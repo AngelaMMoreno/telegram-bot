@@ -1,0 +1,93 @@
+{
+  "fallos": [
+    {
+      "pregunta": "¿Cuánto es 7 x 8? ",
+      "opciones": [
+        "56",
+        "48",
+        "54",
+        "64"
+      ],
+      "correcta": 0
+    },
+    {
+      "pregunta": "¿Cuál es el elemento químico con símbolo H? ",
+      "opciones": [
+        "Hidrógeno",
+        "Helio",
+        "Hierro",
+        "Plomo"
+      ],
+      "correcta": 0
+    },
+    {
+      "pregunta": "¿Qué planeta es conocido como el planeta rojo? ",
+      "opciones": [
+        "Marte",
+        "Venus",
+        "Júpiter",
+        "Saturno"
+      ],
+      "correcta": 0
+    },
+    {
+      "pregunta": "¿Cuál de estos animales es un mamífero? ",
+      "opciones": [
+        "Delfín",
+        "Pingüino",
+        "Tiburón",
+        "Cocodrilo"
+      ],
+      "correcta": 0
+    },
+    {
+      "pregunta": "¿Cuánto es 9 x 6? ",
+      "opciones": [
+        "54",
+        "42",
+        "56",
+        "63"
+      ],
+      "correcta": 0
+    },
+    {
+      "pregunta": "¿Qué gas respiramos principalmente los humanos? ",
+      "opciones": [
+        "Oxígeno",
+        "Nitrógeno",
+        "Dióxido de carbono",
+        "Helio"
+      ],
+      "correcta": 0
+    }
+  ],
+  "historial_tests": [
+    {
+      "quiz_id": 1,
+      "titulo": "Quiz 1",
+      "intentos": [
+        {
+          "hechas": 5,
+          "fallos": 4,
+          "nota": 0
+        }
+      ]
+    },
+    {
+      "quiz_id": 2,
+      "titulo": "Quiz 2",
+      "intentos": [
+        {
+          "hechas": 3,
+          "fallos": 2,
+          "nota": 1.3333333333333333
+        },
+        {
+          "hechas": 3,
+          "fallos": 0,
+          "nota": 10.0
+        }
+      ]
+    }
+  ]
+}
