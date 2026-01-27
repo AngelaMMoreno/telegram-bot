@@ -86,7 +86,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
-    chat_id = query.message.chat_id
+    chat_id = query.message.chat.id
     user_data = cargar_usuario(chat_id)
 
     if data == "pegar_texto":
@@ -222,7 +222,7 @@ async def enviar_pregunta(chat_id, context):
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    chat_id = query.message.chat_id
+    chat_id = query.message.chat.id
     user_data = cargar_usuario(chat_id)
 
     quiz = context.user_data.get("quiz")
@@ -299,15 +299,28 @@ async def mostrar_tests_quiz(chat_id, context, quiz_id, user_data):
     media = total_notas / len(tests["intentos"])
     mensaje += f"📈 Nota media: {media:.2f}/10"
     await context.bot.send_message(chat_id, mensaje)
-
-# ─────────────── MAIN ───────────────
+# ─────────────── MAIN para Render Polling ───────────────
 if __name__ == "__main__":
-    TOKEN = os.environ.get("8561570570:AAGEzK8gV-CbEkeJIswxij25X2QUemIgqEE")
+    import os
+    from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters
+
+    # Cargar token de entorno
+    TOKEN = os.environ.get("TOKEN")
+    if not TOKEN:
+        raise ValueError("❌ ERROR: La variable de entorno TOKEN no está definida")
+    else:
+        print("✅ TOKEN cargado correctamente")
+
+    # Crear la aplicación
     app = ApplicationBuilder().token(TOKEN).build()
+
+    # Agregar handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("fin", fin))
     app.add_handler(CallbackQueryHandler(responder, pattern=r"^\d+$"))
     app.add_handler(CallbackQueryHandler(handle_button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
+    # Iniciar el bot con polling
     print("🤖 Bot iniciado")
     app.run_polling()
