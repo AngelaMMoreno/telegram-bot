@@ -22,6 +22,7 @@ QUESTION_WRAP = 70
 OPTION_WRAP = 28
 OPTION_MAX_LEN = 64
 FAILURES_TEST_SIZE = 40
+TIEMPO_PREGUNTA_SEGUNDOS = 20
 
 
 # ─────────────── DB ───────────────
@@ -49,6 +50,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS quizzes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
+                description TEXT,
                 created_at TEXT NOT NULL
             )
             """
@@ -116,6 +118,7 @@ def init_db():
             )
             """
         )
+        asegurar_columna_descripcion(conn)
         conn.commit()
 
 
@@ -135,15 +138,27 @@ def get_or_create_user(chat_id):
         return cur.lastrowid
 
 
-def create_quiz(quiz):
-    title = quiz.get("titulo") or "Quiz"
+def asegurar_columna_descripcion(conn):
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(quizzes)")
+    columnas = [row[1] for row in cur.fetchall()]
+    if "description" not in columnas:
+        cur.execute("ALTER TABLE quizzes ADD COLUMN description TEXT")
+
+
+def create_quiz(quiz, titulo=None, descripcion=None):
+    title = titulo or quiz.get("titulo") or "Quiz"
+    descripcion = descripcion or quiz.get("descripcion")
     preguntas = quiz.get("preguntas") or []
     if not preguntas:
         return None
     now = datetime.utcnow().isoformat()
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("INSERT INTO quizzes (title, created_at) VALUES (?, ?)", (title, now))
+        cur.execute(
+            "INSERT INTO quizzes (title, description, created_at) VALUES (?, ?, ?)",
+            (title, descripcion, now),
+        )
         quiz_id = cur.lastrowid
         for p in preguntas:
             texto = (p.get("pregunta") or "").strip()
@@ -164,10 +179,18 @@ def create_quiz(quiz):
         return quiz_id
 
 
-def list_quizzes():
+def listar_tests_con_conteo():
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, title FROM quizzes ORDER BY id DESC")
+        cur.execute(
+            """
+            SELECT q.id, q.title, q.description, COUNT(que.id) AS total_preguntas
+            FROM quizzes q
+            LEFT JOIN questions que ON que.quiz_id = q.id
+            GROUP BY q.id
+            ORDER BY q.id DESC
+            """
+        )
         return cur.fetchall()
 
 
@@ -327,6 +350,45 @@ def get_progress_summary(user_id):
         }
 
 
+def borrar_test(quiz_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM questions WHERE quiz_id = ?", (quiz_id,))
+        preguntas_ids = [row["id"] for row in cur.fetchall()]
+        if preguntas_ids:
+            placeholders = ",".join("?" for _ in preguntas_ids)
+            cur.execute(
+                f"DELETE FROM failures WHERE question_id IN ({placeholders})",
+                preguntas_ids,
+            )
+            cur.execute(
+                f"DELETE FROM options WHERE question_id IN ({placeholders})",
+                preguntas_ids,
+            )
+            cur.execute(
+                f"DELETE FROM attempt_items WHERE question_id IN ({placeholders})",
+                preguntas_ids,
+            )
+            cur.execute(
+                f"DELETE FROM questions WHERE id IN ({placeholders})",
+                preguntas_ids,
+            )
+        cur.execute("SELECT id FROM attempts WHERE quiz_id = ?", (quiz_id,))
+        intentos_ids = [row["id"] for row in cur.fetchall()]
+        if intentos_ids:
+            placeholders = ",".join("?" for _ in intentos_ids)
+            cur.execute(
+                f"DELETE FROM attempt_items WHERE attempt_id IN ({placeholders})",
+                intentos_ids,
+            )
+            cur.execute(
+                f"DELETE FROM attempts WHERE id IN ({placeholders})",
+                intentos_ids,
+            )
+        cur.execute("DELETE FROM quizzes WHERE id = ?", (quiz_id,))
+        conn.commit()
+
+
 # ─────────────── Formato de texto ───────────────
 def wrap_text(text, width):
     return textwrap.fill(text, width=width, replace_whitespace=False)
@@ -354,13 +416,65 @@ def format_option(text):
     return wrapped
 
 
-def parse_quiz_json(text):
+def parse_preguntas_json(text):
     payload = json.loads(text)
-    if isinstance(payload, dict):
-        return [payload]
     if isinstance(payload, list):
         return payload
     return []
+
+
+def cancelar_temporizador_pregunta(context):
+    trabajo = context.user_data.pop("temporizador_pregunta", None)
+    if trabajo:
+        trabajo.schedule_removal()
+
+
+def programar_temporizador_pregunta(context, chat_id, indice_pregunta, pregunta_id):
+    telegram_user_id = context.user_data.get("quiz", {}).get("telegram_user_id")
+    if not telegram_user_id:
+        return
+    trabajo = context.job_queue.run_once(
+        tiempo_agotado,
+        TIEMPO_PREGUNTA_SEGUNDOS,
+        data={
+            "chat_id": chat_id,
+            "indice_pregunta": indice_pregunta,
+            "pregunta_id": pregunta_id,
+            "telegram_user_id": telegram_user_id,
+        },
+    )
+    context.user_data["temporizador_pregunta"] = trabajo
+
+
+async def tiempo_agotado(context: ContextTypes.DEFAULT_TYPE):
+    datos = context.job.data
+    telegram_user_id = datos["telegram_user_id"]
+    chat_id = datos["chat_id"]
+    indice_pregunta = datos["indice_pregunta"]
+    pregunta_id = datos["pregunta_id"]
+
+    datos_usuario = context.application.user_data.get(telegram_user_id)
+    if not datos_usuario:
+        return
+
+    quiz = datos_usuario.get("quiz")
+    if not quiz or quiz.get("i") != indice_pregunta:
+        return
+
+    actual = quiz.get("current")
+    if not actual or actual.get("question_id") != pregunta_id:
+        return
+
+    quiz["fail"] += 1
+    correcta = wrap_text(actual["options"][actual["correct_index"]], QUESTION_WRAP)
+    await context.bot.send_message(chat_id, "⏰ Tiempo agotado.")
+    await context.bot.send_message(chat_id, f"💡 Respuesta correcta:\n{correcta}")
+
+    add_attempt_item(quiz["attempt_id"], pregunta_id, "Sin respuesta", False)
+    record_failure(quiz["user_id"], pregunta_id)
+
+    quiz["i"] += 1
+    await enviar_pregunta(chat_id, context)
 
 
 # ─────────────── /start ───────────────
@@ -390,21 +504,31 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = query.message.chat.id
 
     if data == "crear_test":
-        context.user_data["modo"] = "json"
-        await query.message.reply_text(
-            "🧩 Pega el JSON del test. Usa el formato del ejemplo pero sin 'correcta'.\n"
-            "La respuesta correcta será siempre la primera opción.\n"
-            "Cuando termines escribe: /fin"
-        )
+        context.user_data["modo"] = "crear_test_nombre"
+        context.user_data["nuevo_test"] = {}
+        await query.message.reply_text("🧩 Escribe el nombre del test:")
     elif data == "mis_tests":
         await mostrar_tests(chat_id, context)
     elif data.startswith("empezar_"):
         quiz_id = int(data.split("_")[1])
-        await iniciar_quiz(chat_id, context, quiz_id=quiz_id, attempt_type="quiz")
+        await iniciar_quiz(
+            chat_id,
+            context,
+            quiz_id=quiz_id,
+            attempt_type="quiz",
+            telegram_user_id=query.from_user.id,
+        )
+    elif data.startswith("borrar_"):
+        quiz_id = int(data.split("_")[1])
+        borrar_test(quiz_id)
+        await query.message.reply_text("🗑️ Test borrado.")
+        await mostrar_tests(chat_id, context)
     elif data == "progreso":
         await mostrar_progreso(chat_id, context)
     elif data == "test_fallos":
-        await iniciar_test_fallos(chat_id, context)
+        await iniciar_test_fallos(
+            chat_id, context, telegram_user_id=query.from_user.id
+        )
     elif data == "descargar_bd":
         await enviar_bd(chat_id, context)
     elif data == "menu":
@@ -413,42 +537,71 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─────────────── Texto pegado ───────────────
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("modo") == "json":
+    modo = context.user_data.get("modo")
+    if modo == "crear_test_nombre":
+        nombre = update.message.text.strip()
+        if not nombre:
+            await update.message.reply_text("❌ El nombre no puede estar vacío.")
+            return
+        context.user_data["nuevo_test"]["titulo"] = nombre
+        context.user_data["modo"] = "crear_test_descripcion"
+        await update.message.reply_text("📝 Escribe la descripción del test:")
+    elif modo == "crear_test_descripcion":
+        descripcion = update.message.text.strip()
+        if not descripcion:
+            await update.message.reply_text("❌ La descripción no puede estar vacía.")
+            return
+        context.user_data["nuevo_test"]["descripcion"] = descripcion
+        context.user_data["modo"] = "crear_test_json"
+        context.user_data.setdefault("buffer", "")
+        await update.message.reply_text(
+            "📦 Pega el JSON de preguntas con el formato indicado (una lista).\n"
+            "La respuesta correcta será siempre la primera opción.\n"
+            "Cuando termines escribe: /fin"
+        )
+    elif modo == "crear_test_json":
         context.user_data.setdefault("buffer", "")
         context.user_data["buffer"] += update.message.text + "\n"
 
 
 async def fin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("modo") != "json":
+    if context.user_data.get("modo") != "crear_test_json":
         return
     text = context.user_data.pop("buffer", "")
     context.user_data.pop("modo", None)
+    nuevo_test = context.user_data.pop("nuevo_test", {})
     try:
-        quizzes = parse_quiz_json(text)
+        preguntas = parse_preguntas_json(text)
     except json.JSONDecodeError:
         await update.message.reply_text("❌ JSON inválido.")
         return
 
-    created = 0
-    for quiz in quizzes:
-        quiz_id = create_quiz(quiz)
-        if quiz_id:
-            created += 1
-    if created == 0:
+    quiz_id = create_quiz(
+        {"preguntas": preguntas},
+        titulo=nuevo_test.get("titulo"),
+        descripcion=nuevo_test.get("descripcion"),
+    )
+    if not quiz_id:
         await update.message.reply_text("❌ No se pudo crear ningún test.")
     else:
-        await update.message.reply_text(f"✅ Tests creados: {created}")
+        await update.message.reply_text("✅ Test creado correctamente.")
     await mostrar_menu(update.message.chat.id, context)
 
 
 # ─────────────── Mostrar tests ───────────────
 async def mostrar_tests(chat_id, context):
-    quizzes = list_quizzes()
+    quizzes = listar_tests_con_conteo()
     if not quizzes:
         await context.bot.send_message(chat_id, "No hay tests creados.")
         return
     botones = [
-        [InlineKeyboardButton(q["title"], callback_data=f"empezar_{q['id']}")]
+        [
+            InlineKeyboardButton(
+                f"{q['title']} ({q['total_preguntas']} preguntas)",
+                callback_data=f"empezar_{q['id']}",
+            ),
+            InlineKeyboardButton("🗑️ Borrar", callback_data=f"borrar_{q['id']}"),
+        ]
         for q in quizzes
     ]
     botones.append([InlineKeyboardButton("☰ Menú", callback_data="menu")])
@@ -458,13 +611,18 @@ async def mostrar_tests(chat_id, context):
 
 
 # ─────────────── Tests ───────────────
-async def iniciar_quiz(chat_id, context, quiz_id=None, attempt_type="quiz"):
+async def iniciar_quiz(
+    chat_id, context, quiz_id=None, attempt_type="quiz", telegram_user_id=None
+):
     user_id = get_or_create_user(chat_id)
     questions = load_quiz_questions(quiz_id)
     if not questions:
         await context.bot.send_message(chat_id, "❌ Test no encontrado o vacío.")
         await mostrar_menu(chat_id, context)
         return
+    await context.bot.send_message(
+        chat_id, f"🧪 Este test tiene {len(questions)} preguntas."
+    )
     attempt_id = create_attempt(user_id, quiz_id, attempt_type)
     context.user_data["quiz"] = {
         "questions": questions,
@@ -474,11 +632,12 @@ async def iniciar_quiz(chat_id, context, quiz_id=None, attempt_type="quiz"):
         "attempt_id": attempt_id,
         "attempt_type": attempt_type,
         "user_id": user_id,
+        "telegram_user_id": telegram_user_id,
     }
     await enviar_pregunta(chat_id, context)
 
 
-async def iniciar_test_fallos(chat_id, context):
+async def iniciar_test_fallos(chat_id, context, telegram_user_id=None):
     user_id = get_or_create_user(chat_id)
     preguntas = get_failures_questions(user_id, FAILURES_TEST_SIZE)
     if not preguntas:
@@ -493,11 +652,13 @@ async def iniciar_test_fallos(chat_id, context):
         "attempt_id": attempt_id,
         "attempt_type": "failures",
         "user_id": user_id,
+        "telegram_user_id": telegram_user_id,
     }
     await enviar_pregunta(chat_id, context)
 
 
 async def enviar_pregunta(chat_id, context):
+    cancelar_temporizador_pregunta(context)
     quiz = context.user_data["quiz"]
     i = quiz["i"]
     if i >= len(quiz["questions"]):
@@ -512,6 +673,8 @@ async def enviar_pregunta(chat_id, context):
         return
 
     q = quiz["questions"][i]
+    total_preguntas = len(quiz["questions"])
+    encabezado = f"📍 Pregunta {i + 1}/{total_preguntas}"
     pregunta = wrap_text(q["text"].strip(), QUESTION_WRAP)
     partes = split_message(pregunta)
 
@@ -533,8 +696,11 @@ async def enviar_pregunta(chat_id, context):
     for parte in partes[:-1]:
         await context.bot.send_message(chat_id, parte)
     await context.bot.send_message(
-        chat_id, partes[-1], reply_markup=InlineKeyboardMarkup(botones)
+        chat_id,
+        f"{encabezado}\n{partes[-1]}",
+        reply_markup=InlineKeyboardMarkup(botones),
     )
+    programar_temporizador_pregunta(context, chat_id, i, q["id"])
 
 
 # ─────────────── Responder ───────────────
@@ -551,6 +717,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not current:
         return
 
+    cancelar_temporizador_pregunta(context)
     selected = int(query.data)
     correct_index = current["correct_index"]
     options = current["options"]
