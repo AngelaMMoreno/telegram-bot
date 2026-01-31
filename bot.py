@@ -517,6 +517,36 @@ def format_option(text):
     return "\n".join(lineas)
 
 
+def construir_lineas_respuesta(indice, texto):
+    texto = (texto or "").strip()
+    if not texto:
+        return f"{indice}."
+    lineas = textwrap.wrap(
+        texto,
+        width=QUESTION_WRAP,
+        replace_whitespace=False,
+        break_long_words=True,
+        break_on_hyphens=False,
+    )
+    sangria = " " * (len(str(indice)) + 2)
+    if not lineas:
+        return f"{indice}."
+    partes = [f"{indice}. {lineas[0]}"]
+    partes.extend(f"{sangria}{linea}" for linea in lineas[1:])
+    return "\n".join(partes)
+
+
+def construir_texto_pregunta(encabezado, texto_pregunta, opciones=None):
+    base = f"{encabezado}\n{texto_pregunta}"
+    if not opciones:
+        return base
+    respuestas = "\n".join(
+        construir_lineas_respuesta(idx + 1, opcion)
+        for idx, opcion in enumerate(opciones)
+    )
+    return f"{base}\n\nRespuestas:\n{respuestas}"
+
+
 def parse_preguntas_json(text):
     payload = json.loads(text)
     if isinstance(payload, list):
@@ -608,7 +638,32 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     chat_id = query.message.chat.id
 
-    if data == "crear_test":
+    if data == "ver_mas":
+        quiz = context.user_data.get("quiz")
+        if not quiz:
+            return
+        i = quiz.get("i", 0)
+        if i >= len(quiz.get("questions", [])):
+            return
+        q = quiz["questions"][i]
+        current = quiz.get("current", {})
+        opciones = current.get("options", [])
+        texto_pregunta = wrap_text(q["text"].strip(), QUESTION_WRAP)
+        texto_expandido = construir_texto_pregunta(
+            f"📍 Pregunta {i + 1}/{len(quiz['questions'])}",
+            texto_pregunta,
+            opciones,
+        )
+        botones = [
+            [InlineKeyboardButton(format_option(o), callback_data=str(idx))]
+            for idx, o in enumerate(opciones)
+        ]
+        botones.append([InlineKeyboardButton("☰ Menú", callback_data="menu")])
+        await query.message.edit_text(
+            texto_expandido,
+            reply_markup=None,
+        )
+    elif data == "crear_test":
         context.user_data["modo"] = "crear_test_nombre"
         context.user_data["nuevo_test"] = {}
         await query.message.reply_text("🧩 Escribe el nombre del test:")
@@ -800,8 +855,7 @@ async def enviar_pregunta(chat_id, context):
     q = quiz["questions"][i]
     total_preguntas = len(quiz["questions"])
     encabezado = f"📍 Pregunta {i + 1}/{total_preguntas}"
-    pregunta = wrap_text(q["text"].strip(), QUESTION_WRAP)
-    partes = split_message(pregunta)
+    texto_pregunta = wrap_text(q["text"].strip(), QUESTION_WRAP)
 
     options = list(q["options"])
     random.shuffle(options)
@@ -812,18 +866,26 @@ async def enviar_pregunta(chat_id, context):
         "correct_index": correct_index,
     }
 
-    botones = [
+    mensaje_inicial = construir_texto_pregunta(encabezado, texto_pregunta)
+    partes = split_message(mensaje_inicial)
+    botones_enunciado = [[InlineKeyboardButton("👀 Ver más", callback_data="ver_mas")]]
+    botones_opciones = [
         [InlineKeyboardButton(format_option(o), callback_data=str(idx))]
         for idx, o in enumerate(options)
     ]
-    botones.append([InlineKeyboardButton("☰ Menú", callback_data="menu")])
+    botones_opciones.append([InlineKeyboardButton("☰ Menú", callback_data="menu")])
 
     for parte in partes[:-1]:
         await context.bot.send_message(chat_id, parte)
     await context.bot.send_message(
         chat_id,
-        f"{encabezado}\n{partes[-1]}",
-        reply_markup=InlineKeyboardMarkup(botones),
+        partes[-1],
+        reply_markup=InlineKeyboardMarkup(botones_enunciado),
+    )
+    await context.bot.send_message(
+        chat_id,
+        "Opciones:",
+        reply_markup=InlineKeyboardMarkup(botones_opciones),
     )
     programar_temporizador_pregunta(context, chat_id, i, q["id"])
 
