@@ -1,5 +1,6 @@
 import os
 import json
+import textwrap
 from datetime import datetime
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -13,6 +14,11 @@ from telegram.ext import (
 
 QUIZZES_FILE = "quizzes.json"
 USERS_DIR = "users"
+
+MAX_MESSAGE_LEN = 4000
+QUESTION_WRAP = 70
+OPTION_WRAP = 28
+OPTION_MAX_LEN = 64
 
 # ─────────────── Asegurarse que exista carpeta de usuarios ───────────────
 if not os.path.exists(USERS_DIR):
@@ -41,6 +47,30 @@ def guardar_usuario(chat_id, data):
     user_file = os.path.join(USERS_DIR, f"{chat_id}.json")
     with open(user_file, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+# ─────────────── Formato de texto ───────────────
+def wrap_text(text, width):
+    return textwrap.fill(text, width=width, replace_whitespace=False)
+
+def split_message(text, limit=MAX_MESSAGE_LEN):
+    if len(text) <= limit:
+        return [text]
+    parts = []
+    current = ""
+    for line in text.splitlines(keepends=True):
+        if len(current) + len(line) > limit:
+            parts.append(current.rstrip())
+            current = ""
+        current += line
+    if current:
+        parts.append(current.rstrip())
+    return parts
+
+def format_option(text):
+    wrapped = wrap_text(text, OPTION_WRAP)
+    if len(wrapped) > OPTION_MAX_LEN:
+        wrapped = wrapped[: OPTION_MAX_LEN - 1].rstrip() + "…"
+    return wrapped
 
 # ─────────────── Parseo de texto pegado ───────────────
 def parse_text(text):
@@ -166,7 +196,12 @@ async def iniciar_quiz(chat_id, context, quiz_id=None, test_fallos=False):
     if test_fallos:
         preguntas = user_data["fallos"].copy()
     else:
-        quiz = next(q for q in cargar_quizzes() if q["id"] == quiz_id)
+        quizzes = cargar_quizzes()
+        quiz = next((q for q in quizzes if q["id"] == quiz_id), None)
+        if not quiz:
+            await context.bot.send_message(chat_id, "❌ Quiz no encontrado.")
+            await mostrar_menu(chat_id, context)
+            return
         preguntas = quiz["preguntas"]
 
     context.user_data["quiz"] = {
@@ -198,11 +233,6 @@ async def enviar_pregunta(chat_id, context):
                     "titulo": quiz_data.get("titulo", f"Quiz {quiz['quiz_id']}"),
                     "intentos": [intento]
                 })
-            # Acumular fallos
-            for j, p in enumerate(quiz["preguntas"]):
-                if j >= quiz["ok"]:
-                    user_data["fallos"].append(p)
-
             guardar_usuario(chat_id, user_data)
 
         await context.bot.send_message(
@@ -214,9 +244,18 @@ async def enviar_pregunta(chat_id, context):
         return
 
     p = quiz["preguntas"][i]
-    botones = [[InlineKeyboardButton(o, callback_data=str(idx))] for idx, o in enumerate(p["opciones"])]
+    pregunta = wrap_text(p["pregunta"].strip(), QUESTION_WRAP)
+    partes = split_message(pregunta)
+    botones = [
+        [InlineKeyboardButton(format_option(o), callback_data=str(idx))]
+        for idx, o in enumerate(p["opciones"])
+    ]
     botones.append([InlineKeyboardButton("☰ Menú", callback_data="menu")])
-    await context.bot.send_message(chat_id, p["pregunta"], reply_markup=InlineKeyboardMarkup(botones))
+    for parte in partes[:-1]:
+        await context.bot.send_message(chat_id, parte)
+    await context.bot.send_message(
+        chat_id, partes[-1], reply_markup=InlineKeyboardMarkup(botones)
+    )
 
 # ─────────────── Responder interactivo ───────────────
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -233,14 +272,20 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if selected == p["correcta"]:
         quiz["ok"] += 1
-        await query.message.reply_text(f"✅ ¡Correcto!\nTu respuesta: {p['opciones'][selected]}")
+        respuesta = wrap_text(p["opciones"][selected], QUESTION_WRAP)
+        await query.message.reply_text(f"✅ ¡Correcto!\nTu respuesta:\n{respuesta}")
         if quiz.get("test_fallos") and p in user_data["fallos"]:
             user_data["fallos"].remove(p)
             guardar_usuario(chat_id, user_data)
     else:
         quiz["fail"] += 1
-        await query.message.reply_text(f"❌ Incorrecto!\nTu respuesta: {p['opciones'][selected]}")
-        await query.message.reply_text(f"💡 Respuesta correcta: {p['opciones'][p['correcta']]}")
+        resp = wrap_text(p["opciones"][selected], QUESTION_WRAP)
+        correcta = wrap_text(p["opciones"][p["correcta"]], QUESTION_WRAP)
+        await query.message.reply_text(f"❌ Incorrecto!\nTu respuesta:\n{resp}")
+        await query.message.reply_text(f"💡 Respuesta correcta:\n{correcta}")
+        if not quiz.get("test_fallos") and p not in user_data["fallos"]:
+            user_data["fallos"].append(p)
+            guardar_usuario(chat_id, user_data)
     quiz["i"] += 1
     await enviar_pregunta(chat_id, context)
 
