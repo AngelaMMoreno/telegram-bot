@@ -2,7 +2,6 @@ import os
 import json
 import random
 import sqlite3
-import textwrap
 from datetime import datetime
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -17,10 +16,6 @@ from telegram.ext import (
 RUTA_DATOS = os.getenv("RUTA_DATOS", os.getenv("DATA_DIR", "users"))
 DB_FILE = os.path.join(RUTA_DATOS, "bot.db")
 
-MAX_MESSAGE_LEN = 4000
-QUESTION_WRAP = 70
-OPTION_WRAP = 28
-OPTION_MAX_LEN = 64
 FAILURES_TEST_SIZE = 40
 TIEMPO_PREGUNTA_SEGUNDOS = 20
 
@@ -480,60 +475,23 @@ def borrar_test(quiz_id):
 
 
 # ─────────────── Formato de texto ───────────────
-def wrap_text(text, width):
-    return textwrap.fill(text, width=width, replace_whitespace=False)
+def wrap_text(text, width=None):
+    return text
 
 
-def split_message(text, limit=MAX_MESSAGE_LEN):
-    if len(text) <= limit:
-        return [text]
-    parts = []
-    current = ""
-    for line in text.splitlines(keepends=True):
-        if len(current) + len(line) > limit:
-            parts.append(current.rstrip())
-            current = ""
-        current += line
-    if current:
-        parts.append(current.rstrip())
-    return parts
+def split_message(text, limit=None):
+    return [text]
 
 
 def format_option(text):
-    lineas = textwrap.wrap(
-        text,
-        width=OPTION_WRAP,
-        replace_whitespace=False,
-        break_long_words=True,
-        break_on_hyphens=False,
-    )
-    if not lineas:
-        return ""
-    if len(lineas) > 2:
-        lineas = lineas[:2]
-        if len(lineas[1]) > 4:
-            lineas[1] = lineas[1][:-4].rstrip()
-        lineas[1] = f"{lineas[1]}...."
-    return "\n".join(lineas)
+    return (text or "").strip()
 
 
 def construir_lineas_respuesta(indice, texto):
     texto = (texto or "").strip()
     if not texto:
         return f"{indice}."
-    lineas = textwrap.wrap(
-        texto,
-        width=QUESTION_WRAP,
-        replace_whitespace=False,
-        break_long_words=True,
-        break_on_hyphens=False,
-    )
-    sangria = " " * (len(str(indice)) + 2)
-    if not lineas:
-        return f"{indice}."
-    partes = [f"{indice}. {lineas[0]}"]
-    partes.extend(f"{sangria}{linea}" for linea in lineas[1:])
-    return "\n".join(partes)
+    return f"{indice}. {texto}"
 
 
 def construir_texto_pregunta(encabezado, texto_pregunta, opciones=None):
@@ -630,7 +588,7 @@ async def tiempo_agotado(context: ContextTypes.DEFAULT_TYPE):
         return
 
     quiz["fail"] += 1
-    correcta = wrap_text(actual["options"][actual["correct_index"]], QUESTION_WRAP)
+    correcta = wrap_text(actual["options"][actual["correct_index"]])
     await context.bot.send_message(chat_id, "⏰ Tiempo agotado.")
     await context.bot.send_message(chat_id, f"💡 Respuesta correcta:\n{correcta}")
 
@@ -677,7 +635,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         q = quiz["questions"][i]
         current = quiz.get("current", {})
         opciones = current.get("options", [])
-        texto_pregunta = wrap_text(q["text"].strip(), QUESTION_WRAP)
+        texto_pregunta = wrap_text(q["text"].strip())
         texto_expandido = construir_texto_pregunta(
             f"📍 Pregunta {i + 1}/{len(quiz['questions'])}",
             texto_pregunta,
@@ -893,7 +851,7 @@ async def enviar_pregunta(chat_id, context):
     q = quiz["questions"][i]
     total_preguntas = len(quiz["questions"])
     encabezado = f"📍 Pregunta {i + 1}/{total_preguntas}"
-    texto_pregunta = wrap_text(q["text"].strip(), QUESTION_WRAP)
+    texto_pregunta = wrap_text(q["text"].strip())
 
     options = list(q["options"])
     random.shuffle(options)
@@ -951,14 +909,14 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if selected == correct_index:
         quiz["ok"] += 1
-        respuesta = wrap_text(options[selected], QUESTION_WRAP)
+        respuesta = wrap_text(options[selected])
         await query.message.reply_text(f"✅ ¡Correcto!\nTu respuesta:\n{respuesta}")
         clear_failure(user_id, question_id)
         is_correct = True
     else:
         quiz["fail"] += 1
-        resp = wrap_text(options[selected], QUESTION_WRAP)
-        correcta = wrap_text(options[correct_index], QUESTION_WRAP)
+        resp = wrap_text(options[selected])
+        correcta = wrap_text(options[correct_index])
         await query.message.reply_text(f"❌ Incorrecto!\nTu respuesta:\n{resp}")
         await query.message.reply_text(f"💡 Respuesta correcta:\n{correcta}")
         record_failure(user_id, question_id)
