@@ -1,0 +1,14 @@
+version: "3.8"
+
+services:
+  quizbot:
+    build: .
+    environment:
+      TOKEN: ${TOKEN}
+    restart: unless-stopped
+    networks:
+      - dokploy-network
+
+networks:
+  dokploy-network:
+    external: true
