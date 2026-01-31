@@ -6,9 +6,14 @@ services:
     environment:
       TOKEN: ${TOKEN}
     restart: unless-stopped
+    volumes:
+      - datos_usuarios:/app/users
     networks:
       - dokploy-network
 
 networks:
   dokploy-network:
     external: true
+
+volumes:
+  datos_usuarios:
