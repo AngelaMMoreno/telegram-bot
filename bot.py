@@ -14,8 +14,8 @@ from telegram.ext import (
     filters,
 )
 
-DATA_DIR = "data"
-DB_FILE = os.path.join(DATA_DIR, "bot.db")
+RUTA_DATOS = os.getenv("RUTA_DATOS", os.getenv("DATA_DIR", "users"))
+DB_FILE = os.path.join(RUTA_DATOS, "bot.db")
 
 MAX_MESSAGE_LEN = 4000
 QUESTION_WRAP = 70
@@ -33,7 +33,7 @@ def get_conn():
 
 
 def init_db():
-    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(RUTA_DATOS, exist_ok=True)
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
