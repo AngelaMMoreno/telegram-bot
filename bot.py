@@ -374,7 +374,7 @@ async def mostrar_menu(chat_id, context, texto="Selecciona una opción:"):
         [InlineKeyboardButton("🧩 Crear test", callback_data="crear_test")],
         [InlineKeyboardButton("📋 Mis tests", callback_data="mis_tests")],
         [InlineKeyboardButton("📈 Progreso", callback_data="progreso")],
-        [InlineKeyboardButton("⚠️ Test de fallos (40)", callback_data="test_fallos")],
+        [InlineKeyboardButton("⚠️ Test de fallos", callback_data="test_fallos")],
         [InlineKeyboardButton("⬇️ Descargar BD", callback_data="descargar_bd")],
     ]
     await context.bot.send_message(
