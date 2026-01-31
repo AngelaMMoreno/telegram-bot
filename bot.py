@@ -547,8 +547,8 @@ def construir_texto_pregunta(encabezado, texto_pregunta, opciones=None):
     return f"{base}\n\nRespuestas:\n{respuestas}"
 
 
-def parse_preguntas_json(text):
-    payload = json.loads(text)
+def parse_preguntas_json(texto):
+    payload = json.loads(texto)
     if isinstance(payload, list):
         return payload
     if isinstance(payload, dict):
@@ -556,6 +556,35 @@ def parse_preguntas_json(text):
         if isinstance(preguntas, list):
             return preguntas
     return []
+
+
+async def procesar_texto_json(texto, update: Update, context, mostrar_error=True):
+    try:
+        preguntas = parse_preguntas_json(texto)
+    except json.JSONDecodeError:
+        if mostrar_error:
+            await update.message.reply_text("❌ JSON inválido.")
+        return False
+    if not preguntas:
+        if mostrar_error:
+            await update.message.reply_text("❌ No se encontraron preguntas válidas.")
+        return False
+
+    context.user_data.pop("modo", None)
+    context.user_data.pop("buffer", None)
+    nuevo_test = context.user_data.pop("nuevo_test", {})
+
+    quiz_id = create_quiz(
+        {"preguntas": preguntas},
+        titulo=nuevo_test.get("titulo"),
+        descripcion=nuevo_test.get("descripcion"),
+    )
+    if not quiz_id:
+        await update.message.reply_text("❌ No se pudo crear ningún test.")
+    else:
+        await update.message.reply_text("✅ Test creado correctamente.")
+    await mostrar_menu(update.message.chat.id, context)
+    return True
 
 
 def cancelar_temporizador_pregunta(context):
@@ -737,35 +766,44 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Puedes enviar una lista de preguntas o un objeto con la clave preguntas.\n"
             "La respuesta correcta será siempre la primera opción.\n"
             "Cada pregunta incluye bloque y tema.\n"
+            "También puedes adjuntar un archivo .json o .txt con el JSON completo.\n"
             "Cuando termines escribe: /fin"
         )
     elif modo == "crear_test_json":
         context.user_data.setdefault("buffer", "")
-        context.user_data["buffer"] += update.message.text + "\n"
+        texto = update.message.text
+        if texto and texto.strip().startswith(("{", "[")):
+            creado = await procesar_texto_json(
+                texto, update, context, mostrar_error=False
+            )
+            if creado:
+                return
+        context.user_data["buffer"] += texto + "\n"
 
 
 async def fin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("modo") != "crear_test_json":
         return
     text = context.user_data.pop("buffer", "")
-    context.user_data.pop("modo", None)
-    nuevo_test = context.user_data.pop("nuevo_test", {})
-    try:
-        preguntas = parse_preguntas_json(text)
-    except json.JSONDecodeError:
-        await update.message.reply_text("❌ JSON inválido.")
-        return
+    await procesar_texto_json(text, update, context)
 
-    quiz_id = create_quiz(
-        {"preguntas": preguntas},
-        titulo=nuevo_test.get("titulo"),
-        descripcion=nuevo_test.get("descripcion"),
-    )
-    if not quiz_id:
-        await update.message.reply_text("❌ No se pudo crear ningún test.")
-    else:
-        await update.message.reply_text("✅ Test creado correctamente.")
-    await mostrar_menu(update.message.chat.id, context)
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("modo") != "crear_test_json":
+        return
+    documento = update.message.document
+    if not documento:
+        return
+    nombre_archivo = (documento.file_name or "").lower()
+    if not (nombre_archivo.endswith(".json") or nombre_archivo.endswith(".txt")):
+        await update.message.reply_text(
+            "❌ Formato no válido. Adjunta un archivo .json o .txt."
+        )
+        return
+    archivo = await documento.get_file()
+    contenido = await archivo.download_as_bytearray()
+    texto = contenido.decode("utf-8", errors="replace")
+    await procesar_texto_json(texto, update, context)
 
 
 # ─────────────── Mostrar tests ───────────────
@@ -987,6 +1025,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("fin", fin))
     app.add_handler(CallbackQueryHandler(responder, pattern=r"^\d+$"))
     app.add_handler(CallbackQueryHandler(handle_button))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     print("🤖 Bot iniciado")
