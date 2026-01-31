@@ -61,6 +61,8 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 quiz_id INTEGER NOT NULL,
                 text TEXT NOT NULL,
+                bloque INTEGER,
+                tema INTEGER,
                 FOREIGN KEY (quiz_id) REFERENCES quizzes(id)
             )
             """
@@ -119,6 +121,7 @@ def init_db():
             """
         )
         asegurar_columna_descripcion(conn)
+        asegurar_columnas_preguntas(conn)
         conn.commit()
 
 
@@ -146,6 +149,16 @@ def asegurar_columna_descripcion(conn):
         cur.execute("ALTER TABLE quizzes ADD COLUMN description TEXT")
 
 
+def asegurar_columnas_preguntas(conn):
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(questions)")
+    columnas = [row[1] for row in cur.fetchall()]
+    if "bloque" not in columnas:
+        cur.execute("ALTER TABLE questions ADD COLUMN bloque INTEGER")
+    if "tema" not in columnas:
+        cur.execute("ALTER TABLE questions ADD COLUMN tema INTEGER")
+
+
 def create_quiz(quiz, titulo=None, descripcion=None):
     title = titulo or quiz.get("titulo") or "Quiz"
     descripcion = descripcion or quiz.get("descripcion")
@@ -163,11 +176,13 @@ def create_quiz(quiz, titulo=None, descripcion=None):
         for p in preguntas:
             texto = (p.get("pregunta") or "").strip()
             opciones = p.get("opciones") or []
+            bloque = p.get("bloque")
+            tema = p.get("tema")
             if not texto or len(opciones) < 2:
                 continue
             cur.execute(
-                "INSERT INTO questions (quiz_id, text) VALUES (?, ?)",
-                (quiz_id, texto),
+                "INSERT INTO questions (quiz_id, text, bloque, tema) VALUES (?, ?, ?, ?)",
+                (quiz_id, texto, bloque, tema),
             )
             q_id = cur.lastrowid
             for idx, opt in enumerate(opciones):
@@ -194,6 +209,14 @@ def listar_tests_con_conteo():
         return cur.fetchall()
 
 
+def obtener_titulo_test(quiz_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT title FROM quizzes WHERE id = ?", (quiz_id,))
+        row = cur.fetchone()
+        return row["title"] if row else None
+
+
 def load_quiz_questions(quiz_id):
     with get_conn() as conn:
         cur = conn.cursor()
@@ -216,6 +239,73 @@ def load_quiz_questions(quiz_id):
                 }
             )
         return questions
+
+
+def get_progreso_por_tests(user_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT q.id AS quiz_id, q.title, a.correct, a.wrong, a.started_at
+            FROM attempts a
+            JOIN quizzes q ON q.id = a.quiz_id
+            WHERE a.user_id = ?
+              AND a.attempt_type = 'quiz'
+              AND a.finished_at IS NOT NULL
+            ORDER BY q.id, a.started_at
+            """,
+            (user_id,),
+        )
+        filas = cur.fetchall()
+    resumen = {}
+    for fila in filas:
+        quiz_id = fila["quiz_id"]
+        resumen.setdefault(
+            quiz_id,
+            {"titulo": fila["title"], "intentos": []},
+        )
+        correct = fila["correct"]
+        wrong = fila["wrong"]
+        total = correct + wrong
+        nota = max((correct - 0.3 * wrong) / total * 10, 0) if total else 0
+        resumen[quiz_id]["intentos"].append(
+            {
+                "correct": correct,
+                "wrong": wrong,
+                "nota": nota,
+            }
+        )
+    return list(resumen.values())
+
+
+def get_progreso_general(user_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT a.correct, a.wrong
+            FROM attempts a
+            JOIN (
+                SELECT quiz_id, MAX(id) AS ultimo_id
+                FROM attempts
+                WHERE user_id = ?
+                  AND attempt_type = 'quiz'
+                  AND finished_at IS NOT NULL
+                GROUP BY quiz_id
+            ) ult ON ult.ultimo_id = a.id
+            """,
+            (user_id,),
+        )
+        filas = cur.fetchall()
+    total_correct = sum(fila["correct"] for fila in filas)
+    total_wrong = sum(fila["wrong"] for fila in filas)
+    total = total_correct + total_wrong
+    nota = max((total_correct - 0.3 * total_wrong) / total * 10, 0) if total else 0
+    return {
+        "total_correct": total_correct,
+        "total_wrong": total_wrong,
+        "nota": nota,
+    }
 
 
 def create_attempt(user_id, quiz_id, attempt_type):
@@ -410,16 +500,31 @@ def split_message(text, limit=MAX_MESSAGE_LEN):
 
 
 def format_option(text):
-    wrapped = wrap_text(text, OPTION_WRAP)
-    if len(wrapped) > OPTION_MAX_LEN:
-        wrapped = wrapped[: OPTION_MAX_LEN - 1].rstrip() + "…"
-    return wrapped
+    lineas = textwrap.wrap(
+        text,
+        width=OPTION_WRAP,
+        replace_whitespace=False,
+        break_long_words=True,
+        break_on_hyphens=False,
+    )
+    if not lineas:
+        return ""
+    if len(lineas) > 2:
+        lineas = lineas[:2]
+        if len(lineas[1]) > 4:
+            lineas[1] = lineas[1][:-4].rstrip()
+        lineas[1] = f"{lineas[1]}...."
+    return "\n".join(lineas)
 
 
 def parse_preguntas_json(text):
     payload = json.loads(text)
     if isinstance(payload, list):
         return payload
+    if isinstance(payload, dict):
+        preguntas = payload.get("preguntas")
+        if isinstance(preguntas, list):
+            return preguntas
     return []
 
 
@@ -520,8 +625,26 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     elif data.startswith("borrar_"):
         quiz_id = int(data.split("_")[1])
+        titulo = obtener_titulo_test(quiz_id) or "este test"
+        botones = [
+            [
+                InlineKeyboardButton(
+                    "✅ Confirmar borrado", callback_data=f"confirmar_borrar_{quiz_id}"
+                ),
+                InlineKeyboardButton("↩️ Cancelar", callback_data="cancelar_borrar"),
+            ]
+        ]
+        await query.message.reply_text(
+            f"⚠️ ¿Seguro que quieres borrar {titulo}?",
+            reply_markup=InlineKeyboardMarkup(botones),
+        )
+    elif data.startswith("confirmar_borrar_"):
+        quiz_id = int(data.split("_")[2])
         borrar_test(quiz_id)
         await query.message.reply_text("🗑️ Test borrado.")
+        await mostrar_tests(chat_id, context)
+    elif data == "cancelar_borrar":
+        await query.message.reply_text("Operación cancelada.")
         await mostrar_tests(chat_id, context)
     elif data == "progreso":
         await mostrar_progreso(chat_id, context)
@@ -555,8 +678,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["modo"] = "crear_test_json"
         context.user_data.setdefault("buffer", "")
         await update.message.reply_text(
-            "📦 Pega el JSON de preguntas con el formato indicado (una lista).\n"
+            "📦 Pega el JSON de preguntas con el formato indicado.\n"
+            "Puedes enviar una lista de preguntas o un objeto con la clave preguntas.\n"
             "La respuesta correcta será siempre la primera opción.\n"
+            "Cada pregunta incluye bloque y tema.\n"
             "Cuando termines escribe: /fin"
         )
     elif modo == "crear_test_json":
@@ -748,19 +873,31 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─────────────── Progreso ───────────────
 async def mostrar_progreso(chat_id, context):
     user_id = get_or_create_user(chat_id)
-    stats = get_progress_summary(user_id)
-    total = stats["total_correct"] + stats["total_wrong"]
-    porcentaje = (stats["total_correct"] / total * 100) if total else 0
+    progreso_general = get_progreso_general(user_id)
+    progreso_tests = get_progreso_por_tests(user_id)
+
     mensaje = (
-        "📈 Progreso\n"
-        f"Tests realizados: {stats['total_attempts']}\n"
-        f"Preguntas hechas: {total}\n"
-        f"Aciertos: {stats['total_correct']}\n"
-        f"Errores: {stats['total_wrong']}\n"
-        f"Porcentaje de acierto: {porcentaje:.2f}%\n"
-        f"Preguntas falladas pendientes: {stats['failed_q']}"
+        "📈 Progreso general\n"
+        f"Aciertos totales: {progreso_general['total_correct']}\n"
+        f"Fallos totales: {progreso_general['total_wrong']}\n"
+        f"Nota general: {progreso_general['nota']:.2f}/10"
     )
-    await context.bot.send_message(chat_id, mensaje)
+
+    if not progreso_tests:
+        mensaje += "\n\nNo hay intentos registrados todavía."
+        await context.bot.send_message(chat_id, mensaje)
+        return
+
+    detalles = ["\n\n📚 Progreso por test"]
+    for test in progreso_tests:
+        detalles.append(f"\n🧪 {test['titulo']}")
+        for idx, intento in enumerate(test["intentos"], start=1):
+            detalles.append(
+                f"  Intento {idx}: ✔️ {intento['correct']} ❌ {intento['wrong']} "
+                f"🎯 {intento['nota']:.2f}/10"
+            )
+
+    await context.bot.send_message(chat_id, mensaje + "\n".join(detalles))
 
 
 # ─────────────── Descargar BD ───────────────
