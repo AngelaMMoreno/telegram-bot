@@ -1,8 +1,4 @@
-[
   {
-    "id": 1,
-    "titulo": "Quiz 1",
-    "fecha": "27/01/2026 18:00",
     "preguntas": [
       {
         "pregunta": "¿Cuál es la capital de Francia? ",
@@ -11,8 +7,7 @@
           "Madrid",
           "Berlín",
           "Roma"
-        ],
-        "correcta": 0
+        ]
       },
       {
         "pregunta": "¿Cuánto es 7 x 8? ",
@@ -21,8 +16,7 @@
           "48",
           "54",
           "64"
-        ],
-        "correcta": 0
+        ]
       },
       {
         "pregunta": "¿Cuál es el elemento químico con símbolo H? ",
@@ -31,8 +25,7 @@
           "Helio",
           "Hierro",
           "Plomo"
-        ],
-        "correcta": 0
+        ]
       },
       {
         "pregunta": "¿Qué planeta es conocido como el planeta rojo? ",
@@ -41,8 +34,7 @@
           "Venus",
           "Júpiter",
           "Saturno"
-        ],
-        "correcta": 0
+        ]
       },
       {
         "pregunta": "¿Cuál de estos animales es un mamífero? ",
@@ -51,46 +43,7 @@
           "Pingüino",
           "Tiburón",
           "Cocodrilo"
-        ],
-        "correcta": 0
-      }
-    ]
-  },
-  {
-    "id": 2,
-    "titulo": "Quiz 2",
-    "fecha": "27/01/2026 18:05",
-    "preguntas": [
-      {
-        "pregunta": "¿Cuál es la capital de Francia? ",
-        "opciones": [
-          "París",
-          "Madrid",
-          "Berlín",
-          "Roma"
-        ],
-        "correcta": 0
-      },
-      {
-        "pregunta": "¿Cuánto es 9 x 6? ",
-        "opciones": [
-          "54",
-          "42",
-          "56",
-          "63"
-        ],
-        "correcta": 0
-      },
-      {
-        "pregunta": "¿Qué gas respiramos principalmente los humanos? ",
-        "opciones": [
-          "Oxígeno",
-          "Nitrógeno",
-          "Dióxido de carbono",
-          "Helio"
-        ],
-        "correcta": 0
+        ]
       }
     ]
   }
-]
