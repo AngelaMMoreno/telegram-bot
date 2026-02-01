@@ -56,6 +56,7 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 quiz_id INTEGER NOT NULL,
                 text TEXT NOT NULL,
+                explicacion TEXT,
                 bloque INTEGER,
                 tema INTEGER,
                 FOREIGN KEY (quiz_id) REFERENCES quizzes(id)
@@ -148,6 +149,8 @@ def asegurar_columnas_preguntas(conn):
     cur = conn.cursor()
     cur.execute("PRAGMA table_info(questions)")
     columnas = [row[1] for row in cur.fetchall()]
+    if "explicacion" not in columnas:
+        cur.execute("ALTER TABLE questions ADD COLUMN explicacion TEXT")
     if "bloque" not in columnas:
         cur.execute("ALTER TABLE questions ADD COLUMN bloque INTEGER")
     if "tema" not in columnas:
@@ -170,14 +173,18 @@ def create_quiz(quiz, titulo=None, descripcion=None):
         quiz_id = cur.lastrowid
         for p in preguntas:
             texto = (p.get("pregunta") or "").strip()
+            explicacion = (p.get("explicacion") or "").strip() or None
             opciones = p.get("opciones") or []
             bloque = p.get("bloque")
             tema = p.get("tema")
             if not texto or len(opciones) < 2:
                 continue
             cur.execute(
-                "INSERT INTO questions (quiz_id, text, bloque, tema) VALUES (?, ?, ?, ?)",
-                (quiz_id, texto, bloque, tema),
+                """
+                INSERT INTO questions (quiz_id, text, explicacion, bloque, tema)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (quiz_id, texto, explicacion, bloque, tema),
             )
             q_id = cur.lastrowid
             for idx, opt in enumerate(opciones):
@@ -215,7 +222,10 @@ def obtener_titulo_test(quiz_id):
 def load_quiz_questions(quiz_id):
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, text FROM questions WHERE quiz_id = ?", (quiz_id,))
+        cur.execute(
+            "SELECT id, text, explicacion FROM questions WHERE quiz_id = ?",
+            (quiz_id,),
+        )
         questions = []
         for row in cur.fetchall():
             cur.execute(
@@ -229,6 +239,7 @@ def load_quiz_questions(quiz_id):
                 {
                     "id": row["id"],
                     "text": row["text"],
+                    "explicacion": row["explicacion"],
                     "options": options,
                     "correct_text": options[0],
                 }
@@ -372,12 +383,33 @@ def clear_failure(user_id, question_id):
         conn.commit()
 
 
+def obtener_explicacion_pregunta(question_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT explicacion FROM questions WHERE id = ?",
+            (question_id,),
+        )
+        row = cur.fetchone()
+        return row["explicacion"] if row else None
+
+
+def actualizar_explicacion_pregunta(question_id, explicacion):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE questions SET explicacion = ? WHERE id = ?",
+            (explicacion, question_id),
+        )
+        conn.commit()
+
+
 def get_failures_questions(user_id, limit_count):
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT q.id, q.text
+            SELECT q.id, q.text, q.explicacion
             FROM failures f
             JOIN questions q ON q.id = f.question_id
             WHERE f.user_id = ?
@@ -400,6 +432,7 @@ def get_failures_questions(user_id, limit_count):
                 {
                     "id": row["id"],
                     "text": row["text"],
+                    "explicacion": row["explicacion"],
                     "options": options,
                     "correct_text": options[0],
                 }
@@ -698,12 +731,49 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await enviar_bd(chat_id, context)
     elif data == "menu":
         await mostrar_menu(chat_id, context)
+    elif data.startswith("explicacion_"):
+        pregunta_id = int(data.split("_")[1])
+        contexto_explicacion = obtener_explicacion_pregunta(pregunta_id)
+        context.user_data["modo"] = "editar_explicacion"
+        context.user_data["pregunta_explicacion_id"] = pregunta_id
+        botones = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("↩️ Cancelar", callback_data="cancelar_explicacion")]]
+        )
+        if contexto_explicacion:
+            await query.message.reply_text(
+                "📝 Explicación actual:\n"
+                f"{contexto_explicacion}\n\n"
+                "Escribe la nueva explicación para la pregunta:",
+                reply_markup=botones,
+            )
+        else:
+            await query.message.reply_text(
+                "📝 Esta pregunta no tiene explicación.\n"
+                "Escribe una explicación para guardarla:",
+                reply_markup=botones,
+            )
+    elif data == "cancelar_explicacion":
+        context.user_data.pop("modo", None)
+        context.user_data.pop("pregunta_explicacion_id", None)
+        await query.message.reply_text("Operación cancelada.")
 
 
 # ─────────────── Texto pegado ───────────────
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     modo = context.user_data.get("modo")
-    if modo == "crear_test_nombre":
+    if modo == "editar_explicacion":
+        explicacion = update.message.text.strip()
+        if not explicacion:
+            await update.message.reply_text("❌ La explicación no puede estar vacía.")
+            return
+        pregunta_id = context.user_data.pop("pregunta_explicacion_id", None)
+        context.user_data.pop("modo", None)
+        if not pregunta_id:
+            await update.message.reply_text("❌ No se pudo identificar la pregunta.")
+            return
+        actualizar_explicacion_pregunta(pregunta_id, explicacion)
+        await update.message.reply_text("✅ Explicación guardada.")
+    elif modo == "crear_test_nombre":
         nombre = update.message.text.strip()
         if not nombre:
             await update.message.reply_text("❌ El nombre no puede estar vacío.")
@@ -723,7 +793,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📦 Pega el JSON de preguntas con el formato indicado.\n"
             "Puedes enviar una lista de preguntas o un objeto con la clave preguntas.\n"
             "La respuesta correcta será siempre la primera opción.\n"
-            "Cada pregunta incluye bloque y tema.\n"
+            "Cada pregunta incluye bloque, tema y opcionalmente explicacion.\n"
             "También puedes adjuntar un archivo .json o .txt con el JSON completo.\n"
             "Cuando termines escribe: /fin"
         )
@@ -923,6 +993,21 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_correct = False
 
     add_attempt_item(quiz["attempt_id"], question_id, options[selected], is_correct)
+
+    botones_explicacion = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "✍️ Añadir/editar explicación",
+                    callback_data=f"explicacion_{question_id}",
+                )
+            ]
+        ]
+    )
+    await query.message.reply_text(
+        "📝 ¿Quieres añadir o editar la explicación de esta pregunta?",
+        reply_markup=botones_explicacion,
+    )
 
     quiz["i"] += 1
     await enviar_pregunta(chat_id, context)
