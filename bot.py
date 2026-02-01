@@ -773,13 +773,14 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text(
                 "📝 Explicación actual:\n"
                 f"{contexto_explicacion}\n\n"
-                "Escribe la nueva explicación para la pregunta:",
+                "Escribe la nueva explicación para la pregunta o adjunta un archivo "
+                "para guardarlo como enlace:",
                 reply_markup=botones,
             )
         else:
             await query.message.reply_text(
                 "📝 Esta pregunta no tiene explicación.\n"
-                "Escribe una explicación para guardarla:",
+                "Escribe una explicación o adjunta un archivo para guardar el enlace:",
                 reply_markup=botones,
             )
     elif data == "cancelar_explicacion":
@@ -871,6 +872,31 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         contenido = await archivo.download_as_bytearray()
         texto = contenido.decode("utf-8", errors="replace")
         await procesar_texto_json(texto, update, context)
+        return
+    if modo == "editar_explicacion":
+        documento = update.message.document
+        if not documento:
+            return
+        pregunta_id = context.user_data.pop("pregunta_explicacion_id", None)
+        context.user_data.pop("modo", None)
+        if not pregunta_id:
+            await update.message.reply_text("❌ No se pudo identificar la pregunta.")
+            return
+        nombre_archivo, url = await guardar_documento_publico(documento)
+        if not nombre_archivo or not url:
+            await update.message.reply_text("❌ No se pudo guardar el archivo.")
+            return
+        descripcion = (update.message.caption or "").strip()
+        if descripcion:
+            explicacion = f"{descripcion}\n\n{url}"
+        else:
+            explicacion = url
+        actualizar_explicacion_pregunta(pregunta_id, explicacion)
+        await update.message.reply_text(
+            "✅ Explicación actualizada con archivo.\n"
+            f"📎 {nombre_archivo}\n"
+            f"🌐 {url}"
+        )
         return
     if modo == "subir_archivo":
         await guardar_archivo_publico(update, context)
@@ -1166,6 +1192,21 @@ async def guardar_archivo_publico(update: Update, context: ContextTypes.DEFAULT_
     if not documento:
         await update.message.reply_text("❌ No se recibió ningún archivo.")
         return
+    nombre_archivo, url = await guardar_documento_publico(documento)
+    if not nombre_archivo or not url:
+        await update.message.reply_text("❌ No se pudo guardar el archivo.")
+        return
+    context.user_data.pop("modo", None)
+    await update.message.reply_text(
+        "✅ Archivo guardado.\n"
+        f"📎 {nombre_archivo}\n"
+        f"🌐 {url}"
+    )
+
+
+async def guardar_documento_publico(documento):
+    if not documento:
+        return None, None
     os.makedirs(RUTA_ARCHIVOS_PUBLICOS, exist_ok=True)
     nombre_archivo = os.path.basename(documento.file_name or "archivo")
     nombre_archivo = asegurar_nombre_archivo_unico(
@@ -1174,13 +1215,8 @@ async def guardar_archivo_publico(update: Update, context: ContextTypes.DEFAULT_
     archivo = await documento.get_file()
     ruta_destino = os.path.join(RUTA_ARCHIVOS_PUBLICOS, nombre_archivo)
     await archivo.download_to_drive(ruta_destino)
-    context.user_data.pop("modo", None)
     url = construir_url_archivo(nombre_archivo)
-    await update.message.reply_text(
-        "✅ Archivo guardado.\n"
-        f"📎 {nombre_archivo}\n"
-        f"🌐 {url}"
-    )
+    return nombre_archivo, url
 
 
 def iniciar_servidor_archivos():
