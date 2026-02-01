@@ -7,14 +7,18 @@ services:
       TOKEN: ${TOKEN}
       SERVIR_ARCHIVOS_PUBLICOS: ${SERVIR_ARCHIVOS_PUBLICOS:-0}
       PUERTO_ARCHIVOS_PUBLICOS: ${PUERTO_ARCHIVOS_PUBLICOS:-8000}
-      URL_PUBLICA_ARCHIVOS: ${URL_PUBLICA_ARCHIVOS:-http://localhost:8000}
+      URL_PUBLICA_ARCHIVOS: ${URL_PUBLICA_ARCHIVOS:-https://files.aprentix.es}
       RUTA_ARCHIVOS_PUBLICOS: /app/users/publicos
     restart: unless-stopped
     volumes:
       - datos_usuarios:/app/users
       - /mnt/data/ficheros:/app/users/publicos
-    ports:
-      - "8000:8000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.archivos.rule=Host(`files.aprentix.es`)"
+      - "traefik.http.routers.archivos.entrypoints=websecure"
+      - "traefik.http.routers.archivos.tls=true"
+      - "traefik.http.services.archivos.loadbalancer.server.port=8000"
     networks:
       - dokploy-network
 
