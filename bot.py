@@ -756,6 +756,15 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("modo", None)
         context.user_data.pop("pregunta_explicacion_id", None)
         await query.message.reply_text("Operación cancelada.")
+    elif data.startswith("ver_explicacion_"):
+        pregunta_id = int(data.split("_")[2])
+        explicacion = obtener_explicacion_pregunta(pregunta_id)
+        if explicacion:
+            await query.message.reply_text(f"📖 Explicación:\n{explicacion}")
+        else:
+            await query.message.reply_text(
+                "ℹ️ Esta pregunta no tiene explicación guardada."
+            )
 
 
 # ─────────────── Texto pegado ───────────────
@@ -994,19 +1003,28 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     add_attempt_item(quiz["attempt_id"], question_id, options[selected], is_correct)
 
-    botones_explicacion = InlineKeyboardMarkup(
-        [
+    explicacion_actual = obtener_explicacion_pregunta(question_id)
+    filas_explicacion = []
+    if explicacion_actual:
+        filas_explicacion.append(
             [
                 InlineKeyboardButton(
-                    "✍️ Añadir/editar explicación",
-                    callback_data=f"explicacion_{question_id}",
+                    "👀 Ver explicación",
+                    callback_data=f"ver_explicacion_{question_id}",
                 )
             ]
+        )
+    filas_explicacion.append(
+        [
+            InlineKeyboardButton(
+                "✍️ Añadir/editar explicación",
+                callback_data=f"explicacion_{question_id}",
+            )
         ]
     )
     await query.message.reply_text(
-        "📝 ¿Quieres añadir o editar la explicación de esta pregunta?",
-        reply_markup=botones_explicacion,
+        "📝 Opciones de explicación:",
+        reply_markup=InlineKeyboardMarkup(filas_explicacion),
     )
 
     quiz["i"] += 1
