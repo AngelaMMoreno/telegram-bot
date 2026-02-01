@@ -2,7 +2,10 @@ import os
 import json
 import random
 import sqlite3
+import threading
 from datetime import datetime
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -15,6 +18,17 @@ from telegram.ext import (
 
 RUTA_DATOS = os.getenv("RUTA_DATOS", os.getenv("DATA_DIR", "users"))
 DB_FILE = os.path.join(RUTA_DATOS, "bot.db")
+RUTA_ARCHIVOS_PUBLICOS = os.getenv(
+    "RUTA_ARCHIVOS_PUBLICOS", os.path.join(RUTA_DATOS, "publicos")
+)
+PUERTO_ARCHIVOS_PUBLICOS = int(os.getenv("PUERTO_ARCHIVOS_PUBLICOS", "8000"))
+SERVIR_ARCHIVOS_PUBLICOS = os.getenv("SERVIR_ARCHIVOS_PUBLICOS", "").lower() in {
+    "1",
+    "true",
+    "si",
+    "sí",
+    "yes",
+}
 
 FAILURES_TEST_SIZE = 40
 TIEMPO_PREGUNTA_SEGUNDOS = 20
@@ -1070,9 +1084,26 @@ async def enviar_bd(chat_id, context):
         await context.bot.send_document(chat_id, document=f, filename="bot.db")
 
 
+def iniciar_servidor_archivos():
+    if not SERVIR_ARCHIVOS_PUBLICOS:
+        return None
+    os.makedirs(RUTA_ARCHIVOS_PUBLICOS, exist_ok=True)
+    controlador = partial(SimpleHTTPRequestHandler, directory=RUTA_ARCHIVOS_PUBLICOS)
+    servidor = ThreadingHTTPServer(("", PUERTO_ARCHIVOS_PUBLICOS), controlador)
+    hilo = threading.Thread(target=servidor.serve_forever, daemon=True)
+    hilo.start()
+    print(
+        "📂 Servidor de archivos iniciado en "
+        f"http://0.0.0.0:{PUERTO_ARCHIVOS_PUBLICOS} "
+        f"(ruta: {RUTA_ARCHIVOS_PUBLICOS})"
+    )
+    return servidor
+
+
 # ─────────────── MAIN ───────────────
 if __name__ == "__main__":
     init_db()
+    iniciar_servidor_archivos()
 
     TOKEN = os.environ.get("TOKEN")
     if not TOKEN:
