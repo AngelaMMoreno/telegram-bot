@@ -6,6 +6,7 @@ import threading
 from datetime import datetime
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import quote
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -22,6 +23,9 @@ RUTA_ARCHIVOS_PUBLICOS = os.getenv(
     "RUTA_ARCHIVOS_PUBLICOS", os.path.join(RUTA_DATOS, "publicos")
 )
 PUERTO_ARCHIVOS_PUBLICOS = int(os.getenv("PUERTO_ARCHIVOS_PUBLICOS", "8000"))
+URL_PUBLICA_ARCHIVOS = os.getenv(
+    "URL_PUBLICA_ARCHIVOS", f"http://localhost:{PUERTO_ARCHIVOS_PUBLICOS}"
+).rstrip("/")
 SERVIR_ARCHIVOS_PUBLICOS = os.getenv("SERVIR_ARCHIVOS_PUBLICOS", "").lower() in {
     "1",
     "true",
@@ -658,6 +662,7 @@ async def mostrar_menu(chat_id, context, texto="Selecciona una opción:"):
         [InlineKeyboardButton("📋 Mis tests", callback_data="mis_tests")],
         [InlineKeyboardButton("📈 Progreso", callback_data="progreso")],
         [InlineKeyboardButton("⚠️ Test de fallos", callback_data="test_fallos")],
+        [InlineKeyboardButton("📁 Archivos", callback_data="archivos")],
         [InlineKeyboardButton("⬇️ Descargar BD", callback_data="descargar_bd")],
     ]
     await context.bot.send_message(
@@ -741,6 +746,17 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await iniciar_test_fallos(
             chat_id, context, telegram_user_id=query.from_user.id
         )
+    elif data == "archivos":
+        await mostrar_menu_archivos(chat_id, context)
+    elif data == "subir_archivo":
+        context.user_data["modo"] = "subir_archivo"
+        await query.message.reply_text(
+            "📤 Envía el archivo que quieras publicar en la carpeta pública."
+        )
+    elif data == "ver_archivos":
+        await mostrar_archivos_publicos(chat_id, context)
+    elif data == "volver_menu_archivos":
+        await mostrar_menu_archivos(chat_id, context)
     elif data == "descargar_bd":
         await enviar_bd(chat_id, context)
     elif data == "menu":
@@ -840,21 +856,25 @@ async def fin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("modo") != "crear_test_json":
+    modo = context.user_data.get("modo")
+    if modo == "crear_test_json":
+        documento = update.message.document
+        if not documento:
+            return
+        nombre_archivo = (documento.file_name or "").lower()
+        if not (nombre_archivo.endswith(".json") or nombre_archivo.endswith(".txt")):
+            await update.message.reply_text(
+                "❌ Formato no válido. Adjunta un archivo .json o .txt."
+            )
+            return
+        archivo = await documento.get_file()
+        contenido = await archivo.download_as_bytearray()
+        texto = contenido.decode("utf-8", errors="replace")
+        await procesar_texto_json(texto, update, context)
         return
-    documento = update.message.document
-    if not documento:
+    if modo == "subir_archivo":
+        await guardar_archivo_publico(update, context)
         return
-    nombre_archivo = (documento.file_name or "").lower()
-    if not (nombre_archivo.endswith(".json") or nombre_archivo.endswith(".txt")):
-        await update.message.reply_text(
-            "❌ Formato no válido. Adjunta un archivo .json o .txt."
-        )
-        return
-    archivo = await documento.get_file()
-    contenido = await archivo.download_as_bytearray()
-    texto = contenido.decode("utf-8", errors="replace")
-    await procesar_texto_json(texto, update, context)
 
 
 # ─────────────── Mostrar tests ───────────────
@@ -1082,6 +1102,85 @@ async def enviar_bd(chat_id, context):
         return
     with open(DB_FILE, "rb") as f:
         await context.bot.send_document(chat_id, document=f, filename="bot.db")
+
+
+async def mostrar_menu_archivos(chat_id, context):
+    botones = [
+        [InlineKeyboardButton("⬆️ Subir archivo", callback_data="subir_archivo")],
+        [InlineKeyboardButton("📂 Ver archivos", callback_data="ver_archivos")],
+        [InlineKeyboardButton("☰ Menú principal", callback_data="menu")],
+    ]
+    await context.bot.send_message(
+        chat_id,
+        "📁 Gestión de archivos",
+        reply_markup=InlineKeyboardMarkup(botones),
+    )
+
+
+def asegurar_nombre_archivo_unico(ruta_directorio, nombre_archivo):
+    base, extension = os.path.splitext(nombre_archivo)
+    contador = 1
+    nombre_final = nombre_archivo
+    while os.path.exists(os.path.join(ruta_directorio, nombre_final)):
+        nombre_final = f"{base}_{contador}{extension}"
+        contador += 1
+    return nombre_final
+
+
+def obtener_archivos_publicos():
+    if not os.path.isdir(RUTA_ARCHIVOS_PUBLICOS):
+        return []
+    entradas = []
+    for nombre in os.listdir(RUTA_ARCHIVOS_PUBLICOS):
+        ruta = os.path.join(RUTA_ARCHIVOS_PUBLICOS, nombre)
+        if os.path.isfile(ruta):
+            entradas.append(
+                {
+                    "nombre": nombre,
+                    "tamano": os.path.getsize(ruta),
+                }
+            )
+    return sorted(entradas, key=lambda item: item["nombre"].lower())
+
+
+def construir_url_archivo(nombre_archivo):
+    return f"{URL_PUBLICA_ARCHIVOS}/{quote(nombre_archivo)}"
+
+
+async def mostrar_archivos_publicos(chat_id, context):
+    archivos = obtener_archivos_publicos()
+    if not archivos:
+        await context.bot.send_message(
+            chat_id, "📭 No hay archivos públicos todavía."
+        )
+        return
+    lineas = ["📂 Archivos públicos:"]
+    for archivo in archivos:
+        url = construir_url_archivo(archivo["nombre"])
+        lineas.append(f"- {archivo['nombre']} ({archivo['tamano']} bytes)\n  {url}")
+    await context.bot.send_message(chat_id, "\n".join(lineas))
+
+
+async def guardar_archivo_publico(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    documento = update.message.document
+    if not documento:
+        await update.message.reply_text("❌ No se recibió ningún archivo.")
+        return
+    os.makedirs(RUTA_ARCHIVOS_PUBLICOS, exist_ok=True)
+    nombre_archivo = os.path.basename(documento.file_name or "archivo")
+    nombre_archivo = asegurar_nombre_archivo_unico(
+        RUTA_ARCHIVOS_PUBLICOS, nombre_archivo
+    )
+    archivo = await documento.get_file()
+    ruta_destino = os.path.join(RUTA_ARCHIVOS_PUBLICOS, nombre_archivo)
+    await archivo.download_to_drive(ruta_destino)
+    context.user_data.pop("modo", None)
+    url = construir_url_archivo(nombre_archivo)
+    await update.message.reply_text(
+        "✅ Archivo guardado.\n"
+        f"📎 {nombre_archivo}\n"
+        f"🌐 {url}"
+    )
 
 
 def iniciar_servidor_archivos():
