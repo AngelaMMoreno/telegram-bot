@@ -3,6 +3,7 @@ import json
 import random
 import sqlite3
 import threading
+from math import ceil
 from datetime import datetime
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -36,6 +37,7 @@ SERVIR_ARCHIVOS_PUBLICOS = os.getenv("SERVIR_ARCHIVOS_PUBLICOS", "").lower() in 
 
 FAILURES_TEST_SIZE = 40
 TIEMPO_PREGUNTA_SEGUNDOS = 20
+TAMANO_PAGINA_TESTS = 50
 
 
 # ─────────────── DB ───────────────
@@ -225,6 +227,31 @@ def listar_tests_con_conteo():
             GROUP BY q.id
             ORDER BY q.id DESC
             """
+        )
+        return cur.fetchall()
+
+
+def contar_tests():
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS total FROM quizzes")
+        row = cur.fetchone()
+        return row["total"] if row else 0
+
+
+def listar_tests_con_conteo_paginado(desplazamiento, limite):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT q.id, q.title, q.description, COUNT(que.id) AS total_preguntas
+            FROM quizzes q
+            LEFT JOIN questions que ON que.quiz_id = q.id
+            GROUP BY q.id
+            ORDER BY q.id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limite, desplazamiento),
         )
         return cur.fetchall()
 
@@ -707,7 +734,10 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["nuevo_test"] = {}
         await query.message.reply_text("🧩 Escribe el nombre del test:")
     elif data == "mis_tests":
-        await mostrar_tests(chat_id, context)
+        await mostrar_tests(chat_id, context, pagina=1)
+    elif data.startswith("mis_tests_pagina_"):
+        pagina = int(data.split("_")[3])
+        await mostrar_tests(chat_id, context, pagina=pagina)
     elif data.startswith("empezar_"):
         quiz_id = int(data.split("_")[1])
         await iniciar_quiz(
@@ -736,10 +766,12 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         quiz_id = int(data.split("_")[2])
         borrar_test(quiz_id)
         await query.message.reply_text("🗑️ Test borrado.")
-        await mostrar_tests(chat_id, context)
+        pagina = context.user_data.get("pagina_tests", 1)
+        await mostrar_tests(chat_id, context, pagina=pagina)
     elif data == "cancelar_borrar":
         await query.message.reply_text("Operación cancelada.")
-        await mostrar_tests(chat_id, context)
+        pagina = context.user_data.get("pagina_tests", 1)
+        await mostrar_tests(chat_id, context, pagina=pagina)
     elif data == "progreso":
         await mostrar_progreso(chat_id, context)
     elif data == "test_fallos":
@@ -904,11 +936,20 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ─────────────── Mostrar tests ───────────────
-async def mostrar_tests(chat_id, context):
-    quizzes = listar_tests_con_conteo()
-    if not quizzes:
+async def mostrar_tests(chat_id, context, pagina=1):
+    total_tests = contar_tests()
+    if total_tests == 0:
         await context.bot.send_message(chat_id, "No hay tests creados.")
         return
+
+    total_paginas = max(1, ceil(total_tests / TAMANO_PAGINA_TESTS))
+    pagina = max(1, min(pagina, total_paginas))
+    desplazamiento = (pagina - 1) * TAMANO_PAGINA_TESTS
+    quizzes = listar_tests_con_conteo_paginado(
+        desplazamiento, TAMANO_PAGINA_TESTS
+    )
+    context.user_data["pagina_tests"] = pagina
+
     botones = [
         [
             InlineKeyboardButton(
@@ -919,9 +960,29 @@ async def mostrar_tests(chat_id, context):
         ]
         for q in quizzes
     ]
+
+    if total_paginas > 1:
+        fila_paginas = []
+        if pagina > 1:
+            fila_paginas.append(
+                InlineKeyboardButton(
+                    "⬅️ Anterior", callback_data=f"mis_tests_pagina_{pagina - 1}"
+                )
+            )
+        if pagina < total_paginas:
+            fila_paginas.append(
+                InlineKeyboardButton(
+                    "Siguiente ➡️", callback_data=f"mis_tests_pagina_{pagina + 1}"
+                )
+            )
+        if fila_paginas:
+            botones.append(fila_paginas)
+
     botones.append([InlineKeyboardButton("☰ Menú", callback_data="menu")])
     await context.bot.send_message(
-        chat_id, "Selecciona un test:", reply_markup=InlineKeyboardMarkup(botones)
+        chat_id,
+        f"Selecciona un test (página {pagina}/{total_paginas}):",
+        reply_markup=InlineKeyboardMarkup(botones),
     )
 
 
