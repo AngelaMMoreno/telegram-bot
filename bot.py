@@ -687,6 +687,7 @@ async def mostrar_menu(chat_id, context, texto="Selecciona una opción:"):
     botones = [
         [InlineKeyboardButton("🧩 Crear test", callback_data="crear_test")],
         [InlineKeyboardButton("📋 Mis tests", callback_data="mis_tests")],
+        [InlineKeyboardButton("🗑️ Borrar test", callback_data="borrar_tests")],
         [InlineKeyboardButton("📈 Progreso", callback_data="progreso")],
         [InlineKeyboardButton("⚠️ Test de fallos", callback_data="test_fallos")],
         [InlineKeyboardButton("📁 Archivos", callback_data="archivos")],
@@ -735,9 +736,14 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("🧩 Escribe el nombre del test:")
     elif data == "mis_tests":
         await mostrar_tests(chat_id, context, pagina=1)
+    elif data == "borrar_tests":
+        await mostrar_tests_para_borrar(chat_id, context, pagina=1)
     elif data.startswith("mis_tests_pagina_"):
         pagina = int(data.split("_")[3])
         await mostrar_tests(chat_id, context, pagina=pagina)
+    elif data.startswith("borrar_tests_pagina_"):
+        pagina = int(data.split("_")[3])
+        await mostrar_tests_para_borrar(chat_id, context, pagina=pagina)
     elif data.startswith("empezar_"):
         quiz_id = int(data.split("_")[1])
         await iniciar_quiz(
@@ -766,12 +772,12 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         quiz_id = int(data.split("_")[2])
         borrar_test(quiz_id)
         await query.message.reply_text("🗑️ Test borrado.")
-        pagina = context.user_data.get("pagina_tests", 1)
-        await mostrar_tests(chat_id, context, pagina=pagina)
+        pagina = context.user_data.get("pagina_borrado_tests", 1)
+        await mostrar_tests_para_borrar(chat_id, context, pagina=pagina)
     elif data == "cancelar_borrar":
         await query.message.reply_text("Operación cancelada.")
-        pagina = context.user_data.get("pagina_tests", 1)
-        await mostrar_tests(chat_id, context, pagina=pagina)
+        pagina = context.user_data.get("pagina_borrado_tests", 1)
+        await mostrar_tests_para_borrar(chat_id, context, pagina=pagina)
     elif data == "progreso":
         await mostrar_progreso(chat_id, context)
     elif data == "test_fallos":
@@ -956,7 +962,6 @@ async def mostrar_tests(chat_id, context, pagina=1):
                 f"{q['title']} ({q['total_preguntas']} preguntas)",
                 callback_data=f"empezar_{q['id']}",
             ),
-            InlineKeyboardButton("🗑️ Borrar", callback_data=f"borrar_{q['id']}"),
         ]
         for q in quizzes
     ]
@@ -982,6 +987,57 @@ async def mostrar_tests(chat_id, context, pagina=1):
     await context.bot.send_message(
         chat_id,
         f"Selecciona un test (página {pagina}/{total_paginas}):",
+        reply_markup=InlineKeyboardMarkup(botones),
+    )
+
+
+async def mostrar_tests_para_borrar(chat_id, context, pagina=1):
+    total_tests = contar_tests()
+    if total_tests == 0:
+        await context.bot.send_message(chat_id, "No hay tests para borrar.")
+        return
+
+    total_paginas = max(1, ceil(total_tests / TAMANO_PAGINA_TESTS))
+    pagina = max(1, min(pagina, total_paginas))
+    desplazamiento = (pagina - 1) * TAMANO_PAGINA_TESTS
+    quizzes = listar_tests_con_conteo_paginado(
+        desplazamiento, TAMANO_PAGINA_TESTS
+    )
+    context.user_data["pagina_borrado_tests"] = pagina
+
+    botones = [
+        [
+            InlineKeyboardButton(
+                f"{q['title']} ({q['total_preguntas']} preguntas)",
+                callback_data=f"borrar_{q['id']}",
+            )
+        ]
+        for q in quizzes
+    ]
+
+    if total_paginas > 1:
+        fila_paginas = []
+        if pagina > 1:
+            fila_paginas.append(
+                InlineKeyboardButton(
+                    "⬅️ Anterior",
+                    callback_data=f"borrar_tests_pagina_{pagina - 1}",
+                )
+            )
+        if pagina < total_paginas:
+            fila_paginas.append(
+                InlineKeyboardButton(
+                    "Siguiente ➡️",
+                    callback_data=f"borrar_tests_pagina_{pagina + 1}",
+                )
+            )
+        if fila_paginas:
+            botones.append(fila_paginas)
+
+    botones.append([InlineKeyboardButton("☰ Menú", callback_data="menu")])
+    await context.bot.send_message(
+        chat_id,
+        f"Selecciona un test para borrar (página {pagina}/{total_paginas}):",
         reply_markup=InlineKeyboardMarkup(botones),
     )
 
