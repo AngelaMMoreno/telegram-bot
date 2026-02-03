@@ -256,6 +256,23 @@ def listar_tests_con_conteo_paginado(desplazamiento, limite):
         return cur.fetchall()
 
 
+def obtener_tests_realizados(user_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT DISTINCT quiz_id
+            FROM attempts
+            WHERE user_id = ?
+              AND attempt_type = 'quiz'
+              AND finished_at IS NOT NULL
+              AND quiz_id IS NOT NULL
+            """,
+            (user_id,),
+        )
+        return {fila["quiz_id"] for fila in cur.fetchall()}
+
+
 def obtener_titulo_test(quiz_id):
     with get_conn() as conn:
         cur = conn.cursor()
@@ -943,6 +960,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─────────────── Mostrar tests ───────────────
 async def mostrar_tests(chat_id, context, pagina=1):
+    user_id = get_or_create_user(chat_id)
     total_tests = contar_tests()
     if total_tests == 0:
         await context.bot.send_message(chat_id, "No hay tests creados.")
@@ -955,10 +973,12 @@ async def mostrar_tests(chat_id, context, pagina=1):
         desplazamiento, TAMANO_PAGINA_TESTS
     )
     context.user_data["pagina_tests"] = pagina
+    tests_realizados = obtener_tests_realizados(user_id)
 
     botones = [
         [
             InlineKeyboardButton(
+                f"{'✅ ' if q['id'] in tests_realizados else ''}"
                 f"{q['title']} ({q['total_preguntas']} preguntas)",
                 callback_data=f"empezar_{q['id']}",
             ),
