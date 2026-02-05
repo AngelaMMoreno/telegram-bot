@@ -582,6 +582,16 @@ def format_option(text):
     return (text or "").strip()
 
 
+def ensanchar_etiqueta_opcion(texto, ancho_minimo=38):
+    texto_limpio = format_option(texto)
+    if len(texto_limpio) >= ancho_minimo:
+        return texto_limpio
+    relleno_total = ancho_minimo - len(texto_limpio)
+    relleno_izquierda = relleno_total // 2
+    relleno_derecha = relleno_total - relleno_izquierda
+    return f"{'·' * relleno_izquierda} {texto_limpio} {'·' * relleno_derecha}"
+
+
 def construir_lineas_respuesta(indice, texto):
     texto = (texto or "").strip()
     if not texto:
@@ -609,6 +619,110 @@ def parse_preguntas_json(texto):
         if isinstance(preguntas, list):
             return preguntas
     return []
+
+
+def obtener_pregunta_como_json(question_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, text, explicacion, bloque, tema
+            FROM questions
+            WHERE id = ?
+            """,
+            (question_id,),
+        )
+        fila = cur.fetchone()
+        if not fila:
+            return None
+        cur.execute(
+            """
+            SELECT text
+            FROM options
+            WHERE question_id = ?
+            ORDER BY position ASC
+            """,
+            (question_id,),
+        )
+        opciones = [item["text"] for item in cur.fetchall()]
+
+    pregunta = {
+        "pregunta": fila["text"],
+        "opciones": opciones,
+        "bloque": fila["bloque"],
+        "tema": fila["tema"],
+        "explicacion": fila["explicacion"],
+    }
+    return pregunta
+
+
+def actualizar_pregunta_desde_json(question_id, payload_pregunta):
+    texto = str(payload_pregunta.get("pregunta") or "").strip()
+    opciones = payload_pregunta.get("opciones")
+    if not texto:
+        raise ValueError("La clave 'pregunta' es obligatoria.")
+    if not isinstance(opciones, list) or len(opciones) < 2:
+        raise ValueError("La clave 'opciones' debe tener al menos dos elementos.")
+
+    opciones_limpias = [str(opcion).strip() for opcion in opciones if str(opcion).strip()]
+    if len(opciones_limpias) < 2:
+        raise ValueError("Debes mantener al menos dos opciones no vacías.")
+
+    explicacion = payload_pregunta.get("explicacion")
+    explicacion = str(explicacion).strip() if explicacion is not None else None
+    if explicacion == "":
+        explicacion = None
+
+    bloque = payload_pregunta.get("bloque")
+    tema = payload_pregunta.get("tema")
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE questions
+            SET text = ?, explicacion = ?, bloque = ?, tema = ?
+            WHERE id = ?
+            """,
+            (texto, explicacion, bloque, tema, question_id),
+        )
+        cur.execute("DELETE FROM options WHERE question_id = ?", (question_id,))
+        for indice, opcion in enumerate(opciones_limpias):
+            cur.execute(
+                """
+                INSERT INTO options (question_id, text, position)
+                VALUES (?, ?, ?)
+                """,
+                (question_id, opcion, indice),
+            )
+        conn.commit()
+
+    return {
+        "id": question_id,
+        "text": texto,
+        "explicacion": explicacion,
+        "options": opciones_limpias,
+        "correct_text": opciones_limpias[0],
+    }
+
+
+def sincronizar_pregunta_en_quiz(context, question_id, pregunta_actualizada):
+    quiz = context.user_data.get("quiz")
+    if not quiz:
+        return
+    for pregunta in quiz.get("questions", []):
+        if pregunta["id"] == question_id:
+            pregunta.update(pregunta_actualizada)
+            break
+
+    actual = quiz.get("current")
+    if actual and actual.get("question_id") == question_id:
+        opciones_mezcladas = list(pregunta_actualizada["options"])
+        random.shuffle(opciones_mezcladas)
+        actual["options"] = opciones_mezcladas
+        actual["correct_index"] = opciones_mezcladas.index(
+            pregunta_actualizada["correct_text"]
+        )
 
 
 async def procesar_texto_json(texto, update: Update, context, mostrar_error=True):
@@ -739,9 +853,10 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             opciones,
         )
         botones = [
-            [InlineKeyboardButton(format_option(o), callback_data=str(idx))]
+            [InlineKeyboardButton(ensanchar_etiqueta_opcion(o), callback_data=str(idx))]
             for idx, o in enumerate(opciones)
         ]
+        botones.append([InlineKeyboardButton("🧾 Editar pregunta (JSON)", callback_data=f"editar_pregunta_json_{q['id']}")])
         botones.append([InlineKeyboardButton("☰ Menú", callback_data="menu")])
         await query.message.edit_text(
             texto_expandido,
@@ -816,6 +931,28 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await enviar_bd(chat_id, context)
     elif data == "menu":
         await mostrar_menu(chat_id, context)
+    elif data.startswith("editar_pregunta_json_"):
+        pregunta_id = int(data.split("_")[-1])
+        payload_actual = obtener_pregunta_como_json(pregunta_id)
+        if not payload_actual:
+            await query.message.reply_text("❌ No se encontró la pregunta para editar.")
+            return
+        context.user_data["modo"] = "editar_pregunta_json"
+        context.user_data["pregunta_json_id"] = pregunta_id
+        json_actual = json.dumps(payload_actual, ensure_ascii=False, indent=2)
+        botones = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("↩️ Cancelar", callback_data="cancelar_edicion_pregunta_json")]]
+        )
+        await query.message.reply_text(
+            "🧾 Edición de pregunta en JSON.\n"
+            "Te envío la pregunta actual para que la edites y la reenvíes:\n\n"
+            f"```json\n{json_actual}\n```",
+            reply_markup=botones,
+        )
+    elif data == "cancelar_edicion_pregunta_json":
+        context.user_data.pop("modo", None)
+        context.user_data.pop("pregunta_json_id", None)
+        await query.message.reply_text("Operación cancelada.")
     elif data.startswith("explicacion_"):
         pregunta_id = int(data.split("_")[1])
         contexto_explicacion = obtener_explicacion_pregunta(pregunta_id)
@@ -868,6 +1005,52 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         actualizar_explicacion_pregunta(pregunta_id, explicacion)
         await update.message.reply_text("✅ Explicación guardada.")
+    elif modo == "editar_pregunta_json":
+        pregunta_id = context.user_data.get("pregunta_json_id")
+        if not pregunta_id:
+            context.user_data.pop("modo", None)
+            await update.message.reply_text("❌ No se pudo identificar la pregunta.")
+            return
+        texto = (update.message.text or "").strip()
+        if not texto:
+            await update.message.reply_text("❌ Debes enviar un JSON válido.")
+            return
+        try:
+            payload = json.loads(texto)
+        except json.JSONDecodeError:
+            await update.message.reply_text("❌ JSON inválido. Revisa el formato e inténtalo de nuevo.")
+            return
+        if isinstance(payload, dict) and isinstance(payload.get("preguntas"), list):
+            preguntas = payload.get("preguntas")
+            if len(preguntas) != 1:
+                await update.message.reply_text(
+                    "❌ Para editar una pregunta debes enviar un único objeto pregunta."
+                )
+                return
+            payload = preguntas[0]
+        if isinstance(payload, list):
+            if len(payload) != 1:
+                await update.message.reply_text(
+                    "❌ Para editar una pregunta debes enviar una lista con un solo elemento."
+                )
+                return
+            payload = payload[0]
+        if not isinstance(payload, dict):
+            await update.message.reply_text(
+                "❌ El contenido debe ser un objeto JSON con la pregunta."
+            )
+            return
+
+        try:
+            pregunta_actualizada = actualizar_pregunta_desde_json(pregunta_id, payload)
+        except ValueError as error:
+            await update.message.reply_text(f"❌ {error}")
+            return
+
+        sincronizar_pregunta_en_quiz(context, pregunta_id, pregunta_actualizada)
+        context.user_data.pop("modo", None)
+        context.user_data.pop("pregunta_json_id", None)
+        await update.message.reply_text("✅ Pregunta actualizada correctamente desde JSON.")
     elif modo == "crear_test_nombre":
         nombre = update.message.text.strip()
         if not nombre:
@@ -927,6 +1110,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         contenido = await archivo.download_as_bytearray()
         texto = contenido.decode("utf-8", errors="replace")
         await procesar_texto_json(texto, update, context)
+        return
+    if modo == "editar_pregunta_json":
+        await update.message.reply_text(
+            "❌ En este modo debes enviar texto JSON, no un archivo."
+        )
         return
     if modo == "editar_explicacion":
         documento = update.message.document
@@ -1142,9 +1330,10 @@ async def enviar_pregunta(chat_id, context):
     partes = split_message(mensaje_inicial)
     botones_enunciado = [[InlineKeyboardButton("👀 Ver más", callback_data="ver_mas")]]
     botones_opciones = [
-        [InlineKeyboardButton(format_option(o), callback_data=str(idx))]
+        [InlineKeyboardButton(ensanchar_etiqueta_opcion(o), callback_data=str(idx))]
         for idx, o in enumerate(options)
     ]
+    botones_opciones.append([InlineKeyboardButton("🧾 Editar pregunta (JSON)", callback_data=f"editar_pregunta_json_{q['id']}")])
     botones_opciones.append([InlineKeyboardButton("☰ Menú", callback_data="menu")])
 
     for parte in partes[:-1]:
@@ -1216,6 +1405,14 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(
                 "✍️ Añadir/editar explicación",
                 callback_data=f"explicacion_{question_id}",
+            )
+        ]
+    )
+    filas_explicacion.append(
+        [
+            InlineKeyboardButton(
+                "🧾 Editar pregunta (JSON)",
+                callback_data=f"editar_pregunta_json_{question_id}",
             )
         ]
     )
