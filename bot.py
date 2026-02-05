@@ -760,6 +760,52 @@ def cancelar_temporizador_pregunta(context):
         trabajo.schedule_removal()
 
 
+def guardar_contexto_cancelable(context, contexto):
+    context.user_data["contexto_cancelable"] = contexto
+
+
+def obtener_quiz_reanudable(quiz, quiz_id):
+    if not quiz:
+        return False
+    if quiz.get("attempt_type") != "quiz":
+        return False
+    if quiz.get("quiz_id") != quiz_id:
+        return False
+    return quiz.get("i", 0) < len(quiz.get("questions", []))
+
+
+async def volver_a_contexto_anterior(chat_id, context):
+    contexto = context.user_data.pop("contexto_cancelable", None)
+    if not contexto:
+        if context.user_data.get("quiz"):
+            await mostrar_pregunta_actual(chat_id, context)
+        else:
+            await mostrar_menu(chat_id, context)
+        return
+
+    tipo = contexto.get("tipo")
+    if tipo == "pregunta_actual":
+        await mostrar_pregunta_actual(chat_id, context)
+    elif tipo == "lista_tests":
+        await mostrar_tests(chat_id, context, pagina=contexto.get("pagina", 1))
+    elif tipo == "lista_borrado_tests":
+        await mostrar_tests_para_borrar(chat_id, context, pagina=contexto.get("pagina", 1))
+    elif tipo == "menu_archivos":
+        await mostrar_menu_archivos(chat_id, context)
+    else:
+        await mostrar_menu(chat_id, context)
+
+
+def cerrar_intento_en_curso(context):
+    quiz = context.user_data.get("quiz")
+    if not quiz:
+        return
+    if quiz.get("attempt_id"):
+        finish_attempt(quiz["attempt_id"], quiz.get("ok", 0), quiz.get("fail", 0))
+    cancelar_temporizador_pregunta(context)
+    context.user_data.pop("quiz", None)
+
+
 def programar_temporizador_pregunta(context, chat_id, indice_pregunta, pregunta_id):
     telegram_user_id = context.user_data.get("quiz", {}).get("telegram_user_id")
     if not telegram_user_id:
@@ -829,6 +875,49 @@ async def mostrar_menu(chat_id, context, texto="Selecciona una opción:"):
     )
 
 
+async def mostrar_pregunta_actual(chat_id, context):
+    quiz = context.user_data.get("quiz")
+    if not quiz:
+        await mostrar_menu(chat_id, context)
+        return
+
+    if quiz.get("i", 0) >= len(quiz.get("questions", [])):
+        await enviar_pregunta(chat_id, context)
+        return
+
+    actual = quiz.get("current")
+    if not actual:
+        await enviar_pregunta(chat_id, context)
+        return
+
+    q = quiz["questions"][quiz["i"]]
+    total_preguntas = len(quiz["questions"])
+    encabezado = f"📍 Pregunta {quiz['i'] + 1}/{total_preguntas}"
+    texto_pregunta = wrap_text(q["text"].strip())
+    texto = construir_texto_pregunta(encabezado, texto_pregunta, actual.get("options", []))
+
+    botones = [
+        [InlineKeyboardButton(ensanchar_etiqueta_opcion(o), callback_data=str(idx))]
+        for idx, o in enumerate(actual.get("options", []))
+    ]
+    botones.append(
+        [
+            InlineKeyboardButton(
+                "🧾 Editar pregunta (JSON)",
+                callback_data=f"editar_pregunta_json_{q['id']}",
+            ),
+            InlineKeyboardButton("☰ Menú", callback_data="menu"),
+        ]
+    )
+
+    await context.bot.send_message(
+        chat_id,
+        texto,
+        reply_markup=InlineKeyboardMarkup(botones),
+    )
+    programar_temporizador_pregunta(context, chat_id, quiz["i"], q["id"])
+
+
 # ─────────────── Botones ───────────────
 async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -878,13 +967,76 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await mostrar_tests_para_borrar(chat_id, context, pagina=pagina)
     elif data.startswith("empezar_"):
         quiz_id = int(data.split("_")[1])
+        quiz_en_curso = context.user_data.get("quiz")
+        if obtener_quiz_reanudable(quiz_en_curso, quiz_id):
+            context.user_data["quiz_pendiente"] = {
+                "quiz_id": quiz_id,
+                "telegram_user_id": query.from_user.id,
+            }
+            guardar_contexto_cancelable(
+                context,
+                {
+                    "tipo": "lista_tests",
+                    "pagina": context.user_data.get("pagina_tests", 1),
+                },
+            )
+            botones = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "▶️ Continuar donde lo dejé",
+                            callback_data="continuar_test_pendiente",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "🔄 Empezar de nuevo",
+                            callback_data="reiniciar_test_pendiente",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "↩️ Cancelar",
+                            callback_data="cancelar_reanudar_test",
+                        )
+                    ],
+                ]
+            )
+            await query.message.reply_text(
+                "Tienes este test a medias. ¿Qué quieres hacer?",
+                reply_markup=botones,
+            )
+        else:
+            await iniciar_quiz(
+                chat_id,
+                context,
+                quiz_id=quiz_id,
+                attempt_type="quiz",
+                telegram_user_id=query.from_user.id,
+            )
+    elif data == "continuar_test_pendiente":
+        pendiente = context.user_data.pop("quiz_pendiente", None)
+        if not pendiente:
+            await query.message.reply_text("No hay ningún test pendiente para continuar.")
+            return
+        await mostrar_pregunta_actual(chat_id, context)
+    elif data == "reiniciar_test_pendiente":
+        pendiente = context.user_data.pop("quiz_pendiente", None)
+        if not pendiente:
+            await query.message.reply_text("No hay ningún test pendiente para reiniciar.")
+            return
+        cerrar_intento_en_curso(context)
         await iniciar_quiz(
             chat_id,
             context,
-            quiz_id=quiz_id,
+            quiz_id=pendiente["quiz_id"],
             attempt_type="quiz",
-            telegram_user_id=query.from_user.id,
+            telegram_user_id=pendiente.get("telegram_user_id"),
         )
+    elif data == "cancelar_reanudar_test":
+        context.user_data.pop("quiz_pendiente", None)
+        await query.message.reply_text("Operación cancelada.")
+        await volver_a_contexto_anterior(chat_id, context)
     elif data.startswith("borrar_"):
         quiz_id = int(data.split("_")[1])
         titulo = obtener_titulo_test(quiz_id) or "este test"
@@ -900,6 +1052,13 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⚠️ ¿Seguro que quieres borrar {titulo}?",
             reply_markup=InlineKeyboardMarkup(botones),
         )
+        guardar_contexto_cancelable(
+            context,
+            {
+                "tipo": "lista_borrado_tests",
+                "pagina": context.user_data.get("pagina_borrado_tests", 1),
+            },
+        )
     elif data.startswith("confirmar_borrar_"):
         quiz_id = int(data.split("_")[2])
         borrar_test(quiz_id)
@@ -908,8 +1067,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await mostrar_tests_para_borrar(chat_id, context, pagina=pagina)
     elif data == "cancelar_borrar":
         await query.message.reply_text("Operación cancelada.")
-        pagina = context.user_data.get("pagina_borrado_tests", 1)
-        await mostrar_tests_para_borrar(chat_id, context, pagina=pagina)
+        await volver_a_contexto_anterior(chat_id, context)
     elif data == "progreso":
         await mostrar_progreso(chat_id, context)
     elif data == "test_fallos":
@@ -939,6 +1097,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         context.user_data["modo"] = "editar_pregunta_json"
         context.user_data["pregunta_json_id"] = pregunta_id
+        guardar_contexto_cancelable(context, {"tipo": "pregunta_actual"})
         json_actual = json.dumps(payload_actual, ensure_ascii=False, indent=2)
         botones = InlineKeyboardMarkup(
             [[InlineKeyboardButton("↩️ Cancelar", callback_data="cancelar_edicion_pregunta_json")]]
@@ -953,11 +1112,13 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("modo", None)
         context.user_data.pop("pregunta_json_id", None)
         await query.message.reply_text("Operación cancelada.")
+        await volver_a_contexto_anterior(chat_id, context)
     elif data.startswith("explicacion_"):
         pregunta_id = int(data.split("_")[1])
         contexto_explicacion = obtener_explicacion_pregunta(pregunta_id)
         context.user_data["modo"] = "editar_explicacion"
         context.user_data["pregunta_explicacion_id"] = pregunta_id
+        guardar_contexto_cancelable(context, {"tipo": "pregunta_actual"})
         botones = InlineKeyboardMarkup(
             [[InlineKeyboardButton("↩️ Cancelar", callback_data="cancelar_explicacion")]]
         )
@@ -979,6 +1140,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("modo", None)
         context.user_data.pop("pregunta_explicacion_id", None)
         await query.message.reply_text("Operación cancelada.")
+        await volver_a_contexto_anterior(chat_id, context)
     elif data.startswith("ver_explicacion_"):
         pregunta_id = int(data.split("_")[2])
         explicacion = obtener_explicacion_pregunta(pregunta_id)
@@ -1266,6 +1428,7 @@ async def iniciar_quiz(
     attempt_id = create_attempt(user_id, quiz_id, attempt_type)
     context.user_data["quiz"] = {
         "questions": questions,
+        "quiz_id": quiz_id,
         "i": 0,
         "ok": 0,
         "fail": 0,
