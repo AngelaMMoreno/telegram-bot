@@ -945,7 +945,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(ensanchar_etiqueta_opcion(o), callback_data=str(idx))]
             for idx, o in enumerate(opciones)
         ]
-        botones.append([InlineKeyboardButton("🧾 Editar pregunta (JSON)", callback_data=f"editar_pregunta_json_{q['id']}")])
+        botones.append([InlineKeyboardButton("🧾 Editar pregunta", callback_data=f"editar_pregunta_json_{q['id']}")])
         botones.append([InlineKeyboardButton("☰ Menú", callback_data="menu")])
         await query.message.edit_text(
             texto_expandido,
@@ -1499,7 +1499,7 @@ async def enviar_pregunta(chat_id, context):
     botones_opciones.append(
         [
             InlineKeyboardButton(
-                "🧾 Editar pregunta (JSON)",
+                "🧾 Editar pregunta",
                 callback_data=f"editar_pregunta_json_{q['id']}",
             ),
             InlineKeyboardButton("☰ Menú", callback_data="menu"),
@@ -1581,7 +1581,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     filas_explicacion.append(
         [
             InlineKeyboardButton(
-                "🧾 Editar pregunta (JSON)",
+                "🧾 Editar pregunta",
                 callback_data=f"editar_pregunta_json_{question_id}",
             )
         ]
