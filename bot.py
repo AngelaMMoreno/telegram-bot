@@ -1333,8 +1333,15 @@ async def enviar_pregunta(chat_id, context):
         [InlineKeyboardButton(ensanchar_etiqueta_opcion(o), callback_data=str(idx))]
         for idx, o in enumerate(options)
     ]
-    botones_opciones.append([InlineKeyboardButton("🧾 Editar pregunta (JSON)", callback_data=f"editar_pregunta_json_{q['id']}")])
-    botones_opciones.append([InlineKeyboardButton("☰ Menú", callback_data="menu")])
+    botones_opciones.append(
+        [
+            InlineKeyboardButton(
+                "🧾 Editar pregunta (JSON)",
+                callback_data=f"editar_pregunta_json_{q['id']}",
+            ),
+            InlineKeyboardButton("☰ Menú", callback_data="menu"),
+        ]
+    )
 
     for parte in partes[:-1]:
         await context.bot.send_message(chat_id, parte)
