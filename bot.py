@@ -903,7 +903,7 @@ async def mostrar_pregunta_actual(chat_id, context):
     botones.append(
         [
             InlineKeyboardButton(
-                "🧾 Editar pregunta (JSON)",
+                "🧾 Editar pregunta",
                 callback_data=f"editar_pregunta_json_{q['id']}",
             ),
             InlineKeyboardButton("☰ Menú", callback_data="menu"),
