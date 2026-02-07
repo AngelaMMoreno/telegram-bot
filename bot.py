@@ -38,6 +38,7 @@ SERVIR_ARCHIVOS_PUBLICOS = os.getenv("SERVIR_ARCHIVOS_PUBLICOS", "").lower() in 
 FAILURES_TEST_SIZE = 40
 TIEMPO_PREGUNTA_SEGUNDOS = 20
 TAMANO_PAGINA_TESTS = 20
+TAMANO_TEST_FAVORITAS = 40
 
 
 # ─────────────── DB ───────────────
@@ -130,6 +131,18 @@ def init_db():
                 question_id INTEGER NOT NULL,
                 fail_count INTEGER NOT NULL DEFAULT 0,
                 last_failed_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, question_id),
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (question_id) REFERENCES questions(id)
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS favorites (
+                user_id INTEGER NOT NULL,
+                question_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
                 PRIMARY KEY (user_id, question_id),
                 FOREIGN KEY (user_id) REFERENCES users(id),
                 FOREIGN KEY (question_id) REFERENCES questions(id)
@@ -445,6 +458,77 @@ def clear_failure(user_id, question_id):
         conn.commit()
 
 
+def agregar_favorita(user_id, question_id):
+    now = datetime.utcnow().isoformat()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO favorites (user_id, question_id, created_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id, question_id) DO NOTHING
+            """,
+            (user_id, question_id, now),
+        )
+        conn.commit()
+
+
+def quitar_favorita(user_id, question_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM favorites WHERE user_id = ? AND question_id = ?",
+            (user_id, question_id),
+        )
+        conn.commit()
+
+
+def es_pregunta_favorita(user_id, question_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT 1 FROM favorites WHERE user_id = ? AND question_id = ?",
+            (user_id, question_id),
+        )
+        return cur.fetchone() is not None
+
+
+def get_favorites_questions(user_id, limit_count):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT q.id, q.text, q.explicacion
+            FROM favorites f
+            JOIN questions q ON q.id = f.question_id
+            WHERE f.user_id = ?
+            ORDER BY f.created_at DESC
+            LIMIT ?
+            """,
+            (user_id, limit_count),
+        )
+        rows = cur.fetchall()
+        questions = []
+        for row in rows:
+            cur.execute(
+                "SELECT text, position FROM options WHERE question_id = ? ORDER BY position ASC",
+                (row["id"],),
+            )
+            options = [o["text"] for o in cur.fetchall()]
+            if not options:
+                continue
+            questions.append(
+                {
+                    "id": row["id"],
+                    "text": row["text"],
+                    "explicacion": row["explicacion"],
+                    "options": options,
+                    "correct_text": options[0],
+                }
+            )
+        return questions
+
+
 def obtener_explicacion_pregunta(question_id):
     with get_conn() as conn:
         cur = conn.cursor()
@@ -539,6 +623,10 @@ def borrar_test(quiz_id):
             placeholders = ",".join("?" for _ in preguntas_ids)
             cur.execute(
                 f"DELETE FROM failures WHERE question_id IN ({placeholders})",
+                preguntas_ids,
+            )
+            cur.execute(
+                f"DELETE FROM favorites WHERE question_id IN ({placeholders})",
                 preguntas_ids,
             )
             cur.execute(
@@ -850,8 +938,9 @@ async def tiempo_agotado(context: ContextTypes.DEFAULT_TYPE):
     add_attempt_item(quiz["attempt_id"], pregunta_id, "Sin respuesta", False)
     record_failure(quiz["user_id"], pregunta_id)
 
-    quiz["i"] += 1
-    await enviar_pregunta(chat_id, context)
+    quiz["esperando_siguiente"] = True
+    quiz["ultimo_pregunta_id"] = pregunta_id
+    await mostrar_opciones_post_respuesta(chat_id, context, pregunta_id)
 
 
 # ─────────────── /start ───────────────
@@ -867,6 +956,7 @@ async def mostrar_menu(chat_id, context, texto="Selecciona una opción:"):
         [InlineKeyboardButton("🗑️ Borrar test", callback_data="borrar_tests")],
         [InlineKeyboardButton("📈 Progreso", callback_data="progreso")],
         [InlineKeyboardButton("⚠️ Test de fallos", callback_data="test_fallos")],
+        [InlineKeyboardButton("⭐ Test de favoritas", callback_data="test_favoritas")],
         [InlineKeyboardButton("📁 Archivos", callback_data="archivos")],
         [InlineKeyboardButton("⬇️ Descargar BD", callback_data="descargar_bd")],
     ]
@@ -880,6 +970,12 @@ async def mostrar_pregunta_actual(chat_id, context):
     if not quiz:
         await mostrar_menu(chat_id, context)
         return
+
+    if quiz.get("esperando_siguiente"):
+        pregunta_id = quiz.get("ultimo_pregunta_id")
+        if pregunta_id:
+            await mostrar_opciones_post_respuesta(chat_id, context, pregunta_id)
+            return
 
     if quiz.get("i", 0) >= len(quiz.get("questions", [])):
         await enviar_pregunta(chat_id, context)
@@ -1074,6 +1170,30 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await iniciar_test_fallos(
             chat_id, context, telegram_user_id=query.from_user.id
         )
+    elif data == "test_favoritas":
+        await iniciar_test_favoritas(
+            chat_id, context, telegram_user_id=query.from_user.id
+        )
+    elif data == "siguiente_pregunta":
+        quiz = context.user_data.get("quiz")
+        if not quiz or not quiz.get("esperando_siguiente"):
+            return
+        quiz["esperando_siguiente"] = False
+        quiz["ultimo_pregunta_id"] = None
+        quiz["i"] += 1
+        await enviar_pregunta(chat_id, context)
+    elif data == "volver_pregunta":
+        context.user_data.pop("modo", None)
+        context.user_data.pop("pregunta_json_id", None)
+        context.user_data.pop("pregunta_explicacion_id", None)
+        quiz = context.user_data.get("quiz")
+        if not quiz:
+            return
+        pregunta_id = quiz.get("ultimo_pregunta_id")
+        if pregunta_id:
+            await mostrar_opciones_post_respuesta(chat_id, context, pregunta_id)
+        else:
+            await mostrar_pregunta_actual(chat_id, context)
     elif data == "archivos":
         await mostrar_menu_archivos(chat_id, context)
     elif data == "subir_archivo":
@@ -1100,7 +1220,18 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         guardar_contexto_cancelable(context, {"tipo": "pregunta_actual"})
         json_actual = json.dumps(payload_actual, ensure_ascii=False, indent=2)
         botones = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("↩️ Cancelar", callback_data="cancelar_edicion_pregunta_json")]]
+            [
+                [
+                    InlineKeyboardButton(
+                        "↩️ Volver a la pregunta", callback_data="volver_pregunta"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        "↩️ Cancelar", callback_data="cancelar_edicion_pregunta_json"
+                    )
+                ],
+            ]
         )
         await query.message.reply_text(
             "🧾 Edición de pregunta en JSON.\n"
@@ -1111,8 +1242,10 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "cancelar_edicion_pregunta_json":
         context.user_data.pop("modo", None)
         context.user_data.pop("pregunta_json_id", None)
-        await query.message.reply_text("Operación cancelada.")
-        await volver_a_contexto_anterior(chat_id, context)
+        await query.message.reply_text(
+            "Operación cancelada.",
+            reply_markup=obtener_markup_volver_pregunta(),
+        )
     elif data.startswith("explicacion_"):
         pregunta_id = int(data.split("_")[1])
         contexto_explicacion = obtener_explicacion_pregunta(pregunta_id)
@@ -1120,7 +1253,14 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["pregunta_explicacion_id"] = pregunta_id
         guardar_contexto_cancelable(context, {"tipo": "pregunta_actual"})
         botones = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("↩️ Cancelar", callback_data="cancelar_explicacion")]]
+            [
+                [
+                    InlineKeyboardButton(
+                        "↩️ Volver a la pregunta", callback_data="volver_pregunta"
+                    )
+                ],
+                [InlineKeyboardButton("↩️ Cancelar", callback_data="cancelar_explicacion")],
+            ]
         )
         if contexto_explicacion:
             await query.message.reply_text(
@@ -1139,17 +1279,35 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "cancelar_explicacion":
         context.user_data.pop("modo", None)
         context.user_data.pop("pregunta_explicacion_id", None)
-        await query.message.reply_text("Operación cancelada.")
-        await volver_a_contexto_anterior(chat_id, context)
+        await query.message.reply_text(
+            "Operación cancelada.",
+            reply_markup=obtener_markup_volver_pregunta(),
+        )
     elif data.startswith("ver_explicacion_"):
         pregunta_id = int(data.split("_")[2])
         explicacion = obtener_explicacion_pregunta(pregunta_id)
         if explicacion:
-            await query.message.reply_text(f"📖 Explicación:\n{explicacion}")
+            await query.message.reply_text(
+                f"📖 Explicación:\n{explicacion}",
+                reply_markup=obtener_markup_volver_pregunta(),
+            )
         else:
             await query.message.reply_text(
-                "ℹ️ Esta pregunta no tiene explicación guardada."
+                "ℹ️ Esta pregunta no tiene explicación guardada.",
+                reply_markup=obtener_markup_volver_pregunta(),
             )
+    elif data.startswith("favorita_"):
+        quiz = context.user_data.get("quiz", {})
+        user_id = quiz.get("user_id") or get_or_create_user(chat_id)
+        pregunta_id = int(data.split("_")[1])
+        if es_pregunta_favorita(user_id, pregunta_id):
+            quitar_favorita(user_id, pregunta_id)
+            await query.message.reply_text("✅ Pregunta quitada de favoritas.")
+        else:
+            agregar_favorita(user_id, pregunta_id)
+            await query.message.reply_text("✅ Pregunta guardada en favoritas.")
+        if quiz.get("esperando_siguiente"):
+            await mostrar_opciones_post_respuesta(chat_id, context, pregunta_id)
 
 
 # ─────────────── Texto pegado ───────────────
@@ -1166,7 +1324,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ No se pudo identificar la pregunta.")
             return
         actualizar_explicacion_pregunta(pregunta_id, explicacion)
-        await update.message.reply_text("✅ Explicación guardada.")
+        await update.message.reply_text(
+            "✅ Explicación guardada.",
+            reply_markup=obtener_markup_volver_pregunta(),
+        )
     elif modo == "editar_pregunta_json":
         pregunta_id = context.user_data.get("pregunta_json_id")
         if not pregunta_id:
@@ -1212,7 +1373,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sincronizar_pregunta_en_quiz(context, pregunta_id, pregunta_actualizada)
         context.user_data.pop("modo", None)
         context.user_data.pop("pregunta_json_id", None)
-        await update.message.reply_text("✅ Pregunta actualizada correctamente desde JSON.")
+        await update.message.reply_text(
+            "✅ Pregunta actualizada correctamente desde JSON.",
+            reply_markup=obtener_markup_volver_pregunta(),
+        )
     elif modo == "crear_test_nombre":
         nombre = update.message.text.strip()
         if not nombre:
@@ -1300,7 +1464,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "✅ Explicación actualizada con archivo.\n"
             f"📎 {nombre_archivo}\n"
-            f"🌐 {url}"
+            f"🌐 {url}",
+            reply_markup=obtener_markup_volver_pregunta(),
         )
         return
     if modo == "subir_archivo":
@@ -1460,6 +1625,26 @@ async def iniciar_test_fallos(chat_id, context, telegram_user_id=None):
     await enviar_pregunta(chat_id, context)
 
 
+async def iniciar_test_favoritas(chat_id, context, telegram_user_id=None):
+    user_id = get_or_create_user(chat_id)
+    preguntas = get_favorites_questions(user_id, TAMANO_TEST_FAVORITAS)
+    if not preguntas:
+        await context.bot.send_message(chat_id, "No tienes preguntas favoritas guardadas.")
+        return
+    attempt_id = create_attempt(user_id, None, "favoritas")
+    context.user_data["quiz"] = {
+        "questions": preguntas,
+        "i": 0,
+        "ok": 0,
+        "fail": 0,
+        "attempt_id": attempt_id,
+        "attempt_type": "favoritas",
+        "user_id": user_id,
+        "telegram_user_id": telegram_user_id,
+    }
+    await enviar_pregunta(chat_id, context)
+
+
 async def enviar_pregunta(chat_id, context):
     cancelar_temporizador_pregunta(context)
     quiz = context.user_data["quiz"]
@@ -1488,6 +1673,8 @@ async def enviar_pregunta(chat_id, context):
         "options": options,
         "correct_index": correct_index,
     }
+    quiz["esperando_siguiente"] = False
+    quiz["ultimo_pregunta_id"] = None
 
     mensaje_inicial = construir_texto_pregunta(encabezado, texto_pregunta)
     partes = split_message(mensaje_inicial)
@@ -1521,6 +1708,77 @@ async def enviar_pregunta(chat_id, context):
     programar_temporizador_pregunta(context, chat_id, i, q["id"])
 
 
+def obtener_texto_boton_favorita(user_id, question_id):
+    if es_pregunta_favorita(user_id, question_id):
+        return "⭐ Quitar favorita"
+    return "⭐ Guardar favorita"
+
+
+def construir_botones_post_respuesta(user_id, question_id):
+    explicacion_actual = obtener_explicacion_pregunta(question_id)
+    filas = []
+    if explicacion_actual:
+        filas.append(
+            [
+                InlineKeyboardButton(
+                    "👀 Ver explicación",
+                    callback_data=f"ver_explicacion_{question_id}",
+                )
+            ]
+        )
+    filas.append(
+        [
+            InlineKeyboardButton(
+                "✍️ Añadir/editar explicación",
+                callback_data=f"explicacion_{question_id}",
+            )
+        ]
+    )
+    filas.append(
+        [
+            InlineKeyboardButton(
+                "🧾 Editar pregunta",
+                callback_data=f"editar_pregunta_json_{question_id}",
+            )
+        ]
+    )
+    filas.append(
+        [
+            InlineKeyboardButton(
+                obtener_texto_boton_favorita(user_id, question_id),
+                callback_data=f"favorita_{question_id}",
+            )
+        ]
+    )
+    filas.append(
+        [
+            InlineKeyboardButton(
+                "➡️ Siguiente pregunta",
+                callback_data="siguiente_pregunta",
+            )
+        ]
+    )
+    filas.append([InlineKeyboardButton("☰ Menú", callback_data="menu")])
+    return InlineKeyboardMarkup(filas)
+
+
+async def mostrar_opciones_post_respuesta(chat_id, context, question_id):
+    quiz = context.user_data.get("quiz", {})
+    user_id = quiz.get("user_id") or get_or_create_user(chat_id)
+    markup = construir_botones_post_respuesta(user_id, question_id)
+    await context.bot.send_message(
+        chat_id,
+        "📝 Opciones de la pregunta:",
+        reply_markup=markup,
+    )
+
+
+def obtener_markup_volver_pregunta():
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("↩️ Volver a la pregunta", callback_data="volver_pregunta")]]
+    )
+
+
 # ─────────────── Responder ───────────────
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1533,6 +1791,9 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     current = quiz.get("current")
     if not current:
+        return
+
+    if quiz.get("esperando_siguiente"):
         return
 
     cancelar_temporizador_pregunta(context)
@@ -1559,40 +1820,9 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     add_attempt_item(quiz["attempt_id"], question_id, options[selected], is_correct)
 
-    explicacion_actual = obtener_explicacion_pregunta(question_id)
-    filas_explicacion = []
-    if explicacion_actual:
-        filas_explicacion.append(
-            [
-                InlineKeyboardButton(
-                    "👀 Ver explicación",
-                    callback_data=f"ver_explicacion_{question_id}",
-                )
-            ]
-        )
-    filas_explicacion.append(
-        [
-            InlineKeyboardButton(
-                "✍️ Añadir/editar explicación",
-                callback_data=f"explicacion_{question_id}",
-            )
-        ]
-    )
-    filas_explicacion.append(
-        [
-            InlineKeyboardButton(
-                "🧾 Editar pregunta",
-                callback_data=f"editar_pregunta_json_{question_id}",
-            )
-        ]
-    )
-    await query.message.reply_text(
-        "📝 Opciones de explicación:",
-        reply_markup=InlineKeyboardMarkup(filas_explicacion),
-    )
-
-    quiz["i"] += 1
-    await enviar_pregunta(chat_id, context)
+    quiz["esperando_siguiente"] = True
+    quiz["ultimo_pregunta_id"] = question_id
+    await mostrar_opciones_post_respuesta(chat_id, context, question_id)
 
 
 # ─────────────── Progreso ───────────────
