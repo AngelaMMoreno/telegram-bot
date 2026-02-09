@@ -4,6 +4,7 @@ import json
 import random
 import sqlite3
 import threading
+import zipfile
 from math import ceil
 from datetime import datetime
 from functools import partial
@@ -1011,6 +1012,11 @@ async def mostrar_menu(chat_id, context, texto="Selecciona una opción:"):
         [InlineKeyboardButton("📋 Mis tests", callback_data="mis_tests")],
         [InlineKeyboardButton("🗑️ Borrar test", callback_data="borrar_tests")],
         [InlineKeyboardButton("⬇️ Descargar test", callback_data="descargar_tests")],
+        [
+            InlineKeyboardButton(
+                "⬇️ Descargar todos los tests", callback_data="descargar_todos_tests"
+            )
+        ],
         [InlineKeyboardButton("📈 Progreso", callback_data="progreso")],
         [InlineKeyboardButton("⚠️ Test de fallos", callback_data="test_fallos")],
         [InlineKeyboardButton("⭐ Test de favoritas", callback_data="test_favoritas")],
@@ -1114,6 +1120,8 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await mostrar_tests_para_borrar(chat_id, context, pagina=1)
     elif data == "descargar_tests":
         await mostrar_tests_para_descargar(chat_id, context, pagina=1)
+    elif data == "descargar_todos_tests":
+        await enviar_tests_como_zip(chat_id, context)
     elif data.startswith("mis_tests_pagina_"):
         pagina = int(data.split("_")[3])
         await mostrar_tests(chat_id, context, pagina=pagina)
@@ -1997,6 +2005,42 @@ async def enviar_test_como_json(chat_id, context, quiz_id):
     archivo = io.BytesIO(contenido.encode("utf-8"))
     archivo.name = nombre_archivo
     await context.bot.send_document(chat_id, document=archivo, filename=nombre_archivo)
+
+
+async def enviar_tests_como_zip(chat_id, context):
+    tests = listar_tests_con_conteo()
+    if not tests:
+        await context.bot.send_message(chat_id, "No hay tests para descargar.")
+        return
+    archivo_memoria = io.BytesIO()
+    nombres_usados = {}
+    total_archivos = 0
+    with zipfile.ZipFile(archivo_memoria, "w", zipfile.ZIP_DEFLATED) as zipf:
+        for test in tests:
+            payload = obtener_test_como_json(test["id"])
+            if not payload or not payload.get("preguntas"):
+                continue
+            titulo = payload.get("titulo") or test["title"] or "test"
+            nombre_base = normalizar_nombre_archivo_test(titulo)
+            contador = nombres_usados.get(nombre_base, 0) + 1
+            nombres_usados[nombre_base] = contador
+            if contador > 1:
+                nombre_archivo = f"{nombre_base}_{contador}.json"
+            else:
+                nombre_archivo = f"{nombre_base}.json"
+            contenido = json.dumps(payload, ensure_ascii=False, indent=2)
+            zipf.writestr(nombre_archivo, contenido)
+            total_archivos += 1
+    if total_archivos == 0:
+        await context.bot.send_message(
+            chat_id, "No hay tests válidos para descargar."
+        )
+        return
+    archivo_memoria.seek(0)
+    archivo_memoria.name = "tests_completos.zip"
+    await context.bot.send_document(
+        chat_id, document=archivo_memoria, filename="tests_completos.zip"
+    )
 
 
 async def mostrar_menu_archivos(chat_id, context):
