@@ -1,3 +1,4 @@
+import io
 import os
 import json
 import random
@@ -357,6 +358,61 @@ def get_progreso_por_tests(user_id):
             }
         )
     return list(resumen.values())
+
+
+def obtener_test_como_json(quiz_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT title, description FROM quizzes WHERE id = ?",
+            (quiz_id,),
+        )
+        quiz = cur.fetchone()
+        if not quiz:
+            return None
+        cur.execute(
+            """
+            SELECT id, text, explicacion, bloque, tema
+            FROM questions
+            WHERE quiz_id = ?
+            ORDER BY id ASC
+            """,
+            (quiz_id,),
+        )
+        preguntas = []
+        for fila in cur.fetchall():
+            cur.execute(
+                """
+                SELECT text
+                FROM options
+                WHERE question_id = ?
+                ORDER BY position ASC
+                """,
+                (fila["id"],),
+            )
+            opciones = [item["text"] for item in cur.fetchall()]
+            if len(opciones) < 2:
+                continue
+            preguntas.append(
+                {
+                    "pregunta": fila["text"],
+                    "opciones": opciones,
+                    "bloque": fila["bloque"],
+                    "tema": fila["tema"],
+                    "explicacion": fila["explicacion"],
+                }
+            )
+    return {
+        "titulo": quiz["title"],
+        "descripcion": quiz["description"],
+        "preguntas": preguntas,
+    }
+
+
+def normalizar_nombre_archivo_test(titulo):
+    base = "".join(c if c.isalnum() else "_" for c in (titulo or "test"))
+    base = base.strip("_") or "test"
+    return base.lower()
 
 
 def get_progreso_general(user_id):
@@ -954,6 +1010,7 @@ async def mostrar_menu(chat_id, context, texto="Selecciona una opción:"):
         [InlineKeyboardButton("🧩 Crear test", callback_data="crear_test")],
         [InlineKeyboardButton("📋 Mis tests", callback_data="mis_tests")],
         [InlineKeyboardButton("🗑️ Borrar test", callback_data="borrar_tests")],
+        [InlineKeyboardButton("⬇️ Descargar test", callback_data="descargar_tests")],
         [InlineKeyboardButton("📈 Progreso", callback_data="progreso")],
         [InlineKeyboardButton("⚠️ Test de fallos", callback_data="test_fallos")],
         [InlineKeyboardButton("⭐ Test de favoritas", callback_data="test_favoritas")],
@@ -1055,12 +1112,17 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await mostrar_tests(chat_id, context, pagina=1)
     elif data == "borrar_tests":
         await mostrar_tests_para_borrar(chat_id, context, pagina=1)
+    elif data == "descargar_tests":
+        await mostrar_tests_para_descargar(chat_id, context, pagina=1)
     elif data.startswith("mis_tests_pagina_"):
         pagina = int(data.split("_")[3])
         await mostrar_tests(chat_id, context, pagina=pagina)
     elif data.startswith("borrar_tests_pagina_"):
         pagina = int(data.split("_")[3])
         await mostrar_tests_para_borrar(chat_id, context, pagina=pagina)
+    elif data.startswith("descargar_test_pagina_"):
+        pagina = int(data.split("_")[3])
+        await mostrar_tests_para_descargar(chat_id, context, pagina=pagina)
     elif data.startswith("empezar_"):
         quiz_id = int(data.split("_")[1])
         quiz_en_curso = context.user_data.get("quiz")
@@ -1161,6 +1223,11 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("🗑️ Test borrado.")
         pagina = context.user_data.get("pagina_borrado_tests", 1)
         await mostrar_tests_para_borrar(chat_id, context, pagina=pagina)
+    elif data.startswith("descargar_test_"):
+        quiz_id = int(data.split("_")[-1])
+        await enviar_test_como_json(chat_id, context, quiz_id)
+        pagina = context.user_data.get("pagina_descarga_tests", 1)
+        await mostrar_tests_para_descargar(chat_id, context, pagina=pagina)
     elif data == "cancelar_borrar":
         await query.message.reply_text("Operación cancelada.")
         await volver_a_contexto_anterior(chat_id, context)
@@ -1577,6 +1644,57 @@ async def mostrar_tests_para_borrar(chat_id, context, pagina=1):
     )
 
 
+async def mostrar_tests_para_descargar(chat_id, context, pagina=1):
+    total_tests = contar_tests()
+    if total_tests == 0:
+        await context.bot.send_message(chat_id, "No hay tests para descargar.")
+        return
+
+    total_paginas = max(1, ceil(total_tests / TAMANO_PAGINA_TESTS))
+    pagina = max(1, min(pagina, total_paginas))
+    desplazamiento = (pagina - 1) * TAMANO_PAGINA_TESTS
+    quizzes = listar_tests_con_conteo_paginado(
+        desplazamiento, TAMANO_PAGINA_TESTS
+    )
+    context.user_data["pagina_descarga_tests"] = pagina
+
+    botones = [
+        [
+            InlineKeyboardButton(
+                f"{q['title']} ({q['total_preguntas']} preguntas)",
+                callback_data=f"descargar_test_{q['id']}",
+            )
+        ]
+        for q in quizzes
+    ]
+
+    if total_paginas > 1:
+        fila_paginas = []
+        if pagina > 1:
+            fila_paginas.append(
+                InlineKeyboardButton(
+                    "⬅️ Anterior",
+                    callback_data=f"descargar_test_pagina_{pagina - 1}",
+                )
+            )
+        if pagina < total_paginas:
+            fila_paginas.append(
+                InlineKeyboardButton(
+                    "Siguiente ➡️",
+                    callback_data=f"descargar_test_pagina_{pagina + 1}",
+                )
+            )
+        if fila_paginas:
+            botones.append(fila_paginas)
+
+    botones.append([InlineKeyboardButton("☰ Menú", callback_data="menu")])
+    await context.bot.send_message(
+        chat_id,
+        f"Selecciona un test para descargar (página {pagina}/{total_paginas}):",
+        reply_markup=InlineKeyboardMarkup(botones),
+    )
+
+
 # ─────────────── Tests ───────────────
 async def iniciar_quiz(
     chat_id, context, quiz_id=None, attempt_type="quiz", telegram_user_id=None
@@ -1862,6 +1980,23 @@ async def enviar_bd(chat_id, context):
         return
     with open(DB_FILE, "rb") as f:
         await context.bot.send_document(chat_id, document=f, filename="bot.db")
+
+
+async def enviar_test_como_json(chat_id, context, quiz_id):
+    payload = obtener_test_como_json(quiz_id)
+    if not payload:
+        await context.bot.send_message(chat_id, "❌ No se encontró el test.")
+        return
+    if not payload.get("preguntas"):
+        await context.bot.send_message(chat_id, "❌ El test no tiene preguntas válidas.")
+        return
+    titulo = payload.get("titulo") or "test"
+    nombre_base = normalizar_nombre_archivo_test(titulo)
+    nombre_archivo = f"{nombre_base}.json"
+    contenido = json.dumps(payload, ensure_ascii=False, indent=2)
+    archivo = io.BytesIO(contenido.encode("utf-8"))
+    archivo.name = nombre_archivo
+    await context.bot.send_document(chat_id, document=archivo, filename=nombre_archivo)
 
 
 async def mostrar_menu_archivos(chat_id, context):
