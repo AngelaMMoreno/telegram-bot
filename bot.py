@@ -489,6 +489,84 @@ def add_attempt_item(attempt_id, question_id, selected_option, is_correct):
         conn.commit()
 
 
+def obtener_tests_pendientes(user_id):
+    """Devuelve un set de quiz_ids con intentos sin terminar."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT DISTINCT quiz_id
+            FROM attempts
+            WHERE user_id = ?
+              AND attempt_type = 'quiz'
+              AND finished_at IS NULL
+              AND quiz_id IS NOT NULL
+            """,
+            (user_id,),
+        )
+        return {fila["quiz_id"] for fila in cur.fetchall()}
+
+
+def obtener_intento_pendiente(user_id, quiz_id):
+    """Devuelve el intento sin terminar más reciente para un test, o None."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, correct, wrong
+            FROM attempts
+            WHERE user_id = ?
+              AND quiz_id = ?
+              AND attempt_type = 'quiz'
+              AND finished_at IS NULL
+            ORDER BY started_at DESC
+            LIMIT 1
+            """,
+            (user_id, quiz_id),
+        )
+        row = cur.fetchone()
+        if row:
+            return {"id": row["id"], "correct": row["correct"], "wrong": row["wrong"]}
+        return None
+
+
+def obtener_preguntas_respondidas(attempt_id):
+    """Devuelve un set de question_ids ya respondidos en este intento."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT question_id FROM attempt_items WHERE attempt_id = ?",
+            (attempt_id,),
+        )
+        return {fila["question_id"] for fila in cur.fetchall()}
+
+
+def cerrar_intentos_pendientes(user_id, quiz_id=None):
+    """Cierra todos los intentos sin terminar de un usuario (opcionalmente para un quiz específico)."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        now = datetime.utcnow().isoformat()
+        if quiz_id is not None:
+            cur.execute(
+                """
+                UPDATE attempts
+                SET finished_at = ?
+                WHERE user_id = ? AND quiz_id = ? AND finished_at IS NULL AND attempt_type = 'quiz'
+                """,
+                (now, user_id, quiz_id),
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE attempts
+                SET finished_at = ?
+                WHERE user_id = ? AND finished_at IS NULL AND attempt_type = 'quiz'
+                """,
+                (now, user_id),
+            )
+        conn.commit()
+
+
 def record_failure(user_id, question_id):
     now = datetime.utcnow().isoformat()
     with get_conn() as conn:
@@ -919,6 +997,50 @@ def obtener_quiz_reanudable(quiz, quiz_id):
     return quiz.get("i", 0) < len(quiz.get("questions", []))
 
 
+def reconstruir_quiz_desde_db(user_id, quiz_id, telegram_user_id):
+    """Reconstruye el estado del quiz desde la BD para poder reanudarlo."""
+    intento = obtener_intento_pendiente(user_id, quiz_id)
+    if not intento:
+        return None
+    questions = load_quiz_questions(quiz_id)
+    if not questions:
+        return None
+    respondidas = obtener_preguntas_respondidas(intento["id"])
+    # Contar aciertos y fallos desde attempt_items
+    ok = 0
+    fail = 0
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT is_correct FROM attempt_items WHERE attempt_id = ?",
+            (intento["id"],),
+        )
+        for fila in cur.fetchall():
+            if fila["is_correct"]:
+                ok += 1
+            else:
+                fail += 1
+    # Filtrar preguntas ya respondidas manteniendo el orden
+    preguntas_pendientes = [q for q in questions if q["id"] not in respondidas]
+    if not preguntas_pendientes:
+        return None
+    # Reconstruir con todas las preguntas pero el índice apuntando a las pendientes
+    # Usamos solo las preguntas pendientes como lista restante
+    return {
+        "questions": preguntas_pendientes,
+        "quiz_id": quiz_id,
+        "i": 0,
+        "ok": ok,
+        "fail": fail,
+        "attempt_id": intento["id"],
+        "attempt_type": "quiz",
+        "user_id": user_id,
+        "telegram_user_id": telegram_user_id,
+        "total_original": len(questions),
+        "respondidas_count": len(respondidas),
+    }
+
+
 async def volver_a_contexto_anterior(chat_id, context):
     contexto = context.user_data.pop("contexto_cancelable", None)
     if not contexto:
@@ -1047,8 +1169,10 @@ async def mostrar_pregunta_actual(chat_id, context):
         return
 
     q = quiz["questions"][quiz["i"]]
-    total_preguntas = len(quiz["questions"])
-    encabezado = f"📍 Pregunta {quiz['i'] + 1}/{total_preguntas}"
+    total_original = quiz.get("total_original", len(quiz["questions"]))
+    respondidas_previas = quiz.get("respondidas_count", 0)
+    numero_pregunta = respondidas_previas + quiz["i"] + 1
+    encabezado = f"📍 Pregunta {numero_pregunta}/{total_original}"
     texto_pregunta = wrap_text(q["text"].strip())
     texto = construir_texto_pregunta(encabezado, texto_pregunta, actual.get("options", []))
 
@@ -1092,8 +1216,11 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         current = quiz.get("current", {})
         opciones = current.get("options", [])
         texto_pregunta = wrap_text(q["text"].strip())
+        total_original = quiz.get("total_original", len(quiz["questions"]))
+        respondidas_previas = quiz.get("respondidas_count", 0)
+        numero_pregunta = respondidas_previas + i + 1
         texto_expandido = construir_texto_pregunta(
-            f"📍 Pregunta {i + 1}/{len(quiz['questions'])}",
+            f"📍 Pregunta {numero_pregunta}/{total_original}",
             texto_pregunta,
             opciones,
         )
@@ -1130,11 +1257,21 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await mostrar_tests_para_descargar(chat_id, context, pagina=pagina)
     elif data.startswith("empezar_"):
         quiz_id = int(data.split("_")[1])
+        user_id = get_or_create_user(chat_id)
         quiz_en_curso = context.user_data.get("quiz")
-        if obtener_quiz_reanudable(quiz_en_curso, quiz_id):
+        # Primero comprobar estado en memoria
+        reanudable_memoria = obtener_quiz_reanudable(quiz_en_curso, quiz_id)
+        # Si no hay en memoria, comprobar en BD
+        reanudable_bd = False
+        if not reanudable_memoria:
+            intento_db = obtener_intento_pendiente(user_id, quiz_id)
+            if intento_db:
+                reanudable_bd = True
+        if reanudable_memoria or reanudable_bd:
             context.user_data["quiz_pendiente"] = {
                 "quiz_id": quiz_id,
                 "telegram_user_id": query.from_user.id,
+                "desde_bd": reanudable_bd and not reanudable_memoria,
             }
             guardar_contexto_cancelable(
                 context,
@@ -1182,13 +1319,35 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not pendiente:
             await query.message.reply_text("No hay ningún test pendiente para continuar.")
             return
-        await mostrar_pregunta_actual(chat_id, context)
+        if pendiente.get("desde_bd"):
+            # Reconstruir estado desde la BD
+            user_id = get_or_create_user(chat_id)
+            quiz_reconstruido = reconstruir_quiz_desde_db(
+                user_id, pendiente["quiz_id"], pendiente["telegram_user_id"]
+            )
+            if not quiz_reconstruido:
+                await query.message.reply_text("No se pudo recuperar el test pendiente.")
+                await mostrar_menu(chat_id, context)
+                return
+            context.user_data["quiz"] = quiz_reconstruido
+            total = quiz_reconstruido["total_original"]
+            respondidas = quiz_reconstruido["respondidas_count"]
+            await query.message.reply_text(
+                f"▶️ Reanudando test: {respondidas}/{total} preguntas respondidas "
+                f"(✔️ {quiz_reconstruido['ok']} ❌ {quiz_reconstruido['fail']})"
+            )
+            await enviar_pregunta(chat_id, context)
+        else:
+            await mostrar_pregunta_actual(chat_id, context)
     elif data == "reiniciar_test_pendiente":
         pendiente = context.user_data.pop("quiz_pendiente", None)
         if not pendiente:
             await query.message.reply_text("No hay ningún test pendiente para reiniciar.")
             return
+        user_id = get_or_create_user(chat_id)
         cerrar_intento_en_curso(context)
+        # También cerrar intentos pendientes en BD
+        cerrar_intentos_pendientes(user_id, pendiente["quiz_id"])
         await iniciar_quiz(
             chat_id,
             context,
@@ -1545,11 +1704,19 @@ async def mostrar_tests(chat_id, context, pagina=1):
     )
     context.user_data["pagina_tests"] = pagina
     tests_realizados = obtener_tests_realizados(user_id)
+    tests_pendientes = obtener_tests_pendientes(user_id)
+
+    def icono_test(quiz_id):
+        if quiz_id in tests_pendientes:
+            return "⏳ "
+        if quiz_id in tests_realizados:
+            return "✅ "
+        return ""
 
     botones = [
         [
             InlineKeyboardButton(
-                f"{'✅ ' if q['id'] in tests_realizados else ''}"
+                f"{icono_test(q['id'])}"
                 f"{q['title']} ({q['total_preguntas']} preguntas)",
                 callback_data=f"empezar_{q['id']}",
             ),
@@ -1689,6 +1856,8 @@ async def iniciar_quiz(
     chat_id, context, quiz_id=None, attempt_type="quiz", telegram_user_id=None
 ):
     user_id = get_or_create_user(chat_id)
+    # Cerrar cualquier quiz en memoria antes de empezar uno nuevo
+    cerrar_intento_en_curso(context)
     questions = load_quiz_questions(quiz_id)
     if not questions:
         await context.bot.send_message(chat_id, "❌ Test no encontrado o vacío.")
@@ -1756,8 +1925,10 @@ async def enviar_pregunta(chat_id, context):
     cancelar_temporizador_pregunta(context)
     quiz = context.user_data["quiz"]
     i = quiz["i"]
+    total_original = quiz.get("total_original", len(quiz["questions"]))
+    respondidas_previas = quiz.get("respondidas_count", 0)
     if i >= len(quiz["questions"]):
-        nota = max((quiz["ok"] - 0.3 * quiz["fail"]) / len(quiz["questions"]) * 10, 0)
+        nota = max((quiz["ok"] - 0.3 * quiz["fail"]) / total_original * 10, 0)
         finish_attempt(quiz["attempt_id"], quiz["ok"], quiz["fail"])
         await context.bot.send_message(
             chat_id,
@@ -1768,8 +1939,8 @@ async def enviar_pregunta(chat_id, context):
         return
 
     q = quiz["questions"][i]
-    total_preguntas = len(quiz["questions"])
-    encabezado = f"📍 Pregunta {i + 1}/{total_preguntas}"
+    numero_pregunta = respondidas_previas + i + 1
+    encabezado = f"📍 Pregunta {numero_pregunta}/{total_original}"
     texto_pregunta = wrap_text(q["text"].strip())
 
     options = list(q["options"])
