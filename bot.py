@@ -1129,6 +1129,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def mostrar_menu(chat_id, context, texto="Selecciona una opción:"):
     botones = [
         [InlineKeyboardButton("🧩 Crear test", callback_data="crear_test")],
+        [InlineKeyboardButton("📦 Subir tests (ZIP)", callback_data="subir_zip")],
         [InlineKeyboardButton("📋 Mis tests", callback_data="mis_tests")],
         [InlineKeyboardButton("🗑️ Borrar test", callback_data="borrar_tests")],
         [InlineKeyboardButton("⬇️ Descargar test", callback_data="descargar_tests")],
@@ -1238,6 +1239,16 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["modo"] = "crear_test_nombre"
         context.user_data["nuevo_test"] = {}
         await query.message.reply_text("🧩 Escribe el nombre del test:")
+    elif data == "subir_zip":
+        context.user_data["modo"] = "subir_zip"
+        await query.message.reply_text(
+            "📦 Envía un archivo .zip con los tests.\n\n"
+            "Cada archivo .json dentro del ZIP se creará como un test independiente.\n"
+            "• El nombre del test será el nombre del archivo (sin extensión).\n"
+            "• Si el JSON incluye una clave \"descripcion\", se usará como descripción.\n"
+            "• El formato del JSON es el mismo que para crear un test normal.\n\n"
+            "Los archivos que no sean .json se ignorarán."
+        )
     elif data == "mis_tests":
         await mostrar_tests(chat_id, context, pagina=1)
     elif data == "borrar_tests":
@@ -1642,6 +1653,80 @@ async def fin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     modo = context.user_data.get("modo")
+    if modo == "subir_zip":
+        documento = update.message.document
+        if not documento:
+            return
+        nombre_archivo = (documento.file_name or "").lower()
+        if not nombre_archivo.endswith(".zip"):
+            await update.message.reply_text(
+                "❌ Formato no válido. Adjunta un archivo .zip."
+            )
+            return
+        archivo = await documento.get_file()
+        contenido = await archivo.download_as_bytearray()
+        try:
+            zip_buffer = io.BytesIO(contenido)
+            with zipfile.ZipFile(zip_buffer) as zf:
+                archivos_json = [
+                    n for n in zf.namelist()
+                    if n.lower().endswith(".json") and not n.startswith("__MACOSX")
+                ]
+                if not archivos_json:
+                    await update.message.reply_text(
+                        "❌ El ZIP no contiene archivos .json."
+                    )
+                    return
+                creados = 0
+                errores = []
+                for nombre in archivos_json:
+                    nombre_base = os.path.basename(nombre)
+                    titulo = os.path.splitext(nombre_base)[0]
+                    if not titulo:
+                        continue
+                    try:
+                        texto = zf.read(nombre).decode("utf-8", errors="replace")
+                        payload = json.loads(texto)
+                        if isinstance(payload, list):
+                            preguntas = payload
+                            descripcion = ""
+                        elif isinstance(payload, dict):
+                            preguntas = payload.get("preguntas")
+                            if isinstance(preguntas, list):
+                                descripcion = payload.get("descripcion") or ""
+                            else:
+                                preguntas = []
+                                descripcion = ""
+                        else:
+                            preguntas = []
+                            descripcion = ""
+                        if not preguntas:
+                            errores.append(f"⚠️ {nombre_base}: sin preguntas válidas")
+                            continue
+                        quiz_id = create_quiz(
+                            {"preguntas": preguntas},
+                            titulo=titulo,
+                            descripcion=descripcion or None,
+                        )
+                        if quiz_id:
+                            creados += 1
+                        else:
+                            errores.append(f"⚠️ {nombre_base}: no se pudo crear")
+                    except json.JSONDecodeError:
+                        errores.append(f"❌ {nombre_base}: JSON inválido")
+                    except Exception as e:
+                        errores.append(f"❌ {nombre_base}: {e}")
+                resumen = f"📦 Resultado de la importación:\n✅ {creados} test(s) creado(s)"
+                if errores:
+                    resumen += f"\n⚠️ {len(errores)} error(es):\n" + "\n".join(errores)
+                await update.message.reply_text(resumen)
+        except zipfile.BadZipFile:
+            await update.message.reply_text("❌ El archivo no es un ZIP válido.")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error procesando el ZIP: {e}")
+        context.user_data.pop("modo", None)
+        await mostrar_menu(update.message.chat.id, context)
+        return
     if modo == "crear_test_json":
         documento = update.message.document
         if not documento:
