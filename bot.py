@@ -446,6 +446,23 @@ def get_progreso_general(user_id):
     }
 
 
+def contar_preguntas_respondidas_hoy(user_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT COUNT(ai.id) AS total
+            FROM attempt_items ai
+            JOIN attempts a ON a.id = ai.attempt_id
+            WHERE a.user_id = ?
+              AND date(a.started_at) = date('now')
+            """,
+            (user_id,),
+        )
+        fila = cur.fetchone()
+        return fila["total"] if fila else 0
+
+
 def create_attempt(user_id, quiz_id, attempt_type):
     now = datetime.utcnow().isoformat()
     with get_conn() as conn:
@@ -2193,9 +2210,11 @@ async def mostrar_progreso(chat_id, context):
     user_id = get_or_create_user(chat_id)
     progreso_general = get_progreso_general(user_id)
     progreso_tests = get_progreso_por_tests(user_id)
+    preguntas_respondidas_hoy = contar_preguntas_respondidas_hoy(user_id)
 
     mensaje = (
         "📈 Progreso general\n"
+        f"Preguntas respondidas hoy: {preguntas_respondidas_hoy}\n"
         f"Aciertos totales: {progreso_general['total_correct']}\n"
         f"Fallos totales: {progreso_general['total_wrong']}\n"
         f"Nota general: {progreso_general['nota']:.2f}/10"
