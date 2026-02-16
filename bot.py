@@ -809,6 +809,53 @@ def borrar_test(quiz_id):
         conn.commit()
 
 
+def borrar_pregunta(question_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT quiz_id FROM questions WHERE id = ?", (question_id,))
+        fila = cur.fetchone()
+        if not fila:
+            return False
+        cur.execute("DELETE FROM failures WHERE question_id = ?", (question_id,))
+        cur.execute("DELETE FROM favorites WHERE question_id = ?", (question_id,))
+        cur.execute("DELETE FROM options WHERE question_id = ?", (question_id,))
+        cur.execute("DELETE FROM attempt_items WHERE question_id = ?", (question_id,))
+        cur.execute("DELETE FROM questions WHERE id = ?", (question_id,))
+        conn.commit()
+        return True
+
+
+def sincronizar_borrado_pregunta_en_quiz(context, question_id):
+    quiz = context.user_data.get("quiz")
+    if not quiz:
+        return
+
+    preguntas = quiz.get("questions", [])
+    indice_actual = quiz.get("i", 0)
+    indice_eliminado = next(
+        (indice for indice, pregunta in enumerate(preguntas) if pregunta["id"] == question_id),
+        None,
+    )
+
+    if indice_eliminado is None:
+        return
+
+    del preguntas[indice_eliminado]
+    quiz["total_original"] = max(0, quiz.get("total_original", len(preguntas) + 1) - 1)
+
+    if indice_eliminado < indice_actual:
+        quiz["i"] = max(0, indice_actual - 1)
+    elif indice_eliminado == indice_actual:
+        quiz["i"] = max(-1, indice_actual - 1)
+
+    actual = quiz.get("current")
+    if actual and actual.get("question_id") == question_id:
+        quiz["current"] = None
+
+    if quiz.get("ultimo_pregunta_id") == question_id:
+        quiz["ultimo_pregunta_id"] = None
+
+
 # ─────────────── Formato de texto ───────────────
 def wrap_text(text, width=None):
     return text
@@ -1544,6 +1591,45 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "ℹ️ Esta pregunta no tiene explicación guardada.",
                 reply_markup=obtener_markup_volver_pregunta(),
             )
+    elif data.startswith("eliminar_pregunta_"):
+        pregunta_id = int(data.split("_")[2])
+        botones = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "✅ Confirmar eliminación",
+                        callback_data=f"confirmar_eliminar_pregunta_{pregunta_id}",
+                    ),
+                    InlineKeyboardButton(
+                        "↩️ Cancelar", callback_data=f"cancelar_eliminar_pregunta_{pregunta_id}"
+                    ),
+                ]
+            ]
+        )
+        await query.message.reply_text(
+            "⚠️ ¿Seguro que quieres eliminar esta pregunta?",
+            reply_markup=botones,
+        )
+    elif data.startswith("confirmar_eliminar_pregunta_"):
+        pregunta_id = int(data.split("_")[3])
+        se_borro = borrar_pregunta(pregunta_id)
+        if not se_borro:
+            await query.message.reply_text("❌ No se encontró la pregunta para eliminar.")
+            return
+        sincronizar_borrado_pregunta_en_quiz(context, pregunta_id)
+        await query.message.reply_text("🗑️ Pregunta eliminada correctamente.")
+        quiz = context.user_data.get("quiz")
+        if quiz:
+            quiz["esperando_siguiente"] = False
+            await enviar_pregunta(chat_id, context)
+        else:
+            await mostrar_menu(chat_id, context)
+    elif data.startswith("cancelar_eliminar_pregunta_"):
+        pregunta_id = int(data.split("_")[3])
+        await query.message.reply_text("Operación cancelada.")
+        quiz = context.user_data.get("quiz")
+        if quiz and quiz.get("esperando_siguiente"):
+            await mostrar_opciones_post_respuesta(chat_id, context, pregunta_id)
     elif data.startswith("favorita_"):
         quiz = context.user_data.get("quiz", {})
         user_id = quiz.get("user_id") or get_or_create_user(chat_id)
@@ -2119,6 +2205,14 @@ def construir_botones_post_respuesta(user_id, question_id):
             InlineKeyboardButton(
                 "🧾 Editar pregunta",
                 callback_data=f"editar_pregunta_json_{question_id}",
+            )
+        ]
+    )
+    filas.append(
+        [
+            InlineKeyboardButton(
+                "🗑️ Eliminar pregunta",
+                callback_data=f"eliminar_pregunta_{question_id}",
             )
         ]
     )
