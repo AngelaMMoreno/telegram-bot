@@ -282,6 +282,29 @@ def listar_tests_con_conteo_paginado(desplazamiento, limite):
         )
         return cur.fetchall()
 
+def obtener_conteo_intentos_por_test(user_id, quiz_ids):
+    if not quiz_ids:
+        return {}
+
+    placeholders = ",".join("?" for _ in quiz_ids)
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            SELECT quiz_id, COUNT(*) AS total_intentos
+            FROM attempts
+            WHERE user_id = ?
+              AND quiz_id IN ({placeholders})
+              AND finished_at IS NOT NULL
+            GROUP BY quiz_id
+            """,
+            [user_id, *quiz_ids],
+        )
+        filas = cur.fetchall()
+
+    return {fila["quiz_id"]: fila["total_intentos"] for fila in filas}
+
+
 def contar_tests_favoritos(user_id):
     with get_conn() as conn:
         cur = conn.cursor()
@@ -1999,6 +2022,8 @@ async def mostrar_tests(chat_id, context, pagina=1):
     tests_realizados = obtener_tests_realizados(user_id)
     tests_pendientes = obtener_tests_pendientes(user_id)
     tests_favoritos = obtener_tests_favoritos(user_id)
+    quizzes_ids = [q["id"] for q in quizzes]
+    conteos_intentos = obtener_conteo_intentos_por_test(user_id, quizzes_ids)
 
     def icono_test(quiz_id):
         if quiz_id in tests_pendientes:
@@ -2013,7 +2038,7 @@ async def mostrar_tests(chat_id, context, pagina=1):
         botones.append(
             [
                 InlineKeyboardButton(
-                    f"{icono_test(q['id'])}"
+                    f"{conteos_intentos.get(q['id'], 0)} · {icono_test(q['id'])}"
                     f"{q['title']} ({q['total_preguntas']} preguntas)",
                     callback_data=f"empezar_{q['id']}",
                 ),
@@ -2065,11 +2090,13 @@ async def mostrar_tests_favoritos(chat_id, context, pagina=1):
         TAMANO_PAGINA_TESTS,
     )
     context.user_data["pagina_tests_favoritos"] = pagina
+    quizzes_ids = [q["id"] for q in quizzes]
+    conteos_intentos = obtener_conteo_intentos_por_test(user_id, quizzes_ids)
 
     botones = [
         [
             InlineKeyboardButton(
-                f"⭐ {q['title']} ({q['total_preguntas']} preguntas)",
+                f"{conteos_intentos.get(q['id'], 0)} · ⭐ {q['title']} ({q['total_preguntas']} preguntas)",
                 callback_data=f"empezar_{q['id']}",
             )
         ]
@@ -2482,7 +2509,10 @@ async def mostrar_progreso(chat_id, context):
 
     if not progreso_tests:
         mensaje += "\n\nNo hay intentos registrados todavía."
-        await context.bot.send_message(chat_id, mensaje)
+        botones = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("☰ Volver al menú", callback_data="menu")]]
+        )
+        await context.bot.send_message(chat_id, mensaje, reply_markup=botones)
         return
 
     detalles = ["\n\n📚 Progreso por test"]
@@ -2494,7 +2524,14 @@ async def mostrar_progreso(chat_id, context):
                 f"🎯 {intento['nota']:.2f}/10"
             )
 
-    await context.bot.send_message(chat_id, mensaje + "\n".join(detalles))
+    botones = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("☰ Volver al menú", callback_data="menu")]]
+    )
+    await context.bot.send_message(
+        chat_id,
+        mensaje + "\n".join(detalles),
+        reply_markup=botones,
+    )
 
 
 # ─────────────── Descargar BD ───────────────
