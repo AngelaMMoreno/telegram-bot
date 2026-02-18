@@ -151,6 +151,18 @@ def init_db():
             )
             """
         )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tests_favoritos (
+                user_id INTEGER NOT NULL,
+                quiz_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, quiz_id),
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (quiz_id) REFERENCES quizzes(id)
+            )
+            """
+        )
         asegurar_columna_descripcion(conn)
         asegurar_columnas_preguntas(conn)
         conn.commit()
@@ -269,6 +281,81 @@ def listar_tests_con_conteo_paginado(desplazamiento, limite):
             (limite, desplazamiento),
         )
         return cur.fetchall()
+
+def contar_tests_favoritos(user_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) AS total FROM tests_favoritos WHERE user_id = ?",
+            (user_id,),
+        )
+        row = cur.fetchone()
+        return row["total"] if row else 0
+
+
+def listar_tests_favoritos_con_conteo_paginado(user_id, desplazamiento, limite):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT q.id, q.title, q.description, COUNT(que.id) AS total_preguntas
+            FROM tests_favoritos tf
+            JOIN quizzes q ON q.id = tf.quiz_id
+            LEFT JOIN questions que ON que.quiz_id = q.id
+            WHERE tf.user_id = ?
+            GROUP BY q.id
+            ORDER BY tf.created_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (user_id, limite, desplazamiento),
+        )
+        return cur.fetchall()
+
+
+def marcar_test_favorito(user_id, quiz_id):
+    now = datetime.utcnow().isoformat()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO tests_favoritos (user_id, quiz_id, created_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id, quiz_id) DO NOTHING
+            """,
+            (user_id, quiz_id, now),
+        )
+        conn.commit()
+
+
+def quitar_test_favorito(user_id, quiz_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM tests_favoritos WHERE user_id = ? AND quiz_id = ?",
+            (user_id, quiz_id),
+        )
+        conn.commit()
+
+
+def es_test_favorito(user_id, quiz_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT 1 FROM tests_favoritos WHERE user_id = ? AND quiz_id = ?",
+            (user_id, quiz_id),
+        )
+        return cur.fetchone() is not None
+
+
+def obtener_tests_favoritos(user_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT quiz_id FROM tests_favoritos WHERE user_id = ?",
+            (user_id,),
+        )
+        return {fila["quiz_id"] for fila in cur.fetchall()}
+
 
 
 def obtener_tests_realizados(user_id):
@@ -769,6 +856,7 @@ def get_progress_summary(user_id):
 def borrar_test(quiz_id):
     with get_conn() as conn:
         cur = conn.cursor()
+        cur.execute("DELETE FROM tests_favoritos WHERE quiz_id = ?", (quiz_id,))
         cur.execute("SELECT id FROM questions WHERE quiz_id = ?", (quiz_id,))
         preguntas_ids = [row["id"] for row in cur.fetchall()]
         if preguntas_ids:
@@ -1204,6 +1292,7 @@ async def mostrar_menu(chat_id, context, texto="Selecciona una opción:"):
         ],
         [InlineKeyboardButton("📈 Progreso", callback_data="progreso")],
         [InlineKeyboardButton("⚠️ Test de fallos", callback_data="test_fallos")],
+        [InlineKeyboardButton("⭐ Hacer tests favoritos", callback_data="tests_favoritos")],
         [InlineKeyboardButton("⭐ Test de favoritas", callback_data="test_favoritas")],
         [InlineKeyboardButton("⬇️ Descargar BD", callback_data="descargar_bd")],
     ]
@@ -1321,15 +1410,31 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await mostrar_tests_para_descargar(chat_id, context, pagina=1)
     elif data == "descargar_todos_tests":
         await enviar_tests_como_zip(chat_id, context)
+    elif data == "tests_favoritos":
+        await mostrar_tests_favoritos(chat_id, context, pagina=1)
     elif data.startswith("mis_tests_pagina_"):
         pagina = int(data.split("_")[3])
         await mostrar_tests(chat_id, context, pagina=pagina)
+    elif data.startswith("tests_favoritos_pagina_"):
+        pagina = int(data.split("_")[3])
+        await mostrar_tests_favoritos(chat_id, context, pagina=pagina)
     elif data.startswith("borrar_tests_pagina_"):
         pagina = int(data.split("_")[3])
         await mostrar_tests_para_borrar(chat_id, context, pagina=pagina)
     elif data.startswith("descargar_test_pagina_"):
         pagina = int(data.split("_")[3])
         await mostrar_tests_para_descargar(chat_id, context, pagina=pagina)
+    elif data.startswith("favorito_test_"):
+        quiz_id = int(data.split("_")[-1])
+        user_id = get_or_create_user(chat_id)
+        if es_test_favorito(user_id, quiz_id):
+            quitar_test_favorito(user_id, quiz_id)
+            await query.message.reply_text("✅ Test quitado de favoritos.")
+        else:
+            marcar_test_favorito(user_id, quiz_id)
+            await query.message.reply_text("✅ Test guardado en favoritos.")
+        pagina = context.user_data.get("pagina_tests", 1)
+        await mostrar_tests(chat_id, context, pagina=pagina)
     elif data.startswith("empezar_"):
         quiz_id = int(data.split("_")[1])
         user_id = get_or_create_user(chat_id)
@@ -1893,6 +1998,7 @@ async def mostrar_tests(chat_id, context, pagina=1):
     context.user_data["pagina_tests"] = pagina
     tests_realizados = obtener_tests_realizados(user_id)
     tests_pendientes = obtener_tests_pendientes(user_id)
+    tests_favoritos = obtener_tests_favoritos(user_id)
 
     def icono_test(quiz_id):
         if quiz_id in tests_pendientes:
@@ -1901,16 +2007,22 @@ async def mostrar_tests(chat_id, context, pagina=1):
             return "✅ "
         return ""
 
-    botones = [
-        [
-            InlineKeyboardButton(
-                f"{icono_test(q['id'])}"
-                f"{q['title']} ({q['total_preguntas']} preguntas)",
-                callback_data=f"empezar_{q['id']}",
-            ),
-        ]
-        for q in quizzes
-    ]
+    botones = []
+    for q in quizzes:
+        icono_favorito = "⭐" if q["id"] in tests_favoritos else "☆"
+        botones.append(
+            [
+                InlineKeyboardButton(
+                    f"{icono_test(q['id'])}"
+                    f"{q['title']} ({q['total_preguntas']} preguntas)",
+                    callback_data=f"empezar_{q['id']}",
+                ),
+                InlineKeyboardButton(
+                    icono_favorito,
+                    callback_data=f"favorito_test_{q['id']}",
+                ),
+            ]
+        )
 
     if total_paginas > 1:
         fila_paginas = []
@@ -1933,6 +2045,60 @@ async def mostrar_tests(chat_id, context, pagina=1):
     await context.bot.send_message(
         chat_id,
         f"Selecciona un test (página {pagina}/{total_paginas}):",
+        reply_markup=InlineKeyboardMarkup(botones),
+    )
+
+
+async def mostrar_tests_favoritos(chat_id, context, pagina=1):
+    user_id = get_or_create_user(chat_id)
+    total_tests_favoritos = contar_tests_favoritos(user_id)
+    if total_tests_favoritos == 0:
+        await context.bot.send_message(chat_id, "No tienes tests favoritos guardados.")
+        return
+
+    total_paginas = max(1, ceil(total_tests_favoritos / TAMANO_PAGINA_TESTS))
+    pagina = max(1, min(pagina, total_paginas))
+    desplazamiento = (pagina - 1) * TAMANO_PAGINA_TESTS
+    quizzes = listar_tests_favoritos_con_conteo_paginado(
+        user_id,
+        desplazamiento,
+        TAMANO_PAGINA_TESTS,
+    )
+    context.user_data["pagina_tests_favoritos"] = pagina
+
+    botones = [
+        [
+            InlineKeyboardButton(
+                f"⭐ {q['title']} ({q['total_preguntas']} preguntas)",
+                callback_data=f"empezar_{q['id']}",
+            )
+        ]
+        for q in quizzes
+    ]
+
+    if total_paginas > 1:
+        fila_paginas = []
+        if pagina > 1:
+            fila_paginas.append(
+                InlineKeyboardButton(
+                    "⬅️ Anterior",
+                    callback_data=f"tests_favoritos_pagina_{pagina - 1}",
+                )
+            )
+        if pagina < total_paginas:
+            fila_paginas.append(
+                InlineKeyboardButton(
+                    "Siguiente ➡️",
+                    callback_data=f"tests_favoritos_pagina_{pagina + 1}",
+                )
+            )
+        if fila_paginas:
+            botones.append(fila_paginas)
+
+    botones.append([InlineKeyboardButton("☰ Menú", callback_data="menu")])
+    await context.bot.send_message(
+        chat_id,
+        f"Selecciona un test favorito (página {pagina}/{total_paginas}):",
         reply_markup=InlineKeyboardMarkup(botones),
     )
 
