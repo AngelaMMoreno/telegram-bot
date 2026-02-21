@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Respuesta - TestBot{% endblock %}
+
+{% block extra_head %}
+<style>
+    .result-icon {
+        font-size: 48px;
+        text-align: center;
+        margin-bottom: 8px;
+    }
+    .result-text {
+        text-align: center;
+        font-size: 18px;
+        font-weight: 700;
+        margin-bottom: 16px;
+    }
+    .result-correct { color: var(--success); }
+    .result-wrong { color: var(--danger); }
+
+    .option-review {
+        padding: 12px 14px;
+        border: 2px solid var(--border);
+        border-radius: 10px;
+        margin-bottom: 8px;
+        font-size: 14px;
+        line-height: 1.4;
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    .option-review.correct-answer {
+        border-color: var(--success);
+        background: #E8F8F5;
+    }
+    .option-review.wrong-selected {
+        border-color: var(--danger);
+        background: #FDEDEC;
+    }
+    .option-review .option-marker {
+        width: 24px;
+        height: 24px;
+        line-height: 24px;
+        text-align: center;
+        border-radius: 50%;
+        font-size: 12px;
+        font-weight: 700;
+        flex-shrink: 0;
+    }
+    .option-review.correct-answer .option-marker {
+        background: var(--success);
+        color: white;
+    }
+    .option-review.wrong-selected .option-marker {
+        background: var(--danger);
+        color: white;
+    }
+    .option-review .option-marker-default {
+        background: var(--bg);
+        color: var(--text-light);
+    }
+
+    .explanation-box {
+        background: #F8F7FF;
+        border: 1px solid #E0DCFF;
+        border-radius: 8px;
+        padding: 12px 14px;
+        margin-top: 12px;
+        font-size: 14px;
+        line-height: 1.5;
+    }
+    .explanation-label {
+        font-weight: 700;
+        font-size: 12px;
+        color: var(--primary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 4px;
+    }
+
+    .score-bar {
+        display: flex;
+        justify-content: center;
+        gap: 20px;
+        margin: 12px 0;
+        font-size: 14px;
+    }
+    .score-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .favorite-btn {
+        background: none;
+        border: 2px solid var(--border);
+        border-radius: 8px;
+        padding: 8px 14px;
+        cursor: pointer;
+        font-size: 14px;
+        font-family: inherit;
+        color: var(--text-light);
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .favorite-btn:hover { border-color: #F39C12; }
+    .favorite-btn.is-fav {
+        border-color: #F39C12;
+        background: #FEF9E7;
+        color: #F39C12;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    {% if is_correct %}
+    <div class="result-icon">&#9989;</div>
+    <div class="result-text result-correct">Correcto</div>
+    {% else %}
+    <div class="result-icon">&#10060;</div>
+    <div class="result-text result-wrong">Incorrecto</div>
+    {% endif %}
+
+    <div class="score-bar">
+        <div class="score-item">
+            <span class="badge badge-success">&#10003; {{ ok }}</span>
+        </div>
+        <div class="score-item">
+            <span class="badge badge-danger">&#10007; {{ fail }}</span>
+        </div>
+        <div class="score-item">
+            <span class="badge badge-primary">{{ current }}/{{ total }}</span>
+        </div>
+    </div>
+
+    <div class="separator"></div>
+
+    <div style="font-size: 14px; color: var(--text-light); margin-bottom: 8px; font-weight: 600;">{{ question.text }}</div>
+
+    {% for opt in options %}
+    <div class="option-review {% if loop.index0 == correct_index %}correct-answer{% endif %} {% if loop.index0 == selected and not is_correct %}wrong-selected{% endif %}">
+        <div class="option-marker {% if loop.index0 != correct_index and loop.index0 != selected %}option-marker-default{% endif %}">
+            {% if loop.index0 == correct_index %}&#10003;{% elif loop.index0 == selected and not is_correct %}&#10007;{% else %}{{ 'ABCDEFGHIJ'[loop.index0] }}{% endif %}
+        </div>
+        <div>{{ opt }}</div>
+    </div>
+    {% endfor %}
+
+    {% if question.explicacion %}
+    <div class="explanation-box">
+        <div class="explanation-label">Explicacion</div>
+        {{ question.explicacion }}
+    </div>
+    {% endif %}
+
+    <div class="separator"></div>
+
+    <div class="d-flex gap-8" style="justify-content: space-between; align-items: center;">
+        <button class="favorite-btn {% if is_favorite %}is-fav{% endif %}" id="fav-btn" onclick="toggleFav({{ question.id }})">
+            <span id="fav-star">{% if is_favorite %}&#9733;{% else %}&#9734;{% endif %}</span>
+            <span id="fav-text">{% if is_favorite %}Favorita{% else %}Favorita{% endif %}</span>
+        </button>
+
+        <a href="{{ url_for('quiz_question') }}" class="btn btn-primary">
+            {% if current < total %}
+            Siguiente &#8594;
+            {% else %}
+            Ver resultado
+            {% endif %}
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function toggleFav(questionId) {
+    fetch('/quiz/favorite/' + questionId, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            const btn = document.getElementById('fav-btn');
+            const star = document.getElementById('fav-star');
+            if (data.is_favorite) {
+                btn.classList.add('is-fav');
+                star.textContent = '\u2605';
+            } else {
+                btn.classList.remove('is-fav');
+                star.textContent = '\u2606';
+            }
+        });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Progreso - TestBot{% endblock %}
+
+{% block extra_head %}
+<style>
+    .test-progress-item {
+        margin-bottom: 12px;
+    }
+    .test-progress-title {
+        font-size: 15px;
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+    .attempt-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 0;
+        font-size: 13px;
+        border-bottom: 1px solid var(--border);
+    }
+    .attempt-row:last-child { border-bottom: none; }
+    .attempt-num {
+        font-weight: 600;
+        color: var(--text-light);
+        width: 24px;
+        flex-shrink: 0;
+    }
+    .attempt-bar {
+        flex: 1;
+        height: 6px;
+        background: var(--border);
+        border-radius: 3px;
+        overflow: hidden;
+        display: flex;
+    }
+    .attempt-bar-ok {
+        height: 100%;
+        background: var(--success);
+    }
+    .attempt-bar-fail {
+        height: 100%;
+        background: var(--danger);
+    }
+    .attempt-nota {
+        font-weight: 700;
+        width: 40px;
+        text-align: right;
+        flex-shrink: 0;
+    }
+    .empty-state {
+        text-align: center;
+        padding: 40px 16px;
+        color: var(--text-light);
+    }
+    .empty-state-icon {
+        font-size: 40px;
+        margin-bottom: 12px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="section-title">Resumen general</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value nota-{% if general.nota >= 8 %}excellent{% elif general.nota >= 6 %}good{% elif general.nota >= 5 %}warning{% else %}bad{% endif %}">
+            {{ general.nota }}
+        </div>
+        <div class="stat-label">Nota media</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" style="color: var(--success);">{{ general.total_correct }}</div>
+        <div class="stat-label">Correctas</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" style="color: var(--danger);">{{ general.total_wrong }}</div>
+        <div class="stat-label">Incorrectas</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" style="color: var(--primary);">{{ hoy }}</div>
+        <div class="stat-label">Hoy</div>
+    </div>
+</div>
+
+<div class="section-title mt-16">Progreso por test</div>
+
+{% if por_tests %}
+    {% for test in por_tests %}
+    <div class="card test-progress-item">
+        <div class="test-progress-title">{{ test.titulo }}</div>
+        {% for intento in test.intentos %}
+        <div class="attempt-row">
+            <div class="attempt-num">#{{ loop.index }}</div>
+            <div class="attempt-bar">
+                {% set total_attempt = intento.correct + intento.wrong %}
+                {% if total_attempt > 0 %}
+                <div class="attempt-bar-ok" style="width: {{ intento.correct / total_attempt * 100 }}%;"></div>
+                <div class="attempt-bar-fail" style="width: {{ intento.wrong / total_attempt * 100 }}%;"></div>
+                {% endif %}
+            </div>
+            <div class="attempt-nota {% if intento.nota >= 8 %}nota-excellent{% elif intento.nota >= 6 %}nota-good{% elif intento.nota >= 5 %}nota-warning{% else %}nota-bad{% endif %}">
+                {{ intento.nota }}
+            </div>
+            <div style="font-size: 11px; color: var(--text-light); width: 60px; text-align: right;">
+                {{ intento.correct }}/{{ intento.correct + intento.wrong }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="card empty-state">
+        <div class="empty-state-icon">&#128202;</div>
+        <p>Aun no has completado ningun test.<br>Empieza uno desde la pantalla de tests.</p>
+    </div>
+{% endif %}
+{% endblock %}

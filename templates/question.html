@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Pregunta {{ current }}/{{ total }} - TestBot{% endblock %}
+
+{% block extra_head %}
+<style>
+    .question-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+    }
+    .question-progress-text {
+        font-size: 13px;
+        color: var(--text-light);
+        font-weight: 600;
+    }
+    .question-text {
+        font-size: 16px;
+        line-height: 1.5;
+        margin-bottom: 20px;
+        white-space: pre-wrap;
+    }
+    .option-btn {
+        display: block;
+        width: 100%;
+        padding: 14px 16px;
+        background: var(--card);
+        border: 2px solid var(--border);
+        border-radius: 10px;
+        font-size: 15px;
+        text-align: left;
+        cursor: pointer;
+        transition: all 0.15s;
+        margin-bottom: 8px;
+        font-family: inherit;
+        color: var(--text);
+        line-height: 1.4;
+    }
+    .option-btn:hover {
+        border-color: var(--primary);
+        background: #F8F7FF;
+    }
+    .option-btn:active {
+        transform: scale(0.98);
+    }
+    .option-label {
+        display: inline-block;
+        width: 24px;
+        height: 24px;
+        line-height: 24px;
+        text-align: center;
+        border-radius: 50%;
+        background: var(--bg);
+        font-size: 12px;
+        font-weight: 700;
+        margin-right: 10px;
+        flex-shrink: 0;
+    }
+    .option-content {
+        display: flex;
+        align-items: flex-start;
+    }
+    .option-text {
+        flex: 1;
+        padding-top: 2px;
+    }
+    .abandon-link {
+        display: block;
+        text-align: center;
+        margin-top: 20px;
+        color: var(--text-light);
+        font-size: 13px;
+        text-decoration: none;
+    }
+    .abandon-link:hover { color: var(--danger); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="question-header">
+        {% if quiz_title %}
+        <span class="badge badge-primary">{{ quiz_title }}</span>
+        {% endif %}
+        <span class="question-progress-text">{{ current }} / {{ total }}</span>
+    </div>
+
+    <div class="progress-bar">
+        <div class="progress-fill progress-fill-primary" style="width: {{ (current - 1) / total * 100 }}%"></div>
+    </div>
+
+    <div class="question-text mt-16">{{ question.text }}</div>
+
+    <form method="POST" action="{{ url_for('quiz_answer') }}" id="answer-form">
+        {% for opt in options %}
+        <button type="submit" name="option" value="{{ loop.index0 }}" class="option-btn">
+            <div class="option-content">
+                <span class="option-label">{{ 'ABCDEFGHIJ'[loop.index0] }}</span>
+                <span class="option-text">{{ opt }}</span>
+            </div>
+        </button>
+        {% endfor %}
+    </form>
+</div>
+
+<form action="{{ url_for('quiz_abandon') }}" method="POST">
+    <button type="submit" class="abandon-link" style="background: none; border: none; cursor: pointer; font-family: inherit; width: 100%;">
+        Abandonar test
+    </button>
+</form>
+{% endblock %}

@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Resultado - TestBot{% endblock %}
+
+{% block extra_head %}
+<style>
+    .result-card {
+        text-align: center;
+        padding: 24px 16px;
+    }
+    .result-emoji {
+        font-size: 56px;
+        margin-bottom: 8px;
+    }
+    .result-title {
+        font-size: 20px;
+        font-weight: 700;
+        margin-bottom: 4px;
+    }
+    .result-subtitle {
+        font-size: 14px;
+        color: var(--text-light);
+        margin-bottom: 20px;
+    }
+    .nota-ring {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 20px;
+        border: 6px solid var(--border);
+    }
+    .nota-ring.excellent { border-color: var(--success); }
+    .nota-ring.good { border-color: #00CEC9; }
+    .nota-ring.warning { border-color: #F39C12; }
+    .nota-ring.bad { border-color: var(--danger); }
+    .nota-inner {
+        font-size: 36px;
+        font-weight: 800;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card result-card">
+    {% if nota >= 8 %}
+    <div class="result-emoji">&#127942;</div>
+    {% elif nota >= 5 %}
+    <div class="result-emoji">&#128170;</div>
+    {% else %}
+    <div class="result-emoji">&#128218;</div>
+    {% endif %}
+
+    <div class="result-title">
+        {% if attempt_type == 'failures' %}Test de fallos
+        {% elif attempt_type == 'favorites' %}Test de favoritas
+        {% elif quiz_title %}{{ quiz_title }}
+        {% else %}Test completado{% endif %}
+    </div>
+    <div class="result-subtitle">Has completado el test</div>
+
+    <div class="nota-ring {% if nota >= 8 %}excellent{% elif nota >= 6 %}good{% elif nota >= 5 %}warning{% else %}bad{% endif %}">
+        <div class="nota-inner {% if nota >= 8 %}nota-excellent{% elif nota >= 6 %}nota-good{% elif nota >= 5 %}nota-warning{% else %}nota-bad{% endif %}">
+            {{ nota }}
+        </div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value" style="color: var(--success);">{{ ok }}</div>
+            <div class="stat-label">Correctas</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="color: var(--danger);">{{ fail }}</div>
+            <div class="stat-label">Incorrectas</div>
+        </div>
+    </div>
+
+    <div class="progress-bar" style="height: 12px; margin: 16px 0;">
+        {% if total > 0 %}
+        <div class="progress-fill progress-fill-success" style="width: {{ ok / total * 100 }}%; display: inline-block; float: left;"></div>
+        <div class="progress-fill progress-fill-danger" style="width: {{ fail / total * 100 }}%; display: inline-block; float: left;"></div>
+        {% endif %}
+    </div>
+
+    <div style="margin-top: 24px;">
+        <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-block">Volver a mis tests</a>
+    </div>
+</div>
+{% endblock %}

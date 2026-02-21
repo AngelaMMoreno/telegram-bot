@@ -11,5 +11,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 EXPOSE 8000
+EXPOSE 5000
 
-CMD ["python", "bot.py"]
+CMD ["sh", "start.sh"]

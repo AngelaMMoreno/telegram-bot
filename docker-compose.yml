@@ -9,6 +9,10 @@ services:
       PUERTO_ARCHIVOS_PUBLICOS: ${PUERTO_ARCHIVOS_PUBLICOS:-8000}
       URL_PUBLICA_ARCHIVOS: ${URL_PUBLICA_ARCHIVOS:-https://files.aprentix.es}
       RUTA_ARCHIVOS_PUBLICOS: /app/users/publicos
+      USERS: ${USERS:-}
+      PASSWORDS: ${PASSWORDS:-}
+      WEB_PORT: ${WEB_PORT:-5000}
+      WEB_SECRET_KEY: ${WEB_SECRET_KEY:-}
     restart: unless-stopped
     volumes:
       - datos_usuarios:/app/users

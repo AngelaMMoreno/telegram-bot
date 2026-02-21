@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Tests - TestBot{% endblock %}
+
+{% block content %}
+<div class="menu-grid">
+    <form action="{{ url_for('start_failures_quiz') }}" method="POST" class="menu-card-form">
+        <button type="submit" class="menu-card">
+            <div class="menu-icon">&#9888;&#65039;</div>
+            <div class="menu-label">Test de fallos</div>
+        </button>
+    </form>
+    <form action="{{ url_for('start_favorites_quiz') }}" method="POST" class="menu-card-form">
+        <button type="submit" class="menu-card">
+            <div class="menu-icon">&#11088;</div>
+            <div class="menu-label">Test de favoritas</div>
+        </button>
+    </form>
+</div>
+
+<div class="section-title">Mis tests ({{ tests|length }})</div>
+
+{% if tests %}
+    {% for test in tests %}
+    <form action="{{ url_for('start_quiz', quiz_id=test.id) }}" method="POST" style="margin-bottom: 8px;">
+        <button type="submit" class="test-item">
+            <div class="test-info">
+                <div class="test-title">{{ test.title }}</div>
+                {% if test.description %}
+                <div class="test-desc">{{ test.description }}</div>
+                {% endif %}
+            </div>
+            <div class="test-count">
+                <span class="badge badge-primary">{{ test.total_preguntas }} preg.</span>
+            </div>
+        </button>
+    </form>
+    {% endfor %}
+{% else %}
+    <div class="card text-center" style="padding: 40px 16px;">
+        <div style="font-size: 40px; margin-bottom: 12px;">&#128218;</div>
+        <p style="color: var(--text-light);">No hay tests creados todavia.<br>Crea tests desde el bot de Telegram.</p>
+    </div>
+{% endif %}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    .menu-card-form {
+        display: contents;
+    }
+    button.menu-card {
+        background: var(--card);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 20px 16px;
+        text-align: center;
+        color: var(--text);
+        transition: all 0.2s;
+        border: 2px solid transparent;
+        cursor: pointer;
+        width: 100%;
+        font-family: inherit;
+    }
+    button.menu-card:hover {
+        border-color: var(--primary);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 16px rgba(108,92,231,0.15);
+    }
+    button.test-item {
+        background: var(--card);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        transition: all 0.2s;
+        border: 2px solid transparent;
+        cursor: pointer;
+        width: 100%;
+        font-family: inherit;
+        text-align: left;
+        font-size: inherit;
+        color: var(--text);
+    }
+    button.test-item:hover {
+        border-color: var(--primary);
+    }
+</style>
+{% endblock %}
