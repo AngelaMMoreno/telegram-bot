@@ -973,7 +973,27 @@ def wrap_text(text, width=None):
 
 
 def split_message(text, limit=None):
-    return [text]
+    texto = text or ""
+    limite = limit or 4096
+    if len(texto) <= limite:
+        return [texto]
+
+    partes = []
+    inicio = 0
+    while inicio < len(texto):
+        fin = min(inicio + limite, len(texto))
+        if fin < len(texto):
+            corte = texto.rfind("\n", inicio, fin)
+            if corte > inicio:
+                fin = corte
+        fragmento = texto[inicio:fin].strip()
+        if fragmento:
+            partes.append(fragmento)
+        inicio = fin
+        while inicio < len(texto) and texto[inicio] == "\n":
+            inicio += 1
+
+    return partes or [texto[:limite]]
 
 
 def format_option(text):
@@ -2527,9 +2547,15 @@ async def mostrar_progreso(chat_id, context):
     botones = InlineKeyboardMarkup(
         [[InlineKeyboardButton("☰ Volver al menú", callback_data="menu")]]
     )
+    mensaje_completo = mensaje + "\n".join(detalles)
+    partes_mensaje = split_message(mensaje_completo)
+
+    for parte in partes_mensaje[:-1]:
+        await context.bot.send_message(chat_id, parte)
+
     await context.bot.send_message(
         chat_id,
-        mensaje + "\n".join(detalles),
+        partes_mensaje[-1],
         reply_markup=botones,
     )
 
