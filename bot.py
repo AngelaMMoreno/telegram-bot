@@ -41,6 +41,7 @@ FAILURES_TEST_SIZE = 40
 TIEMPO_PREGUNTA_SEGUNDOS = 20
 TAMANO_PAGINA_TESTS = 20
 TAMANO_TEST_FAVORITAS = 40
+TAMANO_TEST_TEMPORAL = 40
 
 
 # ─────────────── DB ───────────────
@@ -160,6 +161,18 @@ def init_db():
                 PRIMARY KEY (user_id, quiz_id),
                 FOREIGN KEY (user_id) REFERENCES users(id),
                 FOREIGN KEY (quiz_id) REFERENCES quizzes(id)
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tests_temporales (
+                attempt_id INTEGER NOT NULL,
+                question_id INTEGER NOT NULL,
+                posicion INTEGER NOT NULL,
+                PRIMARY KEY (attempt_id, posicion),
+                FOREIGN KEY (attempt_id) REFERENCES attempts(id),
+                FOREIGN KEY (question_id) REFERENCES questions(id)
             )
             """
         )
@@ -600,6 +613,7 @@ def finish_attempt(attempt_id, correct, wrong):
             """,
             (now, correct, wrong, attempt_id),
         )
+        cur.execute("DELETE FROM tests_temporales WHERE attempt_id = ?", (attempt_id,))
         conn.commit()
 
 
@@ -657,6 +671,27 @@ def obtener_intento_pendiente(user_id, quiz_id):
         return None
 
 
+def obtener_intento_pendiente_por_tipo(user_id, tipo_intento):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, correct, wrong
+            FROM attempts
+            WHERE user_id = ?
+              AND attempt_type = ?
+              AND finished_at IS NULL
+            ORDER BY started_at DESC
+            LIMIT 1
+            """,
+            (user_id, tipo_intento),
+        )
+        fila = cur.fetchone()
+        if not fila:
+            return None
+        return {"id": fila["id"], "correct": fila["correct"], "wrong": fila["wrong"]}
+
+
 def obtener_preguntas_respondidas(attempt_id):
     """Devuelve un set de question_ids ya respondidos en este intento."""
     with get_conn() as conn:
@@ -693,8 +728,88 @@ def descartar_intentos_pendientes(user_id, quiz_id=None):
         intentos_ids = [fila["id"] for fila in cur.fetchall()]
         for intento_id in intentos_ids:
             cur.execute("DELETE FROM attempt_items WHERE attempt_id = ?", (intento_id,))
+            cur.execute("DELETE FROM tests_temporales WHERE attempt_id = ?", (intento_id,))
             cur.execute("DELETE FROM attempts WHERE id = ?", (intento_id,))
         conn.commit()
+
+
+def descartar_intentos_pendientes_por_tipo(user_id, tipo_intento):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id
+            FROM attempts
+            WHERE user_id = ?
+              AND attempt_type = ?
+              AND finished_at IS NULL
+            """,
+            (user_id, tipo_intento),
+        )
+        intentos_ids = [fila["id"] for fila in cur.fetchall()]
+        for intento_id in intentos_ids:
+            cur.execute("DELETE FROM attempt_items WHERE attempt_id = ?", (intento_id,))
+            cur.execute("DELETE FROM tests_temporales WHERE attempt_id = ?", (intento_id,))
+            cur.execute("DELETE FROM attempts WHERE id = ?", (intento_id,))
+        conn.commit()
+
+
+def guardar_test_temporal(attempt_id, preguntas):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        for posicion, pregunta in enumerate(preguntas):
+            cur.execute(
+                """
+                INSERT INTO tests_temporales (attempt_id, question_id, posicion)
+                VALUES (?, ?, ?)
+                """,
+                (attempt_id, pregunta["id"], posicion),
+            )
+        conn.commit()
+
+
+def obtener_test_temporal(attempt_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT question_id
+            FROM tests_temporales
+            WHERE attempt_id = ?
+            ORDER BY posicion ASC
+            """,
+            (attempt_id,),
+        )
+        preguntas_ids = [fila["question_id"] for fila in cur.fetchall()]
+        if not preguntas_ids:
+            return []
+
+        preguntas = []
+        for pregunta_id in preguntas_ids:
+            cur.execute(
+                "SELECT id, text, explicacion FROM questions WHERE id = ?",
+                (pregunta_id,),
+            )
+            fila = cur.fetchone()
+            if not fila:
+                continue
+            cur.execute(
+                "SELECT text, position FROM options WHERE question_id = ? ORDER BY position ASC",
+                (pregunta_id,),
+            )
+            opciones = [opcion["text"] for opcion in cur.fetchall()]
+            if not opciones:
+                continue
+            preguntas.append(
+                {
+                    "id": fila["id"],
+                    "text": fila["text"],
+                    "explicacion": fila["explicacion"],
+                    "options": opciones,
+                    "correct_text": opciones[0],
+                }
+            )
+        return preguntas
 
 
 def record_failure(user_id, question_id):
@@ -962,6 +1077,10 @@ def borrar_test(quiz_id):
             placeholders = ",".join("?" for _ in intentos_ids)
             cur.execute(
                 f"DELETE FROM attempt_items WHERE attempt_id IN ({placeholders})",
+                intentos_ids,
+            )
+            cur.execute(
+                f"DELETE FROM tests_temporales WHERE attempt_id IN ({placeholders})",
                 intentos_ids,
             )
             cur.execute(
@@ -1271,6 +1390,14 @@ def obtener_quiz_reanudable(quiz, quiz_id):
     return quiz.get("i", 0) < len(quiz.get("questions", []))
 
 
+def obtener_test_temporal_reanudable(quiz, tipo_intento):
+    if not quiz:
+        return False
+    if quiz.get("attempt_type") != tipo_intento:
+        return False
+    return quiz.get("i", 0) < len(quiz.get("questions", []))
+
+
 def reconstruir_quiz_desde_db(user_id, quiz_id, telegram_user_id):
     """Reconstruye el estado del quiz desde la BD para poder reanudarlo."""
     intento = obtener_intento_pendiente(user_id, quiz_id)
@@ -1311,6 +1438,48 @@ def reconstruir_quiz_desde_db(user_id, quiz_id, telegram_user_id):
         "user_id": user_id,
         "telegram_user_id": telegram_user_id,
         "total_original": len(questions),
+        "respondidas_count": len(respondidas),
+    }
+
+
+def reconstruir_test_temporal_desde_db(user_id, tipo_intento, telegram_user_id):
+    intento = obtener_intento_pendiente_por_tipo(user_id, tipo_intento)
+    if not intento:
+        return None
+
+    preguntas = obtener_test_temporal(intento["id"])
+    if not preguntas:
+        return None
+
+    respondidas = obtener_preguntas_respondidas(intento["id"])
+    ok = 0
+    fail = 0
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT is_correct FROM attempt_items WHERE attempt_id = ?",
+            (intento["id"],),
+        )
+        for fila in cur.fetchall():
+            if fila["is_correct"]:
+                ok += 1
+            else:
+                fail += 1
+
+    preguntas_pendientes = [q for q in preguntas if q["id"] not in respondidas]
+    if not preguntas_pendientes:
+        return None
+
+    return {
+        "questions": preguntas_pendientes,
+        "i": 0,
+        "ok": ok,
+        "fail": fail,
+        "attempt_id": intento["id"],
+        "attempt_type": tipo_intento,
+        "user_id": user_id,
+        "telegram_user_id": telegram_user_id,
+        "total_original": len(preguntas),
         "respondidas_count": len(respondidas),
     }
 
@@ -1624,7 +1793,8 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not pendiente:
             await query.message.reply_text("No hay ningún test pendiente para continuar.")
             return
-        if pendiente.get("desde_bd"):
+        tipo_pendiente = pendiente.get("tipo", "quiz")
+        if pendiente.get("desde_bd") and tipo_pendiente == "quiz":
             # Reconstruir estado desde la BD
             user_id = get_or_create_user(chat_id)
             quiz_reconstruido = reconstruir_quiz_desde_db(
@@ -1634,6 +1804,25 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.reply_text("No se pudo recuperar el test pendiente.")
                 await mostrar_menu(chat_id, context)
                 return
+            cerrar_intento_en_curso(context)
+            context.user_data["quiz"] = quiz_reconstruido
+            total = quiz_reconstruido["total_original"]
+            respondidas = quiz_reconstruido["respondidas_count"]
+            await query.message.reply_text(
+                f"▶️ Reanudando test: {respondidas}/{total} preguntas respondidas "
+                f"(✔️ {quiz_reconstruido['ok']} ❌ {quiz_reconstruido['fail']})"
+            )
+            await enviar_pregunta(chat_id, context)
+        elif pendiente.get("desde_bd") and tipo_pendiente in {"failures", "favoritas"}:
+            user_id = get_or_create_user(chat_id)
+            quiz_reconstruido = reconstruir_test_temporal_desde_db(
+                user_id, tipo_pendiente, pendiente["telegram_user_id"]
+            )
+            if not quiz_reconstruido:
+                await query.message.reply_text("No se pudo recuperar el test pendiente.")
+                await mostrar_menu(chat_id, context)
+                return
+            cerrar_intento_en_curso(context)
             context.user_data["quiz"] = quiz_reconstruido
             total = quiz_reconstruido["total_original"]
             respondidas = quiz_reconstruido["respondidas_count"]
@@ -1650,16 +1839,27 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text("No hay ningún test pendiente para reiniciar.")
             return
         user_id = get_or_create_user(chat_id)
+        tipo_pendiente = pendiente.get("tipo", "quiz")
         cerrar_intento_en_curso(context)
         # También cerrar intentos pendientes en BD
-        descartar_intentos_pendientes(user_id, pendiente["quiz_id"])
-        await iniciar_quiz(
-            chat_id,
-            context,
-            quiz_id=pendiente["quiz_id"],
-            attempt_type="quiz",
-            telegram_user_id=pendiente.get("telegram_user_id"),
-        )
+        if tipo_pendiente == "quiz":
+            descartar_intentos_pendientes(user_id, pendiente["quiz_id"])
+            await iniciar_quiz(
+                chat_id,
+                context,
+                quiz_id=pendiente["quiz_id"],
+                attempt_type="quiz",
+                telegram_user_id=pendiente.get("telegram_user_id"),
+            )
+        else:
+            descartar_intentos_pendientes_por_tipo(user_id, tipo_pendiente)
+            await iniciar_test_temporal(
+                chat_id,
+                context,
+                tipo_intento=tipo_pendiente,
+                telegram_user_id=pendiente.get("telegram_user_id"),
+                forzar_nuevo=True,
+            )
     elif data == "cancelar_reanudar_test":
         context.user_data.pop("quiz_pendiente", None)
         await query.message.reply_text("Operación cancelada.")
@@ -1703,13 +1903,95 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "progreso":
         await mostrar_progreso(chat_id, context)
     elif data == "test_fallos":
-        await iniciar_test_fallos(
-            chat_id, context, telegram_user_id=query.from_user.id
-        )
+        user_id = get_or_create_user(chat_id)
+        quiz_en_curso = context.user_data.get("quiz")
+        reanudable_memoria = obtener_test_temporal_reanudable(quiz_en_curso, "failures")
+        reanudable_bd = False
+        if not reanudable_memoria:
+            reanudable_bd = (
+                obtener_intento_pendiente_por_tipo(user_id, "failures") is not None
+            )
+        if reanudable_memoria or reanudable_bd:
+            context.user_data["quiz_pendiente"] = {
+                "tipo": "failures",
+                "telegram_user_id": query.from_user.id,
+                "desde_bd": reanudable_bd and not reanudable_memoria,
+            }
+            botones = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "▶️ Continuar donde lo dejé",
+                            callback_data="continuar_test_pendiente",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "🔄 Empezar de nuevo",
+                            callback_data="reiniciar_test_pendiente",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "↩️ Cancelar",
+                            callback_data="cancelar_reanudar_test",
+                        )
+                    ],
+                ]
+            )
+            await query.message.reply_text(
+                "Tienes este test de errores a medias. ¿Qué quieres hacer?",
+                reply_markup=botones,
+            )
+        else:
+            await iniciar_test_fallos(
+                chat_id, context, telegram_user_id=query.from_user.id
+            )
     elif data == "test_favoritas":
-        await iniciar_test_favoritas(
-            chat_id, context, telegram_user_id=query.from_user.id
-        )
+        user_id = get_or_create_user(chat_id)
+        quiz_en_curso = context.user_data.get("quiz")
+        reanudable_memoria = obtener_test_temporal_reanudable(quiz_en_curso, "favoritas")
+        reanudable_bd = False
+        if not reanudable_memoria:
+            reanudable_bd = (
+                obtener_intento_pendiente_por_tipo(user_id, "favoritas") is not None
+            )
+        if reanudable_memoria or reanudable_bd:
+            context.user_data["quiz_pendiente"] = {
+                "tipo": "favoritas",
+                "telegram_user_id": query.from_user.id,
+                "desde_bd": reanudable_bd and not reanudable_memoria,
+            }
+            botones = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "▶️ Continuar donde lo dejé",
+                            callback_data="continuar_test_pendiente",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "🔄 Empezar de nuevo",
+                            callback_data="reiniciar_test_pendiente",
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            "↩️ Cancelar",
+                            callback_data="cancelar_reanudar_test",
+                        )
+                    ],
+                ]
+            )
+            await query.message.reply_text(
+                "Tienes este test de favoritas a medias. ¿Qué quieres hacer?",
+                reply_markup=botones,
+            )
+        else:
+            await iniciar_test_favoritas(
+                chat_id, context, telegram_user_id=query.from_user.id
+            )
     elif data == "siguiente_pregunta":
         quiz = context.user_data.get("quiz")
         if not quiz or not quiz.get("esperando_siguiente"):
@@ -2375,41 +2657,55 @@ async def iniciar_quiz(
 
 
 async def iniciar_test_fallos(chat_id, context, telegram_user_id=None):
-    user_id = get_or_create_user(chat_id)
-    preguntas = get_failures_questions(user_id, FAILURES_TEST_SIZE)
-    if not preguntas:
-        await context.bot.send_message(chat_id, "No tienes fallos acumulados.")
-        return
-    attempt_id = create_attempt(user_id, None, "failures")
-    context.user_data["quiz"] = {
-        "questions": preguntas,
-        "i": 0,
-        "ok": 0,
-        "fail": 0,
-        "attempt_id": attempt_id,
-        "attempt_type": "failures",
-        "user_id": user_id,
-        "telegram_user_id": telegram_user_id,
-    }
-    await enviar_pregunta(chat_id, context)
+    await iniciar_test_temporal(
+        chat_id,
+        context,
+        tipo_intento="failures",
+        telegram_user_id=telegram_user_id,
+    )
 
 
 async def iniciar_test_favoritas(chat_id, context, telegram_user_id=None):
+    await iniciar_test_temporal(
+        chat_id,
+        context,
+        tipo_intento="favoritas",
+        telegram_user_id=telegram_user_id,
+    )
+
+
+async def iniciar_test_temporal(
+    chat_id, context, tipo_intento, telegram_user_id=None, forzar_nuevo=False
+):
     user_id = get_or_create_user(chat_id)
-    preguntas = get_favorites_questions(user_id, TAMANO_TEST_FAVORITAS)
+    if forzar_nuevo:
+        descartar_intentos_pendientes_por_tipo(user_id, tipo_intento)
+
+    if tipo_intento == "failures":
+        preguntas = get_failures_questions(user_id, TAMANO_TEST_TEMPORAL)
+        mensaje_vacio = "No tienes fallos acumulados."
+    else:
+        preguntas = get_favorites_questions(user_id, TAMANO_TEST_TEMPORAL)
+        mensaje_vacio = "No tienes preguntas favoritas guardadas."
+
     if not preguntas:
-        await context.bot.send_message(chat_id, "No tienes preguntas favoritas guardadas.")
+        await context.bot.send_message(chat_id, mensaje_vacio)
         return
-    attempt_id = create_attempt(user_id, None, "favoritas")
+
+    cerrar_intento_en_curso(context)
+    attempt_id = create_attempt(user_id, None, tipo_intento)
+    guardar_test_temporal(attempt_id, preguntas)
     context.user_data["quiz"] = {
         "questions": preguntas,
         "i": 0,
         "ok": 0,
         "fail": 0,
         "attempt_id": attempt_id,
-        "attempt_type": "favoritas",
+        "attempt_type": tipo_intento,
         "user_id": user_id,
         "telegram_user_id": telegram_user_id,
+        "total_original": len(preguntas),
+        "respondidas_count": 0,
     }
     await enviar_pregunta(chat_id, context)
 
