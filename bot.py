@@ -668,29 +668,32 @@ def obtener_preguntas_respondidas(attempt_id):
         return {fila["question_id"] for fila in cur.fetchall()}
 
 
-def cerrar_intentos_pendientes(user_id, quiz_id=None):
-    """Cierra todos los intentos sin terminar de un usuario (opcionalmente para un quiz específico)."""
+def descartar_intentos_pendientes(user_id, quiz_id=None):
+    """Elimina intentos sin terminar de un usuario (opcionalmente para un quiz específico)."""
     with get_conn() as conn:
         cur = conn.cursor()
-        now = datetime.utcnow().isoformat()
         if quiz_id is not None:
             cur.execute(
                 """
-                UPDATE attempts
-                SET finished_at = ?
+                SELECT id
+                FROM attempts
                 WHERE user_id = ? AND quiz_id = ? AND finished_at IS NULL AND attempt_type = 'quiz'
                 """,
-                (now, user_id, quiz_id),
+                (user_id, quiz_id),
             )
         else:
             cur.execute(
                 """
-                UPDATE attempts
-                SET finished_at = ?
+                SELECT id
+                FROM attempts
                 WHERE user_id = ? AND finished_at IS NULL AND attempt_type = 'quiz'
                 """,
-                (now, user_id),
+                (user_id,),
             )
+        intentos_ids = [fila["id"] for fila in cur.fetchall()]
+        for intento_id in intentos_ids:
+            cur.execute("DELETE FROM attempt_items WHERE attempt_id = ?", (intento_id,))
+            cur.execute("DELETE FROM attempts WHERE id = ?", (intento_id,))
         conn.commit()
 
 
@@ -717,6 +720,55 @@ def clear_failure(user_id, question_id):
             "DELETE FROM failures WHERE user_id = ? AND question_id = ?",
             (user_id, question_id),
         )
+        conn.commit()
+
+
+def revertir_fallo(user_id, question_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT fail_count FROM failures WHERE user_id = ? AND question_id = ?",
+            (user_id, question_id),
+        )
+        fila = cur.fetchone()
+        if not fila:
+            return
+        if fila["fail_count"] <= 1:
+            cur.execute(
+                "DELETE FROM failures WHERE user_id = ? AND question_id = ?",
+                (user_id, question_id),
+            )
+        else:
+            cur.execute(
+                "UPDATE failures SET fail_count = fail_count - 1 WHERE user_id = ? AND question_id = ?",
+                (user_id, question_id),
+            )
+        conn.commit()
+
+
+def obtener_respuesta_pregunta_intento(attempt_id, question_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, is_correct
+            FROM attempt_items
+            WHERE attempt_id = ? AND question_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (attempt_id, question_id),
+        )
+        fila = cur.fetchone()
+        if not fila:
+            return None
+        return {"id": fila["id"], "is_correct": bool(fila["is_correct"])}
+
+
+def borrar_respuesta_pregunta_intento(attempt_item_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM attempt_items WHERE id = ?", (attempt_item_id,))
         conn.commit()
 
 
@@ -1127,11 +1179,36 @@ def actualizar_pregunta_desde_json(question_id, payload_pregunta):
 def sincronizar_pregunta_en_quiz(context, question_id, pregunta_actualizada):
     quiz = context.user_data.get("quiz")
     if not quiz:
-        return
+        return False
+
     for pregunta in quiz.get("questions", []):
         if pregunta["id"] == question_id:
             pregunta.update(pregunta_actualizada)
             break
+
+    respuesta_previa = obtener_respuesta_pregunta_intento(
+        quiz.get("attempt_id"), question_id
+    )
+    if respuesta_previa:
+        borrar_respuesta_pregunta_intento(respuesta_previa["id"])
+        if respuesta_previa["is_correct"]:
+            quiz["ok"] = max(0, quiz.get("ok", 0) - 1)
+        else:
+            quiz["fail"] = max(0, quiz.get("fail", 0) - 1)
+            user_id = quiz.get("user_id")
+            if user_id:
+                revertir_fallo(user_id, question_id)
+
+        opciones_mezcladas = list(pregunta_actualizada["options"])
+        random.shuffle(opciones_mezcladas)
+        quiz["current"] = {
+            "question_id": question_id,
+            "options": opciones_mezcladas,
+            "correct_index": opciones_mezcladas.index(pregunta_actualizada["correct_text"]),
+        }
+        quiz["esperando_siguiente"] = False
+        quiz["ultimo_pregunta_id"] = None
+        return True
 
     actual = quiz.get("current")
     if actual and actual.get("question_id") == question_id:
@@ -1141,6 +1218,8 @@ def sincronizar_pregunta_en_quiz(context, question_id, pregunta_actualizada):
         actual["correct_index"] = opciones_mezcladas.index(
             pregunta_actualizada["correct_text"]
         )
+
+    return False
 
 
 async def procesar_texto_json(texto, update: Update, context, mostrar_error=True):
@@ -1260,8 +1339,11 @@ def cerrar_intento_en_curso(context):
     quiz = context.user_data.get("quiz")
     if not quiz:
         return
-    if quiz.get("attempt_id"):
-        finish_attempt(quiz["attempt_id"], quiz.get("ok", 0), quiz.get("fail", 0))
+
+    attempt_id = quiz.get("attempt_id")
+    if attempt_id and quiz.get("attempt_type") != "quiz":
+        finish_attempt(attempt_id, quiz.get("ok", 0), quiz.get("fail", 0))
+
     cancelar_temporizador_pregunta(context)
     context.user_data.pop("quiz", None)
 
@@ -1570,7 +1652,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = get_or_create_user(chat_id)
         cerrar_intento_en_curso(context)
         # También cerrar intentos pendientes en BD
-        cerrar_intentos_pendientes(user_id, pendiente["quiz_id"])
+        descartar_intentos_pendientes(user_id, pendiente["quiz_id"])
         await iniciar_quiz(
             chat_id,
             context,
@@ -1852,11 +1934,21 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ {error}")
             return
 
-        sincronizar_pregunta_en_quiz(context, pregunta_id, pregunta_actualizada)
+        pregunta_reiniciada = sincronizar_pregunta_en_quiz(
+            context, pregunta_id, pregunta_actualizada
+        )
         context.user_data.pop("modo", None)
         context.user_data.pop("pregunta_json_id", None)
+        if pregunta_reiniciada:
+            mensaje = (
+                "✅ Pregunta actualizada correctamente desde JSON.\n"
+                "🔄 Como ya estaba respondida, se reinició su resultado para que cuente "
+                "la respuesta de la pregunta modificada."
+            )
+        else:
+            mensaje = "✅ Pregunta actualizada correctamente desde JSON."
         await update.message.reply_text(
-            "✅ Pregunta actualizada correctamente desde JSON.",
+            mensaje,
             reply_markup=obtener_markup_volver_pregunta(),
         )
     elif modo == "crear_test_nombre":
