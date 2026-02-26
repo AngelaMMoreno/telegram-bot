@@ -43,6 +43,34 @@ TAMANO_PAGINA_TESTS = 20
 TAMANO_TEST_FAVORITAS = 40
 TAMANO_TEST_TEMPORAL = 40
 PENALIZACION_FALLO = 1 / 3
+PREGUNTAS_PARTE_1_SIMULACRO = 80
+PUNTOS_ACIERTO_PARTE_2 = 4
+
+
+def cargar_historico_desde_entorno(nombre_variable):
+    valor = (os.getenv(nombre_variable) or "").strip()
+    if not valor:
+        return []
+    try:
+        datos = json.loads(valor)
+    except json.JSONDecodeError:
+        return []
+
+    historico = []
+    for item in datos:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            continue
+        puntuacion, posicion = item
+        try:
+            historico.append((float(puntuacion), int(posicion)))
+        except (TypeError, ValueError):
+            continue
+    return historico
+
+
+HISTORICO_2024 = cargar_historico_desde_entorno("HISTORICO_2024")
+HISTORICO_2022 = cargar_historico_desde_entorno("HISTORICO_2022")
+PLAZAS_REFERENCIA_SIMULACRO = int(os.getenv("PLAZAS_REFERENCIA_SIMULACRO", "844"))
 
 
 # ─────────────── DB ───────────────
@@ -477,17 +505,74 @@ def eliminar_simulacro(simulacro_id):
         return cur.rowcount > 0
 
 
-def calcular_nota_transformada_simulacro(puntuacion_directa, nota_corte_directa, total_preguntas, escala_maxima):
-    if total_preguntas <= 0 or nota_corte_directa <= 0 or escala_maxima <= 0:
+def estimar_posicion_en_historico(puntuacion, historico):
+    if not historico:
+        return None
+    if puntuacion >= historico[0][0]:
+        return 1
+    for indice in range(len(historico) - 1):
+        puntuacion_actual, posicion_actual = historico[indice]
+        puntuacion_siguiente, posicion_siguiente = historico[indice + 1]
+        if puntuacion >= puntuacion_siguiente:
+            if puntuacion_actual == puntuacion_siguiente:
+                return posicion_siguiente
+            fraccion = (puntuacion_actual - puntuacion) / (puntuacion_actual - puntuacion_siguiente)
+            return round(posicion_actual + fraccion * (posicion_siguiente - posicion_actual))
+    return historico[-1][1] + 1
+
+
+def nota_corte_para_plazas(plazas, historico):
+    if not historico:
+        return None
+    for puntuacion, posicion in historico:
+        if posicion >= plazas:
+            return puntuacion
+    return historico[-1][0]
+
+
+def calcular_nota_transformada_simulacro(puntuacion_directa, nota_corte_directa, total_directa_maxima, escala_maxima):
+    if total_directa_maxima <= 0 or nota_corte_directa <= 0 or escala_maxima <= 0:
         return 0.0
     puntuacion_directa = max(0.0, puntuacion_directa)
     if puntuacion_directa < nota_corte_directa:
         return (escala_maxima / 2) * (puntuacion_directa / nota_corte_directa)
-    if total_preguntas <= nota_corte_directa:
+    if total_directa_maxima <= nota_corte_directa:
         return escala_maxima / 2
     return (escala_maxima / 2) * (
-        1 + (puntuacion_directa - nota_corte_directa) / (total_preguntas - nota_corte_directa)
+        1 + (puntuacion_directa - nota_corte_directa) / (total_directa_maxima - nota_corte_directa)
     )
+
+
+def calcular_resultado_simulacro_tai(aciertos_p1, errores_p1, aciertos_p2, errores_p2, nota_corte_directa, escala_maxima):
+    directa_p1 = max(0.0, aciertos_p1 - PENALIZACION_FALLO * errores_p1)
+    directa_p2 = max(0.0, PUNTOS_ACIERTO_PARTE_2 * aciertos_p2 - PUNTOS_ACIERTO_PARTE_2 * PENALIZACION_FALLO * errores_p2)
+    directa_total = directa_p1 + directa_p2
+
+    total_directa_maxima = PREGUNTAS_PARTE_1_SIMULACRO + PUNTOS_ACIERTO_PARTE_2 * (aciertos_p2 + errores_p2)
+    if total_directa_maxima <= 0:
+        total_directa_maxima = PREGUNTAS_PARTE_1_SIMULACRO
+
+    nota_transformada = calcular_nota_transformada_simulacro(
+        directa_total,
+        nota_corte_directa,
+        total_directa_maxima,
+        escala_maxima,
+    )
+
+    corte_2024 = nota_corte_para_plazas(PLAZAS_REFERENCIA_SIMULACRO, HISTORICO_2024)
+    corte_2022 = nota_corte_para_plazas(PLAZAS_REFERENCIA_SIMULACRO, HISTORICO_2022)
+
+    return {
+        "directa_p1": round(directa_p1, 2),
+        "directa_p2": round(directa_p2, 2),
+        "directa_total": round(directa_total, 2),
+        "nota_transformada": round(nota_transformada, 2),
+        "total_directa_maxima": round(total_directa_maxima, 2),
+        "pos_2024": estimar_posicion_en_historico(directa_total, HISTORICO_2024),
+        "pos_2022": estimar_posicion_en_historico(directa_total, HISTORICO_2022),
+        "corte_2024": corte_2024,
+        "corte_2022": corte_2022,
+    }
 
 
 def obtener_titulo_test(quiz_id):
@@ -3167,27 +3252,55 @@ async def enviar_pregunta(chat_id, context):
         finish_attempt(quiz["attempt_id"], quiz["ok"], quiz["fail"])
         if quiz.get("attempt_type") == "simulacro" and quiz.get("simulacro"):
             datos_simulacro = quiz["simulacro"]
-            nota_transformada = calcular_nota_transformada_simulacro(
-                puntuacion_directa,
+            aciertos_p1 = min(quiz["ok"], PREGUNTAS_PARTE_1_SIMULACRO)
+            aciertos_p2 = max(quiz["ok"] - PREGUNTAS_PARTE_1_SIMULACRO, 0)
+            errores_p1 = min(quiz["fail"], PREGUNTAS_PARTE_1_SIMULACRO - aciertos_p1)
+            errores_p2 = max(quiz["fail"] - errores_p1, 0)
+
+            resultado_tai = calcular_resultado_simulacro_tai(
+                aciertos_p1,
+                errores_p1,
+                aciertos_p2,
+                errores_p2,
                 datos_simulacro["nota_corte_directa"],
-                total_original,
                 datos_simulacro["escala_maxima"],
             )
-            aprobado = "✅ APTO" if puntuacion_directa >= datos_simulacro["nota_corte_directa"] else "❌ NO APTO"
-            await context.bot.send_message(
-                chat_id,
-                (
-                    f"🏁 Fin del simulacro: {datos_simulacro['nombre']}\n"
-                    f"✔️ {quiz['ok']} · ❌ {quiz['fail']} · ⏭️ {quiz.get('sin_responder', 0)}\n"
-                    f"Penalización por fallos: {penalizacion:.2f} (cada fallo quita {PENALIZACION_FALLO:.2f})\n"
-                    f"Puntuación directa (d): {puntuacion_directa:.2f}\n"
-                    f"Corte (M): {datos_simulacro['nota_corte_directa']:.2f}\n"
-                    f"Máxima directa (N): {total_original}\n"
-                    f"Escala final (E): {datos_simulacro['escala_maxima']:.2f}\n"
-                    f"Nota transformada t(d): {nota_transformada:.2f}/{datos_simulacro['escala_maxima']:.2f}\n"
-                    f"Resultado: {aprobado}"
-                ),
+
+            aprobado = (
+                "✅ APTO"
+                if resultado_tai["directa_total"] >= datos_simulacro["nota_corte_directa"]
+                else "❌ NO APTO"
             )
+            lineas = [
+                f"🏁 Fin del simulacro: {datos_simulacro['nombre']}",
+                f"✔️ {quiz['ok']} · ❌ {quiz['fail']} · ⏭️ {quiz.get('sin_responder', 0)}",
+                f"Penalización por fallos: {penalizacion:.2f} (cada fallo quita {PENALIZACION_FALLO:.2f})",
+                f"Directa P1 (A-E/3): {resultado_tai['directa_p1']:.2f}/{PREGUNTAS_PARTE_1_SIMULACRO}",
+                (
+                    "Directa P2 (4A-4E/3): "
+                    f"{resultado_tai['directa_p2']:.2f}/"
+                    f"{max(resultado_tai['total_directa_maxima'] - PREGUNTAS_PARTE_1_SIMULACRO, 0):.2f}"
+                ),
+                f"Puntuación directa total (d): {resultado_tai['directa_total']:.2f}",
+                f"Corte (M): {datos_simulacro['nota_corte_directa']:.2f}",
+                f"Máxima directa (N): {resultado_tai['total_directa_maxima']:.2f}",
+                f"Escala final (E): {datos_simulacro['escala_maxima']:.2f}",
+                f"Nota transformada t(d): {resultado_tai['nota_transformada']:.2f}/{datos_simulacro['escala_maxima']:.2f}",
+            ]
+            if resultado_tai["corte_2024"] is not None:
+                lineas.append(
+                    f"Corte histórico 2024 ({PLAZAS_REFERENCIA_SIMULACRO} plazas): {resultado_tai['corte_2024']:.2f}"
+                )
+            if resultado_tai["corte_2022"] is not None:
+                lineas.append(
+                    f"Corte histórico 2022 ({PLAZAS_REFERENCIA_SIMULACRO} plazas): {resultado_tai['corte_2022']:.2f}"
+                )
+            if resultado_tai["pos_2024"] is not None:
+                lineas.append(f"Posición estimada 2024: #{resultado_tai['pos_2024']}")
+            if resultado_tai["pos_2022"] is not None:
+                lineas.append(f"Posición estimada 2022: #{resultado_tai['pos_2022']}")
+            lineas.append(f"Resultado: {aprobado}")
+            await context.bot.send_message(chat_id, "\n".join(lineas))
         else:
             nota = max((quiz["ok"] - PENALIZACION_FALLO * quiz["fail"]) / total_original * 10, 0)
             await context.bot.send_message(
