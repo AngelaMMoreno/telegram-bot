@@ -71,6 +71,9 @@ def cargar_historico_desde_entorno(nombre_variable):
 HISTORICO_2024 = cargar_historico_desde_entorno("HISTORICO_2024")
 HISTORICO_2022 = cargar_historico_desde_entorno("HISTORICO_2022")
 PLAZAS_REFERENCIA_SIMULACRO = int(os.getenv("PLAZAS_REFERENCIA_SIMULACRO", "844"))
+N_MAX_SIMULACRO = 160       # Puntuación directa máxima (80 + 80)
+E_MAX_SIMULACRO = 100       # Calificación máxima transformada
+MIN_DIRECTA_SIMULACRO = N_MAX_SIMULACRO * 0.30  # 48 pts — mínimo 30%
 
 
 # ─────────────── DB ───────────────
@@ -543,35 +546,47 @@ def calcular_nota_transformada_simulacro(puntuacion_directa, nota_corte_directa,
     )
 
 
-def calcular_resultado_simulacro_tai(aciertos_p1, errores_p1, aciertos_p2, errores_p2, nota_corte_directa, escala_maxima):
+def calcular_resultado_simulacro_tai(aciertos_p1, errores_p1, aciertos_p2, errores_p2,
+                                     total_p1=80, total_p2=20):
     directa_p1 = max(0.0, aciertos_p1 - PENALIZACION_FALLO * errores_p1)
     directa_p2 = max(0.0, PUNTOS_ACIERTO_PARTE_2 * aciertos_p2 - PUNTOS_ACIERTO_PARTE_2 * PENALIZACION_FALLO * errores_p2)
     directa_total = directa_p1 + directa_p2
 
-    total_directa_maxima = PREGUNTAS_PARTE_1_SIMULACRO + PUNTOS_ACIERTO_PARTE_2 * (aciertos_p2 + errores_p2)
-    if total_directa_maxima <= 0:
-        total_directa_maxima = PREGUNTAS_PARTE_1_SIMULACRO
-
-    nota_transformada = calcular_nota_transformada_simulacro(
-        directa_total,
-        nota_corte_directa,
-        total_directa_maxima,
-        escala_maxima,
-    )
-
     corte_2024 = nota_corte_para_plazas(PLAZAS_REFERENCIA_SIMULACRO, HISTORICO_2024)
     corte_2022 = nota_corte_para_plazas(PLAZAS_REFERENCIA_SIMULACRO, HISTORICO_2022)
+
+    cortes = [c for c in [corte_2024, corte_2022] if c is not None]
+    if cortes:
+        corte_optimista = max(MIN_DIRECTA_SIMULACRO, min(cortes))
+        corte_pesimista = max(MIN_DIRECTA_SIMULACRO, max(cortes))
+    else:
+        corte_optimista = MIN_DIRECTA_SIMULACRO
+        corte_pesimista = MIN_DIRECTA_SIMULACRO
+    corte_media = (corte_optimista + corte_pesimista) / 2
+
+    tps_optimista = calcular_nota_transformada_simulacro(directa_total, corte_optimista, N_MAX_SIMULACRO, E_MAX_SIMULACRO)
+    tps_medio = calcular_nota_transformada_simulacro(directa_total, corte_media, N_MAX_SIMULACRO, E_MAX_SIMULACRO)
+    tps_pesimista = calcular_nota_transformada_simulacro(directa_total, corte_pesimista, N_MAX_SIMULACRO, E_MAX_SIMULACRO)
 
     return {
         "directa_p1": round(directa_p1, 2),
         "directa_p2": round(directa_p2, 2),
         "directa_total": round(directa_total, 2),
-        "nota_transformada": round(nota_transformada, 2),
-        "total_directa_maxima": round(total_directa_maxima, 2),
-        "pos_2024": estimar_posicion_en_historico(directa_total, HISTORICO_2024),
-        "pos_2022": estimar_posicion_en_historico(directa_total, HISTORICO_2022),
+        "blancos_p1": total_p1 - aciertos_p1 - errores_p1,
+        "blancos_p2": total_p2 - aciertos_p2 - errores_p2,
         "corte_2024": corte_2024,
         "corte_2022": corte_2022,
+        "corte_optimista": round(corte_optimista, 2),
+        "corte_pesimista": round(corte_pesimista, 2),
+        "corte_media": round(corte_media, 2),
+        "tps_optimista": round(tps_optimista, 2),
+        "tps_medio": round(tps_medio, 2),
+        "tps_pesimista": round(tps_pesimista, 2),
+        "aprobado_optimista": directa_total >= corte_optimista,
+        "aprobado_pesimista": directa_total >= corte_pesimista,
+        "supera_minimo_30": directa_total >= MIN_DIRECTA_SIMULACRO,
+        "pos_2024": estimar_posicion_en_historico(directa_total, HISTORICO_2024),
+        "pos_2022": estimar_posicion_en_historico(directa_total, HISTORICO_2022),
     }
 
 
@@ -1544,12 +1559,7 @@ def extraer_preguntas_desde_payload(payload):
     return [], None
 
 
-def crear_test_y_simulacro_desde_preguntas(
-    preguntas,
-    nombre_simulacro,
-    nota_corte_directa,
-    escala_maxima,
-):
+def crear_test_y_simulacro_desde_preguntas(preguntas, nombre_simulacro):
     if not preguntas:
         return None, "sin_preguntas"
 
@@ -1566,15 +1576,11 @@ def crear_test_y_simulacro_desde_preguntas(
         borrar_test(quiz_id)
         return None, "sin_preguntas_validas"
 
-    if nota_corte_directa > total_preguntas:
-        borrar_test(quiz_id)
-        return None, f"corte_mayor_maximo:{total_preguntas}"
-
     simulacro_id = crear_simulacro(
         nombre_simulacro,
         quiz_id,
-        nota_corte_directa,
-        escala_maxima,
+        MIN_DIRECTA_SIMULACRO,
+        E_MAX_SIMULACRO,
     )
     return simulacro_id, None
 
@@ -1595,27 +1601,11 @@ async def procesar_texto_json_simulacro(texto, update: Update, context, mostrar_
 
     configuracion = context.user_data.get("simulacro_en_creacion") or {}
     nombre_simulacro = configuracion.get("nombre") or titulo_payload or "Simulacro"
-    nota_corte_directa = configuracion.get("nota_corte_directa")
-    escala_maxima = configuracion.get("escala_maxima")
 
-    if nota_corte_directa is None or escala_maxima is None:
-        await update.message.reply_text("❌ Faltan datos de configuración del simulacro (corte y escala).")
-        return False
-
-    simulacro_id, error = crear_test_y_simulacro_desde_preguntas(
-        preguntas,
-        nombre_simulacro,
-        nota_corte_directa,
-        escala_maxima,
-    )
+    simulacro_id, error = crear_test_y_simulacro_desde_preguntas(preguntas, nombre_simulacro)
 
     if error:
-        if error.startswith("corte_mayor_maximo:"):
-            maximo = error.split(":", 1)[1]
-            await update.message.reply_text(
-                f"❌ La nota de corte no puede ser mayor que el máximo directo N={maximo}."
-            )
-        elif error == "sin_preguntas_validas":
+        if error == "sin_preguntas_validas":
             await update.message.reply_text("❌ No se pudo crear el simulacro porque no hay preguntas válidas.")
         else:
             await update.message.reply_text("❌ No se pudo crear el simulacro.")
@@ -2613,40 +2603,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         simulacro = context.user_data.get("simulacro_en_creacion") or {}
         simulacro["nombre"] = nombre
         context.user_data["simulacro_en_creacion"] = simulacro
-        context.user_data["modo"] = "crear_simulacro_corte"
-        await update.message.reply_text(
-            "Indica la nota de corte directa (M). Ejemplo: 60"
-        )
-    elif modo == "crear_simulacro_corte":
-        texto_corte = (update.message.text or "").strip().replace(",", ".")
-        try:
-            nota_corte = float(texto_corte)
-        except ValueError:
-            await update.message.reply_text("❌ Valor inválido. Debe ser un número.")
-            return
-        if nota_corte <= 0:
-            await update.message.reply_text("❌ La nota de corte debe ser mayor que 0.")
-            return
-        simulacro = context.user_data.get("simulacro_en_creacion") or {}
-        simulacro["nota_corte_directa"] = nota_corte
-        context.user_data["simulacro_en_creacion"] = simulacro
-        context.user_data["modo"] = "crear_simulacro_escala"
-        await update.message.reply_text(
-            "Indica la escala máxima final (E). Ejemplo: 100"
-        )
-    elif modo == "crear_simulacro_escala":
-        texto_escala = (update.message.text or "").strip().replace(",", ".")
-        try:
-            escala_maxima = float(texto_escala)
-        except ValueError:
-            await update.message.reply_text("❌ Valor inválido. Debe ser un número.")
-            return
-        if escala_maxima <= 0:
-            await update.message.reply_text("❌ La escala máxima debe ser mayor que 0.")
-            return
-        simulacro = context.user_data.get("simulacro_en_creacion") or {}
-        simulacro["escala_maxima"] = escala_maxima
-        context.user_data["simulacro_en_creacion"] = simulacro
         context.user_data["modo"] = "crear_simulacro_json"
         context.user_data.setdefault("buffer", "")
         await update.message.reply_text(
@@ -2815,12 +2771,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         contenido = await archivo.download_as_bytearray()
 
         if nombre_archivo.endswith(".zip"):
-            configuracion = context.user_data.get("simulacro_en_creacion") or {}
-            nota_corte = configuracion.get("nota_corte_directa")
-            escala_maxima = configuracion.get("escala_maxima")
-            if nota_corte is None or escala_maxima is None:
-                await update.message.reply_text("❌ Faltan datos de configuración del simulacro.")
-                return
             try:
                 zip_buffer = io.BytesIO(contenido)
                 with zipfile.ZipFile(zip_buffer) as zf:
@@ -2846,17 +2796,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             simulacro_id, error = crear_test_y_simulacro_desde_preguntas(
                                 preguntas,
                                 titulo_payload or nombre_simulacro,
-                                nota_corte,
-                                escala_maxima,
                             )
                             if error:
-                                if error.startswith("corte_mayor_maximo:"):
-                                    maximo = error.split(":", 1)[1]
-                                    errores.append(
-                                        f"⚠️ {nombre_base}: corte mayor que el máximo N={maximo}"
-                                    )
-                                else:
-                                    errores.append(f"⚠️ {nombre_base}: no se pudo crear")
+                                errores.append(f"⚠️ {nombre_base}: no se pudo crear")
                                 continue
                             if simulacro_id:
                                 creados += 1
@@ -3252,54 +3194,61 @@ async def enviar_pregunta(chat_id, context):
         finish_attempt(quiz["attempt_id"], quiz["ok"], quiz["fail"])
         if quiz.get("attempt_type") == "simulacro" and quiz.get("simulacro"):
             datos_simulacro = quiz["simulacro"]
+            total_p2 = max(len(quiz["questions"]) - PREGUNTAS_PARTE_1_SIMULACRO, 0)
             aciertos_p1 = min(quiz["ok"], PREGUNTAS_PARTE_1_SIMULACRO)
             aciertos_p2 = max(quiz["ok"] - PREGUNTAS_PARTE_1_SIMULACRO, 0)
             errores_p1 = min(quiz["fail"], PREGUNTAS_PARTE_1_SIMULACRO - aciertos_p1)
             errores_p2 = max(quiz["fail"] - errores_p1, 0)
 
             resultado_tai = calcular_resultado_simulacro_tai(
-                aciertos_p1,
-                errores_p1,
-                aciertos_p2,
-                errores_p2,
-                datos_simulacro["nota_corte_directa"],
-                datos_simulacro["escala_maxima"],
+                aciertos_p1, errores_p1, aciertos_p2, errores_p2,
+                total_p1=PREGUNTAS_PARTE_1_SIMULACRO, total_p2=total_p2,
             )
 
-            aprobado = (
-                "✅ APTO"
-                if resultado_tai["directa_total"] >= datos_simulacro["nota_corte_directa"]
-                else "❌ NO APTO"
-            )
+            # Veredicto según escenarios
+            if not resultado_tai["supera_minimo_30"]:
+                veredicto = "❌ BAJO MÍNIMO (30%)"
+            elif resultado_tai["aprobado_pesimista"]:
+                veredicto = "✅ APTO (optimista y pesimista)"
+            elif resultado_tai["aprobado_optimista"]:
+                veredicto = "⚠️ FRONTERA (sólo escenario optimista)"
+            else:
+                veredicto = "❌ NO APTO"
+
+            margen = resultado_tai["directa_total"] - resultado_tai["corte_media"]
+            signo = "+" if margen >= 0 else ""
+
             lineas = [
                 f"🏁 Fin del simulacro: {datos_simulacro['nombre']}",
                 f"✔️ {quiz['ok']} · ❌ {quiz['fail']} · ⏭️ {quiz.get('sin_responder', 0)}",
-                f"Penalización por fallos: {penalizacion:.2f} (cada fallo quita {PENALIZACION_FALLO:.2f})",
-                f"Directa P1 (A-E/3): {resultado_tai['directa_p1']:.2f}/{PREGUNTAS_PARTE_1_SIMULACRO}",
-                (
-                    "Directa P2 (4A-4E/3): "
-                    f"{resultado_tai['directa_p2']:.2f}/"
-                    f"{max(resultado_tai['total_directa_maxima'] - PREGUNTAS_PARTE_1_SIMULACRO, 0):.2f}"
-                ),
-                f"Puntuación directa total (d): {resultado_tai['directa_total']:.2f}",
-                f"Corte (M): {datos_simulacro['nota_corte_directa']:.2f}",
-                f"Máxima directa (N): {resultado_tai['total_directa_maxima']:.2f}",
-                f"Escala final (E): {datos_simulacro['escala_maxima']:.2f}",
-                f"Nota transformada t(d): {resultado_tai['nota_transformada']:.2f}/{datos_simulacro['escala_maxima']:.2f}",
+                f"  Blancos P1: {resultado_tai['blancos_p1']} · Blancos P2: {resultado_tai['blancos_p2']}",
+                "─" * 30,
+                f"Directa P1  (A - E/3):     {resultado_tai['directa_p1']:>7.2f} / {PREGUNTAS_PARTE_1_SIMULACRO}",
+                f"Directa P2  (4A - 4E/3):   {resultado_tai['directa_p2']:>7.2f} / {total_p2 * PUNTOS_ACIERTO_PARTE_2}",
+                f"TOTAL DIRECTA:             {resultado_tai['directa_total']:>7.2f} / {N_MAX_SIMULACRO}",
+                "─" * 30,
             ]
             if resultado_tai["corte_2024"] is not None:
-                lineas.append(
-                    f"Corte histórico 2024 ({PLAZAS_REFERENCIA_SIMULACRO} plazas): {resultado_tai['corte_2024']:.2f}"
-                )
+                lineas.append(f"Corte 2024 ({PLAZAS_REFERENCIA_SIMULACRO} plazas): {resultado_tai['corte_2024']}")
             if resultado_tai["corte_2022"] is not None:
-                lineas.append(
-                    f"Corte histórico 2022 ({PLAZAS_REFERENCIA_SIMULACRO} plazas): {resultado_tai['corte_2022']:.2f}"
-                )
+                lineas.append(f"Corte 2022 ({PLAZAS_REFERENCIA_SIMULACRO} plazas): {resultado_tai['corte_2022']}")
+            lineas += [
+                f"Rango corte: {resultado_tai['corte_optimista']} – {resultado_tai['corte_pesimista']}",
+                f"Corte medio: {resultado_tai['corte_media']}",
+                "─" * 30,
+                f"TPS optimista:  {resultado_tai['tps_optimista']:>6.2f} / 100  {'✅' if resultado_tai['tps_optimista'] >= 50 else '❌'}",
+                f"TPS medio:      {resultado_tai['tps_medio']:>6.2f} / 100  {'✅' if resultado_tai['tps_medio'] >= 50 else '❌'}",
+                f"TPS pesimista:  {resultado_tai['tps_pesimista']:>6.2f} / 100  {'✅' if resultado_tai['tps_pesimista'] >= 50 else '❌'}",
+                "─" * 30,
+            ]
             if resultado_tai["pos_2024"] is not None:
-                lineas.append(f"Posición estimada 2024: #{resultado_tai['pos_2024']}")
+                lineas.append(f"Posición est. 2024: #{resultado_tai['pos_2024']}")
             if resultado_tai["pos_2022"] is not None:
-                lineas.append(f"Posición estimada 2022: #{resultado_tai['pos_2022']}")
-            lineas.append(f"Resultado: {aprobado}")
+                lineas.append(f"Posición est. 2022: #{resultado_tai['pos_2022']}")
+            lineas += [
+                f"Margen vs corte medio: {signo}{margen:.2f} pts",
+                f"Veredicto: {veredicto}",
+            ]
             await context.bot.send_message(chat_id, "\n".join(lineas))
         else:
             nota = max((quiz["ok"] - PENALIZACION_FALLO * quiz["fail"]) / total_original * 10, 0)
