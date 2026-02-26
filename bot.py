@@ -42,6 +42,7 @@ TIEMPO_PREGUNTA_SEGUNDOS = 20
 TAMANO_PAGINA_TESTS = 20
 TAMANO_TEST_FAVORITAS = 40
 TAMANO_TEST_TEMPORAL = 40
+PENALIZACION_FALLO = 1 / 3
 
 
 # ─────────────── DB ───────────────
@@ -173,6 +174,19 @@ def init_db():
                 PRIMARY KEY (attempt_id, posicion),
                 FOREIGN KEY (attempt_id) REFERENCES attempts(id),
                 FOREIGN KEY (question_id) REFERENCES questions(id)
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS simulacros (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT NOT NULL,
+                quiz_id INTEGER NOT NULL,
+                nota_corte_directa REAL NOT NULL,
+                escala_maxima REAL NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (quiz_id) REFERENCES quizzes(id)
             )
             """
         )
@@ -411,6 +425,139 @@ def obtener_tests_realizados(user_id):
         return {fila["quiz_id"] for fila in cur.fetchall()}
 
 
+def listar_simulacros():
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT s.id, s.nombre, s.quiz_id, s.nota_corte_directa, s.escala_maxima, q.title AS test_titulo
+            FROM simulacros s
+            JOIN quizzes q ON q.id = s.quiz_id
+            ORDER BY s.id DESC
+            """
+        )
+        return cur.fetchall()
+
+
+def obtener_simulacro(simulacro_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT s.id, s.nombre, s.quiz_id, s.nota_corte_directa, s.escala_maxima, q.title AS test_titulo
+            FROM simulacros s
+            JOIN quizzes q ON q.id = s.quiz_id
+            WHERE s.id = ?
+            """,
+            (simulacro_id,),
+        )
+        return cur.fetchone()
+
+
+def crear_simulacro(nombre, quiz_id, nota_corte_directa, escala_maxima):
+    now = datetime.utcnow().isoformat()
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO simulacros (nombre, quiz_id, nota_corte_directa, escala_maxima, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (nombre, quiz_id, nota_corte_directa, escala_maxima, now),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def eliminar_simulacro(simulacro_id):
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM simulacros WHERE id = ?", (simulacro_id,))
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def calcular_nota_transformada_simulacro(puntuacion_directa, nota_corte_directa, total_preguntas, escala_maxima):
+    if total_preguntas <= 0 or nota_corte_directa <= 0 or escala_maxima <= 0:
+        return 0.0
+    puntuacion_directa = max(0.0, puntuacion_directa)
+    if puntuacion_directa < nota_corte_directa:
+        return (escala_maxima / 2) * (puntuacion_directa / nota_corte_directa)
+    if total_preguntas <= nota_corte_directa:
+        return escala_maxima / 2
+    return (escala_maxima / 2) * (
+        1 + (puntuacion_directa - nota_corte_directa) / (total_preguntas - nota_corte_directa)
+    )
+
+
+def obtener_parte_tai_de_pregunta(pregunta, indice=None, total=None):
+    bloque = pregunta.get("bloque")
+    if bloque == 2:
+        return 2
+    if total and total >= 100 and indice is not None and 80 <= indice < 100:
+        return 2
+    return 1
+
+
+def calcular_puntuacion_directa_tai_p1(aciertos, errores):
+    return max(0.0, aciertos - errores / 3)
+
+
+def calcular_puntuacion_directa_tai_p2(aciertos, errores):
+    return max(0.0, 4 * aciertos - (4 * errores) / 3)
+
+
+def calcular_resultado_simulacro_tai(quiz, datos_simulacro):
+    resumen_tai = quiz.get("resumen_tai") or {}
+    aciertos_p1 = resumen_tai.get("aciertos_p1", 0)
+    errores_p1 = resumen_tai.get("errores_p1", 0)
+    blancos_p1 = resumen_tai.get("blancos_p1", 0)
+    aciertos_p2 = resumen_tai.get("aciertos_p2", 0)
+    errores_p2 = resumen_tai.get("errores_p2", 0)
+    blancos_p2 = resumen_tai.get("blancos_p2", 0)
+
+    total_p1 = resumen_tai.get("total_p1", aciertos_p1 + errores_p1 + blancos_p1)
+    total_p2 = resumen_tai.get("total_p2", aciertos_p2 + errores_p2 + blancos_p2)
+    maxima_directa = total_p1 + (4 * total_p2)
+
+    directa_p1 = calcular_puntuacion_directa_tai_p1(aciertos_p1, errores_p1)
+    directa_p2 = calcular_puntuacion_directa_tai_p2(aciertos_p2, errores_p2)
+    directa_total = directa_p1 + directa_p2
+
+    corte = datos_simulacro["nota_corte_directa"]
+    escala = datos_simulacro["escala_maxima"]
+    nota_transformada = calcular_nota_transformada_simulacro(
+        directa_total,
+        corte,
+        maxima_directa,
+        escala,
+    )
+
+    minimo_directa = maxima_directa * 0.30
+    margen = directa_total - corte
+    if directa_total < minimo_directa:
+        veredicto = "❌ BAJO MÍNIMO (30%)"
+    elif directa_total >= corte:
+        veredicto = "✅ APTO"
+    else:
+        veredicto = "❌ NO APTO"
+
+    return {
+        "directa_p1": directa_p1,
+        "directa_p2": directa_p2,
+        "directa_total": directa_total,
+        "maxima_directa": maxima_directa,
+        "total_p1": total_p1,
+        "total_p2": total_p2,
+        "blancos_p1": blancos_p1,
+        "blancos_p2": blancos_p2,
+        "nota_transformada": nota_transformada,
+        "minimo_directa": minimo_directa,
+        "margen": margen,
+        "veredicto": veredicto,
+    }
+
+
 def obtener_titulo_test(quiz_id):
     with get_conn() as conn:
         cur = conn.cursor()
@@ -423,7 +570,7 @@ def load_quiz_questions(quiz_id):
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, text, explicacion FROM questions WHERE quiz_id = ?",
+            "SELECT id, text, explicacion, bloque FROM questions WHERE quiz_id = ?",
             (quiz_id,),
         )
         questions = []
@@ -440,6 +587,7 @@ def load_quiz_questions(quiz_id):
                     "id": row["id"],
                     "text": row["text"],
                     "explicacion": row["explicacion"],
+                    "bloque": row["bloque"],
                     "options": options,
                     "correct_text": options[0],
                 }
@@ -473,7 +621,7 @@ def get_progreso_por_tests(user_id):
         correct = fila["correct"]
         wrong = fila["wrong"]
         total = correct + wrong
-        nota = max((correct - 0.3 * wrong) / total * 10, 0) if total else 0
+        nota = max((correct - PENALIZACION_FALLO * wrong) / total * 10, 0) if total else 0
         resumen[quiz_id]["intentos"].append(
             {
                 "correct": correct,
@@ -561,7 +709,7 @@ def get_progreso_general(user_id):
     total_correct = sum(fila["correct"] for fila in filas)
     total_wrong = sum(fila["wrong"] for fila in filas)
     total = total_correct + total_wrong
-    nota = max((total_correct - 0.3 * total_wrong) / total * 10, 0) if total else 0
+    nota = max((total_correct - PENALIZACION_FALLO * total_wrong) / total * 10, 0) if total else 0
     return {
         "total_correct": total_correct,
         "total_wrong": total_wrong,
@@ -1370,6 +1518,101 @@ async def procesar_texto_json(texto, update: Update, context, mostrar_error=True
     return True
 
 
+def extraer_preguntas_desde_payload(payload):
+    if isinstance(payload, list):
+        return payload, None
+    if isinstance(payload, dict):
+        preguntas = payload.get("preguntas")
+        if isinstance(preguntas, list):
+            return preguntas, payload.get("titulo")
+    return [], None
+
+
+def crear_test_y_simulacro_desde_preguntas(
+    preguntas,
+    nombre_simulacro,
+    nota_corte_directa,
+    escala_maxima,
+):
+    if not preguntas:
+        return None, "sin_preguntas"
+
+    quiz_id = create_quiz(
+        {"preguntas": preguntas},
+        titulo=nombre_simulacro,
+        descripcion=f"Test base del simulacro {nombre_simulacro}",
+    )
+    if not quiz_id:
+        return None, "error_crear_test"
+
+    total_preguntas = len(load_quiz_questions(quiz_id))
+    if total_preguntas <= 0:
+        borrar_test(quiz_id)
+        return None, "sin_preguntas_validas"
+
+    if nota_corte_directa > total_preguntas:
+        borrar_test(quiz_id)
+        return None, f"corte_mayor_maximo:{total_preguntas}"
+
+    simulacro_id = crear_simulacro(
+        nombre_simulacro,
+        quiz_id,
+        nota_corte_directa,
+        escala_maxima,
+    )
+    return simulacro_id, None
+
+
+async def procesar_texto_json_simulacro(texto, update: Update, context, mostrar_error=True):
+    try:
+        payload = json.loads(texto)
+    except json.JSONDecodeError:
+        if mostrar_error:
+            await update.message.reply_text("❌ JSON inválido.")
+        return False
+
+    preguntas, titulo_payload = extraer_preguntas_desde_payload(payload)
+    if not preguntas:
+        if mostrar_error:
+            await update.message.reply_text("❌ No se encontraron preguntas válidas para el simulacro.")
+        return False
+
+    configuracion = context.user_data.get("simulacro_en_creacion") or {}
+    nombre_simulacro = configuracion.get("nombre") or titulo_payload or "Simulacro"
+    nota_corte_directa = configuracion.get("nota_corte_directa")
+    escala_maxima = configuracion.get("escala_maxima")
+
+    if nota_corte_directa is None or escala_maxima is None:
+        await update.message.reply_text("❌ Faltan datos de configuración del simulacro (corte y escala).")
+        return False
+
+    simulacro_id, error = crear_test_y_simulacro_desde_preguntas(
+        preguntas,
+        nombre_simulacro,
+        nota_corte_directa,
+        escala_maxima,
+    )
+
+    if error:
+        if error.startswith("corte_mayor_maximo:"):
+            maximo = error.split(":", 1)[1]
+            await update.message.reply_text(
+                f"❌ La nota de corte no puede ser mayor que el máximo directo N={maximo}."
+            )
+        elif error == "sin_preguntas_validas":
+            await update.message.reply_text("❌ No se pudo crear el simulacro porque no hay preguntas válidas.")
+        else:
+            await update.message.reply_text("❌ No se pudo crear el simulacro.")
+        return False
+
+    context.user_data.pop("modo", None)
+    context.user_data.pop("buffer", None)
+    context.user_data.pop("simulacro_en_creacion", None)
+    await update.message.reply_text(f"✅ Simulacro creado correctamente (ID {simulacro_id}).")
+    await mostrar_menu_simulacros(update.message.chat.id, context)
+    return True
+
+
 def cancelar_temporizador_pregunta(context):
     trabajo = context.user_data.pop("temporizador_pregunta", None)
     if trabajo:
@@ -1553,13 +1796,26 @@ async def tiempo_agotado(context: ContextTypes.DEFAULT_TYPE):
     if not actual or actual.get("question_id") != pregunta_id:
         return
 
-    quiz["fail"] += 1
     correcta = wrap_text(actual["options"][actual["correct_index"]])
     await context.bot.send_message(chat_id, "⏰ Tiempo agotado.")
-    await context.bot.send_message(chat_id, f"💡 Respuesta correcta:\n{correcta}")
 
-    add_attempt_item(quiz["attempt_id"], pregunta_id, "Sin respuesta", False)
-    record_failure(quiz["user_id"], pregunta_id)
+    if quiz.get("attempt_type") == "simulacro":
+        quiz["sin_responder"] = quiz.get("sin_responder", 0) + 1
+        parte_tai = actual.get("parte_tai", 1)
+        resumen_tai = quiz.get("resumen_tai") or {}
+        if parte_tai == 2:
+            resumen_tai["blancos_p2"] = resumen_tai.get("blancos_p2", 0) + 1
+        else:
+            resumen_tai["blancos_p1"] = resumen_tai.get("blancos_p1", 0) + 1
+        quiz["resumen_tai"] = resumen_tai
+        await context.bot.send_message(chat_id, "Pregunta dejada sin contestar.")
+        add_attempt_item(quiz["attempt_id"], pregunta_id, "Sin respuesta", False)
+    else:
+        quiz["fail"] += 1
+        await context.bot.send_message(chat_id, f"💡 Respuesta correcta:\n{correcta}")
+        add_attempt_item(quiz["attempt_id"], pregunta_id, "Sin respuesta", False)
+        record_failure(quiz["user_id"], pregunta_id)
+
 
     quiz["esperando_siguiente"] = True
     quiz["ultimo_pregunta_id"] = pregunta_id
@@ -1588,11 +1844,64 @@ async def mostrar_menu(chat_id, context, texto="Selecciona una opción:"):
         [InlineKeyboardButton("⚠️ Test de fallos", callback_data="test_fallos")],
         [InlineKeyboardButton("⭐ Hacer tests favoritos", callback_data="tests_favoritos")],
         [InlineKeyboardButton("⭐ Test de favoritas", callback_data="test_favoritas")],
+        [InlineKeyboardButton("🧪 Simulacros", callback_data="menu_simulacros")],
         [InlineKeyboardButton("⬇️ Descargar BD", callback_data="descargar_bd")],
     ]
     await context.bot.send_message(
         chat_id, texto, reply_markup=InlineKeyboardMarkup(botones)
     )
+
+
+async def mostrar_menu_simulacros(chat_id, context, texto="🧪 Menú de simulacros"):
+    botones = [
+        [InlineKeyboardButton("➕ Añadir simulacro", callback_data="anadir_simulacro")],
+        [InlineKeyboardButton("🗑️ Eliminar simulacro", callback_data="eliminar_simulacro")],
+        [InlineKeyboardButton("▶️ Hacer simulacro", callback_data="hacer_simulacro")],
+        [InlineKeyboardButton("☰ Menú", callback_data="menu")],
+    ]
+    await context.bot.send_message(
+        chat_id,
+        texto,
+        reply_markup=InlineKeyboardMarkup(botones),
+    )
+
+
+async def mostrar_lista_simulacros(chat_id, context, modo_lista):
+    simulacros = listar_simulacros()
+    if not simulacros:
+        await context.bot.send_message(chat_id, "No hay simulacros creados todavía.")
+        return
+
+    if modo_lista == "eliminar":
+        prefijo = "eliminar_simulacro_"
+        titulo = "🗑️ Elige un simulacro para eliminar:"
+    else:
+        prefijo = "iniciar_simulacro_"
+        titulo = "▶️ Elige un simulacro para empezar:"
+
+    botones = []
+    for simulacro in simulacros:
+        etiqueta = (
+            f"{simulacro['nombre']} · {simulacro['test_titulo']} "
+            f"(corte={simulacro['nota_corte_directa']}, E={simulacro['escala_maxima']})"
+        )
+        botones.append(
+            [
+                InlineKeyboardButton(
+                    etiqueta,
+                    callback_data=f"{prefijo}{simulacro['id']}",
+                )
+            ]
+        )
+
+    botones.append([InlineKeyboardButton("↩️ Volver", callback_data="menu_simulacros")])
+    await context.bot.send_message(
+        chat_id,
+        titulo,
+        reply_markup=InlineKeyboardMarkup(botones),
+    )
+
+
 
 
 async def mostrar_pregunta_actual(chat_id, context):
@@ -1992,6 +2301,28 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await iniciar_test_favoritas(
                 chat_id, context, telegram_user_id=query.from_user.id
             )
+    elif data == "simulacro_sin_contestar":
+        quiz = context.user_data.get("quiz")
+        if not quiz or quiz.get("attempt_type") != "simulacro":
+            return
+        current = quiz.get("current")
+        if not current or quiz.get("esperando_siguiente"):
+            return
+        cancelar_temporizador_pregunta(context)
+        pregunta_id = current["question_id"]
+        quiz["sin_responder"] = quiz.get("sin_responder", 0) + 1
+        parte_tai = current.get("parte_tai", 1)
+        resumen_tai = quiz.get("resumen_tai") or {}
+        if parte_tai == 2:
+            resumen_tai["blancos_p2"] = resumen_tai.get("blancos_p2", 0) + 1
+        else:
+            resumen_tai["blancos_p1"] = resumen_tai.get("blancos_p1", 0) + 1
+        quiz["resumen_tai"] = resumen_tai
+        add_attempt_item(quiz["attempt_id"], pregunta_id, "Sin respuesta", False)
+        await query.message.reply_text("⏭️ Pregunta dejada sin contestar.")
+        quiz["esperando_siguiente"] = True
+        quiz["ultimo_pregunta_id"] = pregunta_id
+        await mostrar_opciones_post_respuesta(chat_id, context, pregunta_id)
     elif data == "siguiente_pregunta":
         quiz = context.user_data.get("quiz")
         if not quiz or not quiz.get("esperando_siguiente"):
@@ -2014,6 +2345,45 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await mostrar_pregunta_actual(chat_id, context)
     elif data == "descargar_bd":
         await enviar_bd(chat_id, context)
+    elif data == "menu_simulacros":
+        await mostrar_menu_simulacros(chat_id, context)
+    elif data == "anadir_simulacro":
+        context.user_data["simulacro_en_creacion"] = {}
+        context.user_data["modo"] = "crear_simulacro_nombre"
+        await query.message.reply_text(
+            "🧪 Creación de simulacro." + "\n" + "Escribe el nombre del simulacro:"
+        )
+    elif data == "eliminar_simulacro":
+        await mostrar_lista_simulacros(chat_id, context, modo_lista="eliminar")
+    elif data == "hacer_simulacro":
+        await mostrar_lista_simulacros(chat_id, context, modo_lista="hacer")
+    elif data.startswith("eliminar_simulacro_"):
+        simulacro_id = int(data.split("_")[-1])
+        if eliminar_simulacro(simulacro_id):
+            await query.message.reply_text("✅ Simulacro eliminado correctamente.")
+        else:
+            await query.message.reply_text("❌ No se encontró el simulacro.")
+        await mostrar_menu_simulacros(chat_id, context)
+    elif data.startswith("iniciar_simulacro_"):
+        simulacro_id = int(data.split("_")[-1])
+        simulacro = obtener_simulacro(simulacro_id)
+        if not simulacro:
+            await query.message.reply_text("❌ Simulacro no encontrado.")
+            return
+        await iniciar_quiz(
+            chat_id,
+            context,
+            quiz_id=simulacro["quiz_id"],
+            attempt_type="simulacro",
+            telegram_user_id=query.from_user.id,
+            configuracion_simulacro={
+                "id": simulacro["id"],
+                "nombre": simulacro["nombre"],
+                "nota_corte_directa": simulacro["nota_corte_directa"],
+                "escala_maxima": simulacro["escala_maxima"],
+                "test_titulo": simulacro["test_titulo"],
+            },
+        )
     elif data == "menu":
         await mostrar_menu(chat_id, context)
     elif data.startswith("editar_pregunta_json_"):
@@ -2233,6 +2603,67 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             mensaje,
             reply_markup=obtener_markup_volver_pregunta(),
         )
+    elif modo == "crear_simulacro_nombre":
+        nombre = (update.message.text or "").strip()
+        if not nombre:
+            await update.message.reply_text("❌ El nombre del simulacro no puede estar vacío.")
+            return
+        simulacro = context.user_data.get("simulacro_en_creacion") or {}
+        simulacro["nombre"] = nombre
+        context.user_data["simulacro_en_creacion"] = simulacro
+        context.user_data["modo"] = "crear_simulacro_corte"
+        await update.message.reply_text(
+            "Indica la nota de corte directa (M). Ejemplo: 60"
+        )
+    elif modo == "crear_simulacro_corte":
+        texto_corte = (update.message.text or "").strip().replace(",", ".")
+        try:
+            nota_corte = float(texto_corte)
+        except ValueError:
+            await update.message.reply_text("❌ Valor inválido. Debe ser un número.")
+            return
+        if nota_corte <= 0:
+            await update.message.reply_text("❌ La nota de corte debe ser mayor que 0.")
+            return
+        simulacro = context.user_data.get("simulacro_en_creacion") or {}
+        simulacro["nota_corte_directa"] = nota_corte
+        context.user_data["simulacro_en_creacion"] = simulacro
+        context.user_data["modo"] = "crear_simulacro_escala"
+        await update.message.reply_text(
+            "Indica la escala máxima final (E). Ejemplo: 100"
+        )
+    elif modo == "crear_simulacro_escala":
+        texto_escala = (update.message.text or "").strip().replace(",", ".")
+        try:
+            escala_maxima = float(texto_escala)
+        except ValueError:
+            await update.message.reply_text("❌ Valor inválido. Debe ser un número.")
+            return
+        if escala_maxima <= 0:
+            await update.message.reply_text("❌ La escala máxima debe ser mayor que 0.")
+            return
+        simulacro = context.user_data.get("simulacro_en_creacion") or {}
+        simulacro["escala_maxima"] = escala_maxima
+        context.user_data["simulacro_en_creacion"] = simulacro
+        context.user_data["modo"] = "crear_simulacro_json"
+        context.user_data.setdefault("buffer", "")
+        await update.message.reply_text(
+            "📦 Ahora envía las preguntas del simulacro en JSON." + "\n"
+            + "Puedes pegar el JSON directamente, adjuntar un archivo .json/.txt," + "\n"
+            + "o adjuntar un .zip con varios .json para crear varios simulacros de una vez." + "\n"
+            + "Cuando termines de pegar texto escribe: /fin"
+        )
+    elif modo == "crear_simulacro_json":
+        context.user_data.setdefault("buffer", "")
+        texto = update.message.text
+        if texto and texto.strip().startswith(("{", "[")):
+            creado = await procesar_texto_json_simulacro(
+                texto, update, context, mostrar_error=False
+            )
+            if creado:
+                return
+        if texto:
+            context.user_data["buffer"] += texto + "\n"
     elif modo == "crear_test_nombre":
         nombre = update.message.text.strip()
         if not nombre:
@@ -2270,10 +2701,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def fin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.user_data.get("modo") != "crear_test_json":
+    modo = context.user_data.get("modo")
+    if modo == "crear_test_json":
+        text = context.user_data.pop("buffer", "")
+        await procesar_texto_json(text, update, context)
         return
-    text = context.user_data.pop("buffer", "")
-    await procesar_texto_json(text, update, context)
+    if modo == "crear_simulacro_json":
+        text = context.user_data.pop("buffer", "")
+        await procesar_texto_json_simulacro(text, update, context)
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2341,9 +2776,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         errores.append(f"❌ {nombre_base}: JSON inválido")
                     except Exception as e:
                         errores.append(f"❌ {nombre_base}: {e}")
-                resumen = f"📦 Resultado de la importación:\n✅ {creados} test(s) creado(s)"
+                resumen = "📦 Resultado de la importación" + "\n" + f"✅ {creados} test(s) creado(s)"
                 if errores:
-                    resumen += f"\n⚠️ {len(errores)} error(es):\n" + "\n".join(errores)
+                    resumen += "\n" + f"⚠️ {len(errores)} error(es):" + "\n" + "\n".join(errores)
                 await update.message.reply_text(resumen)
         except zipfile.BadZipFile:
             await update.message.reply_text("❌ El archivo no es un ZIP válido.")
@@ -2352,6 +2787,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("modo", None)
         await mostrar_menu(update.message.chat.id, context)
         return
+
     if modo == "crear_test_json":
         documento = update.message.document
         if not documento:
@@ -2367,6 +2803,89 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         texto = contenido.decode("utf-8", errors="replace")
         await procesar_texto_json(texto, update, context)
         return
+
+    if modo == "crear_simulacro_json":
+        documento = update.message.document
+        if not documento:
+            return
+        nombre_archivo = (documento.file_name or "").lower()
+        archivo = await documento.get_file()
+        contenido = await archivo.download_as_bytearray()
+
+        if nombre_archivo.endswith(".zip"):
+            configuracion = context.user_data.get("simulacro_en_creacion") or {}
+            nota_corte = configuracion.get("nota_corte_directa")
+            escala_maxima = configuracion.get("escala_maxima")
+            if nota_corte is None or escala_maxima is None:
+                await update.message.reply_text("❌ Faltan datos de configuración del simulacro.")
+                return
+            try:
+                zip_buffer = io.BytesIO(contenido)
+                with zipfile.ZipFile(zip_buffer) as zf:
+                    archivos_json = [
+                        n for n in zf.namelist()
+                        if n.lower().endswith(".json") and not n.startswith("__MACOSX")
+                    ]
+                    if not archivos_json:
+                        await update.message.reply_text("❌ El ZIP no contiene archivos .json.")
+                        return
+                    creados = 0
+                    errores = []
+                    for nombre in archivos_json:
+                        nombre_base = os.path.basename(nombre)
+                        nombre_simulacro = os.path.splitext(nombre_base)[0] or "Simulacro"
+                        try:
+                            texto = zf.read(nombre).decode("utf-8", errors="replace")
+                            payload = json.loads(texto)
+                            preguntas, titulo_payload = extraer_preguntas_desde_payload(payload)
+                            if not preguntas:
+                                errores.append(f"⚠️ {nombre_base}: sin preguntas válidas")
+                                continue
+                            simulacro_id, error = crear_test_y_simulacro_desde_preguntas(
+                                preguntas,
+                                titulo_payload or nombre_simulacro,
+                                nota_corte,
+                                escala_maxima,
+                            )
+                            if error:
+                                if error.startswith("corte_mayor_maximo:"):
+                                    maximo = error.split(":", 1)[1]
+                                    errores.append(
+                                        f"⚠️ {nombre_base}: corte mayor que el máximo N={maximo}"
+                                    )
+                                else:
+                                    errores.append(f"⚠️ {nombre_base}: no se pudo crear")
+                                continue
+                            if simulacro_id:
+                                creados += 1
+                        except json.JSONDecodeError:
+                            errores.append(f"❌ {nombre_base}: JSON inválido")
+                        except Exception as e:
+                            errores.append(f"❌ {nombre_base}: {e}")
+                    resumen = "📦 Resultado de la importación de simulacros" + "\n" + f"✅ {creados} simulacro(s) creado(s)"
+                    if errores:
+                        resumen += "\n" + f"⚠️ {len(errores)} error(es):" + "\n" + "\n".join(errores)
+                    await update.message.reply_text(resumen)
+            except zipfile.BadZipFile:
+                await update.message.reply_text("❌ El archivo no es un ZIP válido.")
+            except Exception as e:
+                await update.message.reply_text(f"❌ Error procesando el ZIP: {e}")
+            context.user_data.pop("modo", None)
+            context.user_data.pop("buffer", None)
+            context.user_data.pop("simulacro_en_creacion", None)
+            await mostrar_menu_simulacros(update.message.chat.id, context)
+            return
+
+        if not (nombre_archivo.endswith(".json") or nombre_archivo.endswith(".txt")):
+            await update.message.reply_text(
+                "❌ Formato no válido. Adjunta un archivo .json, .txt o .zip."
+            )
+            return
+
+        texto = contenido.decode("utf-8", errors="replace")
+        await procesar_texto_json_simulacro(texto, update, context)
+        return
+
     if modo == "editar_pregunta_json":
         await update.message.reply_text(
             "❌ En este modo debes enviar texto JSON, no un archivo."
@@ -2398,6 +2917,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=obtener_markup_volver_pregunta(),
         )
         return
+
 # ─────────────── Mostrar tests ───────────────
 async def mostrar_tests(chat_id, context, pagina=1):
     user_id = get_or_create_user(chat_id)
@@ -2628,7 +3148,12 @@ async def mostrar_tests_para_descargar(chat_id, context, pagina=1):
 
 # ─────────────── Tests ───────────────
 async def iniciar_quiz(
-    chat_id, context, quiz_id=None, attempt_type="quiz", telegram_user_id=None
+    chat_id,
+    context,
+    quiz_id=None,
+    attempt_type="quiz",
+    telegram_user_id=None,
+    configuracion_simulacro=None,
 ):
     user_id = get_or_create_user(chat_id)
     # Cerrar cualquier quiz en memoria antes de empezar uno nuevo
@@ -2641,6 +3166,30 @@ async def iniciar_quiz(
     await context.bot.send_message(
         chat_id, f"🧪 Este test tiene {len(questions)} preguntas."
     )
+
+    resumen_tai = None
+    if attempt_type == "simulacro":
+        total_p1 = 0
+        total_p2 = 0
+        total_preguntas = len(questions)
+        for indice, pregunta in enumerate(questions):
+            parte_tai = obtener_parte_tai_de_pregunta(pregunta, indice, total_preguntas)
+            pregunta["parte_tai"] = parte_tai
+            if parte_tai == 2:
+                total_p2 += 1
+            else:
+                total_p1 += 1
+        resumen_tai = {
+            "aciertos_p1": 0,
+            "errores_p1": 0,
+            "blancos_p1": 0,
+            "aciertos_p2": 0,
+            "errores_p2": 0,
+            "blancos_p2": 0,
+            "total_p1": total_p1,
+            "total_p2": total_p2,
+        }
+
     attempt_id = create_attempt(user_id, quiz_id, attempt_type)
     context.user_data["quiz"] = {
         "questions": questions,
@@ -2648,10 +3197,13 @@ async def iniciar_quiz(
         "i": 0,
         "ok": 0,
         "fail": 0,
+        "sin_responder": 0,
         "attempt_id": attempt_id,
         "attempt_type": attempt_type,
         "user_id": user_id,
         "telegram_user_id": telegram_user_id,
+        "simulacro": configuracion_simulacro,
+        "resumen_tai": resumen_tai,
     }
     await enviar_pregunta(chat_id, context)
 
@@ -2700,6 +3252,7 @@ async def iniciar_test_temporal(
         "i": 0,
         "ok": 0,
         "fail": 0,
+        "sin_responder": 0,
         "attempt_id": attempt_id,
         "attempt_type": tipo_intento,
         "user_id": user_id,
@@ -2717,15 +3270,38 @@ async def enviar_pregunta(chat_id, context):
     total_original = quiz.get("total_original", len(quiz["questions"]))
     respondidas_previas = quiz.get("respondidas_count", 0)
     if i >= len(quiz["questions"]):
-        nota = max((quiz["ok"] - 0.3 * quiz["fail"]) / total_original * 10, 0)
         finish_attempt(quiz["attempt_id"], quiz["ok"], quiz["fail"])
-        await context.bot.send_message(
-            chat_id,
-            f"🏁 Fin del test\n✔️ {quiz['ok']} ❌ {quiz['fail']}\n🎯 Nota: {nota:.2f}/10",
-        )
+        if quiz.get("attempt_type") == "simulacro" and quiz.get("simulacro"):
+            datos_simulacro = quiz["simulacro"]
+            resultado_tai = calcular_resultado_simulacro_tai(quiz, datos_simulacro)
+            signo_margen = "+" if resultado_tai["margen"] >= 0 else ""
+            await context.bot.send_message(
+                chat_id,
+                (
+                    f"🏁 Fin del simulacro: {datos_simulacro['nombre']}\n"
+                    f"P1 (cuestionario): {resultado_tai['directa_p1']:.2f}/{resultado_tai['total_p1']} "
+                    f"(blancos: {resultado_tai['blancos_p1']})\n"
+                    f"P2 (práctico): {resultado_tai['directa_p2']:.2f}/{resultado_tai['total_p2'] * 4} "
+                    f"(blancos: {resultado_tai['blancos_p2']})\n"
+                    f"TOTAL DIRECTA: {resultado_tai['directa_total']:.2f}/{resultado_tai['maxima_directa']:.2f}\n"
+                    f"Corte (M): {datos_simulacro['nota_corte_directa']:.2f}\n"
+                    f"Mínimo 30%: {resultado_tai['minimo_directa']:.2f}\n"
+                    f"Escala final (E): {datos_simulacro['escala_maxima']:.2f}\n"
+                    f"Nota transformada t(d): {resultado_tai['nota_transformada']:.2f}/{datos_simulacro['escala_maxima']:.2f}\n"
+                    f"Margen vs corte: {signo_margen}{resultado_tai['margen']:.2f} pts\n"
+                    f"Veredicto: {resultado_tai['veredicto']}"
+                ),
+            )
+        else:
+            nota = max((quiz["ok"] - PENALIZACION_FALLO * quiz["fail"]) / total_original * 10, 0)
+            await context.bot.send_message(
+                chat_id,
+                f"🏁 Fin del test\n✔️ {quiz['ok']} ❌ {quiz['fail']}\n🎯 Nota: {nota:.2f}/10",
+            )
         context.user_data.pop("quiz")
         await mostrar_menu(chat_id, context)
         return
+
 
     q = quiz["questions"][i]
     numero_pregunta = respondidas_previas + i + 1
@@ -2739,6 +3315,7 @@ async def enviar_pregunta(chat_id, context):
         "question_id": q["id"],
         "options": options,
         "correct_index": correct_index,
+        "parte_tai": q.get("parte_tai", 1),
     }
     quiz["esperando_siguiente"] = False
     quiz["ultimo_pregunta_id"] = None
@@ -2750,6 +3327,10 @@ async def enviar_pregunta(chat_id, context):
         [InlineKeyboardButton(ensanchar_etiqueta_opcion(o), callback_data=str(idx))]
         for idx, o in enumerate(options)
     ]
+    if quiz.get("attempt_type") == "simulacro":
+        botones_opciones.append(
+            [InlineKeyboardButton("⏭️ Dejar sin contestar", callback_data="simulacro_sin_contestar")]
+        )
     botones_opciones.append(
         [
             InlineKeyboardButton(
@@ -2877,21 +3458,37 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     options = current["options"]
     question_id = current["question_id"]
     user_id = quiz["user_id"]
+    parte_tai = current.get("parte_tai", 1)
 
     if selected == correct_index:
         quiz["ok"] += 1
+        if quiz.get("attempt_type") == "simulacro":
+            resumen_tai = quiz.get("resumen_tai") or {}
+            if parte_tai == 2:
+                resumen_tai["aciertos_p2"] = resumen_tai.get("aciertos_p2", 0) + 1
+            else:
+                resumen_tai["aciertos_p1"] = resumen_tai.get("aciertos_p1", 0) + 1
+            quiz["resumen_tai"] = resumen_tai
         respuesta = wrap_text(options[selected])
         await query.message.reply_text(f"✅ ¡Correcto!\nTu respuesta:\n{respuesta}")
         clear_failure(user_id, question_id)
         is_correct = True
     else:
         quiz["fail"] += 1
+        if quiz.get("attempt_type") == "simulacro":
+            resumen_tai = quiz.get("resumen_tai") or {}
+            if parte_tai == 2:
+                resumen_tai["errores_p2"] = resumen_tai.get("errores_p2", 0) + 1
+            else:
+                resumen_tai["errores_p1"] = resumen_tai.get("errores_p1", 0) + 1
+            quiz["resumen_tai"] = resumen_tai
         resp = wrap_text(options[selected])
         correcta = wrap_text(options[correct_index])
         await query.message.reply_text(f"❌ Incorrecto!\nTu respuesta:\n{resp}")
         await query.message.reply_text(f"💡 Respuesta correcta:\n{correcta}")
         record_failure(user_id, question_id)
         is_correct = False
+
 
     add_attempt_item(quiz["attempt_id"], question_id, options[selected], is_correct)
 
