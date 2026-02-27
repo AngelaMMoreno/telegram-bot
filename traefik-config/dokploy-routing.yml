@@ -1,0 +1,35 @@
+http:
+  routers:
+    # Router HTTPS: dokploy.aprentix.es (con y sin www) → panel Dokploy puerto 3000
+    dokploy_https:
+      rule: "Host(`dokploy.aprentix.es`) || Host(`www.dokploy.aprentix.es`)"
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      service: dokploy_servicio
+      middlewares: []
+
+    # Router HTTP: redirige a HTTPS
+    dokploy_http:
+      rule: "Host(`dokploy.aprentix.es`) || Host(`www.dokploy.aprentix.es`)"
+      entryPoints:
+        - web
+      middlewares:
+        - redireccion_https_file
+      service: dokploy_servicio
+
+  services:
+    # Apunta al contenedor/servicio de Dokploy en la red de Docker.
+    # Dokploy escucha en el puerto 3000.
+    # Si la resolución por nombre falla, usa la IP del host Docker (172.17.0.1).
+    dokploy_servicio:
+      loadBalancer:
+        servers:
+          - url: "http://dokploy:3000"
+
+  middlewares:
+    redireccion_https_file:
+      redirectScheme:
+        scheme: https
+        permanent: true

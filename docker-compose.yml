@@ -15,27 +15,25 @@ services:
       - /mnt/data/ficheros:/app/users/publicos
     labels:
       - "traefik.enable=true"
+
+      # Middleware: redirige HTTP → HTTPS permanentemente
       - "traefik.http.middlewares.redireccion_https.redirectscheme.scheme=https"
       - "traefik.http.middlewares.redireccion_https.redirectscheme.permanent=true"
 
+      # Router HTTPS: sirve ficheros en aprentix.es (con y sin www)
       - "traefik.http.routers.archivos.rule=Host(`${DOMINIO_PUBLICO_ARCHIVOS:-aprentix.es}`) || Host(`${DOMINIO_PUBLICO_ARCHIVOS_WWW:-www.aprentix.es}`)"
       - "traefik.http.routers.archivos.entrypoints=websecure"
       - "traefik.http.routers.archivos.tls=true"
+      - "traefik.http.routers.archivos.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.archivos.service=archivos"
       - "traefik.http.services.archivos.loadbalancer.server.port=${PUERTO_ARCHIVOS_PUBLICOS:-8000}"
 
+      # Router HTTP: redirige aprentix.es → HTTPS
       - "traefik.http.routers.archivos_http.rule=Host(`${DOMINIO_PUBLICO_ARCHIVOS:-aprentix.es}`) || Host(`${DOMINIO_PUBLICO_ARCHIVOS_WWW:-www.aprentix.es}`)"
       - "traefik.http.routers.archivos_http.entrypoints=web"
       - "traefik.http.routers.archivos_http.middlewares=redireccion_https"
+      - "traefik.http.routers.archivos_http.service=archivos"
 
-      - "traefik.http.routers.dokploy_https.rule=Host(`${DOMINIO_DOKPLOY:-dokploy.aprentix.es}`) || Host(`${DOMINIO_DOKPLOY_WWW:-www.dokploy.aprentix.es}`)"
-      - "traefik.http.routers.dokploy_https.entrypoints=websecure"
-      - "traefik.http.routers.dokploy_https.tls=true"
-      - "traefik.http.routers.dokploy_https.service=dokploy_servicio"
-      - "traefik.http.services.dokploy_servicio.loadbalancer.server.port=${PUERTO_DOKPLOY_INTERNO:-3000}"
-
-      - "traefik.http.routers.dokploy_http.rule=Host(`${DOMINIO_DOKPLOY:-dokploy.aprentix.es}`) || Host(`${DOMINIO_DOKPLOY_WWW:-www.dokploy.aprentix.es}`)"
-      - "traefik.http.routers.dokploy_http.entrypoints=web"
-      - "traefik.http.routers.dokploy_http.middlewares=redireccion_https"
     networks:
       - dokploy-network
 
