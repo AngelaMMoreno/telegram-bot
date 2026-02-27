@@ -5,9 +5,9 @@ services:
     build: .
     environment:
       TOKEN: ${TOKEN}
-      SERVIR_ARCHIVOS_PUBLICOS: ${SERVIR_ARCHIVOS_PUBLICOS:-0}
+      SERVIR_ARCHIVOS_PUBLICOS: ${SERVIR_ARCHIVOS_PUBLICOS:-1}
       PUERTO_ARCHIVOS_PUBLICOS: ${PUERTO_ARCHIVOS_PUBLICOS:-8000}
-      URL_PUBLICA_ARCHIVOS: ${URL_PUBLICA_ARCHIVOS:-https://files.aprentix.es}
+      URL_PUBLICA_ARCHIVOS: ${URL_PUBLICA_ARCHIVOS:-https://aprentix.es}
       RUTA_ARCHIVOS_PUBLICOS: /app/users/publicos
     restart: unless-stopped
     volumes:
@@ -15,10 +15,27 @@ services:
       - /mnt/data/ficheros:/app/users/publicos
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.archivos.rule=Host(`files.aprentix.es`)"
+      - "traefik.http.middlewares.redireccion_https.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.redireccion_https.redirectscheme.permanent=true"
+
+      - "traefik.http.routers.archivos.rule=Host(`${DOMINIO_PUBLICO_ARCHIVOS:-aprentix.es}`) || Host(`${DOMINIO_PUBLICO_ARCHIVOS_WWW:-www.aprentix.es}`)"
       - "traefik.http.routers.archivos.entrypoints=websecure"
       - "traefik.http.routers.archivos.tls=true"
-      - "traefik.http.services.archivos.loadbalancer.server.port=8000"
+      - "traefik.http.services.archivos.loadbalancer.server.port=${PUERTO_ARCHIVOS_PUBLICOS:-8000}"
+
+      - "traefik.http.routers.archivos_http.rule=Host(`${DOMINIO_PUBLICO_ARCHIVOS:-aprentix.es}`) || Host(`${DOMINIO_PUBLICO_ARCHIVOS_WWW:-www.aprentix.es}`)"
+      - "traefik.http.routers.archivos_http.entrypoints=web"
+      - "traefik.http.routers.archivos_http.middlewares=redireccion_https"
+
+      - "traefik.http.routers.dokploy_https.rule=Host(`${DOMINIO_DOKPLOY:-dokploy.aprentix.es}`) || Host(`${DOMINIO_DOKPLOY_WWW:-www.dokploy.aprentix.es}`)"
+      - "traefik.http.routers.dokploy_https.entrypoints=websecure"
+      - "traefik.http.routers.dokploy_https.tls=true"
+      - "traefik.http.routers.dokploy_https.service=dokploy_servicio"
+      - "traefik.http.services.dokploy_servicio.loadbalancer.server.port=${PUERTO_DOKPLOY_INTERNO:-3000}"
+
+      - "traefik.http.routers.dokploy_http.rule=Host(`${DOMINIO_DOKPLOY:-dokploy.aprentix.es}`) || Host(`${DOMINIO_DOKPLOY_WWW:-www.dokploy.aprentix.es}`)"
+      - "traefik.http.routers.dokploy_http.entrypoints=web"
+      - "traefik.http.routers.dokploy_http.middlewares=redireccion_https"
     networks:
       - dokploy-network
 

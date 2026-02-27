@@ -9,7 +9,7 @@ from math import ceil
 from datetime import datetime
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import quote
+from urllib.parse import quote, unquote, urlparse
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -23,12 +23,14 @@ from telegram.ext import (
 RUTA_DATOS = os.getenv("RUTA_DATOS", os.getenv("DATA_DIR", "users"))
 DB_FILE = os.path.join(RUTA_DATOS, "bot.db")
 RUTA_ARCHIVOS_PUBLICOS = os.getenv(
-    "RUTA_ARCHIVOS_PUBLICOS", os.path.join(RUTA_DATOS, "publicos")
+    "RUTA_ARCHIVOS_PUBLICOS", "/mnt/data/ficheros"
 )
 PUERTO_ARCHIVOS_PUBLICOS = int(os.getenv("PUERTO_ARCHIVOS_PUBLICOS", "8000"))
 URL_PUBLICA_ARCHIVOS = os.getenv(
-    "URL_PUBLICA_ARCHIVOS", f"http://localhost:{PUERTO_ARCHIVOS_PUBLICOS}"
+    "URL_PUBLICA_ARCHIVOS", f"https://localhost:{PUERTO_ARCHIVOS_PUBLICOS}"
 ).rstrip("/")
+if URL_PUBLICA_ARCHIVOS.startswith("http://"):
+    URL_PUBLICA_ARCHIVOS = "https://" + URL_PUBLICA_ARCHIVOS[len("http://") :]
 SERVIR_ARCHIVOS_PUBLICOS = os.getenv("SERVIR_ARCHIVOS_PUBLICOS", "").lower() in {
     "1",
     "true",
@@ -2435,14 +2437,15 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text(
                 "📝 Explicación actual:\n"
                 f"{contexto_explicacion}\n\n"
-                "Escribe la nueva explicación para la pregunta o adjunta un archivo "
-                "para guardarlo como enlace:",
+                "Escribe la nueva explicación, pega una URL/nombre de fichero "
+                "o adjunta un archivo para guardarlo como enlace HTTPS:",
                 reply_markup=botones,
             )
         else:
             await query.message.reply_text(
                 "📝 Esta pregunta no tiene explicación.\n"
-                "Escribe una explicación o adjunta un archivo para guardar el enlace:",
+                "Escribe una explicación, pega una URL/nombre de fichero "
+                "o adjunta un archivo para guardar el enlace HTTPS:",
                 reply_markup=botones,
             )
     elif data == "cancelar_explicacion":
@@ -2530,6 +2533,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("modo", None)
         if not pregunta_id:
             await update.message.reply_text("❌ No se pudo identificar la pregunta.")
+            return
+        url_archivo = construir_url_archivo_desde_texto(explicacion)
+        if url_archivo:
+            actualizar_explicacion_pregunta(pregunta_id, url_archivo)
+            await update.message.reply_text(
+                "✅ Explicación guardada como enlace HTTPS.",
+                reply_markup=obtener_markup_volver_pregunta(),
+            )
             return
         actualizar_explicacion_pregunta(pregunta_id, explicacion)
         await update.message.reply_text(
@@ -3560,6 +3571,29 @@ def asegurar_nombre_archivo_unico(ruta_directorio, nombre_archivo):
 
 def construir_url_archivo(nombre_archivo):
     return f"{URL_PUBLICA_ARCHIVOS}/{quote(nombre_archivo)}"
+
+
+def extraer_nombre_archivo_desde_texto(texto):
+    texto = (texto or "").strip()
+    if not texto:
+        return None
+    if "://" in texto:
+        texto = urlparse(texto).path or ""
+    texto = unquote(texto).strip().lstrip("/")
+    nombre_archivo = os.path.basename(texto)
+    if nombre_archivo in {"", ".", ".."}:
+        return None
+    return nombre_archivo
+
+
+def construir_url_archivo_desde_texto(texto):
+    nombre_archivo = extraer_nombre_archivo_desde_texto(texto)
+    if not nombre_archivo:
+        return None
+    ruta_archivo = os.path.join(RUTA_ARCHIVOS_PUBLICOS, nombre_archivo)
+    if not os.path.isfile(ruta_archivo):
+        return None
+    return construir_url_archivo(nombre_archivo)
 
 
 async def guardar_documento_publico(documento):
