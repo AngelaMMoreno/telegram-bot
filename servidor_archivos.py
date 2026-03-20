@@ -433,6 +433,8 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
 
     def serve_upload_page(self, query: dict, *, msg: str = "", msg_type: str = "ok"):
         carpeta = query.get("carpeta", ["/"])[0]
+        msg = msg or query.get("msg", [""])[0]
+        msg_type = msg_type or query.get("tipo", ["ok"])[0]
         self._send_html(self._render_upload(carpeta, msg=msg, msg_type=msg_type))
 
     def _render_upload(self, carpeta_sel: str = "/", *, msg: str = "", msg_type: str = "ok") -> str:
@@ -541,34 +543,38 @@ initDrop('dz','file-inp','file-name');
                 environ={
                     "REQUEST_METHOD": "POST",
                     "CONTENT_TYPE": self.headers.get("Content-Type"),
+                    "CONTENT_LENGTH": self.headers.get("Content-Length", "0"),
                 },
             )
 
     def handle_upload(self):
-        form = self._parse_form()
-        carpeta = form.getvalue("carpeta", "/")
-        icono = form.getvalue("icono", "📄")
+        try:
+            form = self._parse_form()
+            carpeta = form.getvalue("carpeta", "/")
+            icono = form.getvalue("icono", "📄")
 
-        file_item = form["archivo"] if "archivo" in form else None
-        if not file_item or not getattr(file_item, "filename", None):
-            self._redirect_with_msg("/subirFichero", "No se recibió ningún archivo.", "err", carpeta)
-            return
+            file_item = form["archivo"] if "archivo" in form else None
+            if not file_item or not getattr(file_item, "filename", None):
+                self._redirect_with_msg("/subirFichero", "No se recibió ningún archivo.", "err", carpeta)
+                return
 
-        dir_path = self.safe_path(carpeta)
-        if dir_path is None or not os.path.isdir(dir_path):
-            dir_path = self.base_dir
+            dir_path = self.safe_path(carpeta)
+            if dir_path is None or not os.path.isdir(dir_path):
+                dir_path = self.base_dir
 
-        filename = os.path.basename(file_item.filename or "archivo")
-        filename = asegurar_nombre_unico(dir_path, filename)
-        with open(os.path.join(dir_path, filename), "wb") as fh:
-            fh.write(file_item.file.read())
+            filename = os.path.basename(file_item.filename or "archivo")
+            filename = asegurar_nombre_unico(dir_path, filename)
+            with open(os.path.join(dir_path, filename), "wb") as fh:
+                fh.write(file_item.file.read())
 
-        meta = cargar_metadata(dir_path)
-        meta.setdefault("files", {})[filename] = icono
-        guardar_metadata(dir_path, meta)
+            meta = cargar_metadata(dir_path)
+            meta.setdefault("files", {})[filename] = icono
+            guardar_metadata(dir_path, meta)
 
-        redirect = carpeta if carpeta.startswith("/") else "/" + carpeta
-        self._redirect(redirect)
+            redirect = carpeta if carpeta.startswith("/") else "/" + carpeta
+            self._redirect(redirect)
+        except Exception as exc:
+            self.send_error(500, f"Error al subir el archivo: {exc}")
 
     def handle_create_folder(self):
         form = self._parse_form()
