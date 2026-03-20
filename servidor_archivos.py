@@ -554,7 +554,7 @@ initDrop('dz','file-inp','file-name');
             icono = form.getvalue("icono", "📄")
 
             file_item = form["archivo"] if "archivo" in form else None
-            if not file_item or not getattr(file_item, "filename", None):
+            if file_item is None or not getattr(file_item, "filename", None):
                 self._redirect_with_msg("/subirFichero", "No se recibió ningún archivo.", "err", carpeta)
                 return
 
