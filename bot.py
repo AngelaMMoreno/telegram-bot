@@ -8,8 +8,8 @@ import zipfile
 from math import ceil
 from datetime import datetime
 from functools import partial
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import quote, unquote, urlparse
+from servidor_archivos import iniciar_servidor as _iniciar_servidor_archivos_bonito
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -3614,17 +3614,7 @@ async def guardar_documento_publico(documento):
 def iniciar_servidor_archivos():
     if not SERVIR_ARCHIVOS_PUBLICOS:
         return None
-    os.makedirs(RUTA_ARCHIVOS_PUBLICOS, exist_ok=True)
-    controlador = partial(SimpleHTTPRequestHandler, directory=RUTA_ARCHIVOS_PUBLICOS)
-    servidor = ThreadingHTTPServer(("", PUERTO_ARCHIVOS_PUBLICOS), controlador)
-    hilo = threading.Thread(target=servidor.serve_forever, daemon=True)
-    hilo.start()
-    print(
-        "📂 Servidor de archivos iniciado en "
-        f"http://0.0.0.0:{PUERTO_ARCHIVOS_PUBLICOS} "
-        f"(ruta: {RUTA_ARCHIVOS_PUBLICOS})"
-    )
-    return servidor
+    return _iniciar_servidor_archivos_bonito(RUTA_ARCHIVOS_PUBLICOS, PUERTO_ARCHIVOS_PUBLICOS)
 
 
 # ─────────────── MAIN ───────────────
