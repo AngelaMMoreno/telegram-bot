@@ -9,6 +9,8 @@ import urllib.parse
 import warnings
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from motor_plantillas import generar_pagina
+
 # ─── Emojis predefinidos ────────────────────────────────────────────────────
 
 EMOJIS = [
@@ -288,6 +290,8 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
             self.handle_upload()
         elif path == "/crearCarpeta":
             self.handle_create_folder()
+        elif path == "/generarPagina":
+            self.handle_generate_page()
         else:
             self.send_error(404)
 
@@ -441,6 +445,7 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
         carpetas = obtener_todas_carpetas(self.base_dir)
         opts_file = _carpeta_options_html(carpetas, carpeta_sel)
         opts_folder = _carpeta_options_html(carpetas, carpeta_sel)
+        opts_page = _carpeta_options_html(carpetas, carpeta_sel)
         ep_file = _emoji_picker_html("file", "📄")
         ep_folder = _emoji_picker_html("folder", "📁")
 
@@ -456,7 +461,15 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>📤 Subir fichero</title>
-<style>{_CSS_BASE}</style>
+<style>{_CSS_BASE}
+textarea.fc{{min-height:180px;font-family:monospace;font-size:13px;resize:vertical}}
+.tab-bar{{display:flex;gap:4px;margin-bottom:14px}}
+.tab-btn{{padding:8px 16px;border:1.5px solid var(--border);border-radius:8px 8px 0 0;
+  background:var(--bg);cursor:pointer;font-size:13px;font-weight:600;color:var(--sub);
+  transition:all .15s}}
+.tab-btn.active{{background:#fff;color:var(--pri);border-bottom-color:#fff}}
+.tab-content{{display:none}}.tab-content.active{{display:block}}
+</style>
 </head>
 <body>
 <div class="hdr">
@@ -498,6 +511,51 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
   </form>
 </div>
 
+<!-- ══ Generar página desde plantilla ═════════════════════════════════════ -->
+<div class="form-card">
+  <h2>🌐 Generar página web desde plantilla</h2>
+  <p style="font-size:13px;color:var(--sub);margin-bottom:16px">
+    Sube un fichero JSON de plantilla o pega su contenido para generar una página interactiva
+    con el mismo estilo que las páginas de temario.
+  </p>
+  <form method="POST" action="/generarPagina" enctype="multipart/form-data">
+
+    <div class="fg">
+      <label>📁 Carpeta destino</label>
+      <select name="carpeta_pagina" class="fc">{opts_page}</select>
+    </div>
+
+    <div class="fg">
+      <label>🏷️ Nombre de la página <span style="font-weight:400;color:var(--sub)">(opcional, se usa el título del JSON si se deja vacío)</span></label>
+      <input type="text" name="nombre_pagina" class="fc" placeholder="mi-temario">
+    </div>
+
+    <div class="fg">
+      <label>📋 Plantilla JSON</label>
+      <div class="tab-bar">
+        <button type="button" class="tab-btn active" onclick="switchTab(this,'tab-file')">📎 Subir fichero</button>
+        <button type="button" class="tab-btn" onclick="switchTab(this,'tab-text')">📝 Pegar JSON</button>
+      </div>
+      <div id="tab-file" class="tab-content active">
+        <div class="drop-zone" id="dz-json">
+          <input type="file" name="plantilla_json" id="json-inp" accept=".json,application/json">
+          <div class="drop-ico">📋</div>
+          <div class="drop-hint">Arrastra un fichero .json o haz clic</div>
+          <div class="drop-name" id="json-name"></div>
+        </div>
+      </div>
+      <div id="tab-text" class="tab-content">
+        <textarea name="plantilla_texto" class="fc"
+          placeholder='{{"titulo": "Mi temario", "descripcion": "...", "categorias": [...]}}'></textarea>
+      </div>
+    </div>
+
+    <button type="submit" class="btn-submit">🌐 Generar página</button>
+  </form>
+</div>
+
+<div class="divider"><span>o</span></div>
+
 <!-- ══ Crear carpeta ══════════════════════════════════════════════════════ -->
 <div class="form-card">
   <h2>📁 Crear una carpeta nueva</h2>
@@ -528,6 +586,14 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
 <script>
 {_JS}
 initDrop('dz','file-inp','file-name');
+initDrop('dz-json','json-inp','json-name');
+
+function switchTab(btn, tabId) {{
+  btn.closest('.fg').querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  btn.closest('.fg').querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.getElementById(tabId).classList.add('active');
+}}
 </script>
 </body>
 </html>"""
@@ -603,6 +669,74 @@ initDrop('dz','file-inp','file-name');
         redirect = carpeta_padre if carpeta_padre.startswith("/") else "/" + carpeta_padre
         self._redirect(redirect)
 
+    def handle_generate_page(self):
+        try:
+            form = self._parse_form()
+            carpeta = form.getvalue("carpeta_pagina", "/")
+            nombre_pagina = form.getvalue("nombre_pagina", "").strip()
+
+            # Obtener JSON: desde fichero subido o desde textarea
+            json_text = None
+            file_item = form["plantilla_json"] if "plantilla_json" in form else None
+            if file_item and getattr(file_item, "filename", None):
+                json_text = file_item.file.read().decode("utf-8")
+
+            if not json_text or not json_text.strip():
+                json_text = form.getvalue("plantilla_texto", "")
+
+            if not json_text or not json_text.strip():
+                self._redirect_with_msg(
+                    "/subirFichero",
+                    "Debes subir un fichero JSON o pegar el contenido de la plantilla.",
+                    "err", carpeta,
+                )
+                return
+
+            try:
+                plantilla = json.loads(json_text)
+            except json.JSONDecodeError as e:
+                self._redirect_with_msg(
+                    "/subirFichero",
+                    f"JSON inválido: {e}",
+                    "err", carpeta,
+                )
+                return
+
+            if not nombre_pagina:
+                nombre_pagina = plantilla.get("titulo", "pagina")
+            # Sanitizar nombre
+            nombre_pagina = "".join(
+                c for c in nombre_pagina if c not in r'/<>\:"|?*'
+            ).strip() or "pagina"
+            if not nombre_pagina.endswith(".html"):
+                nombre_pagina += ".html"
+
+            dir_path = self.safe_path(carpeta)
+            if dir_path is None or not os.path.isdir(dir_path):
+                dir_path = self.base_dir
+
+            nombre_pagina = asegurar_nombre_unico(dir_path, nombre_pagina)
+            html_content = generar_pagina(plantilla)
+
+            with open(os.path.join(dir_path, nombre_pagina), "w", encoding="utf-8") as fh:
+                fh.write(html_content)
+
+            # Guardar también el JSON fuente junto a la página
+            nombre_json = nombre_pagina.rsplit(".", 1)[0] + ".json"
+            nombre_json = asegurar_nombre_unico(dir_path, nombre_json)
+            with open(os.path.join(dir_path, nombre_json), "w", encoding="utf-8") as fh:
+                json.dump(plantilla, fh, ensure_ascii=False, indent=2)
+
+            meta = cargar_metadata(dir_path)
+            meta.setdefault("files", {})[nombre_pagina] = "🌐"
+            meta.setdefault("files", {})[nombre_json] = "📋"
+            guardar_metadata(dir_path, meta)
+
+            redirect = carpeta if carpeta.startswith("/") else "/" + carpeta
+            self._redirect(redirect)
+        except Exception as exc:
+            self.send_error(500, f"Error al generar la página: {exc}")
+
     # ── response helpers ──────────────────────────────────────────────────────
 
     def _send_html(self, content: str):
@@ -650,3 +784,23 @@ def iniciar_servidor(base_dir: str, puerto: int) -> ThreadingHTTPServer:
         f"(directorio: {base_dir})"
     )
     return servidor
+
+
+# ─── Standalone ───────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    base_dir = os.getenv("RUTA_ARCHIVOS_PUBLICOS", "/app/datos/publicos")
+    puerto = int(os.getenv("PUERTO_ARCHIVOS_PUBLICOS", "8000"))
+
+    os.makedirs(base_dir, exist_ok=True)
+    handler = crear_handler(base_dir)
+    servidor = ThreadingHTTPServer(("", puerto), handler)
+    print(
+        f"📂 Servidor de ficheros iniciado en http://0.0.0.0:{puerto} "
+        f"(directorio: {base_dir})"
+    )
+    try:
+        servidor.serve_forever()
+    except KeyboardInterrupt:
+        print("\n📂 Servidor detenido")
+        servidor.shutdown()

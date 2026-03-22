@@ -3,13 +3,11 @@ import os
 import json
 import random
 import sqlite3
-import threading
 import zipfile
 from math import ceil
 from datetime import datetime
 from functools import partial
 from urllib.parse import quote, unquote, urlparse
-from servidor_archivos import iniciar_servidor as _iniciar_servidor_archivos_bonito
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -31,14 +29,6 @@ URL_PUBLICA_ARCHIVOS = os.getenv(
 ).rstrip("/")
 if URL_PUBLICA_ARCHIVOS.startswith("http://"):
     URL_PUBLICA_ARCHIVOS = "https://" + URL_PUBLICA_ARCHIVOS[len("http://") :]
-SERVIR_ARCHIVOS_PUBLICOS = os.getenv("SERVIR_ARCHIVOS_PUBLICOS", "").lower() in {
-    "1",
-    "true",
-    "si",
-    "sí",
-    "yes",
-}
-
 FAILURES_TEST_SIZE = 40
 TIEMPO_PREGUNTA_SEGUNDOS = 20
 TAMANO_PAGINA_TESTS = 20
@@ -3611,16 +3601,9 @@ async def guardar_documento_publico(documento):
     return nombre_archivo, url
 
 
-def iniciar_servidor_archivos():
-    if not SERVIR_ARCHIVOS_PUBLICOS:
-        return None
-    return _iniciar_servidor_archivos_bonito(RUTA_ARCHIVOS_PUBLICOS, PUERTO_ARCHIVOS_PUBLICOS)
-
-
 # ─────────────── MAIN ───────────────
 if __name__ == "__main__":
     init_db()
-    iniciar_servidor_archivos()
 
     TOKEN = os.environ.get("TOKEN")
     if not TOKEN:

@@ -2,17 +2,27 @@ version: "3.8"
 
 services:
   quizbot:
-    build: .
+    build: ./bot
     environment:
       TOKEN: ${TOKEN}
-      SERVIR_ARCHIVOS_PUBLICOS: ${SERVIR_ARCHIVOS_PUBLICOS:-1}
-      PUERTO_ARCHIVOS_PUBLICOS: ${PUERTO_ARCHIVOS_PUBLICOS:-8000}
-      URL_PUBLICA_ARCHIVOS: ${URL_PUBLICA_ARCHIVOS:-https://aprentix.es}
       RUTA_ARCHIVOS_PUBLICOS: /app/users/publicos
+      URL_PUBLICA_ARCHIVOS: ${URL_PUBLICA_ARCHIVOS:-https://aprentix.es}
+      PUERTO_ARCHIVOS_PUBLICOS: ${PUERTO_ARCHIVOS_PUBLICOS:-8000}
     restart: unless-stopped
     volumes:
       - datos_usuarios:/app/users
-      - /mnt/data/ficheros:/app/users/publicos
+      - ficheros_publicos:/app/users/publicos
+    networks:
+      - dokploy-network
+
+  servidor:
+    build: ./servidor
+    environment:
+      RUTA_ARCHIVOS_PUBLICOS: /app/datos/publicos
+      PUERTO_ARCHIVOS_PUBLICOS: ${PUERTO_ARCHIVOS_PUBLICOS:-8000}
+    restart: unless-stopped
+    volumes:
+      - ficheros_publicos:/app/datos/publicos
     labels:
       - "traefik.enable=true"
       - "traefik.http.middlewares.redireccion_https.redirectscheme.scheme=https"
@@ -45,3 +55,4 @@ networks:
 
 volumes:
   datos_usuarios:
+  ficheros_publicos:
