@@ -1,22 +1,8 @@
 version: "3.8"
 
 services:
-  quizbot:
-    build: ./bot
-    environment:
-      TOKEN: ${TOKEN}
-      RUTA_ARCHIVOS_PUBLICOS: /app/users/publicos
-      URL_PUBLICA_ARCHIVOS: ${URL_PUBLICA_ARCHIVOS:-https://aprentix.es}
-      PUERTO_ARCHIVOS_PUBLICOS: ${PUERTO_ARCHIVOS_PUBLICOS:-8000}
-    restart: unless-stopped
-    volumes:
-      - datos_usuarios:/app/users
-      - ${RUTA_HOST_ARCHIVOS:-/mnt/data/ficheros}:/app/users/publicos
-    networks:
-      - dokploy-network
-
   servidor:
-    build: ./servidor
+    build: .
     environment:
       RUTA_ARCHIVOS_PUBLICOS: /app/datos/publicos
       PUERTO_ARCHIVOS_PUBLICOS: ${PUERTO_ARCHIVOS_PUBLICOS:-8000}
@@ -52,6 +38,3 @@ services:
 networks:
   dokploy-network:
     external: true
-
-volumes:
-  datos_usuarios:
