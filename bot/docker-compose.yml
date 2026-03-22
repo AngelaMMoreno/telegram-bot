@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  quizbot:
+    build:
+      context: ..
+      dockerfile: bot/Dockerfile
+    environment:
+      TOKEN: ${TOKEN}
+    restart: unless-stopped
+    volumes:
+      - datos_usuarios:/app/users
+
+volumes:
+  datos_usuarios:
+    name: telegram-bot_datos_usuarios
