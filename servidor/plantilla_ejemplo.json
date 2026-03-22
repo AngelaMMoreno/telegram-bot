@@ -1,0 +1,89 @@
+{
+  "titulo": "Herramientas CCN-CERT",
+  "descripcion": "Ecosistema de soluciones de ciberseguridad del Centro Criptológico Nacional",
+  "banner": {
+    "etiqueta": "PLATAFORMA NACIONAL",
+    "titulo": "IRIS — Plataforma de ciberseguridad del sector público",
+    "descripcion": "Conoce en tiempo real el estado de la ciberseguridad del sector público español. Mediante mapas interactivos y representaciones visuales, alerta sobre ciberataques, vulnerabilidades y riesgos.",
+    "badges": ["LUCÍA", "CARMEN", "GLORIA", "MÓNICA", "INÉS", "PILAR"]
+  },
+  "categorias": [
+    {
+      "icono": "🎯",
+      "nombre": "Detección APT / Endpoint",
+      "color": "#8a5510",
+      "items": [
+        {
+          "id": "carmen",
+          "nombre": "CARMEN",
+          "descripcion": "Detección de APT en tráfico de red entrante, saliente e interno",
+          "detalle": {
+            "titulo": "CARMEN — Detección de APT en red",
+            "texto": "Primera capacidad española para la detección de amenazas persistentes avanzadas (APT) en redes.",
+            "relaciones": "<strong>Integra a:</strong> CLAUDIA (endpoint). <strong>Alimenta a:</strong> IRIS.",
+            "categoria": "🎯 Detección APT / Endpoint",
+            "color": "#8a5510"
+          }
+        },
+        {
+          "id": "claudia",
+          "nombre": "CLAUDIA",
+          "descripcion": "Endpoint de detección APT integrado con CARMEN",
+          "hijo": true,
+          "detalle": {
+            "titulo": "CLAUDIA — Endpoint de detección APT",
+            "texto": "Solución de endpoint que se integra con CARMEN para ampliar la visibilidad al interior de los equipos.",
+            "relaciones": "<strong>Dependencia:</strong> Funciona integrada con CARMEN.",
+            "categoria": "🎯 Detección APT / Endpoint",
+            "color": "#8a5510"
+          }
+        },
+        {
+          "id": "microclaudia",
+          "nombre": "microCLAUDIA",
+          "descripcion": "Vacunas anti-ransomware ligeras derivadas de CLAUDIA",
+          "hijo": true,
+          "detalle": {
+            "titulo": "microCLAUDIA — Vacunas anti-ransomware",
+            "texto": "Versión ligera basada en el motor de CLAUDIA orientada a la protección contra ransomware.",
+            "relaciones": "<strong>Derivada de:</strong> El motor de CLAUDIA, versión reducida para despliegues masivos.",
+            "categoria": "🎯 Detección APT / Endpoint",
+            "color": "#8a5510"
+          }
+        }
+      ]
+    },
+    {
+      "icono": "🦠",
+      "nombre": "Análisis de malware",
+      "color": "#b5431c",
+      "items": [
+        {
+          "id": "ada",
+          "nombre": "ADA",
+          "descripcion": "Plataforma de análisis avanzado de malware (dinámico + estático)",
+          "detalle": {
+            "titulo": "ADA — Análisis dinámico avanzado",
+            "texto": "Plataforma que integra capacidades dinámicas (MARTA) y estáticas (MARÍA) en un único interfaz.",
+            "relaciones": "<strong>Contiene a:</strong> MARTA (sandboxing dinámico) y MARÍA (análisis estático).",
+            "categoria": "🦠 Análisis de malware",
+            "color": "#b5431c"
+          }
+        },
+        {
+          "id": "marta",
+          "nombre": "MARTA",
+          "descripcion": "Multi-sandboxing para análisis dinámico automatizado",
+          "hijo": true,
+          "detalle": {
+            "titulo": "MARTA — Multi-sandboxing dinámico",
+            "texto": "Plataforma avanzada de multi-sandboxing para el análisis automatizado de ficheros potencialmente maliciosos.",
+            "relaciones": "<strong>Dependencia:</strong> Integrada dentro de ADA.",
+            "categoria": "🦠 Análisis de malware",
+            "color": "#b5431c"
+          }
+        }
+      ]
+    }
+  ]
+}
