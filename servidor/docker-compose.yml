@@ -8,7 +8,7 @@ services:
       PUERTO_ARCHIVOS_PUBLICOS: ${PUERTO_ARCHIVOS_PUBLICOS:-8000}
     restart: unless-stopped
     volumes:
-      - ficheros_publicos:/app/datos/publicos
+      - ${RUTA_HOST_ARCHIVOS:-/mnt/data/ficheros}:/app/datos/publicos
     labels:
       - "traefik.enable=true"
       - "traefik.http.middlewares.redireccion_https.redirectscheme.scheme=https"
@@ -39,5 +39,3 @@ networks:
   dokploy-network:
     external: true
 
-volumes:
-  ficheros_publicos:

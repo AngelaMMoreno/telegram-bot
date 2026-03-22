@@ -11,7 +11,7 @@ services:
     restart: unless-stopped
     volumes:
       - datos_usuarios:/app/users
-      - ficheros_publicos:/app/users/publicos
+      - ${RUTA_HOST_ARCHIVOS:-/mnt/data/ficheros}:/app/users/publicos
     networks:
       - dokploy-network
 
@@ -21,4 +21,3 @@ networks:
 
 volumes:
   datos_usuarios:
-  ficheros_publicos:
