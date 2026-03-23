@@ -5,6 +5,8 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+EXPOSE ${PUERTO_ARCHIVOS_PUBLICOS:-8000}
+
 COPY . .
 
 CMD ["python", "servidor_archivos.py"]
