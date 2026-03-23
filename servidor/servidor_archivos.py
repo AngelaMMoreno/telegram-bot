@@ -10,6 +10,14 @@ import urllib.parse
 import warnings
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+try:
+    import yaml
+    _YAML_DISPONIBLE = True
+except ImportError:
+    _YAML_DISPONIBLE = False
+
+from generador_paginas import generar_html
+
 # ─── Emojis predefinidos ────────────────────────────────────────────────────
 
 EMOJIS = [
@@ -66,6 +74,37 @@ def format_size(size: int) -> str:
     elif size < 1024 * 1024 * 1024:
         return f"{size / 1024 / 1024:.1f} MB"
     return f"{size / 1024 / 1024 / 1024:.1f} GB"
+
+
+def _es_plantilla_pagina(filename: str, contenido: bytes) -> dict | None:
+    """Detecta si un archivo es una plantilla de página y devuelve el dict parseado."""
+    nombre_lower = filename.lower()
+    if not (nombre_lower.endswith(".yaml") or nombre_lower.endswith(".yml")
+            or nombre_lower.endswith(".json")):
+        return None
+
+    try:
+        texto = contenido.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+    try:
+        if nombre_lower.endswith(".json"):
+            data = json.loads(texto)
+        else:
+            if not _YAML_DISPONIBLE:
+                return None
+            data = yaml.safe_load(texto)
+    except Exception:
+        return None
+
+    # Verificar que tiene la estructura mínima de plantilla de página
+    if isinstance(data, dict) and "titulo" in data and (
+        "secciones" in data or "categorias" in data
+    ):
+        return data
+
+    return None
 
 
 def asegurar_nombre_unico(directorio: str, nombre: str) -> str:
@@ -569,9 +608,45 @@ initDrop('dz','file-inp','file-name');
                 dir_path = self.base_dir
 
             filename = os.path.basename(file_item.filename or "archivo")
+            contenido = file_item.file.read()
+
+            # Detectar si es una plantilla de página de teoría
+            plantilla = _es_plantilla_pagina(filename, contenido)
+            if plantilla is not None:
+                # Generar HTML a partir de la plantilla
+                try:
+                    html_content = generar_html(plantilla)
+                    # Guardar el HTML con el mismo nombre pero extensión .html
+                    nombre_base = os.path.splitext(filename)[0]
+                    html_filename = asegurar_nombre_unico(dir_path, nombre_base + ".html")
+                    with open(os.path.join(dir_path, html_filename), "w", encoding="utf-8") as fh:
+                        fh.write(html_content)
+
+                    # También guardar el YAML/JSON original
+                    filename = asegurar_nombre_unico(dir_path, filename)
+                    with open(os.path.join(dir_path, filename), "wb") as fh:
+                        fh.write(contenido)
+
+                    meta = cargar_metadata(dir_path)
+                    meta.setdefault("files", {})[html_filename] = "📖"
+                    meta.setdefault("files", {})[filename] = icono
+                    guardar_metadata(dir_path, meta)
+
+                    redirect = carpeta if carpeta.startswith("/") else "/" + carpeta
+                    self._redirect(redirect)
+                    return
+                except Exception as exc:
+                    self._redirect_with_msg(
+                        "/subirFichero",
+                        f"Error generando página desde plantilla: {exc}",
+                        "err",
+                        carpeta,
+                    )
+                    return
+
             filename = asegurar_nombre_unico(dir_path, filename)
             with open(os.path.join(dir_path, filename), "wb") as fh:
-                fh.write(file_item.file.read())
+                fh.write(contenido)
 
             meta = cargar_metadata(dir_path)
             meta.setdefault("files", {})[filename] = icono
