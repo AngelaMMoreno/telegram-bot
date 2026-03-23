@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Editor de páginas dinámicas con JSON</title>
+  <link rel="stylesheet" href="./estilos.css">
+</head>
+<body>
+  <div class="aplicacion">
+    <aside class="panel panel-editor">
+      <header class="encabezado-panel">
+        <div>
+          <p class="etiqueta-superior">SISTEMA LOW-CODE</p>
+          <h1>Editor bidireccional JSON → Página</h1>
+          <p class="texto-secundario">
+            Pega JSON, prueba plantillas base/completas e inyecta módulos sin sobrescribir la página completa.
+          </p>
+        </div>
+        <div class="acciones-principales">
+          <button id="boton-plantilla-base" class="boton boton-secundario">Plantilla base</button>
+          <button id="boton-plantilla-completa" class="boton boton-primario">Plantilla completa</button>
+        </div>
+      </header>
+
+      <section class="bloque-editor">
+        <div class="titulo-bloque">
+          <h2>Editor JSON</h2>
+          <button id="boton-formatear" class="boton boton-fantasma">Formatear</button>
+        </div>
+        <textarea id="editor-json" class="editor-json" spellcheck="false"></textarea>
+        <p id="estado-json" class="estado estado-neutro">Listo para renderizar.</p>
+      </section>
+
+      <section class="bloque-editor">
+        <div class="titulo-bloque">
+          <h2>Inyección incremental</h2>
+          <button id="boton-inyectar" class="boton boton-secundario">Inyectar bloque</button>
+        </div>
+        <textarea id="editor-fragmento" class="editor-fragmento" spellcheck="false"></textarea>
+        <p class="ayuda">Acepta un objeto <code>categoria</code>, un objeto <code>item</code> o un arreglo de categorías.</p>
+      </section>
+
+      <section class="bloque-editor bloque-inspector">
+        <div class="titulo-bloque">
+          <h2>Inspector visual</h2>
+          <span id="ruta-seleccion" class="ruta-seleccion">Sin selección</span>
+        </div>
+        <form id="formulario-inspector" class="formulario-inspector"></form>
+      </section>
+    </aside>
+
+    <main class="panel panel-vista-previa">
+      <section class="resumen-adn">
+        <div class="titulo-bloque">
+          <h2>ADN del diseño extraído</h2>
+        </div>
+        <ul class="lista-adn">
+          <li>Diseño mobile-first con rejilla adaptable de una a múltiples columnas.</li>
+          <li>Uso intensivo de tarjetas elevadas con bordes suaves, sombras ligeras y encabezados cromáticos.</li>
+          <li>Jerarquía visual por categorías, ítems y subtemas mediante sangrías, badges y panel lateral de detalle.</li>
+          <li>Banner superior de alto contraste, tipografía moderna y microetiquetas monoespaciadas.</li>
+        </ul>
+      </section>
+
+      <section id="lienzo" class="lienzo"></section>
+    </main>
+  </div>
+
+  <script src="./ejemplos.js"></script>
+  <script src="./aplicacion.js"></script>
+</body>
+</html>
