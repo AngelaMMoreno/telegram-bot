@@ -4,14 +4,11 @@ services:
   quizbot:
     build: .
     environment:
-      TOKEN: ${TOKEN}
-      SERVIR_ARCHIVOS_PUBLICOS: ${SERVIR_ARCHIVOS_PUBLICOS:-1}
       PUERTO_ARCHIVOS_PUBLICOS: ${PUERTO_ARCHIVOS_PUBLICOS:-8000}
       URL_PUBLICA_ARCHIVOS: ${URL_PUBLICA_ARCHIVOS:-https://aprentix.es}
       RUTA_ARCHIVOS_PUBLICOS: /app/users/publicos
     restart: unless-stopped
     volumes:
-      - datos_usuarios:/app/users
       - /mnt/data/ficheros:/app/users/publicos
     labels:
       - "traefik.enable=true"

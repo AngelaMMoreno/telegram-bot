@@ -3,13 +3,9 @@ import os
 import json
 import random
 import sqlite3
-import threading
 import zipfile
 from math import ceil
 from datetime import datetime
-from functools import partial
-from urllib.parse import quote, unquote, urlparse
-from servidor_archivos import iniciar_servidor as _iniciar_servidor_archivos_bonito
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -20,24 +16,7 @@ from telegram.ext import (
     filters,
 )
 
-RUTA_DATOS = os.getenv("RUTA_DATOS", os.getenv("DATA_DIR", "users"))
-DB_FILE = os.path.join(RUTA_DATOS, "bot.db")
-RUTA_ARCHIVOS_PUBLICOS = os.getenv(
-    "RUTA_ARCHIVOS_PUBLICOS", "/mnt/data/ficheros"
-)
-PUERTO_ARCHIVOS_PUBLICOS = int(os.getenv("PUERTO_ARCHIVOS_PUBLICOS", "8000"))
-URL_PUBLICA_ARCHIVOS = os.getenv(
-    "URL_PUBLICA_ARCHIVOS", f"https://localhost:{PUERTO_ARCHIVOS_PUBLICOS}"
-).rstrip("/")
-if URL_PUBLICA_ARCHIVOS.startswith("http://"):
-    URL_PUBLICA_ARCHIVOS = "https://" + URL_PUBLICA_ARCHIVOS[len("http://") :]
-SERVIR_ARCHIVOS_PUBLICOS = os.getenv("SERVIR_ARCHIVOS_PUBLICOS", "").lower() in {
-    "1",
-    "true",
-    "si",
-    "sí",
-    "yes",
-}
+DB_FILE = os.path.join("/app/bd", "bot.db")
 
 FAILURES_TEST_SIZE = 40
 TIEMPO_PREGUNTA_SEGUNDOS = 20
@@ -1673,11 +1652,10 @@ def reconstruir_quiz_desde_db(user_id, quiz_id, telegram_user_id):
             else:
                 fail += 1
     # Filtrar preguntas ya respondidas manteniendo el orden
+    # Usamos solo las preguntas pendientes como lista restante
     preguntas_pendientes = [q for q in questions if q["id"] not in respondidas]
     if not preguntas_pendientes:
         return None
-    # Reconstruir con todas las preguntas pero el índice apuntando a las pendientes
-    # Usamos solo las preguntas pendientes como lista restante
     return {
         "questions": preguntas_pendientes,
         "quiz_id": quiz_id,
@@ -2437,15 +2415,13 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text(
                 "📝 Explicación actual:\n"
                 f"{contexto_explicacion}\n\n"
-                "Escribe la nueva explicación, pega una URL/nombre de fichero "
-                "o adjunta un archivo para guardarlo como enlace HTTPS:",
+                "Escribe la nueva explicación:",
                 reply_markup=botones,
             )
         else:
             await query.message.reply_text(
                 "📝 Esta pregunta no tiene explicación.\n"
-                "Escribe una explicación, pega una URL/nombre de fichero "
-                "o adjunta un archivo para guardar el enlace HTTPS:",
+                "Escribe una explicación:",
                 reply_markup=botones,
             )
     elif data == "cancelar_explicacion":
@@ -2533,14 +2509,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.pop("modo", None)
         if not pregunta_id:
             await update.message.reply_text("❌ No se pudo identificar la pregunta.")
-            return
-        url_archivo = construir_url_archivo_desde_texto(explicacion)
-        if url_archivo:
-            actualizar_explicacion_pregunta(pregunta_id, url_archivo)
-            await update.message.reply_text(
-                "✅ Explicación guardada como enlace HTTPS.",
-                reply_markup=obtener_markup_volver_pregunta(),
-            )
             return
         actualizar_explicacion_pregunta(pregunta_id, explicacion)
         await update.message.reply_text(
@@ -2844,32 +2812,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if modo == "editar_pregunta_json":
         await update.message.reply_text(
             "❌ En este modo debes enviar texto JSON, no un archivo."
-        )
-        return
-    if modo == "editar_explicacion":
-        documento = update.message.document
-        if not documento:
-            return
-        pregunta_id = context.user_data.pop("pregunta_explicacion_id", None)
-        context.user_data.pop("modo", None)
-        if not pregunta_id:
-            await update.message.reply_text("❌ No se pudo identificar la pregunta.")
-            return
-        nombre_archivo, url = await guardar_documento_publico(documento)
-        if not nombre_archivo or not url:
-            await update.message.reply_text("❌ No se pudo guardar el archivo.")
-            return
-        descripcion = (update.message.caption or "").strip()
-        if descripcion:
-            explicacion = f"{descripcion}\n\n{url}"
-        else:
-            explicacion = url
-        actualizar_explicacion_pregunta(pregunta_id, explicacion)
-        await update.message.reply_text(
-            "✅ Explicación actualizada con archivo.\n"
-            f"📎 {nombre_archivo}\n"
-            f"🌐 {url}",
-            reply_markup=obtener_markup_volver_pregunta(),
         )
         return
 
@@ -3559,68 +3501,9 @@ async def enviar_tests_como_zip(chat_id, context):
     )
 
 
-def asegurar_nombre_archivo_unico(ruta_directorio, nombre_archivo):
-    base, extension = os.path.splitext(nombre_archivo)
-    contador = 1
-    nombre_final = nombre_archivo
-    while os.path.exists(os.path.join(ruta_directorio, nombre_final)):
-        nombre_final = f"{base}_{contador}{extension}"
-        contador += 1
-    return nombre_final
-
-
-def construir_url_archivo(nombre_archivo):
-    return f"{URL_PUBLICA_ARCHIVOS}/{quote(nombre_archivo)}"
-
-
-def extraer_nombre_archivo_desde_texto(texto):
-    texto = (texto or "").strip()
-    if not texto:
-        return None
-    if "://" in texto:
-        texto = urlparse(texto).path or ""
-    texto = unquote(texto).strip().lstrip("/")
-    nombre_archivo = os.path.basename(texto)
-    if nombre_archivo in {"", ".", ".."}:
-        return None
-    return nombre_archivo
-
-
-def construir_url_archivo_desde_texto(texto):
-    nombre_archivo = extraer_nombre_archivo_desde_texto(texto)
-    if not nombre_archivo:
-        return None
-    ruta_archivo = os.path.join(RUTA_ARCHIVOS_PUBLICOS, nombre_archivo)
-    if not os.path.isfile(ruta_archivo):
-        return None
-    return construir_url_archivo(nombre_archivo)
-
-
-async def guardar_documento_publico(documento):
-    if not documento:
-        return None, None
-    os.makedirs(RUTA_ARCHIVOS_PUBLICOS, exist_ok=True)
-    nombre_archivo = os.path.basename(documento.file_name or "archivo")
-    nombre_archivo = asegurar_nombre_archivo_unico(
-        RUTA_ARCHIVOS_PUBLICOS, nombre_archivo
-    )
-    archivo = await documento.get_file()
-    ruta_destino = os.path.join(RUTA_ARCHIVOS_PUBLICOS, nombre_archivo)
-    await archivo.download_to_drive(ruta_destino)
-    url = construir_url_archivo(nombre_archivo)
-    return nombre_archivo, url
-
-
-def iniciar_servidor_archivos():
-    if not SERVIR_ARCHIVOS_PUBLICOS:
-        return None
-    return _iniciar_servidor_archivos_bonito(RUTA_ARCHIVOS_PUBLICOS, PUERTO_ARCHIVOS_PUBLICOS)
-
-
 # ─────────────── MAIN ───────────────
 if __name__ == "__main__":
     init_db()
-    iniciar_servidor_archivos()
 
     TOKEN = os.environ.get("TOKEN")
     if not TOKEN:

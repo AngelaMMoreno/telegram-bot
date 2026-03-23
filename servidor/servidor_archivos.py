@@ -28,6 +28,11 @@ EMOJIS = [
 
 METADATA_FILE = ".metadata.json"
 
+RUTA_ARCHIVOS_PUBLICOS = os.getenv(
+    "RUTA_ARCHIVOS_PUBLICOS", "/mnt/data/ficheros"
+)
+PUERTO_ARCHIVOS_PUBLICOS = int(os.getenv("PUERTO_ARCHIVOS_PUBLICOS", "8000"))
+
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -650,3 +655,6 @@ def iniciar_servidor(base_dir: str, puerto: int) -> ThreadingHTTPServer:
         f"(directorio: {base_dir})"
     )
     return servidor
+
+if __name__ == "__main__":
+    iniciar_servidor(RUTA_ARCHIVOS_PUBLICOS, PUERTO_ARCHIVOS_PUBLICOS)
