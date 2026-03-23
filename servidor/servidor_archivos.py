@@ -693,6 +693,7 @@ __ALERT_HTML__
       <div class="tabs">
         <button type="button" class="tab active" data-tab="editor">✏️ Editor YAML</button>
         <button type="button" class="tab" data-tab="disenador">🧭 Asistente visual</button>
+        <button type="button" class="tab" data-tab="markdown">📋 Importar Markdown</button>
         <button type="button" class="tab" data-tab="preview">👁️ Vista previa</button>
       </div>
 
@@ -751,6 +752,38 @@ secciones:
               <button type="button" class="btn-mini" id="agregarSeccionBtn">+ Añadir sección</button>
             </div>
             <div id="contenedorSecciones"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-markdown">
+        <div style="display:grid;gap:14px">
+          <div class="ayuda-diseno">
+            Pega tus tablas Markdown. Cada <strong>línea de texto antes de una tabla</strong> se convierte en el nombre de una tarjeta. Pulsa <strong>Analizar</strong>, configura el mapeo de columnas y añade las tarjetas al editor.
+          </div>
+          <div class="fg">
+            <label>Contenido Markdown</label>
+            <textarea id="mdInput" class="yaml-editor" rows="14"
+              placeholder="SQL
+| Categoría | Descripción | Comandos |
+| --------- | ----------- | -------- |
+| DDL | Data Definition Language | CREATE, ALTER, DROP |
+| DML | Data Manipulation Language | INSERT, UPDATE, DELETE |
+
+Consultas y filtrado
+| Palabra clave | ¿Para qué sirve? | Ejemplo |
+| ------------- | ---------------- | ------- |
+| SELECT | Seleccionar datos | SELECT nombre FROM tabla |
+| WHERE | Filtrar registros | WHERE edad > 18 |"></textarea>
+          </div>
+          <div><button type="button" class="btn-mini" id="btnAnalizarMD" style="padding:8px 16px">🔍 Analizar tablas →</button></div>
+          <div id="mdResultado" style="display:none">
+            <div id="mdInfo" class="ayuda-diseno" style="margin-bottom:10px"></div>
+            <div id="mdMapeo"></div>
+            <div class="acciones-inline" style="margin-top:14px">
+              <button type="button" class="btn-mini" id="btnMDReemplazar" style="padding:8px 14px">↩ Reemplazar contenido del editor</button>
+              <button type="button" class="btn-mini" id="btnMDAnyadir" style="padding:8px 14px">+ Añadir al YAML existente</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1052,6 +1085,167 @@ document.getElementById('bannerTitulo').addEventListener('input', (e) => { estad
 document.getElementById('bannerDescripcion').addEventListener('input', (e) => { estadoDiseno.bannerDescripcion = e.target.value; sincronizarEditorSegunModo(); });
 document.getElementById('agregarSeccionBtn').addEventListener('click', () => { estadoDiseno.secciones.push(crearSeccion()); renderizarSecciones(); });
 document.getElementById('pageForm').addEventListener('submit', () => { sincronizarEditorSegunModo(); });
+
+// ── Importador Markdown ─────────────────────────────────────────────────────
+const _MD_COLORES = ["#b5431c","#8a5510","#1254a0","#0a6b52","#4036b0","#4a4845","#4f7d10","#12876a","#7c3aed","#0891b2","#059669","#c2410c"];
+const _MD_ICONOS  = ["📚","🔧","🎯","📊","🔐","🧪","🌐","⚙️","🎓","💡","🔬","📋"];
+let _bloquesMD = [];
+
+function _mdLimpiar(txt) {
+  return (txt || '')
+    .replace(/\*\*/g, '')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^\s*#+\s*/, '')
+    .trim();
+}
+
+function _mdEsSep(linea) {
+  return /^\s*\|[\s|\-:]+\|\s*$/.test(linea);
+}
+
+function _mdParsarFila(linea) {
+  return linea.split('|').slice(1, -1).map(c => _mdLimpiar(c.trim()));
+}
+
+function _mdParsarBloques(texto) {
+  const bloques = [];
+  const lineas = texto.split('\\n');
+  let titulo = '';
+  let enTabla = false;
+  let cabs = [];
+  let filas = [];
+
+  function guardar() {
+    if (enTabla && filas.length) bloques.push({ titulo, cabs: [...cabs], filas: [...filas] });
+    enTabla = false; cabs = []; filas = [];
+  }
+
+  for (const linea of lineas) {
+    const t = linea.trim();
+    if (t.startsWith('|')) {
+      if (!enTabla) { enTabla = true; cabs = _mdParsarFila(t); }
+      else if (_mdEsSep(t)) { /* separador */ }
+      else { const f = _mdParsarFila(t); if (f.some(Boolean)) filas.push(f); }
+    } else {
+      guardar();
+      const lim = _mdLimpiar(t);
+      if (lim) titulo = lim;
+    }
+  }
+  guardar();
+  return bloques;
+}
+
+function _mdAnalizar() {
+  const texto = document.getElementById('mdInput').value.trim();
+  if (!texto) return;
+  _bloquesMD = _mdParsarBloques(texto);
+  const $res  = document.getElementById('mdResultado');
+  const $info = document.getElementById('mdInfo');
+  const $map  = document.getElementById('mdMapeo');
+
+  if (!_bloquesMD.length) {
+    $info.innerHTML = '⚠️ No se detectaron tablas. Asegúrate de incluir la línea separadora <code>| --- | --- |</code> en cada tabla.';
+    $res.style.display = 'block'; $map.innerHTML = ''; return;
+  }
+
+  const totalItems = _bloquesMD.reduce((s, b) => s + b.filas.length, 0);
+  $info.innerHTML = `✅ <strong>${_bloquesMD.length}</strong> tabla(s) detectada(s) → <strong>${_bloquesMD.length}</strong> tarjeta(s) con <strong>${totalItems}</strong> items en total.`;
+
+  const maxCols = Math.max(..._bloquesMD.map(b => b.cabs.length));
+  const opciones = ['nombre','descripcion','etiqueta','detalle','ignorar'];
+  const defectos = ['nombre','descripcion','etiqueta','detalle'];
+
+  let html = '<div class="bloque-diseno">';
+  html += '<h4 style="margin-bottom:6px">Mapeo de columnas</h4>';
+  html += '<div style="font-size:12px;color:var(--sub);margin-bottom:10px">Define qué representa cada columna. Se aplica a todas las tablas.</div>';
+  html += '<div class="grid-dos">';
+  for (let i = 0; i < maxCols; i++) {
+    const cab = (_bloquesMD[0].cabs[i] || `Col ${i+1}`);
+    const def = defectos[i] || 'ignorar';
+    html += `<div class="fg"><label>Col ${i+1} — <em>${escapeHtml(cab)}</em></label>
+      <select class="fc _mdc" data-col="${i}">${opciones.map(o => `<option value="${o}"${o===def?' selected':''}>${o}</option>`).join('')}</select>
+    </div>`;
+  }
+  html += '</div>';
+  html += '<div style="margin-top:10px;font-size:12px;color:var(--sub)"><strong>Tarjetas que se crearán:</strong><br style="margin-bottom:4px">';
+  _bloquesMD.forEach((b, i) => {
+    const color = _MD_COLORES[i % _MD_COLORES.length];
+    html += `<span style="display:inline-flex;align-items:center;gap:5px;margin:3px 4px;padding:3px 10px;background:var(--pri-light);border-radius:6px;color:var(--pri-d);font-size:11px">
+      <span style="width:9px;height:9px;border-radius:50%;background:${color};flex-shrink:0"></span>
+      ${_MD_ICONOS[i % _MD_ICONOS.length]} ${escapeHtml(b.titulo || `Tabla ${i+1}`)}
+      <span style="opacity:.55">(${b.filas.length})</span></span>`;
+  });
+  html += '</div></div>';
+  $map.innerHTML = html;
+  $res.style.display = 'block';
+}
+
+function _mdGetMapeo() {
+  const m = {};
+  document.querySelectorAll('._mdc').forEach(s => { m[+s.dataset.col] = s.value; });
+  return m;
+}
+
+function _mdConvertir(reemplazar) {
+  if (!_bloquesMD.length) { alert('Primero analiza el contenido Markdown.'); return; }
+  const mapeo = _mdGetMapeo();
+
+  const categorias = _bloquesMD.map((b, idx) => {
+    const items = b.filas.map(fila => {
+      const item = { nombre: '', contraible: false };
+      Object.entries(mapeo).forEach(([ci, campo]) => {
+        const val = (fila[+ci] || '').trim();
+        if (!val || campo === 'ignorar') return;
+        if (campo === 'nombre')       item.nombre = val;
+        else if (campo === 'descripcion') item.descripcion = val;
+        else if (campo === 'etiqueta')    item.etiqueta = val;
+        else if (campo === 'detalle') {
+          item.detalle = item.detalle || {};
+          item.detalle.texto = item.detalle.texto ? item.detalle.texto + ' — ' + val : val;
+          item.contraible = true;
+        }
+      });
+      return item.nombre ? item : null;
+    }).filter(Boolean);
+
+    return {
+      nombre: b.titulo || `Sección ${idx + 1}`,
+      icono: _MD_ICONOS[idx % _MD_ICONOS.length],
+      color: _MD_COLORES[idx % _MD_COLORES.length],
+      items,
+    };
+  });
+
+  let plantilla;
+  if (!reemplazar) {
+    try {
+      plantilla = JSON.parse(document.getElementById('yamlEditor').value);
+      if (!plantilla.secciones || !plantilla.secciones.length) plantilla.secciones = [{ categorias: [] }];
+      if (!plantilla.secciones[0].categorias) plantilla.secciones[0].categorias = [];
+      plantilla.secciones[0].categorias.push(...categorias);
+    } catch { reemplazar = true; }
+  }
+  if (reemplazar) {
+    plantilla = {
+      titulo: document.getElementById('tituloDiseno').value || 'Nueva página',
+      descripcion: document.getElementById('descripcionDiseno').value || '',
+      secciones: [{ categorias }],
+    };
+  }
+
+  document.getElementById('yamlEditor').value = JSON.stringify(plantilla, null, 2);
+  document.getElementById('formatoContenido').value = 'json';
+  modoContenido = 'editor';
+  cambiarTab('editor');
+}
+
+document.getElementById('btnAnalizarMD').addEventListener('click', _mdAnalizar);
+document.getElementById('btnMDReemplazar').addEventListener('click', () => _mdConvertir(true));
+document.getElementById('btnMDAnyadir').addEventListener('click', () => _mdConvertir(false));
+// ── Fin importador Markdown ─────────────────────────────────────────────────
+
 renderizarSecciones();
 </script>
 </body>
