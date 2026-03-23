@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  quizbot:
+    build: .
+    environment:
+      TOKEN: ${TOKEN}
+      URL_PUBLICA_ARCHIVOS: ${URL_PUBLICA_ARCHIVOS:-https://aprentix.es}
+      RUTA_ARCHIVOS_PUBLICOS: /app/users/publicos
+    restart: unless-stopped
+    volumes:
+      - datos_usuarios:/app/users
+      - /mnt/data/ficheros:/app/users/publicos
+    networks:
+      - dokploy-network
+
+networks:
+  dokploy-network:
+    external: true
+
+volumes:
+  datos_usuarios:

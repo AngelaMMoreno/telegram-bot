@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<!-- saved from url=(0048)https://aprentix.es/teoria/Modelo_OSI_TCPIP.html -->
+<html lang="es"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Modelo OSI y TCP/IP — Capas, PDU, Dispositivos y Protocolos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com/">
+<link href="./Modelo OSI y TCP_IP — Capas, PDU, Dispositivos y Protocolos_files/css2" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════
+   RESET & BASE — Mobile First
+   ═══════════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --font-body:'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-mono:'JetBrains Mono', monospace;
+
+  /* Surfaces */
+  --bg-page:#f5f6f8;
+  --bg-card:#ffffff;
+  --bg-card-hover:#fafbfc;
+  --bg-detail:#ffffff;
+
+  /* Text */
+  --text-primary:#1a1d23;
+  --text-secondary:#5a5f6d;
+  --text-tertiary:#8b90a0;
+
+  /* Borders */
+  --border-light:#e8eaef;
+  --border-medium:#d4d7de;
+
+  /* Shadows */
+  --shadow-sm:0 1px 3px rgba(0,0,0,.04), 0 1px 2px rgba(0,0,0,.06);
+  --shadow-md:0 4px 16px rgba(0,0,0,.06), 0 2px 6px rgba(0,0,0,.04);
+  --shadow-lg:0 8px 32px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.04);
+  --shadow-tool:0 1px 4px rgba(0,0,0,.03);
+  --shadow-tool-hover:0 4px 20px rgba(0,0,0,.08), 0 2px 8px rgba(0,0,0,.04);
+
+  /* Radii */
+  --radius-sm:.5rem;
+  --radius-md:.75rem;
+  --radius-lg:1rem;
+  --radius-xl:1.25rem;
+}
+
+html{
+  font-size:16px;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
+
+body{
+  font-family:var(--font-body);
+  background:var(--bg-page);
+  color:var(--text-primary);
+  line-height:1.6;
+  min-height:100vh;
+}
+
+/* ═══════════════════════════════════════
+   LAYOUT
+   ═══════════════════════════════════════ */
+.wrap{
+  width:100%;
+  max-width:1280px;
+  margin:0 auto;
+  padding:1rem 1rem 3rem;
+}
+
+/* ═══════════════════════════════════════
+   PAGE HEADER
+   ═══════════════════════════════════════ */
+.page-header{
+  margin-bottom:1.5rem;
+  padding:0 .25rem;
+}
+.page-header h1{
+  font-size:1.5rem;
+  font-weight:700;
+  letter-spacing:-.02em;
+  color:var(--text-primary);
+  line-height:1.2;
+}
+.page-header p{
+  font-size:.9rem;
+  color:var(--text-secondary);
+  margin-top:.35rem;
+  line-height:1.5;
+}
+
+/* ═══════════════════════════════════════
+   COMPARISON BANNER
+   ═══════════════════════════════════════ */
+.compare-banner{
+  background:linear-gradient(135deg,#0c1a35 0%,#162d58 50%,#1a3a6e 100%);
+  border-radius:var(--radius-lg);
+  padding:1.5rem;
+  margin-bottom:1.75rem;
+  color:#fff;
+  position:relative;
+  overflow:hidden;
+  box-shadow:0 4px 24px rgba(12,26,53,.35);
+}
+.compare-banner::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background:
+    radial-gradient(ellipse at 85% 20%, rgba(59,130,246,.2) 0%, transparent 50%),
+    radial-gradient(ellipse at 10% 80%, rgba(99,102,241,.1) 0%, transparent 50%);
+  pointer-events:none;
+}
+.compare-banner::after{
+  content:'';
+  position:absolute;
+  top:-50%;right:-30%;
+  width:60%;height:200%;
+  background:linear-gradient(135deg, transparent 40%, rgba(255,255,255,.03) 50%, transparent 60%);
+  pointer-events:none;
+}
+.compare-banner>*{position:relative;z-index:1}
+
+.banner-label{
+  font-family:var(--font-mono);
+  font-size:.65rem;
+  font-weight:600;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  opacity:.5;
+  margin-bottom:.5rem;
+}
+.banner-title{
+  font-size:1.25rem;
+  font-weight:700;
+  margin-bottom:.6rem;
+  letter-spacing:-.01em;
+  line-height:1.3;
+}
+.banner-sub{
+  font-size:.875rem;
+  opacity:.7;
+  margin-bottom:1.25rem;
+  max-width:70ch;
+  line-height:1.6;
+}
+
+.banner-cols{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:.75rem;
+  margin-top:1rem;
+}
+.banner-col{
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:var(--radius-md);
+  padding:1rem;
+}
+.banner-col-title{
+  font-family:var(--font-mono);
+  font-size:.7rem;
+  font-weight:700;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  opacity:.6;
+  margin-bottom:.4rem;
+}
+.banner-col h3{
+  font-size:1rem;
+  font-weight:700;
+  margin-bottom:.35rem;
+}
+.banner-col p{
+  font-size:.8rem;
+  opacity:.65;
+  line-height:1.55;
+}
+
+.diff-badges{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.4rem;
+  margin-top:1rem;
+}
+.diff-badge{
+  font-family:var(--font-mono);
+  font-size:.65rem;
+  font-weight:600;
+  padding:.3em .85em;
+  border-radius:2rem;
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.15);
+  color:rgba(255,255,255,.85);
+  cursor:pointer;
+  transition:all .2s ease;
+  letter-spacing:.04em;
+  user-select:none;
+}
+.diff-badge:hover{
+  background:rgba(255,255,255,.18);
+  border-color:rgba(255,255,255,.35);
+  transform:translateY(-1px);
+}
+
+/* ═══════════════════════════════════════
+   SECTION DIVIDER
+   ═══════════════════════════════════════ */
+.section-title{
+  font-family:var(--font-mono);
+  font-size:.7rem;
+  font-weight:700;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--text-tertiary);
+  padding:0 .25rem;
+  margin:2rem 0 1rem;
+}
+
+/* ═══════════════════════════════════════
+   GRID — Mobile First (1 col default)
+   ═══════════════════════════════════════ */
+.grid{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:1.25rem;
+}
+
+/* ═══════════════════════════════════════
+   CATEGORY CARD (LAYER)
+   ═══════════════════════════════════════ */
+.cat{
+  border-radius:var(--radius-lg);
+  overflow:hidden;
+  border:1.5px solid var(--cat-border);
+  background:var(--bg-card);
+  box-shadow:var(--shadow-sm);
+  transition:box-shadow .2s ease;
+}
+.cat:hover{
+  box-shadow:var(--shadow-md);
+}
+
+.cat-head{
+  padding:.85rem 1.1rem;
+  display:flex;
+  align-items:center;
+  gap:.6rem;
+  background:var(--cat-head-bg);
+  border-bottom:1.5px solid var(--cat-border);
+}
+.cat-icon{font-size:1.05rem;line-height:1;flex-shrink:0}
+.cat-name{
+  font-family:var(--font-mono);
+  font-size:.7rem;
+  font-weight:700;
+  color:var(--cat-color);
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+.cat-layer-num{
+  font-family:var(--font-mono);
+  font-size:.6rem;
+  font-weight:700;
+  padding:.2em .55em;
+  border-radius:.4rem;
+  background:var(--cat-color);
+  color:#fff;
+  margin-left:auto;
+  letter-spacing:.04em;
+  white-space:nowrap;
+}
+.cat-pdu{
+  font-family:var(--font-mono);
+  font-size:.6rem;
+  font-weight:600;
+  padding:.2em .6em;
+  border-radius:2rem;
+  background:rgba(0,0,0,.04);
+  color:var(--text-secondary);
+  letter-spacing:.03em;
+  white-space:nowrap;
+}
+
+.tools{
+  padding:.65rem;
+  display:flex;
+  flex-direction:column;
+  gap:.45rem;
+}
+
+/* ═══════════════════════════════════════
+   TOOL CARD (PROTOCOL / DEVICE)
+   ═══════════════════════════════════════ */
+.tool{
+  background:var(--bg-card);
+  border:1.5px solid var(--border-light);
+  border-radius:var(--radius-md);
+  padding:.85rem 1rem;
+  padding-right:2.2rem;
+  cursor:pointer;
+  transition:all .2s ease;
+  position:relative;
+  box-shadow:var(--shadow-tool);
+}
+.tool:hover{
+  border-color:var(--cat-color);
+  box-shadow:var(--shadow-tool-hover);
+  transform:translateY(-1px);
+  background:var(--bg-card-hover);
+}
+.tool:active{
+  transform:translateY(0);
+  box-shadow:var(--shadow-sm);
+}
+
+.tool.child{
+  margin-left:.85rem;
+  border-left:3px solid var(--cat-color);
+  padding-left:.85rem;
+}
+
+.tool-name{
+  font-size:.95rem;
+  font-weight:700;
+  color:var(--text-primary);
+  margin-bottom:.3rem;
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+  flex-wrap:wrap;
+  line-height:1.4;
+}
+.tool-desc{
+  font-size:.85rem;
+  color:var(--text-secondary);
+  line-height:1.55;
+}
+
+.badge{
+  font-family:var(--font-mono);
+  font-size:.6rem;
+  font-weight:600;
+  padding:.2em .6em;
+  border-radius:.5rem;
+  letter-spacing:.04em;
+  white-space:nowrap;
+}
+
+.tool-arrow{
+  position:absolute;
+  right:.85rem;
+  top:50%;
+  transform:translateY(-50%);
+  font-size:1rem;
+  color:var(--text-tertiary);
+  opacity:.3;
+  transition:all .2s ease;
+  font-weight:300;
+}
+.tool:hover .tool-arrow{
+  opacity:.7;
+  right:.65rem;
+  color:var(--cat-color);
+}
+
+/* ═══════════════════════════════════════
+   DETAIL PANEL
+   ═══════════════════════════════════════ */
+.detail-panel{
+  border-radius:var(--radius-xl);
+  padding:0;
+  margin-top:1.75rem;
+  display:none;
+  overflow:hidden;
+  border:2px solid var(--detail-color, var(--border-medium));
+  box-shadow:var(--shadow-lg);
+  background:var(--bg-detail);
+  animation:slideUp .3s ease;
+}
+@keyframes slideUp{
+  from{opacity:0;transform:translateY(12px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.detail-panel.show{display:block}
+
+.detail-stripe{
+  height:4px;
+  background:var(--detail-color, var(--border-medium));
+}
+.detail-inner{
+  padding:1.5rem;
+}
+.detail-cat-label{
+  font-family:var(--font-mono);
+  font-size:.6rem;
+  font-weight:700;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--detail-color);
+  margin-bottom:.4rem;
+  opacity:.8;
+}
+.detail-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  margin-bottom:1rem;
+  gap:1rem;
+}
+.detail-title{
+  font-size:1.15rem;
+  font-weight:700;
+  color:var(--text-primary);
+  line-height:1.3;
+  letter-spacing:-.01em;
+}
+.close-btn{
+  flex-shrink:0;
+  font-size:.75rem;
+  font-weight:500;
+  color:var(--text-secondary);
+  cursor:pointer;
+  border:1.5px solid var(--border-light);
+  padding:.35em .85em;
+  border-radius:2rem;
+  transition:all .2s ease;
+  white-space:nowrap;
+  background:transparent;
+  font-family:var(--font-body);
+}
+.close-btn:hover{
+  color:var(--detail-color);
+  border-color:var(--detail-color);
+  background:var(--detail-bg);
+}
+.detail-text{
+  font-size:.95rem;
+  color:var(--text-secondary);
+  line-height:1.7;
+  margin-bottom:1rem;
+}
+.rel-note{
+  font-size:.875rem;
+  color:var(--text-secondary);
+  padding:1rem 1.15rem;
+  background:var(--detail-note-bg);
+  border-radius:var(--radius-md);
+  border:1.5px solid var(--detail-note-border);
+  line-height:1.65;
+}
+.rel-note strong{color:var(--text-primary)}
+
+/* ═══════════════════════════════════════
+   LAYER COLOR PALETTES
+   ═══════════════════════════════════════ */
+/* Capa 7 — Aplicación */
+.c-app{
+  --cat-border:rgba(139,92,246,.22);
+  --cat-head-bg:rgba(139,92,246,.06);
+  --cat-color:#7c3aed;
+}
+/* Capa 6 — Presentación */
+.c-pres{
+  --cat-border:rgba(99,102,241,.22);
+  --cat-head-bg:rgba(99,102,241,.06);
+  --cat-color:#5b5fc7;
+}
+/* Capa 5 — Sesión */
+.c-ses{
+  --cat-border:rgba(59,130,246,.22);
+  --cat-head-bg:rgba(59,130,246,.06);
+  --cat-color:#2563eb;
+}
+/* Capa 4 — Transporte */
+.c-trans{
+  --cat-border:rgba(14,165,233,.22);
+  --cat-head-bg:rgba(14,165,233,.06);
+  --cat-color:#0891b2;
+}
+/* Capa 3 — Red */
+.c-red{
+  --cat-border:rgba(16,185,129,.22);
+  --cat-head-bg:rgba(16,185,129,.06);
+  --cat-color:#059669;
+}
+/* Capa 2 — Enlace de datos */
+.c-enlace{
+  --cat-border:rgba(245,158,11,.22);
+  --cat-head-bg:rgba(245,158,11,.06);
+  --cat-color:#b45309;
+}
+/* Capa 1 — Física */
+.c-fisica{
+  --cat-border:rgba(239,68,68,.22);
+  --cat-head-bg:rgba(239,68,68,.06);
+  --cat-color:#dc2626;
+}
+/* TCP/IP grouping */
+.c-tcpapp{
+  --cat-border:rgba(139,92,246,.22);
+  --cat-head-bg:rgba(139,92,246,.06);
+  --cat-color:#7c3aed;
+}
+.c-tcptrans{
+  --cat-border:rgba(14,165,233,.22);
+  --cat-head-bg:rgba(14,165,233,.06);
+  --cat-color:#0891b2;
+}
+.c-tcpinternet{
+  --cat-border:rgba(16,185,129,.22);
+  --cat-head-bg:rgba(16,185,129,.06);
+  --cat-color:#059669;
+}
+.c-tcpacceso{
+  --cat-border:rgba(234,88,12,.22);
+  --cat-head-bg:rgba(234,88,12,.06);
+  --cat-color:#c2410c;
+}
+
+/* Full-width cards */
+.cat-full{grid-column:1 / -1;}
+
+/* ═══════════════════════════════════════
+   TABLET — 2 columns
+   ═══════════════════════════════════════ */
+@media (min-width: 640px){
+  .wrap{padding:1.5rem 1.5rem 3rem}
+  .page-header h1{font-size:1.7rem}
+  .compare-banner{padding:1.75rem}
+  .banner-title{font-size:1.35rem}
+  .banner-cols{grid-template-columns:1fr 1fr}
+
+  .grid{
+    grid-template-columns:repeat(2,1fr);
+    gap:1.25rem;
+  }
+
+  .detail-inner{padding:1.75rem}
+}
+
+/* ═══════════════════════════════════════
+   DESKTOP — 3 columns
+   ═══════════════════════════════════════ */
+@media (min-width: 1024px){
+  .wrap{padding:2rem 2.5rem 4rem}
+
+  .page-header{margin-bottom:2rem}
+  .page-header h1{font-size:1.85rem}
+  .page-header p{font-size:.95rem}
+
+  .compare-banner{
+    padding:2rem 2.25rem;
+    margin-bottom:2rem;
+    border-radius:var(--radius-xl);
+  }
+  .banner-title{font-size:1.5rem}
+  .banner-sub{font-size:.925rem}
+
+  .grid{
+    grid-template-columns:repeat(3,1fr);
+    gap:1.5rem;
+  }
+
+  .cat-head{padding:.9rem 1.25rem}
+
+  .tool{padding:.95rem 1.1rem;padding-right:2.4rem}
+  .tool-name{font-size:1rem}
+  .tool-desc{font-size:.875rem}
+
+  .detail-inner{padding:2rem 2.25rem}
+  .detail-title{font-size:1.3rem}
+  .detail-text{font-size:1rem}
+  .rel-note{font-size:.925rem}
+}
+
+/* ═══════════════════════════════════════
+   WIDE DESKTOP
+   ═══════════════════════════════════════ */
+@media (min-width: 1400px){
+  .page-header h1{font-size:2rem}
+  .banner-title{font-size:1.6rem}
+  .tool-name{font-size:1.05rem}
+  .tool-desc{font-size:.9rem}
+  .detail-title{font-size:1.4rem}
+  .detail-text{font-size:1.05rem}
+}
+
+/* ═══════════════════════════════════════
+   SCROLLBAR STYLING
+   ═══════════════════════════════════════ */
+::-webkit-scrollbar{width:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#c8cad0;border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:#a8aab2}
+
+/* ═══════════════════════════════════════
+   FOCUS / A11Y
+   ═══════════════════════════════════════ */
+.tool:focus-visible,
+.diff-badge:focus-visible,
+.close-btn:focus-visible{
+  outline:2px solid var(--cat-color, #4036b0);
+  outline-offset:2px;
+}
+
+/* Touch targets */
+@media (hover: none){
+  .tool{padding:1rem 1.1rem;padding-right:2.4rem}
+  .diff-badge{padding:.4em 1em;font-size:.75rem}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <!-- Page header -->
+  <header class="page-header">
+    <h1>Modelo OSI y TCP/IP</h1>
+    <p>Arquitectura de capas, unidades de datos (PDU), dispositivos característicos y protocolos de cada nivel</p>
+  </header>
+
+  <!-- Comparison Banner -->
+  <div class="compare-banner">
+    <div class="banner-label">Comparativa de modelos de referencia</div>
+    <div class="banner-title">OSI (7 capas) vs TCP/IP (4 capas) — Diferencias clave</div>
+    <div class="banner-sub">El modelo OSI es un marco teórico de referencia creado por ISO que divide la comunicación en 7 capas. El modelo TCP/IP es la implementación práctica utilizada en Internet con 4 capas. Ambos describen cómo fluyen los datos desde la aplicación hasta el medio físico.</div>
+
+    <div class="banner-cols">
+      <div class="banner-col">
+        <div class="banner-col-title">Modelo OSI</div>
+        <h3>Open Systems Interconnection</h3>
+        <p>7 capas · Modelo teórico / de referencia · Creado por ISO (1984) · Separación estricta entre sesión, presentación y aplicación · Enfoque top-down · Estándar académico y de certificaciones</p>
+      </div>
+      <div class="banner-col">
+        <div class="banner-col-title">Modelo TCP/IP</div>
+        <h3>Transmission Control Protocol / Internet Protocol</h3>
+        <p>4 capas · Modelo práctico / de implementación · Creado por DoD / DARPA (1970s) · Fusiona las capas 5-6-7 en "Aplicación" y las capas 1-2 en "Acceso a la red" · Estándar real de Internet</p>
+      </div>
+    </div>
+
+    <div class="diff-badges" style="margin-top:1.25rem">
+      <span class="diff-badge" tabindex="0" role="button" onclick="showDetail(&#39;diff_capas&#39;)">Nº de capas</span>
+      <span class="diff-badge" tabindex="0" role="button" onclick="showDetail(&#39;diff_enfoque&#39;)">Enfoque teórico vs práctico</span>
+      <span class="diff-badge" tabindex="0" role="button" onclick="showDetail(&#39;diff_sesion&#39;)">Capas de sesión y presentación</span>
+      <span class="diff-badge" tabindex="0" role="button" onclick="showDetail(&#39;diff_encaps&#39;)">Encapsulamiento</span>
+      <span class="diff-badge" tabindex="0" role="button" onclick="showDetail(&#39;diff_protocolo&#39;)">Independencia de protocolos</span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       MODELO OSI — 7 CAPAS
+       ═══════════════════════════════════════ -->
+  <div class="section-title">🔷 Modelo OSI — Las 7 capas (de arriba a abajo)</div>
+
+  <div class="grid">
+
+    <!-- CAPA 7 — Aplicación -->
+    <div class="cat c-app">
+      <div class="cat-head">
+        <span class="cat-icon">🖥️</span>
+        <span class="cat-name">Capa 7 — Aplicación</span>
+        <span class="cat-pdu">PDU: Datos</span>
+      </div>
+      <div class="tools">
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;http&#39;)">
+          <div class="tool-name">HTTP / HTTPS <span class="badge" style="background:rgba(139,92,246,.1);color:#7c3aed">Web</span></div>
+          <div class="tool-desc">Transferencia de hipertexto — base de la navegación web</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;dns&#39;)">
+          <div class="tool-name">DNS <span class="badge" style="background:rgba(139,92,246,.1);color:#7c3aed">Nombres</span></div>
+          <div class="tool-desc">Resolución de nombres de dominio a direcciones IP</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;dhcp&#39;)">
+          <div class="tool-name">DHCP</div>
+          <div class="tool-desc">Asignación dinámica de configuración IP a los hosts</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;ftp&#39;)">
+          <div class="tool-name">FTP / SFTP / TFTP</div>
+          <div class="tool-desc">Transferencia de archivos — con y sin cifrado</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;smtp&#39;)">
+          <div class="tool-name">SMTP / POP3 / IMAP</div>
+          <div class="tool-desc">Envío y recepción de correo electrónico</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;ssh&#39;)">
+          <div class="tool-name">SSH / Telnet</div>
+          <div class="tool-desc">Acceso remoto a equipos — cifrado vs texto plano</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;snmp&#39;)">
+          <div class="tool-name">SNMP</div>
+          <div class="tool-desc">Gestión y monitorización de dispositivos de red</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;dev_app&#39;)">
+          <div class="tool-name">Dispositivos <span class="badge" style="background:rgba(139,92,246,.08);color:#7c3aed">Hardware</span></div>
+          <div class="tool-desc">Proxy, gateway de aplicación, firewall L7 (WAF)</div>
+          <span class="tool-arrow">›</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CAPA 6 — Presentación -->
+    <div class="cat c-pres">
+      <div class="cat-head">
+        <span class="cat-icon">🔄</span>
+        <span class="cat-name">Capa 6 — Presentación</span>
+        <span class="cat-pdu">PDU: Datos</span>
+      </div>
+      <div class="tools">
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;ssl&#39;)">
+          <div class="tool-name">SSL / TLS <span class="badge" style="background:rgba(99,102,241,.1);color:#5b5fc7">Cifrado</span></div>
+          <div class="tool-desc">Cifrado de comunicaciones — seguridad en la capa de transporte</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;codificacion&#39;)">
+          <div class="tool-name">ASCII / UTF-8 / EBCDIC</div>
+          <div class="tool-desc">Codificación y representación de caracteres</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;formatos&#39;)">
+          <div class="tool-name">JPEG / MPEG / GIF / PNG</div>
+          <div class="tool-desc">Formatos de compresión y representación multimedia</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;serializacion&#39;)">
+          <div class="tool-name">XDR / ASN.1</div>
+          <div class="tool-desc">Serialización y representación externa de datos</div>
+          <span class="tool-arrow">›</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CAPA 5 — Sesión -->
+    <div class="cat c-ses">
+      <div class="cat-head">
+        <span class="cat-icon">🤝</span>
+        <span class="cat-name">Capa 5 — Sesión</span>
+        <span class="cat-pdu">PDU: Datos</span>
+      </div>
+      <div class="tools">
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;netbios&#39;)">
+          <div class="tool-name">NetBIOS</div>
+          <div class="tool-desc">Servicio de sesiones en redes Windows — nombres y sesiones</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;rpc&#39;)">
+          <div class="tool-name">RPC <span class="badge" style="background:rgba(59,130,246,.1);color:#2563eb">Llamadas</span></div>
+          <div class="tool-desc">Llamadas a procedimientos remotos entre sistemas</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;pptp&#39;)">
+          <div class="tool-name">PPTP / L2TP</div>
+          <div class="tool-desc">Protocolos de túnel para VPN — establecimiento de sesión</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;sip&#39;)">
+          <div class="tool-name">SIP / H.323</div>
+          <div class="tool-desc">Señalización y control de sesiones multimedia (VoIP)</div>
+          <span class="tool-arrow">›</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CAPA 4 — Transporte -->
+    <div class="cat c-trans">
+      <div class="cat-head">
+        <span class="cat-icon">🚚</span>
+        <span class="cat-name">Capa 4 — Transporte</span>
+        <span class="cat-pdu">PDU: Segmento / Datagrama</span>
+      </div>
+      <div class="tools">
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;tcp&#39;)">
+          <div class="tool-name">TCP <span class="badge" style="background:rgba(14,165,233,.1);color:#0891b2">Fiable</span></div>
+          <div class="tool-desc">Orientado a conexión — control de flujo, orden y retransmisión</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;udp&#39;)">
+          <div class="tool-name">UDP <span class="badge" style="background:rgba(14,165,233,.08);color:#0891b2">Rápido</span></div>
+          <div class="tool-desc">Sin conexión — rápido, sin garantía de entrega ni orden</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;sctp&#39;)">
+          <div class="tool-name">SCTP</div>
+          <div class="tool-desc">Multistreaming y multihoming — fiable como TCP, ágil como UDP</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;dev_trans&#39;)">
+          <div class="tool-name">Dispositivos <span class="badge" style="background:rgba(14,165,233,.08);color:#0891b2">Hardware</span></div>
+          <div class="tool-desc">Firewall L4, balanceador de carga, gateway de transporte</div>
+          <span class="tool-arrow">›</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CAPA 3 — Red -->
+    <div class="cat c-red">
+      <div class="cat-head">
+        <span class="cat-icon">🌐</span>
+        <span class="cat-name">Capa 3 — Red</span>
+        <span class="cat-pdu">PDU: Paquete</span>
+      </div>
+      <div class="tools">
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;ip&#39;)">
+          <div class="tool-name">IPv4 / IPv6 <span class="badge" style="background:rgba(16,185,129,.1);color:#059669">Core</span></div>
+          <div class="tool-desc">Direccionamiento lógico y enrutamiento de paquetes entre redes</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;icmp&#39;)">
+          <div class="tool-name">ICMP / ICMPv6</div>
+          <div class="tool-desc">Mensajes de control y diagnóstico — ping, traceroute</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;arp&#39;)">
+          <div class="tool-name">ARP / NDP</div>
+          <div class="tool-desc">Resolución de direcciones lógicas (IP) a físicas (MAC)</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;routing&#39;)">
+          <div class="tool-name">OSPF / RIP / BGP / EIGRP <span class="badge" style="background:rgba(16,185,129,.08);color:#059669">Routing</span></div>
+          <div class="tool-desc">Protocolos de enrutamiento dinámico — IGP y EGP</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;ipsec&#39;)">
+          <div class="tool-name">IPsec / GRE</div>
+          <div class="tool-desc">Seguridad a nivel de red — VPN, túneles y cifrado de paquetes</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;dev_red&#39;)">
+          <div class="tool-name">Dispositivos <span class="badge" style="background:rgba(16,185,129,.08);color:#059669">Hardware</span></div>
+          <div class="tool-desc">Router, switch L3, firewall L3</div>
+          <span class="tool-arrow">›</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CAPA 2 — Enlace de datos -->
+    <div class="cat c-enlace">
+      <div class="cat-head">
+        <span class="cat-icon">🔗</span>
+        <span class="cat-name">Capa 2 — Enlace de datos</span>
+        <span class="cat-pdu">PDU: Trama (Frame)</span>
+      </div>
+      <div class="tools">
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;ethernet&#39;)">
+          <div class="tool-name">Ethernet (IEEE 802.3) <span class="badge" style="background:rgba(245,158,11,.1);color:#b45309">LAN</span></div>
+          <div class="tool-desc">Estándar de red cableada — direccionamiento MAC y control de acceso</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;wifi&#39;)">
+          <div class="tool-name">Wi-Fi (IEEE 802.11)</div>
+          <div class="tool-desc">Red inalámbrica — CSMA/CA, frecuencias 2.4/5/6 GHz</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;ppp&#39;)">
+          <div class="tool-name">PPP / HDLC</div>
+          <div class="tool-desc">Protocolos punto a punto para enlaces WAN serie</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;stp&#39;)">
+          <div class="tool-name">STP / RSTP <span class="badge" style="background:rgba(245,158,11,.08);color:#b45309">Bucles</span></div>
+          <div class="tool-desc">Prevención de bucles en topologías redundantes de switches</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;vlan&#39;)">
+          <div class="tool-name">VLAN (802.1Q) / Trunk</div>
+          <div class="tool-desc">Segmentación lógica de la red a nivel de enlace</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;dev_enlace&#39;)">
+          <div class="tool-name">Dispositivos <span class="badge" style="background:rgba(245,158,11,.08);color:#b45309">Hardware</span></div>
+          <div class="tool-desc">Switch L2, bridge, punto de acceso Wi-Fi, tarjeta de red (NIC)</div>
+          <span class="tool-arrow">›</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CAPA 1 — Física -->
+    <div class="cat c-fisica cat-full">
+      <div class="cat-head">
+        <span class="cat-icon">⚡</span>
+        <span class="cat-name">Capa 1 — Física</span>
+        <span class="cat-pdu">PDU: Bits</span>
+      </div>
+      <div class="tools" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.45rem;">
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;medios&#39;)">
+          <div class="tool-name">Medios de transmisión</div>
+          <div class="tool-desc">Cable UTP/STP, coaxial, fibra óptica (monomodo/multimodo)</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;estandares_fisicos&#39;)">
+          <div class="tool-name">Estándares físicos <span class="badge" style="background:rgba(239,68,68,.1);color:#dc2626">Señales</span></div>
+          <div class="tool-desc">RS-232, V.35, EIA/TIA-568, DSL, SONET/SDH</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;conectores&#39;)">
+          <div class="tool-name">Conectores y topologías</div>
+          <div class="tool-desc">RJ-45, SC, LC, ST — Bus, estrella, anillo, malla</div>
+          <span class="tool-arrow">›</span>
+        </div>
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;dev_fisica&#39;)">
+          <div class="tool-name">Dispositivos <span class="badge" style="background:rgba(239,68,68,.08);color:#dc2626">Hardware</span></div>
+          <div class="tool-desc">Hub, repetidor, modem, transceiver, media converter</div>
+          <span class="tool-arrow">›</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       MODELO TCP/IP — 4 CAPAS
+       ═══════════════════════════════════════ -->
+  <div class="section-title" style="margin-top:2.5rem">🔶 Modelo TCP/IP — Las 4 capas y su equivalencia con OSI</div>
+
+  <div class="grid">
+
+    <!-- Aplicación (TCP/IP) -->
+    <div class="cat c-tcpapp">
+      <div class="cat-head">
+        <span class="cat-icon">📱</span>
+        <span class="cat-name">Aplicación</span>
+        <span class="cat-layer-num">≡ OSI 5+6+7</span>
+      </div>
+      <div class="tools">
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;tcpip_app&#39;)">
+          <div class="tool-name">Capa de Aplicación TCP/IP</div>
+          <div class="tool-desc">Agrupa las funciones de sesión, presentación y aplicación de OSI en una sola capa</div>
+          <span class="tool-arrow">›</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transporte (TCP/IP) -->
+    <div class="cat c-tcptrans">
+      <div class="cat-head">
+        <span class="cat-icon">🚚</span>
+        <span class="cat-name">Transporte</span>
+        <span class="cat-layer-num">≡ OSI 4</span>
+      </div>
+      <div class="tools">
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;tcpip_trans&#39;)">
+          <div class="tool-name">Capa de Transporte TCP/IP</div>
+          <div class="tool-desc">Equivalente directa a la capa 4 OSI — TCP y UDP como protocolos principales</div>
+          <span class="tool-arrow">›</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Internet (TCP/IP) -->
+    <div class="cat c-tcpinternet">
+      <div class="cat-head">
+        <span class="cat-icon">🌐</span>
+        <span class="cat-name">Internet</span>
+        <span class="cat-layer-num">≡ OSI 3</span>
+      </div>
+      <div class="tools">
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;tcpip_internet&#39;)">
+          <div class="tool-name">Capa de Internet TCP/IP</div>
+          <div class="tool-desc">Equivalente a la capa de Red OSI — IP, ICMP, ARP y protocolos de enrutamiento</div>
+          <span class="tool-arrow">›</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Acceso a la Red (TCP/IP) -->
+    <div class="cat c-tcpacceso">
+      <div class="cat-head">
+        <span class="cat-icon">🔌</span>
+        <span class="cat-name">Acceso a la red</span>
+        <span class="cat-layer-num">≡ OSI 1+2</span>
+      </div>
+      <div class="tools">
+        <div class="tool" tabindex="0" role="button" onclick="showDetail(&#39;tcpip_acceso&#39;)">
+          <div class="tool-name">Capa de Acceso a la Red TCP/IP</div>
+          <div class="tool-desc">Fusiona las capas física y de enlace de datos de OSI en una única capa</div>
+          <span class="tool-arrow">›</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Detail Panel -->
+  <div class="detail-panel" id="detail-panel">
+    <div class="detail-stripe"></div>
+    <div class="detail-inner">
+      <div class="detail-cat-label" id="detail-cat-label"></div>
+      <div class="detail-header">
+        <div class="detail-title" id="detail-title"></div>
+        <button class="close-btn" onclick="closeDetail()">✕ cerrar</button>
+      </div>
+      <div class="detail-text" id="detail-text"></div>
+      <div class="rel-note" id="detail-rel"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const data={
+
+  // ═══════════════════════════════════════
+  // DIFERENCIAS OSI vs TCP/IP
+  // ═══════════════════════════════════════
+  diff_capas:{
+    title:"Número de capas — 7 (OSI) vs 4 (TCP/IP)",
+    text:"El modelo OSI define 7 capas con funciones claramente separadas, lo que lo convierte en un excelente marco de referencia para estudiar redes. El modelo TCP/IP simplifica esto a 4 capas, fusionando las tres capas superiores de OSI (Aplicación, Presentación, Sesión) en una sola capa de Aplicación, y las dos inferiores (Física, Enlace de datos) en Acceso a la red.",
+    rel:"<strong>Clave para el examen:</strong> OSI = 7 capas (Aplicación, Presentación, Sesión, Transporte, Red, Enlace de datos, Física). TCP/IP = 4 capas (Aplicación, Transporte, Internet, Acceso a la red). La equivalencia es: OSI 7+6+5 → TCP/IP Aplicación · OSI 4 → TCP/IP Transporte · OSI 3 → TCP/IP Internet · OSI 2+1 → TCP/IP Acceso a la red.",
+    cat:"Diferencias OSI vs TCP/IP",color:"#1e40af",bg:"rgba(30,64,175,.04)",notebg:"rgba(30,64,175,.04)",noteborder:"rgba(30,64,175,.15)"
+  },
+  diff_enfoque:{
+    title:"Enfoque teórico (OSI) vs práctico (TCP/IP)",
+    text:"OSI fue diseñado primero como modelo y luego se intentaron crear protocolos que lo implementaran (enfoque top-down). TCP/IP surgió de protocolos ya existentes (TCP, IP) y el modelo se formalizó después para describirlos (enfoque bottom-up). Esto explica por qué TCP/IP es el estándar real de Internet: los protocolos existían antes que el modelo.",
+    rel:"<strong>Implicación práctica:</strong> OSI es perfecto para aprender y describir redes por capas. TCP/IP es lo que realmente se implementa en routers, sistemas operativos y aplicaciones. En el mundo real se usa TCP/IP, pero se explica y diagnostica con la terminología de OSI.",
+    cat:"Diferencias OSI vs TCP/IP",color:"#1e40af",bg:"rgba(30,64,175,.04)",notebg:"rgba(30,64,175,.04)",noteborder:"rgba(30,64,175,.15)"
+  },
+  diff_sesion:{
+    title:"Capas de Sesión y Presentación — ¿existen en TCP/IP?",
+    text:"En OSI, la capa 5 (Sesión) gestiona el establecimiento, mantenimiento y cierre de sesiones entre aplicaciones. La capa 6 (Presentación) se encarga de la traducción de formatos, cifrado y compresión. En TCP/IP estas funciones no desaparecen, sino que se integran dentro de la propia capa de Aplicación o se delegan a bibliotecas como TLS/SSL.",
+    rel:"<strong>Ejemplo concreto:</strong> TLS (cifrado) es función de Presentación en OSI, pero en TCP/IP se implementa como parte de la Aplicación. Las cookies HTTP y los tokens de sesión gestionan la 'sesión' dentro de la propia aplicación, no en una capa separada.",
+    cat:"Diferencias OSI vs TCP/IP",color:"#1e40af",bg:"rgba(30,64,175,.04)",notebg:"rgba(30,64,175,.04)",noteborder:"rgba(30,64,175,.15)"
+  },
+  diff_encaps:{
+    title:"Proceso de encapsulamiento en ambos modelos",
+    text:"En ambos modelos, los datos se encapsulan al descender por las capas: cada capa añade su propia cabecera (header) y a veces una cola (trailer). Al subir, se desencapsulan. La diferencia está en la terminología de las PDU: en OSI se distingue claramente entre Datos (L7-L5), Segmento/Datagrama (L4), Paquete (L3), Trama (L2) y Bits (L1). En TCP/IP se habla de Mensaje (Aplicación), Segmento/Datagrama (Transporte), Paquete (Internet) y Trama (Acceso a la red).",
+    rel:"<strong>Flujo de encapsulamiento (OSI):</strong> [Datos] → +cabecera L4 → [Segmento] → +cabecera L3 → [Paquete] → +cabecera y cola L2 → [Trama] → codificación en [Bits]. Cada cabecera contiene información de control de su capa (puertos, IPs, MACs…).",
+    cat:"Diferencias OSI vs TCP/IP",color:"#1e40af",bg:"rgba(30,64,175,.04)",notebg:"rgba(30,64,175,.04)",noteborder:"rgba(30,64,175,.15)"
+  },
+  diff_protocolo:{
+    title:"Independencia de protocolos",
+    text:"OSI es independiente de protocolos: describe funciones genéricas sin vincularse a implementaciones concretas. Cualquier protocolo puede mapearse a su capa correspondiente. TCP/IP, en cambio, fue diseñado en torno a protocolos específicos (TCP, IP, UDP) que forman el núcleo del modelo. Esto hace que OSI sea más flexible conceptualmente pero que TCP/IP sea más directo en la práctica.",
+    rel:"<strong>Ventaja de OSI:</strong> permite analizar cualquier tecnología de red (Ethernet, ATM, Frame Relay, etc.) usando las mismas capas. <strong>Ventaja de TCP/IP:</strong> al basarse en protocolos reales, no hay ambigüedad sobre qué protocolo va en cada capa.",
+    cat:"Diferencias OSI vs TCP/IP",color:"#1e40af",bg:"rgba(30,64,175,.04)",notebg:"rgba(30,64,175,.04)",noteborder:"rgba(30,64,175,.15)"
+  },
+
+  // ═══════════════════════════════════════
+  // CAPA 7 — APLICACIÓN
+  // ═══════════════════════════════════════
+  http:{
+    title:"HTTP / HTTPS — HyperText Transfer Protocol",
+    text:"HTTP es el protocolo base de la World Wide Web. Opera en el modelo petición-respuesta (request/response) entre cliente y servidor. Es un protocolo sin estado (stateless) que utiliza métodos como GET, POST, PUT, DELETE. HTTPS añade una capa de cifrado TLS/SSL sobre HTTP para proteger la confidencialidad e integridad de los datos en tránsito. HTTP usa el puerto 80 y HTTPS el puerto 443.",
+    rel:"<strong>PDU:</strong> Datos (mensaje HTTP). <strong>Capa OSI:</strong> 7 (Aplicación). <strong>Capa TCP/IP:</strong> Aplicación. <strong>Transporte:</strong> TCP. <strong>Puertos:</strong> 80 (HTTP), 443 (HTTPS). <strong>Característica clave:</strong> Stateless — cada petición es independiente. Las cookies y cabeceras de sesión compensan esta limitación.",
+    cat:"🖥️ Capa 7 — Aplicación",color:"#7c3aed",bg:"rgba(139,92,246,.04)",notebg:"rgba(139,92,246,.04)",noteborder:"rgba(139,92,246,.15)"
+  },
+  dns:{
+    title:"DNS — Domain Name System",
+    text:"Sistema jerárquico y distribuido que traduce nombres de dominio legibles (www.ejemplo.com) a direcciones IP numéricas (93.184.216.34). Utiliza una estructura de árbol con servidores raíz, TLD (.com, .es), servidores autoritativos y resolvers recursivos. Soporta múltiples tipos de registro: A (IPv4), AAAA (IPv6), MX (correo), CNAME (alias), NS (servidores de nombres), TXT, SRV, entre otros.",
+    rel:"<strong>PDU:</strong> Datos. <strong>Capa OSI:</strong> 7 (Aplicación). <strong>Transporte:</strong> UDP/53 para consultas normales, TCP/53 para transferencias de zona y respuestas grandes (>512 bytes). <strong>Nota de seguridad:</strong> DNSSEC añade firmas digitales para evitar el envenenamiento de caché (DNS spoofing).",
+    cat:"🖥️ Capa 7 — Aplicación",color:"#7c3aed",bg:"rgba(139,92,246,.04)",notebg:"rgba(139,92,246,.04)",noteborder:"rgba(139,92,246,.15)"
+  },
+  dhcp:{
+    title:"DHCP — Dynamic Host Configuration Protocol",
+    text:"Protocolo que asigna automáticamente configuración de red a los dispositivos: dirección IP, máscara de subred, puerta de enlace predeterminada (gateway) y servidores DNS. Sigue el proceso DORA: Discovery (el cliente busca servidores DHCP), Offer (el servidor ofrece una IP), Request (el cliente acepta) y Acknowledge (el servidor confirma). Las IPs se asignan con un tiempo de concesión (lease time) que debe renovarse periódicamente.",
+    rel:"<strong>PDU:</strong> Datos. <strong>Capa OSI:</strong> 7 (Aplicación). <strong>Transporte:</strong> UDP. <strong>Puertos:</strong> 67 (servidor), 68 (cliente). <strong>Flujo DORA:</strong> Discover → Offer → Request → ACK. Usa broadcast al inicio porque el cliente aún no tiene IP. <strong>Relacionado con:</strong> APIPA (autoconfiguración 169.254.x.x si DHCP falla).",
+    cat:"🖥️ Capa 7 — Aplicación",color:"#7c3aed",bg:"rgba(139,92,246,.04)",notebg:"rgba(139,92,246,.04)",noteborder:"rgba(139,92,246,.15)"
+  },
+  ftp:{
+    title:"FTP / SFTP / TFTP — Protocolos de transferencia de archivos",
+    text:"FTP (File Transfer Protocol) permite transferir archivos entre cliente y servidor usando dos conexiones TCP: el canal de control (puerto 21) para comandos y el canal de datos (puerto 20 en modo activo, dinámico en modo pasivo). SFTP (SSH File Transfer Protocol) transmite todo cifrado sobre SSH (puerto 22). TFTP (Trivial FTP) es una versión simplificada sobre UDP (puerto 69), sin autenticación, usado típicamente para transferir imágenes de firmware o archivos de configuración en entornos controlados.",
+    rel:"<strong>Puertos:</strong> FTP 20/21 (TCP), SFTP 22 (TCP), TFTP 69 (UDP). <strong>Diferencia clave:</strong> FTP no cifra (credenciales en texto plano), SFTP cifra todo el tráfico, TFTP es minimalista y sin autenticación. <strong>Modos FTP:</strong> Activo (el servidor inicia la conexión de datos) vs Pasivo (el cliente inicia ambas conexiones — mejor con firewalls/NAT).",
+    cat:"🖥️ Capa 7 — Aplicación",color:"#7c3aed",bg:"rgba(139,92,246,.04)",notebg:"rgba(139,92,246,.04)",noteborder:"rgba(139,92,246,.15)"
+  },
+  smtp:{
+    title:"SMTP / POP3 / IMAP — Protocolos de correo electrónico",
+    text:"SMTP (Simple Mail Transfer Protocol) se encarga del envío de correo entre servidores y desde el cliente al servidor (puerto 25, 587 con STARTTLS o 465 con SSL). POP3 (Post Office Protocol v3) descarga los correos al cliente y por defecto los elimina del servidor (puerto 110, 995 con SSL). IMAP (Internet Message Access Protocol) sincroniza los correos manteniendo una copia en el servidor, permitiendo acceso desde múltiples dispositivos (puerto 143, 993 con SSL).",
+    rel:"<strong>Puertos:</strong> SMTP 25/587/465 · POP3 110/995 · IMAP 143/993. <strong>Diferencia POP3 vs IMAP:</strong> POP3 descarga y opcionalmente borra del servidor (offline). IMAP mantiene los mensajes sincronizados en el servidor (online, múltiples dispositivos). <strong>Todos usan TCP</strong> como protocolo de transporte.",
+    cat:"🖥️ Capa 7 — Aplicación",color:"#7c3aed",bg:"rgba(139,92,246,.04)",notebg:"rgba(139,92,246,.04)",noteborder:"rgba(139,92,246,.15)"
+  },
+  ssh:{
+    title:"SSH / Telnet — Acceso remoto",
+    text:"SSH (Secure Shell) proporciona acceso remoto cifrado a la línea de comandos de un equipo. Utiliza criptografía asimétrica para el intercambio de claves y simétrica para la sesión. Permite también túneles seguros, reenvío de puertos y transferencia de archivos (SCP, SFTP). Telnet ofrece la misma funcionalidad de acceso remoto pero sin cifrado alguno: todo el tráfico (incluidas contraseñas) viaja en texto plano.",
+    rel:"<strong>Puertos:</strong> SSH 22 (TCP), Telnet 23 (TCP). <strong>Regla fundamental:</strong> Telnet NUNCA debe usarse en entornos de producción — siempre SSH. <strong>SSH también soporta:</strong> autenticación por clave pública (más segura que contraseña), port forwarding (local, remoto y dinámico) y SOCKS proxy.",
+    cat:"🖥️ Capa 7 — Aplicación",color:"#7c3aed",bg:"rgba(139,92,246,.04)",notebg:"rgba(139,92,246,.04)",noteborder:"rgba(139,92,246,.15)"
+  },
+  snmp:{
+    title:"SNMP — Simple Network Management Protocol",
+    text:"Protocolo para la gestión y monitorización de dispositivos de red (routers, switches, servidores, impresoras). Utiliza un modelo de agente-gestor: los agentes instalados en los dispositivos recogen información (MIBs — Management Information Bases) y el gestor (NMS) la consulta. Soporta operaciones GET (leer), SET (configurar) y TRAP (notificaciones asíncronas del agente al gestor). SNMPv3 añade autenticación y cifrado.",
+    rel:"<strong>Puerto:</strong> 161 (UDP) para consultas, 162 (UDP) para traps. <strong>Versiones:</strong> v1 (sin seguridad, community strings en texto plano), v2c (mejoras de rendimiento, sigue sin cifrar), v3 (autenticación + cifrado — la recomendada). <strong>MIB:</strong> estructura de árbol con OIDs que identifican cada variable monitorizable.",
+    cat:"🖥️ Capa 7 — Aplicación",color:"#7c3aed",bg:"rgba(139,92,246,.04)",notebg:"rgba(139,92,246,.04)",noteborder:"rgba(139,92,246,.15)"
+  },
+  dev_app:{
+    title:"Dispositivos de la Capa de Aplicación (L7)",
+    text:"Los dispositivos de capa 7 inspeccionan y toman decisiones basadas en el contenido de los datos de aplicación. El proxy actúa como intermediario entre clientes y servidores, cacheando contenido, filtrando URLs y ocultando la identidad del cliente. El gateway de aplicación traduce entre diferentes protocolos de aplicación. El WAF (Web Application Firewall) inspecciona y filtra el tráfico HTTP/HTTPS, protegiendo contra ataques como SQL injection, XSS y CSRF.",
+    rel:"<strong>Dispositivos clave:</strong> Proxy (forward y reverse), Gateway de aplicación, WAF (Web Application Firewall), balanceador de carga L7 (distribuye según URL, cookies, cabeceras HTTP). <strong>Diferencia con L4:</strong> un firewall L4 decide por puerto/IP; un firewall L7 puede inspeccionar el contenido del payload (Deep Packet Inspection).",
+    cat:"🖥️ Capa 7 — Aplicación",color:"#7c3aed",bg:"rgba(139,92,246,.04)",notebg:"rgba(139,92,246,.04)",noteborder:"rgba(139,92,246,.15)"
+  },
+
+  // ═══════════════════════════════════════
+  // CAPA 6 — PRESENTACIÓN
+  // ═══════════════════════════════════════
+  ssl:{
+    title:"SSL / TLS — Cifrado de comunicaciones",
+    text:"SSL (Secure Sockets Layer) y su sucesor TLS (Transport Layer Security) proporcionan cifrado, autenticación del servidor (y opcionalmente del cliente) e integridad de datos. TLS opera entre la capa de aplicación y transporte, estableciendo un canal seguro mediante un handshake que negocia algoritmos, intercambia certificados X.509 y deriva claves de sesión simétricas. SSL está obsoleto (vulnerable); las versiones actuales son TLS 1.2 y TLS 1.3.",
+    rel:"<strong>Capa OSI:</strong> 6 (Presentación) — aunque técnicamente opera entre L4 y L7. <strong>TLS 1.3 vs 1.2:</strong> TLS 1.3 reduce el handshake a 1-RTT (o 0-RTT en reconexiones), elimina algoritmos débiles (RC4, SHA-1, RSA key exchange) y es más rápido y seguro. <strong>Puerto:</strong> depende del protocolo de aplicación (443 para HTTPS, 993 para IMAPS, etc.).",
+    cat:"🔄 Capa 6 — Presentación",color:"#5b5fc7",bg:"rgba(99,102,241,.04)",notebg:"rgba(99,102,241,.04)",noteborder:"rgba(99,102,241,.15)"
+  },
+  codificacion:{
+    title:"ASCII / UTF-8 / EBCDIC — Codificación de caracteres",
+    text:"La capa de presentación se encarga de traducir los datos entre formatos que el emisor y el receptor puedan entender. ASCII (American Standard Code for Information Interchange) codifica 128 caracteres en 7 bits. UTF-8 es la codificación Unicode dominante en Internet, compatible con ASCII y capaz de representar todos los caracteres del mundo (1-4 bytes por carácter). EBCDIC es la codificación propietaria de IBM usada en mainframes.",
+    rel:"<strong>Función en OSI:</strong> Traducción de formato y codificación entre sistemas heterogéneos. <strong>UTF-8 domina la web:</strong> >98% de las páginas web lo utilizan. <strong>Nota:</strong> en TCP/IP estas funciones las maneja directamente la aplicación (p.ej. la cabecera Content-Type en HTTP indica la codificación).",
+    cat:"🔄 Capa 6 — Presentación",color:"#5b5fc7",bg:"rgba(99,102,241,.04)",notebg:"rgba(99,102,241,.04)",noteborder:"rgba(99,102,241,.15)"
+  },
+  formatos:{
+    title:"JPEG / MPEG / GIF / PNG — Formatos multimedia",
+    text:"La capa de presentación gestiona la compresión y representación de datos multimedia. JPEG es un formato de imagen con compresión con pérdida (lossy), ideal para fotografías. PNG usa compresión sin pérdida (lossless), soporta transparencia y es preferido para gráficos. GIF soporta animación pero solo 256 colores. MPEG es un conjunto de estándares para compresión de vídeo y audio (MPEG-2 para DVD, MPEG-4/H.264/H.265 para streaming).",
+    rel:"<strong>Función en OSI:</strong> Compresión y descompresión de datos para optimizar la transmisión. <strong>Lossy vs Lossless:</strong> JPEG y MPEG son lossy (pierden algo de calidad para reducir tamaño). PNG y GIF son lossless (mantienen calidad exacta). <strong>En TCP/IP:</strong> estas funciones se implementan en la capa de Aplicación directamente.",
+    cat:"🔄 Capa 6 — Presentación",color:"#5b5fc7",bg:"rgba(99,102,241,.04)",notebg:"rgba(99,102,241,.04)",noteborder:"rgba(99,102,241,.15)"
+  },
+  serializacion:{
+    title:"XDR / ASN.1 — Serialización y representación de datos",
+    text:"XDR (External Data Representation) es un estándar para serializar datos de forma independiente a la plataforma, usado típicamente con RPC (Remote Procedure Call) de Sun/ONC. ASN.1 (Abstract Syntax Notation One) es una notación estándar para definir estructuras de datos complejas de manera independiente de la máquina. Se usa ampliamente en telecomunicaciones (protocolos como SNMP, LDAP) y criptografía (certificados X.509).",
+    rel:"<strong>Función en OSI:</strong> Garantizar que los datos se interpreten igual independientemente de la arquitectura del sistema (big-endian vs little-endian, tamaños de tipos). <strong>ASN.1 + BER/DER:</strong> ASN.1 define la estructura; BER/DER definen cómo codificarla en bytes. Los certificados TLS/SSL (X.509) están definidos en ASN.1.",
+    cat:"🔄 Capa 6 — Presentación",color:"#5b5fc7",bg:"rgba(99,102,241,.04)",notebg:"rgba(99,102,241,.04)",noteborder:"rgba(99,102,241,.15)"
+  },
+
+  // ═══════════════════════════════════════
+  // CAPA 5 — SESIÓN
+  // ═══════════════════════════════════════
+  netbios:{
+    title:"NetBIOS — Network Basic Input/Output System",
+    text:"NetBIOS proporciona servicios de sesión para que las aplicaciones en distintos equipos establezcan y gestionen conexiones en redes locales (LAN). Ofrece tres servicios principales: servicio de nombres (resolución de nombres NetBIOS a IPs), servicio de datagramas (comunicación sin conexión) y servicio de sesión (comunicación orientada a conexión). Fue fundamental en las redes Windows para compartir archivos e impresoras, aunque ha sido progresivamente sustituido por DNS y SMB directo sobre TCP/IP.",
+    rel:"<strong>Puertos:</strong> 137 (UDP — nombre), 138 (UDP — datagrama), 139 (TCP — sesión). <strong>NetBIOS sobre TCP/IP (NBT):</strong> permite que NetBIOS funcione sobre redes TCP/IP modernas. <strong>Nota de seguridad:</strong> suele recomendarse deshabilitarlo si no es necesario, ya que expone información del sistema a la red.",
+    cat:"🤝 Capa 5 — Sesión",color:"#2563eb",bg:"rgba(59,130,246,.04)",notebg:"rgba(59,130,246,.04)",noteborder:"rgba(59,130,246,.15)"
+  },
+  rpc:{
+    title:"RPC — Remote Procedure Call",
+    text:"RPC permite que un programa ejecute código (procedimientos o funciones) en un sistema remoto como si fuera local, abstrayendo toda la comunicación de red subyacente. El proceso incluye: el cliente llama a un stub local → el stub serializa los parámetros (marshalling) → se envían por la red → el stub del servidor deserializa → ejecuta la función → devuelve el resultado por el mismo camino. Variantes incluyen ONC-RPC (Sun), DCE/RPC (Microsoft) y gRPC (Google, sobre HTTP/2).",
+    rel:"<strong>Capa OSI:</strong> 5 (Sesión) — gestiona el establecimiento de la sesión RPC. <strong>Relación con SMB:</strong> los protocolos de compartición de ficheros de Windows (SMB/CIFS) usan DCE/RPC internamente. <strong>gRPC:</strong> versión moderna que usa Protocol Buffers para serialización y HTTP/2 para transporte, muy usado en microservicios.",
+    cat:"🤝 Capa 5 — Sesión",color:"#2563eb",bg:"rgba(59,130,246,.04)",notebg:"rgba(59,130,246,.04)",noteborder:"rgba(59,130,246,.15)"
+  },
+  pptp:{
+    title:"PPTP / L2TP — Protocolos de túnel VPN",
+    text:"PPTP (Point-to-Point Tunneling Protocol) encapsula tramas PPP dentro de paquetes IP para crear túneles VPN. Es sencillo de configurar pero su seguridad está comprometida (vulnerabilidades en MS-CHAPv2). L2TP (Layer 2 Tunneling Protocol) combina las características de PPTP y L2F (Cisco), y se usa habitualmente junto con IPsec (L2TP/IPsec) para añadir cifrado, ya que L2TP por sí solo no cifra. Ambos operan en la capa 5 ya que gestionan sesiones de túnel.",
+    rel:"<strong>Puertos:</strong> PPTP usa TCP/1723 + GRE (protocolo 47). L2TP usa UDP/1701 (y con IPsec: UDP/500 para IKE, UDP/4500 para NAT-T). <strong>Recomendación:</strong> PPTP se considera inseguro — preferir L2TP/IPsec, IKEv2/IPsec o WireGuard. <strong>Relación con capa 3:</strong> IPsec opera en L3 pero L2TP necesita la sesión de L5.",
+    cat:"🤝 Capa 5 — Sesión",color:"#2563eb",bg:"rgba(59,130,246,.04)",notebg:"rgba(59,130,246,.04)",noteborder:"rgba(59,130,246,.15)"
+  },
+  sip:{
+    title:"SIP / H.323 — Señalización multimedia",
+    text:"SIP (Session Initiation Protocol) gestiona el establecimiento, modificación y cierre de sesiones multimedia (voz, vídeo, mensajería). Es el estándar dominante en VoIP moderno, basado en texto (similar a HTTP) y altamente extensible. H.323 es el estándar anterior de la ITU-T para comunicaciones multimedia, más complejo y basado en ASN.1. Aunque H.323 fue el estándar original, SIP lo ha reemplazado en la mayoría de implementaciones por su simplicidad.",
+    rel:"<strong>Puerto SIP:</strong> 5060 (UDP/TCP), 5061 (TLS). <strong>Función de sesión:</strong> SIP solo establece y gestiona la sesión; el flujo multimedia real se transmite por RTP (Real-time Transport Protocol) sobre UDP. <strong>Componentes SIP:</strong> User Agent (cliente/servidor), Proxy SIP, Registrar y Redirect Server.",
+    cat:"🤝 Capa 5 — Sesión",color:"#2563eb",bg:"rgba(59,130,246,.04)",notebg:"rgba(59,130,246,.04)",noteborder:"rgba(59,130,246,.15)"
+  },
+
+  // ═══════════════════════════════════════
+  // CAPA 4 — TRANSPORTE
+  // ═══════════════════════════════════════
+  tcp:{
+    title:"TCP — Transmission Control Protocol",
+    text:"Protocolo orientado a conexión que garantiza la entrega fiable, ordenada y sin errores de datos. Establece una conexión mediante el handshake de tres vías (SYN → SYN-ACK → ACK) y la cierra con un cierre de cuatro vías (FIN → ACK → FIN → ACK). Implementa control de flujo mediante ventana deslizante (sliding window), control de congestión (slow start, congestion avoidance, fast retransmit, fast recovery) y retransmisión de segmentos perdidos. La PDU de TCP se denomina segmento.",
+    rel:"<strong>PDU:</strong> Segmento. <strong>Cabecera TCP:</strong> Puerto origen/destino (16 bits cada uno), número de secuencia, número de ACK, flags (SYN, ACK, FIN, RST, PSH, URG), ventana, checksum. <strong>Tamaño cabecera:</strong> 20-60 bytes. <strong>Usos típicos:</strong> HTTP/HTTPS, FTP, SMTP, SSH — todo lo que necesita fiabilidad. <strong>MSS:</strong> Maximum Segment Size, negociado en el handshake.",
+    cat:"🚚 Capa 4 — Transporte",color:"#0891b2",bg:"rgba(14,165,233,.04)",notebg:"rgba(14,165,233,.04)",noteborder:"rgba(14,165,233,.15)"
+  },
+  udp:{
+    title:"UDP — User Datagram Protocol",
+    text:"Protocolo sin conexión (connectionless) que envía datos sin establecer una conexión previa ni garantizar su entrega, orden o integridad. No tiene handshake, no retransmite paquetes perdidos y no controla el flujo ni la congestión. Su cabecera es mínima (8 bytes) frente a la de TCP (20+ bytes), lo que lo hace más rápido y con menor overhead. La PDU de UDP se denomina datagrama. Ideal para aplicaciones que priorizan la velocidad sobre la fiabilidad.",
+    rel:"<strong>PDU:</strong> Datagrama. <strong>Cabecera UDP:</strong> Solo 4 campos (8 bytes) — Puerto origen, Puerto destino, Longitud, Checksum. <strong>Usos típicos:</strong> DNS (consultas), DHCP, VoIP (RTP), streaming de vídeo, juegos online, SNMP, TFTP. <strong>Clave:</strong> Si la aplicación necesita fiabilidad con UDP, la implementa ella misma (como hace QUIC).",
+    cat:"🚚 Capa 4 — Transporte",color:"#0891b2",bg:"rgba(14,165,233,.04)",notebg:"rgba(14,165,233,.04)",noteborder:"rgba(14,165,233,.15)"
+  },
+  sctp:{
+    title:"SCTP — Stream Control Transmission Protocol",
+    text:"SCTP combina características de TCP y UDP: es orientado a conexión (como TCP), fiable y con control de flujo, pero además soporta multistreaming (múltiples flujos independientes dentro de una misma asociación, evitando el head-of-line blocking de TCP) y multihoming (una asociación puede usar múltiples direcciones IP, proporcionando redundancia). Fue diseñado originalmente para la señalización telefónica (SS7 sobre IP) pero se usa también en telecomunicaciones (Diameter, redes 4G/5G).",
+    rel:"<strong>Ventaja sobre TCP:</strong> Si un paquete se pierde en un stream, los demás streams no se bloquean (en TCP sí, porque hay una única secuencia). <strong>Multihoming:</strong> si una interfaz de red cae, el tráfico migra automáticamente a otra. <strong>Cabecera:</strong> Puerto origen/destino + Verification Tag + Checksum + chunks de datos/control.",
+    cat:"🚚 Capa 4 — Transporte",color:"#0891b2",bg:"rgba(14,165,233,.04)",notebg:"rgba(14,165,233,.04)",noteborder:"rgba(14,165,233,.15)"
+  },
+  dev_trans:{
+    title:"Dispositivos de la Capa de Transporte (L4)",
+    text:"Los dispositivos de capa 4 toman decisiones basadas en los puertos TCP/UDP y la información de sesión. El firewall L4 (stateful firewall) filtra tráfico basándose en la tupla de 5 elementos (IP origen/destino, puerto origen/destino, protocolo), manteniendo una tabla de estado de las conexiones. El balanceador de carga L4 distribuye el tráfico entre múltiples servidores basándose en puertos y algoritmos como round-robin, least connections o IP hash.",
+    rel:"<strong>Dispositivos clave:</strong> Firewall stateful (L4), balanceador de carga L4, gateway de transporte. <strong>Firewall stateful vs stateless:</strong> El stateful recuerda las conexiones activas y permite el tráfico de retorno automáticamente. El stateless analiza cada paquete de forma independiente. <strong>Diferencia con L7:</strong> L4 solo ve puertos e IPs; L7 inspecciona contenido de la aplicación.",
+    cat:"🚚 Capa 4 — Transporte",color:"#0891b2",bg:"rgba(14,165,233,.04)",notebg:"rgba(14,165,233,.04)",noteborder:"rgba(14,165,233,.15)"
+  },
+
+  // ═══════════════════════════════════════
+  // CAPA 3 — RED
+  // ═══════════════════════════════════════
+  ip:{
+    title:"IPv4 / IPv6 — Internet Protocol",
+    text:"IP es el protocolo fundamental de la capa de red, responsable del direccionamiento lógico y el enrutamiento de paquetes entre redes. IPv4 utiliza direcciones de 32 bits (4 octetos, ej: 192.168.1.1), con un espacio total de ~4.300 millones de direcciones, hoy agotado. IPv6 utiliza direcciones de 128 bits (8 grupos hexadecimales, ej: 2001:0db8::1), con un espacio virtualmente infinito. IP es un protocolo sin conexión (connectionless) y de mejor esfuerzo (best-effort) — no garantiza la entrega.",
+    rel:"<strong>PDU:</strong> Paquete (datagrama IP). <strong>Cabecera IPv4:</strong> 20-60 bytes — incluye versión, TTL, protocolo, IP origen/destino, checksum, flags de fragmentación. <strong>Cabecera IPv6:</strong> 40 bytes fijos, más simple (sin checksum ni fragmentación en routers — la gestiona el origen). <strong>Mejoras IPv6:</strong> autoconfiguración (SLAAC), IPsec obligatorio, eliminación de NAT, cabeceras de extensión.",
+    cat:"🌐 Capa 3 — Red",color:"#059669",bg:"rgba(16,185,129,.04)",notebg:"rgba(16,185,129,.04)",noteborder:"rgba(16,185,129,.15)"
+  },
+  icmp:{
+    title:"ICMP / ICMPv6 — Mensajes de control",
+    text:"ICMP (Internet Control Message Protocol) es un protocolo auxiliar de IP que transmite mensajes de error y diagnóstico. No transporta datos de aplicación, sino información sobre la propia red. Los tipos más conocidos son: Echo Request/Reply (ping), Destination Unreachable, Time Exceeded (usado por traceroute), Redirect. ICMPv6 amplía estas funciones para IPv6, integrando además funciones que en IPv4 eran protocolos separados (ARP → NDP, IGMP → MLD).",
+    rel:"<strong>Capa OSI:</strong> 3 (Red) — aunque encapsulado dentro de un paquete IP. <strong>Herramientas que lo usan:</strong> ping (Echo Request/Reply, tipos 8/0), traceroute (TTL expirado → Time Exceeded, tipo 11). <strong>Seguridad:</strong> Los firewalls suelen limitar ICMP para evitar reconocimiento de red (ICMP sweep), pero bloquearlo completamente puede causar problemas de diagnóstico.",
+    cat:"🌐 Capa 3 — Red",color:"#059669",bg:"rgba(16,185,129,.04)",notebg:"rgba(16,185,129,.04)",noteborder:"rgba(16,185,129,.15)"
+  },
+  arp:{
+    title:"ARP / NDP — Resolución de direcciones",
+    text:"ARP (Address Resolution Protocol) resuelve direcciones IP (lógicas, L3) a direcciones MAC (físicas, L2) dentro de una misma red local. Cuando un host necesita enviar un paquete a una IP local, envía un ARP Request en broadcast (¿quién tiene esta IP?) y recibe un ARP Reply en unicast con la MAC correspondiente. Los resultados se almacenan en la tabla ARP (caché). En IPv6, ARP no existe: su función la realiza NDP (Neighbor Discovery Protocol) mediante mensajes ICMPv6.",
+    rel:"<strong>Nota sobre la capa:</strong> ARP opera entre L2 y L3 — usa tramas L2 para resolver direcciones L3. Algunos textos lo sitúan en L2, otros en L3 y otros como 'inter-capa'. <strong>Ataque ARP Spoofing:</strong> un atacante envía ARP Reply falsos para asociar su MAC con la IP de otro host (MitM). <strong>Defensa:</strong> Dynamic ARP Inspection (DAI) en switches, ARP estático.",
+    cat:"🌐 Capa 3 — Red",color:"#059669",bg:"rgba(16,185,129,.04)",notebg:"rgba(16,185,129,.04)",noteborder:"rgba(16,185,129,.15)"
+  },
+  routing:{
+    title:"OSPF / RIP / BGP / EIGRP — Protocolos de enrutamiento",
+    text:"Los protocolos de enrutamiento permiten a los routers intercambiar información sobre rutas y construir tablas de enrutamiento de forma dinámica. Se clasifican en IGP (Interior Gateway Protocol, dentro de un sistema autónomo) y EGP (Exterior Gateway Protocol, entre sistemas autónomos). RIP (v1/v2) usa vector-distancia con un máximo de 15 saltos. OSPF es un protocolo de estado de enlace (link-state), más eficiente y escalable, basado en el algoritmo de Dijkstra. EIGRP (Cisco, ahora abierto) es un híbrido (vector-distancia avanzado). BGP es el EGP estándar de Internet, intercambia rutas entre sistemas autónomos (AS).",
+    rel:"<strong>Clasificación:</strong> IGP: RIP (vector-distancia), OSPF (estado de enlace), IS-IS (estado de enlace), EIGRP (híbrido/vector-distancia avanzado). EGP: BGP (path-vector). <strong>Métricas:</strong> RIP = saltos. OSPF = coste (basado en ancho de banda). EIGRP = métrica compuesta (ancho de banda, retardo, fiabilidad, carga). BGP = atributos de ruta (AS-path, next-hop, local-pref, MED…).",
+    cat:"🌐 Capa 3 — Red",color:"#059669",bg:"rgba(16,185,129,.04)",notebg:"rgba(16,185,129,.04)",noteborder:"rgba(16,185,129,.15)"
+  },
+  ipsec:{
+    title:"IPsec / GRE — Seguridad y túneles en capa 3",
+    text:"IPsec (IP Security) es un conjunto de protocolos que proporciona autenticación, integridad y confidencialidad a nivel de paquete IP. Tiene dos modos: Transporte (solo cifra el payload) y Túnel (cifra cabecera + payload, encapsulando en un nuevo paquete IP). Usa AH (Authentication Header, solo autenticación/integridad) y/o ESP (Encapsulating Security Payload, cifrado + autenticación). IKE (Internet Key Exchange) negocia las claves. GRE (Generic Routing Encapsulation) crea túneles IP sin cifrado, a menudo combinado con IPsec (GRE over IPsec).",
+    rel:"<strong>Protocolos IPsec:</strong> IKE (UDP/500, UDP/4500 con NAT-T), AH (protocolo IP 51), ESP (protocolo IP 50). <strong>Modo túnel vs transporte:</strong> Túnel = VPN site-to-site (encapsula paquete completo). Transporte = cifrado host-to-host (solo payload). <strong>GRE:</strong> protocolo IP 47, sin cifrado propio, permite encapsular protocolos no-IP y multicast.",
+    cat:"🌐 Capa 3 — Red",color:"#059669",bg:"rgba(16,185,129,.04)",notebg:"rgba(16,185,129,.04)",noteborder:"rgba(16,185,129,.15)"
+  },
+  dev_red:{
+    title:"Dispositivos de la Capa de Red (L3)",
+    text:"El dispositivo fundamental de la capa 3 es el router, que interconecta redes diferentes y toma decisiones de encaminamiento basándose en las direcciones IP de destino y su tabla de enrutamiento. Los routers operan en L3 porque leen la cabecera del paquete IP para decidir por qué interfaz reenviar cada paquete. Los switches L3 (o switches multicapa) combinan la velocidad de conmutación L2 con capacidades de enrutamiento L3, realizando routing entre VLANs a velocidad de hardware.",
+    rel:"<strong>Dispositivos clave:</strong> Router (dispositivo L3 por excelencia), switch multicapa (L3), firewall L3 (filtra por IP origen/destino). <strong>Router vs Switch L2:</strong> El router conecta REDES distintas usando IPs; el switch L2 conecta DISPOSITIVOS dentro de la misma red usando MACs. <strong>Router vs Switch L3:</strong> El switch L3 enruta entre VLANs dentro de una LAN; el router conecta redes WAN/Internet.",
+    cat:"🌐 Capa 3 — Red",color:"#059669",bg:"rgba(16,185,129,.04)",notebg:"rgba(16,185,129,.04)",noteborder:"rgba(16,185,129,.15)"
+  },
+
+  // ═══════════════════════════════════════
+  // CAPA 2 — ENLACE DE DATOS
+  // ═══════════════════════════════════════
+  ethernet:{
+    title:"Ethernet (IEEE 802.3) — Estándar de red cableada",
+    text:"Ethernet es el estándar dominante para redes de área local (LAN) cableadas. Opera en la capa 2 (y parte de la capa 1) definiendo cómo se formatean y transmiten las tramas. Cada trama Ethernet incluye: dirección MAC destino (6 bytes), dirección MAC origen (6 bytes), EtherType/Length (2 bytes), datos (46-1500 bytes) y FCS (4 bytes de CRC para detección de errores). Usa CSMA/CD (Carrier Sense Multiple Access with Collision Detection) para el control de acceso al medio en redes half-duplex, aunque en full-duplex (estándar actual) no hay colisiones.",
+    rel:"<strong>PDU:</strong> Trama (Frame). <strong>Velocidades:</strong> 10 Mbps (10BASE-T), 100 Mbps (Fast Ethernet), 1 Gbps (Gigabit Ethernet), 10/25/40/100 Gbps. <strong>MAC Address:</strong> 48 bits (6 bytes), formato XX:XX:XX:XX:XX:XX — los 3 primeros bytes = OUI (fabricante), los 3 últimos = identificador único. <strong>MTU estándar:</strong> 1500 bytes (Jumbo frames: hasta 9000 bytes).",
+    cat:"🔗 Capa 2 — Enlace de datos",color:"#b45309",bg:"rgba(245,158,11,.04)",notebg:"rgba(245,158,11,.04)",noteborder:"rgba(245,158,11,.15)"
+  },
+  wifi:{
+    title:"Wi-Fi (IEEE 802.11) — Red inalámbrica",
+    text:"Wi-Fi es el estándar de red inalámbrica para LAN (WLAN). Opera en las bandas de frecuencia de 2.4 GHz, 5 GHz y 6 GHz (Wi-Fi 6E/7). A diferencia de Ethernet que usa CSMA/CD, Wi-Fi utiliza CSMA/CA (Collision Avoidance) porque no puede detectar colisiones en el medio inalámbrico — evita colisiones escuchando antes de transmitir y usando mecanismos como RTS/CTS. La trama 802.11 es más compleja que la de Ethernet, con hasta 4 campos de dirección MAC.",
+    rel:"<strong>Estándares:</strong> 802.11a (5 GHz, 54 Mbps), 802.11b (2.4 GHz, 11 Mbps), 802.11g (2.4 GHz, 54 Mbps), 802.11n/Wi-Fi 4 (2.4/5 GHz, 600 Mbps, MIMO), 802.11ac/Wi-Fi 5 (5 GHz, multi-Gbps, MU-MIMO), 802.11ax/Wi-Fi 6 (2.4/5 GHz, OFDMA), Wi-Fi 7 (802.11be). <strong>Seguridad:</strong> WEP (roto) → WPA → WPA2 (AES-CCMP) → WPA3 (SAE).",
+    cat:"🔗 Capa 2 — Enlace de datos",color:"#b45309",bg:"rgba(245,158,11,.04)",notebg:"rgba(245,158,11,.04)",noteborder:"rgba(245,158,11,.15)"
+  },
+  ppp:{
+    title:"PPP / HDLC — Protocolos punto a punto",
+    text:"PPP (Point-to-Point Protocol) es un protocolo de enlace de datos para conexiones punto a punto (serie, DSL, dial-up). Proporciona encapsulación de paquetes multiprotocolo, autenticación (PAP en texto plano, CHAP con desafío/respuesta), detección de errores y negociación de opciones mediante LCP (Link Control Protocol) y NCPs (Network Control Protocols, como IPCP para IP). HDLC (High-Level Data Link Control) es un protocolo más antiguo de la ISO, usado en enlaces WAN serie. Cisco usa una variante propietaria de HDLC como protocolo por defecto en sus enlaces serie.",
+    rel:"<strong>PPP vs HDLC:</strong> PPP es más flexible (multiprotocolo, autenticación, compresión), mientras que HDLC es más simple y rápido pero sin autenticación nativa. <strong>PPPoE:</strong> PPP over Ethernet, muy usado por ISPs para conexiones de banda ancha (DSL), añadiendo autenticación y control de sesión sobre Ethernet.",
+    cat:"🔗 Capa 2 — Enlace de datos",color:"#b45309",bg:"rgba(245,158,11,.04)",notebg:"rgba(245,158,11,.04)",noteborder:"rgba(245,158,11,.15)"
+  },
+  stp:{
+    title:"STP / RSTP — Prevención de bucles",
+    text:"STP (Spanning Tree Protocol, IEEE 802.1D) evita bucles de capa 2 en redes con enlaces redundantes entre switches. Funciona eligiendo un Root Bridge (switch raíz) y bloqueando los puertos que crearían bucles, dejando solo un camino activo entre cada par de switches. Los puertos pueden estar en estado: Root, Designated, Blocked/Alternate. RSTP (Rapid STP, 802.1w) reduce drásticamente el tiempo de convergencia de ~50 segundos (STP) a ~1-2 segundos gracias a mecanismos de negociación directa entre switches.",
+    rel:"<strong>¿Por qué bucles L2 son críticos?</strong> Sin STP, una trama broadcast en una topología con bucles se replicaría infinitamente (broadcast storm), saturando la red e inutilizando las tablas MAC. <strong>Evolución:</strong> STP (802.1D) → RSTP (802.1w) → MSTP (802.1s, múltiples instancias por VLAN). <strong>Alternativas modernas:</strong> SPB (802.1aq), TRILL, fabrics.",
+    cat:"🔗 Capa 2 — Enlace de datos",color:"#b45309",bg:"rgba(245,158,11,.04)",notebg:"rgba(245,158,11,.04)",noteborder:"rgba(245,158,11,.15)"
+  },
+  vlan:{
+    title:"VLAN (802.1Q) / Trunk — Segmentación lógica",
+    text:"Las VLANs (Virtual Local Area Networks) permiten segmentar una red física en múltiples redes lógicas independientes a nivel de capa 2, sin necesidad de hardware adicional. Los dispositivos en la misma VLAN pueden comunicarse directamente; entre VLANs diferentes se necesita un router o switch L3 (inter-VLAN routing). El estándar IEEE 802.1Q define cómo etiquetar las tramas con un identificador de VLAN (VLAN tag de 12 bits → hasta 4094 VLANs). Los enlaces trunk transportan tramas de múltiples VLANs entre switches usando estas etiquetas.",
+    rel:"<strong>Puerto Access vs Trunk:</strong> Access = conecta a un dispositivo final, pertenece a una sola VLAN, sin etiqueta. Trunk = conecta switches entre sí, transporta múltiples VLANs con etiquetas 802.1Q. <strong>VLAN nativa:</strong> VLAN cuyo tráfico se envía sin etiquetar por el trunk (por defecto VLAN 1 — cambiarla es una práctica de seguridad). <strong>Ataque VLAN hopping:</strong> técnica para saltar entre VLANs explotando la VLAN nativa.",
+    cat:"🔗 Capa 2 — Enlace de datos",color:"#b45309",bg:"rgba(245,158,11,.04)",notebg:"rgba(245,158,11,.04)",noteborder:"rgba(245,158,11,.15)"
+  },
+  dev_enlace:{
+    title:"Dispositivos de la Capa de Enlace de Datos (L2)",
+    text:"El dispositivo fundamental de la capa 2 es el switch (conmutador). A diferencia del hub (L1), el switch aprende las direcciones MAC de los dispositivos conectados a cada puerto (tabla CAM/MAC) y reenvía las tramas solo al puerto de destino correcto, en lugar de inundar todos los puertos. El bridge (puente) es el antecesor del switch, con la misma función pero menor número de puertos y procesamiento por software. La tarjeta de red (NIC) opera en L2 ya que tiene su dirección MAC única. El punto de acceso Wi-Fi (AP) actúa como un bridge/switch inalámbrico.",
+    rel:"<strong>Dispositivos clave:</strong> Switch L2 (conmutación por hardware, tabla CAM), Bridge (conmutación por software), NIC (tarjeta de red, con dirección MAC), Access Point inalámbrico. <strong>Switch vs Hub:</strong> El switch es inteligente (reenvía por MAC), el hub es tonto (replica a todos los puertos). <strong>Subcapas L2:</strong> LLC (Logical Link Control, 802.2) — interfaz con L3. MAC (Media Access Control) — control de acceso al medio y direccionamiento físico.",
+    cat:"🔗 Capa 2 — Enlace de datos",color:"#b45309",bg:"rgba(245,158,11,.04)",notebg:"rgba(245,158,11,.04)",noteborder:"rgba(245,158,11,.15)"
+  },
+
+  // ═══════════════════════════════════════
+  // CAPA 1 — FÍSICA
+  // ═══════════════════════════════════════
+  medios:{
+    title:"Medios de transmisión — Cable y fibra",
+    text:"Los medios de transmisión son el soporte físico por el que viajan las señales. Cable de par trenzado: UTP (Unshielded Twisted Pair, sin blindaje, el más común en LANs — Cat5e, Cat6, Cat6a, Cat7, Cat8) y STP (Shielded, con blindaje contra interferencias electromagnéticas). Cable coaxial: conductor central rodeado de aislante y malla metálica, usado en redes de cable y CATV. Fibra óptica: transmite luz por hilos de vidrio o plástico. Monomodo (SMF): un solo haz de luz, largas distancias (>10 km), núcleo fino (~9 µm). Multimodo (MMF): múltiples haces, distancias cortas (<500 m), núcleo más grueso (50/62.5 µm).",
+    rel:"<strong>Comparativa:</strong> UTP: barato, hasta 100 m, susceptible a EMI. STP: más caro, mejor contra EMI. Coaxial: mayor distancia que UTP, usado en CATV/ISP. Fibra monomodo: máxima distancia y velocidad, más cara. Fibra multimodo: distancias medias, más barata que monomodo. <strong>Categorías UTP:</strong> Cat5e (1 Gbps/100m), Cat6 (10 Gbps/55m), Cat6a (10 Gbps/100m), Cat7 (10 Gbps, blindado), Cat8 (25-40 Gbps/30m).",
+    cat:"⚡ Capa 1 — Física",color:"#dc2626",bg:"rgba(239,68,68,.04)",notebg:"rgba(239,68,68,.04)",noteborder:"rgba(239,68,68,.15)"
+  },
+  estandares_fisicos:{
+    title:"Estándares de señalización física",
+    text:"Los estándares de capa física definen las características eléctricas, ópticas y mecánicas de la transmisión. RS-232 (EIA-232): estándar serie para comunicación entre equipos (DTE-DCE), velocidades bajas, distancias cortas. V.35: interfaz para conexiones WAN de alta velocidad. EIA/TIA-568: define el cableado estructurado para edificios comerciales, incluyendo los esquemas de pines T568A y T568B para RJ-45. DSL (Digital Subscriber Line): transmisión de datos sobre líneas telefónicas (ADSL, VDSL). SONET/SDH: estándares de transmisión óptica de alta velocidad para redes WAN/MAN.",
+    rel:"<strong>Señalización:</strong> Las señales pueden ser eléctricas (cobre), ópticas (fibra) o electromagnéticas (inalámbricas). <strong>T568A vs T568B:</strong> Ambos son esquemas válidos de cableado RJ-45; T568B es el más usado. Un cable directo (straight-through) conecta dispositivos diferentes (PC-switch); un cable cruzado (crossover) conecta dispositivos iguales (switch-switch), aunque Auto-MDIX lo hace automáticamente en equipos modernos.",
+    cat:"⚡ Capa 1 — Física",color:"#dc2626",bg:"rgba(239,68,68,.04)",notebg:"rgba(239,68,68,.04)",noteborder:"rgba(239,68,68,.15)"
+  },
+  conectores:{
+    title:"Conectores y topologías de red",
+    text:"Los conectores son las interfaces físicas que unen los cables a los dispositivos. RJ-45: conector de 8 pines para cable UTP/STP Ethernet. RJ-11: conector telefónico (4/6 pines). BNC: conector para cable coaxial (redes antiguas). SC, LC, ST, MTRJ: conectores de fibra óptica (LC es el más común en datacenters por su tamaño reducido). Las topologías definen la disposición física o lógica de los dispositivos: Bus (todos comparten el medio), Estrella (todos conectados a un nodo central — la más usada), Anillo (cada nodo conectado al siguiente formando un círculo), Malla (todos conectados entre sí — máxima redundancia).",
+    rel:"<strong>Topología física vs lógica:</strong> La física es cómo están conectados los cables. La lógica es cómo fluyen los datos. Ejemplo: una red Token Ring puede tener topología física de estrella (conectada a un MAU) pero topología lógica de anillo. <strong>Topología estrella:</strong> dominante en LANs modernas, el nodo central es un switch. Si el switch falla, toda la red cae (punto único de fallo).",
+    cat:"⚡ Capa 1 — Física",color:"#dc2626",bg:"rgba(239,68,68,.04)",notebg:"rgba(239,68,68,.04)",noteborder:"rgba(239,68,68,.15)"
+  },
+  dev_fisica:{
+    title:"Dispositivos de la Capa Física (L1)",
+    text:"Los dispositivos de capa 1 trabajan exclusivamente con señales eléctricas, ópticas o electromagnéticas sin interpretar su contenido. El hub (concentrador) recibe una señal por un puerto y la replica a TODOS los demás puertos — no tiene inteligencia para direccionar. El repetidor amplifica y regenera la señal para extender la distancia del enlace. El modem (modulador-demodulador) convierte señales digitales a analógicas y viceversa para la transmisión por líneas telefónicas o coaxiales. El transceiver convierte entre tipos de medio (ej: cobre a fibra). El media converter transforma la señal entre diferentes medios físicos.",
+    rel:"<strong>Dispositivos clave:</strong> Hub (repite a todos los puertos — dominio de colisión único), Repetidor (extiende la distancia de la señal), Modem (digital ↔ analógico), Transceiver/SFP (convierte medios), Media converter, Patch panel (organización de cableado). <strong>Hub vs Switch:</strong> El hub es L1 (no lee MACs, inunda todo); el switch es L2 (lee MACs, reenvía selectivamente). El hub crea un único dominio de colisión; el switch crea uno por puerto.",
+    cat:"⚡ Capa 1 — Física",color:"#dc2626",bg:"rgba(239,68,68,.04)",notebg:"rgba(239,68,68,.04)",noteborder:"rgba(239,68,68,.15)"
+  },
+
+  // ═══════════════════════════════════════
+  // MODELO TCP/IP — CAPAS
+  // ═══════════════════════════════════════
+  tcpip_app:{
+    title:"Capa de Aplicación TCP/IP (≡ OSI capas 5+6+7)",
+    text:"La capa de Aplicación del modelo TCP/IP agrupa todas las funciones de las capas 5 (Sesión), 6 (Presentación) y 7 (Aplicación) del modelo OSI en una sola capa. Esto significa que el cifrado (TLS), la gestión de sesiones, la codificación de datos y la lógica de la aplicación se manejan todo dentro de esta misma capa. Los protocolos de esta capa interactúan directamente con las aplicaciones del usuario e invocan los servicios de la capa de Transporte a través de sockets (combinación de IP + puerto).",
+    rel:"<strong>Protocolos incluidos:</strong> HTTP/HTTPS, DNS, DHCP, FTP, SMTP, POP3, IMAP, SSH, Telnet, SNMP, NTP, SIP, LDAP, SMB, RDP, y todos los demás protocolos de aplicación. <strong>Diferencia con OSI:</strong> en OSI, TLS estaría en L6 (Presentación), NetBIOS en L5 (Sesión) y HTTP en L7 (Aplicación). En TCP/IP, todos conviven en la misma capa sin esa separación.",
+    cat:"📱 TCP/IP — Aplicación",color:"#7c3aed",bg:"rgba(139,92,246,.04)",notebg:"rgba(139,92,246,.04)",noteborder:"rgba(139,92,246,.15)"
+  },
+  tcpip_trans:{
+    title:"Capa de Transporte TCP/IP (≡ OSI capa 4)",
+    text:"La capa de Transporte del modelo TCP/IP es equivalente directa a la capa 4 del modelo OSI. Proporciona comunicación extremo a extremo (end-to-end) entre procesos de aplicación en hosts remotos. Sus dos protocolos principales son TCP (fiable, orientado a conexión) y UDP (rápido, sin conexión). La capa de transporte multipleja las conexiones usando puertos (0-65535): puertos bien conocidos (0-1023), registrados (1024-49151) y dinámicos/efímeros (49152-65535).",
+    rel:"<strong>PDU:</strong> Segmento (TCP) / Datagrama (UDP). <strong>Función principal:</strong> segmentación de datos, multiplexación por puertos, control de flujo y congestión (TCP). <strong>Socket:</strong> IP + Puerto + Protocolo = identificador único de una conexión. <strong>Esta es la única capa que coincide exactamente</strong> entre ambos modelos sin fusionar ni separar nada.",
+    cat:"🚚 TCP/IP — Transporte",color:"#0891b2",bg:"rgba(14,165,233,.04)",notebg:"rgba(14,165,233,.04)",noteborder:"rgba(14,165,233,.15)"
+  },
+  tcpip_internet:{
+    title:"Capa de Internet TCP/IP (≡ OSI capa 3)",
+    text:"La capa de Internet del modelo TCP/IP es funcionalmente equivalente a la capa de Red (L3) del modelo OSI. Su protocolo principal es IP (IPv4/IPv6), responsable del direccionamiento lógico y el encaminamiento de paquetes entre redes. También incluye ICMP (diagnóstico y control), ARP (resolución IP→MAC en IPv4) y los protocolos de enrutamiento (OSPF, BGP, RIP, EIGRP). La diferencia de nombre ('Internet' vs 'Red') refleja que TCP/IP fue diseñado específicamente para internet-working (interconexión de redes).",
+    rel:"<strong>PDU:</strong> Paquete (datagrama IP). <strong>Protocolos:</strong> IPv4, IPv6, ICMP/ICMPv6, ARP/NDP, IPsec, OSPF, RIP, BGP, EIGRP, GRE, IGMP/MLD. <strong>Equivalencia con OSI:</strong> prácticamente idéntica en funciones. <strong>Dispositivo principal:</strong> Router. <strong>Nota:</strong> ARP a veces se clasifica como parte de la capa de Acceso a la red en TCP/IP, dependiendo del autor.",
+    cat:"🌐 TCP/IP — Internet",color:"#059669",bg:"rgba(16,185,129,.04)",notebg:"rgba(16,185,129,.04)",noteborder:"rgba(16,185,129,.15)"
+  },
+  tcpip_acceso:{
+    title:"Capa de Acceso a la Red TCP/IP (≡ OSI capas 1+2)",
+    text:"La capa de Acceso a la Red (también llamada 'Interfaz de Red' o 'Enlace') del modelo TCP/IP fusiona las funciones de las capas Física (L1) y Enlace de datos (L2) del modelo OSI. Se ocupa de todo lo necesario para transmitir datos a través del enlace físico entre dos nodos directamente conectados: direccionamiento MAC, encapsulación en tramas, acceso al medio físico (CSMA/CD, CSMA/CA), señalización eléctrica/óptica, y la interfaz con el hardware de red. TCP/IP no detalla esta capa tanto como OSI porque fue diseñado para funcionar sobre cualquier tecnología de red.",
+    rel:"<strong>PDU:</strong> Trama (Frame) a nivel de enlace, Bits a nivel físico. <strong>Tecnologías incluidas:</strong> Ethernet (802.3), Wi-Fi (802.11), PPP, HDLC, Frame Relay, ATM, DSL, fibra óptica, cable coaxial, par trenzado. <strong>Dispositivos:</strong> Switch L2, bridge, hub, repetidor, NIC, modem, AP inalámbrico. <strong>Diferencia con OSI:</strong> OSI separa físico y enlace; TCP/IP los trata como una unidad.",
+    cat:"🔌 TCP/IP — Acceso a la red",color:"#c2410c",bg:"rgba(234,88,12,.04)",notebg:"rgba(234,88,12,.04)",noteborder:"rgba(234,88,12,.15)"
+  }
+};
+
+function showDetail(id){
+  const d=data[id];
+  if(!d) return;
+  const p=document.getElementById('detail-panel');
+  document.getElementById('detail-cat-label').textContent=d.cat||'';
+  document.getElementById('detail-title').textContent=d.title;
+  document.getElementById('detail-text').textContent=d.text;
+  document.getElementById('detail-rel').innerHTML=d.rel;
+  p.style.setProperty('--detail-color', d.color);
+  p.style.setProperty('--detail-bg', d.bg);
+  p.style.setProperty('--detail-note-bg', d.notebg);
+  p.style.setProperty('--detail-note-border', d.noteborder);
+  p.classList.remove('show');
+  void p.offsetWidth;
+  p.classList.add('show');
+  setTimeout(()=>p.scrollIntoView({behavior:'smooth',block:'nearest'}),50);
+}
+
+function closeDetail(){
+  document.getElementById('detail-panel').classList.remove('show');
+}
+
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape') closeDetail();
+});
+document.querySelectorAll('.tool[tabindex], .diff-badge[tabindex]').forEach(el=>{
+  el.addEventListener('keydown', function(e){
+    if(e.key === 'Enter' || e.key === ' '){
+      e.preventDefault();
+      this.click();
+    }
+  });
+});
+</script>
+
+
+
+</body></html>

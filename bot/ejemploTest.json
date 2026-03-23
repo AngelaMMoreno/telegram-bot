@@ -1,0 +1,57 @@
+[
+      {
+        "pregunta": "¿Cuál es la capital de Francia? ",
+        "opciones": [
+          "París que es la capital de francia para las cosassdfklmsdflñskdmñlsadmflsdmfañsldfmsañldgsañdlgksñdlgksañdglklkdsmflsdgmsñadlmfsaldkgm",
+          "Madrid",
+          "Berlín",
+          "Roma"
+        ],
+        "bloque":1,
+        "tema":1
+      },
+      {
+        "pregunta": "¿Cuánto es 7 x 8? ",
+        "opciones": [
+          "56",
+          "48",
+          "54",
+          "64"
+        ],
+        "bloque":1,
+        "tema":3
+      },
+      {
+        "pregunta": "¿Cuál es el elemento químico con símbolo H? ",
+        "opciones": [
+          "Hidrógeno",
+          "Helio",
+          "Hierro",
+          "Plomo"
+        ],
+        "bloque":2,
+        "tema":6
+      },
+      {
+        "pregunta": "¿Qué planeta es conocido como el planeta rojo? ",
+        "opciones": [
+          "Marte",
+          "Venus",
+          "Júpiter",
+          "Saturno"
+        ],
+        "bloque":3,
+        "tema":7
+      },
+      {
+        "pregunta": "¿Cuál de estos animales es un mamífero? ",
+        "opciones": [
+          "Delfín",
+          "Pingüino",
+          "Tiburón",
+          "Cocodrilo"
+        ],
+        "bloque":4,
+        "tema":8
+      }
+    ]
