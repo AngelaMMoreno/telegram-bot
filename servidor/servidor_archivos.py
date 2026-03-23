@@ -98,13 +98,26 @@ def _es_plantilla_pagina(filename: str, contenido: bytes) -> dict | None:
     except Exception:
         return None
 
-    # Verificar que tiene la estructura mínima de plantilla de página
     if isinstance(data, dict) and "titulo" in data and (
         "secciones" in data or "categorias" in data
     ):
         return data
 
     return None
+
+
+def _leer_plantilla_pagina(fs_path: str) -> dict | None:
+    """Lee una plantilla de página del disco si el archivo coincide con el formato esperado."""
+    try:
+        with open(fs_path, "rb") as fh:
+            return _es_plantilla_pagina(os.path.basename(fs_path), fh.read())
+    except OSError:
+        return None
+
+
+def _es_archivo_auxiliar_pagina(fs_path: str) -> bool:
+    """Indica si el archivo es una plantilla de página que no debe listarse por defecto."""
+    return _leer_plantilla_pagina(fs_path) is not None
 
 
 def asegurar_nombre_unico(directorio: str, nombre: str) -> str:
@@ -377,7 +390,10 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
             key=lambda e: e.name.lower(),
         )
         files = sorted(
-            [e for e in entries if e.is_file() and not e.name.startswith(".")],
+            [
+                e for e in entries
+                if e.is_file() and not e.name.startswith(".") and not _es_archivo_auxiliar_pagina(e.path)
+            ],
             key=lambda e: e.name.lower(),
         )
         self._send_html(self._render_directory(fs_path, url_path, dirs, files, meta))
@@ -463,6 +479,11 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
     # ── file serving ─────────────────────────────────────────────────────────
 
     def serve_file(self, fs_path: str):
+        plantilla = _leer_plantilla_pagina(fs_path)
+        if plantilla is not None:
+            self._send_html(generar_html(plantilla))
+            return
+
         mime, _ = mimetypes.guess_type(fs_path)
         mime = mime or "application/octet-stream"
         try:
@@ -600,81 +621,143 @@ initDrop('dz','file-inp','file-name');
 
         back_url = html.escape(carpeta_sel) if carpeta_sel.startswith("/") else "/"
 
-        return f"""<!DOCTYPE html>
+        documento = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>📖 Crear página de teoría</title>
 <style>
-{_CSS_BASE}
-.yaml-editor{{width:100%;min-height:420px;font-family:'Courier New',monospace;font-size:13px;
+__CSS_BASE__
+.yaml-editor{width:100%;min-height:420px;font-family:'Courier New',monospace;font-size:13px;
   line-height:1.5;padding:14px;border:1.5px solid var(--border);border-radius:10px;
-  background:#1e1e2e;color:#cdd6f4;resize:vertical;tab-size:2}}
-.yaml-editor::placeholder{{color:#585b70}}
-.yaml-editor:focus{{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(99,102,241,.15)}}
-.hint{{font-size:12px;color:var(--sub);margin-top:6px;line-height:1.5}}
-.hint code{{background:var(--pri-light);padding:1px 5px;border-radius:4px;font-size:11px;color:var(--pri-d)}}
-.preview-frame{{width:100%;height:500px;border:1.5px solid var(--border);border-radius:10px;
-  background:#fff;margin-top:12px;display:none}}
-.tabs{{display:flex;gap:4px;margin-bottom:12px}}
-.tab{{padding:7px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;
-  border:1.5px solid var(--border);background:#fff;color:var(--sub);transition:all .15s}}
-.tab.active{{background:var(--pri);color:#fff;border-color:var(--pri)}}
+  background:#1e1e2e;color:#cdd6f4;resize:vertical;tab-size:2}
+.yaml-editor::placeholder{color:#585b70}
+.yaml-editor:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(99,102,241,.15)}
+.hint{font-size:12px;color:var(--sub);margin-top:6px;line-height:1.5}
+.hint code{background:var(--pri-light);padding:1px 5px;border-radius:4px;font-size:11px;color:var(--pri-d)}
+.preview-frame{width:100%;height:540px;border:1.5px solid var(--border);border-radius:10px;
+  background:#fff;margin-top:12px;display:block}
+.tabs{display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap}
+.tab{padding:7px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;
+  border:1.5px solid var(--border);background:#fff;color:var(--sub);transition:all .15s}
+.tab.active{background:var(--pri);color:#fff;border-color:var(--pri)}
+.panel{display:none}
+.panel.active{display:block}
+.disenador{display:grid;gap:14px}
+.bloque-diseno{border:1.5px solid var(--border);border-radius:12px;background:#fff;padding:16px}
+.bloque-diseno h3,.bloque-diseno h4,.bloque-diseno h5{margin:0 0 10px 0;color:var(--text)}
+.grid-dos{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.acciones-inline{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.btn-mini{border:1px solid var(--border);background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:12px;font-weight:600;color:var(--sub)}
+.btn-mini:hover{border-color:var(--pri);color:var(--pri)}
+.btn-mini.peligro{border-color:#fecaca;color:#b91c1c;background:#fff5f5}
+.nodo-diseno{border:1px solid var(--border);border-radius:12px;background:#fafafa;padding:14px;margin-top:10px}
+.nodo-diseno.nivel-1{margin-left:18px;background:#fcfcff}
+.nodo-diseno.nivel-2{margin-left:36px;background:#f8faff}
+.cabecera-nodo{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.cabecera-nodo strong{color:var(--text)}
+.selector-check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--sub);margin-top:6px}
+.ayuda-diseno{padding:10px 12px;border-radius:10px;background:var(--pri-light);color:var(--pri-d);font-size:12px;line-height:1.5}
 </style>
 </head>
 <body>
 <div class="hdr">
   <div class="hdr-title">📖 Crear página de teoría</div>
   <div class="hdr-actions">
-    <a href="{back_url}" class="btn btn-ghost">← Volver</a>
+    <a href="__BACK_URL__" class="btn btn-ghost">← Volver</a>
   </div>
 </div>
 
 <div class="form-wrap">
-{alert_html}
+__ALERT_HTML__
 
 <div class="form-card">
-  <h2>📝 Pega tu plantilla YAML</h2>
+  <h2>🧩 Crear página desde YAML o con asistente visual</h2>
 
   <form method="POST" action="/crearPagina" id="pageForm">
+    <input type="hidden" name="formato_contenido" id="formatoContenido" value="yaml">
+
     <div class="fg">
       <label>📁 Carpeta destino</label>
-      <select name="carpeta" class="fc">{opts}</select>
+      <select name="carpeta" class="fc">__OPTS__</select>
     </div>
 
     <div class="fg">
       <label>🏷️ Nombre del archivo (sin extensión)</label>
       <input type="text" name="nombre" class="fc" placeholder="mi-tema-de-estudio" required
-             pattern="[^/\\\\<>:&quot;|?*.]+" title="Sin barras, puntos ni caracteres especiales">
+             pattern="[^/\\<>:&quot;|?*.]+" title="Sin barras, puntos ni caracteres especiales">
     </div>
 
     <div class="fg">
       <div class="tabs">
-        <div class="tab active" onclick="showTab('editor')">✏️ Editor</div>
-        <div class="tab" onclick="showTab('preview')">👁️ Vista previa</div>
+        <button type="button" class="tab active" data-tab="editor">✏️ Editor YAML</button>
+        <button type="button" class="tab" data-tab="disenador">🧭 Asistente visual</button>
+        <button type="button" class="tab" data-tab="preview">👁️ Vista previa</button>
       </div>
-      <textarea name="yaml_content" class="yaml-editor" id="yamlEditor" required
-                placeholder='# Pega aqui tu plantilla YAML
+
+      <div class="panel active" id="panel-editor">
+        <textarea name="yaml_content" class="yaml-editor" id="yamlEditor" required
+                  placeholder='# Pega aquí tu plantilla YAML
 titulo: "Mi tema de estudio"
-descripcion: "Descripcion breve"
+descripcion: "Descripción breve"
 
 secciones:
-  - titulo: "Seccion 1"
+  - titulo: "Bloque principal"
     categorias:
-      - nombre: "Categoria"
+      - nombre: "Tarjeta"
         icono: "📚"
         color: "#1254a0"
         items:
-          - nombre: "Concepto"
-            descripcion: "Explicacion breve"
+          - nombre: "Apartado"
+            descripcion: "Resumen"
+            contraible: true
             detalle:
-              texto: "Explicacion completa..."
-              nota: "Notas adicionales..."'></textarea>
-      <iframe id="previewFrame" class="preview-frame"></iframe>
-      <div class="hint">
-        Pega el YAML generado por la IA. Campos obligatorios: <code>titulo</code> y <code>secciones</code> (o <code>categorias</code>).
-        Opcional: <code>banner</code>, <code>descripcion</code>, <code>detalle</code> en cada item.
+              texto: "Desarrollo del apartado"
+            subitems:
+              - nombre: "Subapartado"
+                descripcion: "Detalle extra"
+                contraible: false
+                detalle:
+                  texto: "Siempre visible"'></textarea>
+        <div class="hint">
+          Puedes pegar YAML a mano o usar el asistente visual. Si usas el asistente, se guardará una plantilla estructurada y no se mostrará como archivo en el listado servido.
+        </div>
+      </div>
+
+      <div class="panel" id="panel-disenador">
+        <div class="disenador">
+          <div class="ayuda-diseno">
+            Crea el tema paso a paso sin escribir YAML. Cada apartado o subapartado puede quedar <strong>contraíble</strong> o <strong>siempre visible</strong>.
+          </div>
+          <div class="bloque-diseno">
+            <h3>📄 Datos generales</h3>
+            <div class="grid-dos">
+              <div class="fg"><label>Título</label><input type="text" class="fc" id="tituloDiseno"></div>
+              <div class="fg"><label>Descripción</label><input type="text" class="fc" id="descripcionDiseno"></div>
+            </div>
+            <div class="selector-check"><input type="checkbox" id="activarBanner"> <label for="activarBanner">Añadir banner destacado</label></div>
+            <div id="camposBanner" style="display:none;margin-top:12px">
+              <div class="grid-dos">
+                <div class="fg"><label>Etiqueta del banner</label><input type="text" class="fc" id="bannerEtiqueta"></div>
+                <div class="fg"><label>Título del banner</label><input type="text" class="fc" id="bannerTitulo"></div>
+              </div>
+              <div class="fg"><label>Descripción del banner</label><textarea class="fc" id="bannerDescripcion" rows="3"></textarea></div>
+            </div>
+          </div>
+          <div class="bloque-diseno">
+            <div class="cabecera-nodo">
+              <h3>🗂️ Secciones y tarjetas</h3>
+              <button type="button" class="btn-mini" id="agregarSeccionBtn">+ Añadir sección</button>
+            </div>
+            <div id="contenedorSecciones"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-preview">
+        <iframe id="previewFrame" class="preview-frame"></iframe>
+        <div class="hint">La vista previa se genera con el contenido actual del editor o del asistente visual.</div>
       </div>
     </div>
 
@@ -684,44 +767,302 @@ secciones:
 </div>
 
 <script>
-function showTab(tab) {{
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  if (tab === 'preview') {{
-    document.querySelectorAll('.tab')[1].classList.add('active');
-    document.getElementById('yamlEditor').style.display = 'none';
-    var frame = document.getElementById('previewFrame');
-    frame.style.display = 'block';
-    // POST yaml to preview endpoint
-    var form = new FormData();
-    form.append('yaml_content', document.getElementById('yamlEditor').value);
-    form.append('preview', '1');
-    fetch('/crearPagina', {{method:'POST', body: form}})
-      .then(r => r.text())
-      .then(html => {{
-        frame.srcdoc = html;
-      }})
-      .catch(() => {{
-        frame.srcdoc = '<p style="padding:2rem;color:#991B1B;">Error al generar la vista previa. Revisa el YAML.</p>';
-      }});
-  }} else {{
-    document.querySelectorAll('.tab')[0].classList.add('active');
-    document.getElementById('yamlEditor').style.display = 'block';
-    document.getElementById('previewFrame').style.display = 'none';
-  }}
-}}
+const estadoDiseno = {
+  titulo: '',
+  descripcion: '',
+  secciones: [crearSeccion()],
+};
+let modoContenido = 'editor';
 
-// Tab key inserts spaces instead of changing focus
-document.getElementById('yamlEditor').addEventListener('keydown', function(e) {{
-  if (e.key === 'Tab') {{
+function crearSeccion() {
+  return { titulo: '', categorias: [crearCategoria()] };
+}
+
+function crearCategoria() {
+  return { nombre: '', icono: '📚', color: '#1254a0', etiquetasTexto: '', items: [crearItem()] };
+}
+
+function crearItem() {
+  return {
+    nombre: '',
+    descripcion: '',
+    etiqueta: '',
+    contraible: true,
+    mostrar_abierto: false,
+    detalle: { texto: '', nota: '' },
+    subitems: [],
+  };
+}
+
+function limpiarDato(valor) {
+  if (Array.isArray(valor)) {
+    const elementos = valor.map(limpiarDato).filter((item) => item !== undefined);
+    return elementos.length ? elementos : undefined;
+  }
+  if (valor && typeof valor === 'object') {
+    const limpio = {};
+    Object.entries(valor).forEach(([clave, contenido]) => {
+      const resultado = limpiarDato(contenido);
+      if (resultado !== undefined && !(typeof resultado === 'string' && resultado.trim() === '')) {
+        limpio[clave] = resultado;
+      }
+    });
+    return Object.keys(limpio).length ? limpio : undefined;
+  }
+  if (typeof valor === 'string') {
+    return valor.trim() ? valor : undefined;
+  }
+  if (typeof valor === 'boolean') {
+    return valor;
+  }
+  return valor;
+}
+
+function normalizarParaGuardar() {
+  const plantilla = {
+    titulo: estadoDiseno.titulo || 'Nueva página',
+    descripcion: estadoDiseno.descripcion || '',
+    secciones: estadoDiseno.secciones,
+  };
+  if (estadoDiseno.bannerActivo) {
+    plantilla.banner = {
+      etiqueta: estadoDiseno.bannerEtiqueta || '',
+      titulo: estadoDiseno.bannerTitulo || '',
+      descripcion: estadoDiseno.bannerDescripcion || '',
+    };
+  }
+  const limpio = limpiarDato(plantilla) || {};
+  (limpio.secciones || []).forEach((seccion) => {
+    (seccion.categorias || []).forEach((categoria) => {
+      if (categoria.etiquetasTexto) {
+        categoria.etiquetas = categoria.etiquetasTexto.split(',').map((txt) => txt.trim()).filter(Boolean);
+      }
+      delete categoria.etiquetasTexto;
+    });
+  });
+  return limpio;
+}
+
+function sincronizarEditorSegunModo() {
+  if (modoContenido !== 'disenador') {
+    document.getElementById('formatoContenido').value = 'yaml';
+    return;
+  }
+  const contenido = JSON.stringify(normalizarParaGuardar(), null, 2);
+  document.getElementById('yamlEditor').value = contenido;
+  document.getElementById('formatoContenido').value = 'json';
+}
+
+function cambiarTab(tab) {
+  document.querySelectorAll('.tab').forEach((boton) => {
+    boton.classList.toggle('active', boton.dataset.tab === tab);
+  });
+  document.querySelectorAll('.panel').forEach((panel) => panel.classList.remove('active'));
+  document.getElementById(`panel-${tab}`).classList.add('active');
+
+  if (tab === 'preview') {
+    sincronizarEditorSegunModo();
+    generarVistaPrevia();
+  }
+}
+
+function generarVistaPrevia() {
+  const form = new FormData();
+  form.append('yaml_content', document.getElementById('yamlEditor').value);
+  form.append('preview', '1');
+  fetch('/crearPagina', { method: 'POST', body: form })
+    .then((respuesta) => respuesta.text())
+    .then((html) => { document.getElementById('previewFrame').srcdoc = html; })
+    .catch(() => {
+      document.getElementById('previewFrame').srcdoc = '<p style="padding:2rem;color:#991B1B;">Error al generar la vista previa.</p>';
+    });
+}
+
+function renderizarSecciones() {
+  const contenedor = document.getElementById('contenedorSecciones');
+  contenedor.innerHTML = '';
+  estadoDiseno.secciones.forEach((seccion, indiceSeccion) => {
+    const caja = document.createElement('div');
+    caja.className = 'nodo-diseno';
+    caja.innerHTML = `
+      <div class="cabecera-nodo">
+        <strong>Sección ${indiceSeccion + 1}</strong>
+        <button type="button" class="btn-mini peligro">Eliminar sección</button>
+      </div>
+      <div class="fg"><label>Título de la sección</label><input type="text" class="fc" value="${escapeHtml(seccion.titulo || '')}"></div>
+      <div class="acciones-inline"><button type="button" class="btn-mini">+ Añadir tarjeta</button></div>
+      <div class="categorias"></div>
+    `;
+    caja.querySelector('.btn-mini.peligro').onclick = () => {
+      estadoDiseno.secciones.splice(indiceSeccion, 1);
+      if (!estadoDiseno.secciones.length) estadoDiseno.secciones.push(crearSeccion());
+      renderizarSecciones();
+    };
+    caja.querySelector('input').oninput = (evento) => {
+      seccion.titulo = evento.target.value;
+      sincronizarEditorSegunModo();
+    };
+    caja.querySelector('.acciones-inline .btn-mini').onclick = () => {
+      seccion.categorias.push(crearCategoria());
+      renderizarSecciones();
+    };
+    const categorias = caja.querySelector('.categorias');
+    seccion.categorias.forEach((categoria, indiceCategoria) => {
+      categorias.appendChild(renderizarCategoria(categoria, indiceSeccion, indiceCategoria));
+    });
+    contenedor.appendChild(caja);
+  });
+  sincronizarEditorSegunModo();
+}
+
+function renderizarCategoria(categoria, indiceSeccion, indiceCategoria) {
+  const caja = document.createElement('div');
+  caja.className = 'nodo-diseno nivel-1';
+  caja.innerHTML = `
+    <div class="cabecera-nodo">
+      <strong>Tarjeta ${indiceCategoria + 1}</strong>
+      <button type="button" class="btn-mini peligro">Eliminar tarjeta</button>
+    </div>
+    <div class="grid-dos">
+      <div class="fg"><label>Nombre</label><input type="text" class="fc nombre" value="${escapeHtml(categoria.nombre || '')}"></div>
+      <div class="fg"><label>Icono</label><input type="text" class="fc icono" value="${escapeHtml(categoria.icono || '📚')}"></div>
+      <div class="fg"><label>Color</label><input type="color" class="fc color" value="${escapeHtml(categoria.color || '#1254a0')}"></div>
+      <div class="fg"><label>Etiquetas (coma separada)</label><input type="text" class="fc etiquetas" value="${escapeHtml(categoria.etiquetasTexto || '')}"></div>
+    </div>
+    <div class="acciones-inline"><button type="button" class="btn-mini agregar-apartado">+ Añadir apartado</button></div>
+    <div class="items"></div>
+  `;
+  caja.querySelector('.peligro').onclick = () => {
+    estadoDiseno.secciones[indiceSeccion].categorias.splice(indiceCategoria, 1);
+    if (!estadoDiseno.secciones[indiceSeccion].categorias.length) {
+      estadoDiseno.secciones[indiceSeccion].categorias.push(crearCategoria());
+    }
+    renderizarSecciones();
+  };
+  caja.querySelector('.nombre').oninput = (e) => { categoria.nombre = e.target.value; sincronizarEditorSegunModo(); };
+  caja.querySelector('.icono').oninput = (e) => { categoria.icono = e.target.value; sincronizarEditorSegunModo(); };
+  caja.querySelector('.color').oninput = (e) => { categoria.color = e.target.value; sincronizarEditorSegunModo(); };
+  caja.querySelector('.etiquetas').oninput = (e) => { categoria.etiquetasTexto = e.target.value; sincronizarEditorSegunModo(); };
+  caja.querySelector('.agregar-apartado').onclick = () => {
+    categoria.items.push(crearItem());
+    renderizarSecciones();
+  };
+  const contenedorItems = caja.querySelector('.items');
+  categoria.items.forEach((item, indiceItem) => {
+    contenedorItems.appendChild(renderizarItem(item, categoria.items, indiceItem, 0));
+  });
+  return caja;
+}
+
+function renderizarItem(item, coleccion, indiceItem, nivel) {
+  const caja = document.createElement('div');
+  caja.className = `nodo-diseno nivel-${Math.min(nivel + 1, 2)}`;
+  caja.innerHTML = `
+    <div class="cabecera-nodo">
+      <strong>${nivel === 0 ? 'Apartado' : 'Subapartado'} ${indiceItem + 1}</strong>
+      <button type="button" class="btn-mini peligro">Eliminar</button>
+    </div>
+    <div class="grid-dos">
+      <div class="fg"><label>Nombre</label><input type="text" class="fc nombre" value="${escapeHtml(item.nombre || '')}"></div>
+      <div class="fg"><label>Etiqueta</label><input type="text" class="fc etiqueta" value="${escapeHtml(item.etiqueta || '')}"></div>
+    </div>
+    <div class="fg"><label>Descripción breve</label><textarea class="fc descripcion" rows="2">${escapeHtml(item.descripcion || '')}</textarea></div>
+    <div class="selector-check"><input type="checkbox" class="contraible" ${item.contraible ? 'checked' : ''}> <label>Mostrar como bloque contraíble</label></div>
+    <div class="selector-check"><input type="checkbox" class="mostrar-abierto" ${item.mostrar_abierto ? 'checked' : ''}> <label>Empezar desplegado</label></div>
+    <div class="fg"><label>Texto ampliado</label><textarea class="fc detalle-texto" rows="3">${escapeHtml((item.detalle || {}).texto || '')}</textarea></div>
+    <div class="fg"><label>Nota ampliada (admite HTML sencillo)</label><textarea class="fc detalle-nota" rows="3">${escapeHtml((item.detalle || {}).nota || '')}</textarea></div>
+    <div class="acciones-inline">
+      <button type="button" class="btn-mini agregar-subitem">+ Añadir subapartado</button>
+    </div>
+    <div class="subitems"></div>
+  `;
+  caja.querySelector('.peligro').onclick = () => {
+    coleccion.splice(indiceItem, 1);
+    if (!coleccion.length) coleccion.push(crearItem());
+    renderizarSecciones();
+  };
+  caja.querySelector('.nombre').oninput = (e) => { item.nombre = e.target.value; sincronizarEditorSegunModo(); };
+  caja.querySelector('.etiqueta').oninput = (e) => { item.etiqueta = e.target.value; sincronizarEditorSegunModo(); };
+  caja.querySelector('.descripcion').oninput = (e) => { item.descripcion = e.target.value; sincronizarEditorSegunModo(); };
+  caja.querySelector('.contraible').onchange = (e) => { item.contraible = e.target.checked; sincronizarEditorSegunModo(); };
+  caja.querySelector('.mostrar-abierto').onchange = (e) => { item.mostrar_abierto = e.target.checked; sincronizarEditorSegunModo(); };
+  caja.querySelector('.detalle-texto').oninput = (e) => {
+    item.detalle = item.detalle || {};
+    item.detalle.texto = e.target.value;
+    sincronizarEditorSegunModo();
+  };
+  caja.querySelector('.detalle-nota').oninput = (e) => {
+    item.detalle = item.detalle || {};
+    item.detalle.nota = e.target.value;
+    sincronizarEditorSegunModo();
+  };
+  caja.querySelector('.agregar-subitem').onclick = () => {
+    item.subitems = item.subitems || [];
+    item.subitems.push(crearItem());
+    renderizarSecciones();
+  };
+  const subitems = caja.querySelector('.subitems');
+  (item.subitems || []).forEach((subitem, indiceSubitem) => {
+    subitems.appendChild(renderizarItem(subitem, item.subitems, indiceSubitem, nivel + 1));
+  });
+  return caja;
+}
+
+function escapeHtml(texto) {
+  return String(texto)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+}
+
+document.querySelectorAll('.tab').forEach((boton) => {
+  boton.addEventListener('click', () => {
+    if (boton.dataset.tab === 'disenador') {
+      modoContenido = 'disenador';
+      document.getElementById('formatoContenido').value = 'json';
+    }
+    if (boton.dataset.tab === 'editor') {
+      modoContenido = 'editor';
+      document.getElementById('formatoContenido').value = 'yaml';
+    }
+    cambiarTab(boton.dataset.tab);
+  });
+});
+
+document.getElementById('yamlEditor').addEventListener('keydown', function(e) {
+  if (e.key === 'Tab') {
     e.preventDefault();
-    var s = this.selectionStart, end = this.selectionEnd;
-    this.value = this.value.substring(0, s) + '  ' + this.value.substring(end);
-    this.selectionStart = this.selectionEnd = s + 2;
-  }}
-}});
+    const inicio = this.selectionStart;
+    const fin = this.selectionEnd;
+    this.value = this.value.substring(0, inicio) + '  ' + this.value.substring(fin);
+    this.selectionStart = this.selectionEnd = inicio + 2;
+  }
+});
+
+document.getElementById('activarBanner').addEventListener('change', function() {
+  estadoDiseno.bannerActivo = this.checked;
+  document.getElementById('camposBanner').style.display = this.checked ? 'block' : 'none';
+  sincronizarEditorSegunModo();
+});
+document.getElementById('tituloDiseno').addEventListener('input', (e) => { estadoDiseno.titulo = e.target.value; sincronizarEditorSegunModo(); });
+document.getElementById('descripcionDiseno').addEventListener('input', (e) => { estadoDiseno.descripcion = e.target.value; sincronizarEditorSegunModo(); });
+document.getElementById('bannerEtiqueta').addEventListener('input', (e) => { estadoDiseno.bannerEtiqueta = e.target.value; sincronizarEditorSegunModo(); });
+document.getElementById('bannerTitulo').addEventListener('input', (e) => { estadoDiseno.bannerTitulo = e.target.value; sincronizarEditorSegunModo(); });
+document.getElementById('bannerDescripcion').addEventListener('input', (e) => { estadoDiseno.bannerDescripcion = e.target.value; sincronizarEditorSegunModo(); });
+document.getElementById('agregarSeccionBtn').addEventListener('click', () => { estadoDiseno.secciones.push(crearSeccion()); renderizarSecciones(); });
+document.getElementById('pageForm').addEventListener('submit', () => { sincronizarEditorSegunModo(); });
+renderizarSecciones();
 </script>
 </body>
 </html>"""
+        return (
+            documento
+            .replace("__CSS_BASE__", _CSS_BASE)
+            .replace("__BACK_URL__", back_url)
+            .replace("__ALERT_HTML__", alert_html)
+            .replace("__OPTS__", opts)
+        )
 
     def handle_crear_pagina(self):
         try:
@@ -784,14 +1125,15 @@ document.getElementById('yamlEditor').addEventListener('keydown', function(e) {{
             with open(os.path.join(dir_path, html_filename), "w", encoding="utf-8") as fh:
                 fh.write(html_content)
 
-            # Guardar YAML original
-            yaml_filename = asegurar_nombre_unico(dir_path, nombre + ".yaml")
-            with open(os.path.join(dir_path, yaml_filename), "w", encoding="utf-8") as fh:
+            formato_contenido = form.getvalue("formato_contenido", "yaml")
+            extension_plantilla = ".json" if formato_contenido == "json" else ".yaml"
+            plantilla_filename = asegurar_nombre_unico(dir_path, nombre + extension_plantilla)
+            with open(os.path.join(dir_path, plantilla_filename), "w", encoding="utf-8") as fh:
                 fh.write(yaml_content)
 
             meta = cargar_metadata(dir_path)
             meta.setdefault("files", {})[html_filename] = "📖"
-            meta.setdefault("files", {})[yaml_filename] = "📝"
+            meta.setdefault("files", {})[plantilla_filename] = "📝"
             guardar_metadata(dir_path, meta)
 
             redirect = carpeta if carpeta.startswith("/") else "/" + carpeta
