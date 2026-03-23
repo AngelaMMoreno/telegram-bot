@@ -1,0 +1,130 @@
+# ═══════════════════════════════════════════════════════════════
+# PLANTILLA DE PÁGINA DE TEORÍA
+# ═══════════════════════════════════════════════════════════════
+# Sube este archivo .yaml al servidor de ficheros y se generará
+# automáticamente una página HTML con el formato de estudio.
+#
+# INSTRUCCIONES PARA LA IA:
+# - Rellena titulo y descripcion con el tema a estudiar
+# - Usa el banner para un resumen/introducción general
+# - Organiza el contenido en secciones > categorias > items
+# - Cada item puede tener un detalle expandible (opcional)
+# - Los niveles (0, 1, 2) crean jerarquía visual (padre/hijo)
+# ═══════════════════════════════════════════════════════════════
+
+titulo: "Ejemplo: Tipos de Cifrado"
+descripcion: "Resumen de los principales algoritmos y métodos de cifrado en ciberseguridad"
+
+# Banner superior (opcional) — ideal para introducción o comparativa
+banner:
+  etiqueta: "Conceptos fundamentales"
+  titulo: "Cifrado Simétrico vs Asimétrico — Diferencias clave"
+  descripcion: "El cifrado simétrico usa la misma clave para cifrar y descifrar. El cifrado asimétrico usa un par de claves (pública y privada). Ambos son fundamentales en la seguridad moderna."
+  columnas:
+    - subtitulo: "Simétrico"
+      titulo: "Una sola clave"
+      texto: "Más rápido · Ideal para grandes volúmenes · Problema de distribución de clave · AES, 3DES, ChaCha20"
+    - subtitulo: "Asimétrico"
+      titulo: "Par de claves"
+      texto: "Más lento · Resuelve distribución de claves · Firma digital · RSA, ECC, Diffie-Hellman"
+
+# Contenido organizado en secciones
+secciones:
+  - titulo: "🔐 Algoritmos de Cifrado Simétrico"
+    categorias:
+      - nombre: "Cifrado por bloques"
+        icono: "🧱"
+        color: "#1254a0"
+        items:
+          - nombre: "AES"
+            descripcion: "Advanced Encryption Standard — el estándar actual más utilizado"
+            etiqueta: "Estándar"
+            detalle:
+              texto: "AES (Rijndael) fue adoptado por NIST en 2001 como reemplazo de DES. Opera con bloques de 128 bits y soporta claves de 128, 192 y 256 bits. Es el cifrado simétrico más usado en el mundo."
+              nota: "<strong>Modos de operación:</strong> ECB (inseguro), CBC, CTR, GCM (autenticado). <strong>Uso:</strong> TLS, WiFi (WPA2/WPA3), cifrado de disco (BitLocker, FileVault)."
+
+          - nombre: "3DES (Triple DES)"
+            descripcion: "Aplica DES tres veces — retrocompatible pero lento"
+            nivel: 1
+            detalle:
+              texto: "Triple DES aplica el algoritmo DES tres veces con 2 o 3 claves diferentes (EDE: Encrypt-Decrypt-Encrypt). Longitud efectiva de 112 bits (3 claves) o 80 bits (2 claves)."
+              nota: "<strong>Estado:</strong> Considerado obsoleto por NIST desde 2023. Reemplazar por AES."
+
+          - nombre: "Blowfish / Twofish"
+            descripcion: "Alternativas de dominio público diseñadas por Bruce Schneier"
+            nivel: 1
+
+      - nombre: "Cifrado por flujo"
+        icono: "🌊"
+        color: "#0a6b52"
+        items:
+          - nombre: "ChaCha20"
+            descripcion: "Cifrado por flujo moderno — alternativa a AES en dispositivos sin AES-NI"
+            etiqueta: "Moderno"
+            detalle:
+              texto: "Diseñado por Daniel J. Bernstein como variante de Salsa20. Usado en TLS 1.3 y por Google en Android/Chrome cuando no hay aceleración hardware AES."
+              nota: "<strong>Ventaja:</strong> Rendimiento superior en software puro (sin instrucciones AES-NI). Combinado con Poly1305 para autenticación (ChaCha20-Poly1305)."
+
+          - nombre: "RC4"
+            descripcion: "Cifrado por flujo clásico — INSEGURO, no usar"
+            detalle:
+              texto: "RC4 fue ampliamente usado en SSL/TLS y WEP/WPA. Múltiples vulnerabilidades descubiertas hacen que su uso sea inseguro."
+              nota: "<strong>Estado:</strong> Prohibido en TLS (RFC 7465). No usar bajo ninguna circunstancia."
+
+  - titulo: "🔑 Algoritmos de Cifrado Asimétrico"
+    categorias:
+      - nombre: "Basados en factorización"
+        icono: "🔢"
+        color: "#b5431c"
+        items:
+          - nombre: "RSA"
+            descripcion: "El algoritmo asimétrico más conocido — cifrado y firma digital"
+            etiqueta: "Clásico"
+            detalle:
+              texto: "RSA se basa en la dificultad de factorizar el producto de dos números primos grandes. Soporta cifrado directo (limitado) y firma digital. Claves típicas: 2048 o 4096 bits."
+              nota: "<strong>Uso:</strong> TLS (intercambio de claves), firma digital, certificados X.509. <strong>Limitación:</strong> Lento para cifrar datos grandes — se usa para cifrar claves simétricas."
+
+      - nombre: "Basados en curvas elípticas"
+        icono: "📐"
+        color: "#7c3aed"
+        items:
+          - nombre: "ECC (Elliptic Curve Cryptography)"
+            descripcion: "Misma seguridad que RSA con claves mucho más cortas"
+            etiqueta: "Eficiente"
+            detalle:
+              texto: "ECC se basa en el problema del logaritmo discreto en curvas elípticas. Una clave ECC de 256 bits ofrece seguridad equivalente a RSA de 3072 bits."
+              nota: "<strong>Curvas comunes:</strong> P-256 (NIST), Curve25519 (Bernstein). <strong>Uso:</strong> TLS 1.3, SSH, criptomonedas, dispositivos IoT."
+
+          - nombre: "ECDSA / EdDSA"
+            descripcion: "Algoritmos de firma digital basados en curvas elípticas"
+            nivel: 1
+
+      - nombre: "Intercambio de claves"
+        icono: "🤝"
+        color: "#059669"
+        items:
+          - nombre: "Diffie-Hellman (DH / ECDH)"
+            descripcion: "Permite acordar una clave secreta compartida sobre un canal inseguro"
+            etiqueta: "Fundamental"
+            detalle:
+              texto: "Diffie-Hellman fue el primer algoritmo de clave pública publicado (1976). No cifra ni firma — solo permite que dos partes acuerden una clave secreta compartida."
+              nota: "<strong>Variantes:</strong> DH clásico (números grandes), ECDH (curvas elípticas, más eficiente). <strong>DHE/ECDHE:</strong> Versiones efímeras que proporcionan Perfect Forward Secrecy."
+
+  - titulo: "🛡️ Funciones Hash (no son cifrado, pero son esenciales)"
+    categorias:
+      - nombre: "Funciones hash criptográficas"
+        icono: "🔨"
+        color: "#4a4845"
+        items:
+          - nombre: "SHA-256 / SHA-3"
+            descripcion: "Funciones hash seguras — integridad y firma digital"
+            etiqueta: "Seguros"
+            detalle:
+              texto: "SHA-256 pertenece a la familia SHA-2 (NIST). SHA-3 (Keccak) es la alternativa más reciente. Producen resúmenes de longitud fija irreversibles."
+              nota: "<strong>SHA-256:</strong> 256 bits, usado en TLS, Bitcoin, certificados. <strong>SHA-3:</strong> Diseño esponja (Keccak), resistente a ataques de extensión de longitud."
+
+          - nombre: "MD5 / SHA-1"
+            descripcion: "Funciones hash obsoletas — NO usar para seguridad"
+            detalle:
+              texto: "MD5 (128 bits) y SHA-1 (160 bits) tienen vulnerabilidades de colisión demostradas. No deben usarse para firmas ni integridad."
+              nota: "<strong>MD5:</strong> Colisiones prácticas desde 2004. <strong>SHA-1:</strong> Colisión demostrada por Google (SHAttered, 2017). Usar SHA-256 o SHA-3."
