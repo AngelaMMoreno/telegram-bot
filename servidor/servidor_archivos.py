@@ -323,6 +323,8 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
 
         if path == "/subirFichero":
             self.serve_upload_page(query)
+        elif path == "/crearPagina":
+            self.serve_crear_pagina(query)
         else:
             self.serve_path(path)
 
@@ -333,6 +335,8 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
             self.handle_upload()
         elif path == "/crearCarpeta":
             self.handle_create_folder()
+        elif path == "/crearPagina":
+            self.handle_crear_pagina()
         else:
             self.send_error(404)
 
@@ -442,6 +446,7 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
 <div class="hdr">
   <div class="hdr-title">🗂️ Ficheros</div>
   <div class="hdr-actions">
+    <a href="/crearPagina?carpeta={urllib.parse.quote(url_path or '/')}" class="btn btn-ghost">📖 Crear página</a>
     <a href="{upload_link}" class="btn btn-white">📤 Subir / Nueva carpeta</a>
   </div>
 </div>
@@ -576,6 +581,224 @@ initDrop('dz','file-inp','file-name');
 </script>
 </body>
 </html>"""
+
+    # ── crear página ────────────────────────────────────────────────────────
+
+    def serve_crear_pagina(self, query: dict, *, msg: str = "", msg_type: str = "ok"):
+        carpeta = query.get("carpeta", ["/"])[0]
+        msg = msg or query.get("msg", [""])[0]
+        msg_type = msg_type or query.get("tipo", ["ok"])[0]
+        self._send_html(self._render_crear_pagina(carpeta, msg=msg, msg_type=msg_type))
+
+    def _render_crear_pagina(self, carpeta_sel: str = "/", *, msg: str = "", msg_type: str = "ok") -> str:
+        carpetas = obtener_todas_carpetas(self.base_dir)
+        opts = _carpeta_options_html(carpetas, carpeta_sel)
+
+        alert_html = ""
+        if msg:
+            alert_html = f'<div class="alert alert-{msg_type}">{html.escape(msg)}</div>'
+
+        back_url = html.escape(carpeta_sel) if carpeta_sel.startswith("/") else "/"
+
+        return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>📖 Crear página de teoría</title>
+<style>
+{_CSS_BASE}
+.yaml-editor{{width:100%;min-height:420px;font-family:'Courier New',monospace;font-size:13px;
+  line-height:1.5;padding:14px;border:1.5px solid var(--border);border-radius:10px;
+  background:#1e1e2e;color:#cdd6f4;resize:vertical;tab-size:2}}
+.yaml-editor::placeholder{{color:#585b70}}
+.yaml-editor:focus{{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(99,102,241,.15)}}
+.hint{{font-size:12px;color:var(--sub);margin-top:6px;line-height:1.5}}
+.hint code{{background:var(--pri-light);padding:1px 5px;border-radius:4px;font-size:11px;color:var(--pri-d)}}
+.preview-frame{{width:100%;height:500px;border:1.5px solid var(--border);border-radius:10px;
+  background:#fff;margin-top:12px;display:none}}
+.tabs{{display:flex;gap:4px;margin-bottom:12px}}
+.tab{{padding:7px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;
+  border:1.5px solid var(--border);background:#fff;color:var(--sub);transition:all .15s}}
+.tab.active{{background:var(--pri);color:#fff;border-color:var(--pri)}}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="hdr-title">📖 Crear página de teoría</div>
+  <div class="hdr-actions">
+    <a href="{back_url}" class="btn btn-ghost">← Volver</a>
+  </div>
+</div>
+
+<div class="form-wrap">
+{alert_html}
+
+<div class="form-card">
+  <h2>📝 Pega tu plantilla YAML</h2>
+
+  <form method="POST" action="/crearPagina" id="pageForm">
+    <div class="fg">
+      <label>📁 Carpeta destino</label>
+      <select name="carpeta" class="fc">{opts}</select>
+    </div>
+
+    <div class="fg">
+      <label>🏷️ Nombre del archivo (sin extensión)</label>
+      <input type="text" name="nombre" class="fc" placeholder="mi-tema-de-estudio" required
+             pattern="[^/\\\\<>:&quot;|?*.]+" title="Sin barras, puntos ni caracteres especiales">
+    </div>
+
+    <div class="fg">
+      <div class="tabs">
+        <div class="tab active" onclick="showTab('editor')">✏️ Editor</div>
+        <div class="tab" onclick="showTab('preview')">👁️ Vista previa</div>
+      </div>
+      <textarea name="yaml_content" class="yaml-editor" id="yamlEditor" required
+                placeholder='# Pega aqui tu plantilla YAML
+titulo: "Mi tema de estudio"
+descripcion: "Descripcion breve"
+
+secciones:
+  - titulo: "Seccion 1"
+    categorias:
+      - nombre: "Categoria"
+        icono: "📚"
+        color: "#1254a0"
+        items:
+          - nombre: "Concepto"
+            descripcion: "Explicacion breve"
+            detalle:
+              texto: "Explicacion completa..."
+              nota: "Notas adicionales..."'></textarea>
+      <iframe id="previewFrame" class="preview-frame"></iframe>
+      <div class="hint">
+        Pega el YAML generado por la IA. Campos obligatorios: <code>titulo</code> y <code>secciones</code> (o <code>categorias</code>).
+        Opcional: <code>banner</code>, <code>descripcion</code>, <code>detalle</code> en cada item.
+      </div>
+    </div>
+
+    <button type="submit" class="btn-submit">📖 Generar página</button>
+  </form>
+</div>
+</div>
+
+<script>
+function showTab(tab) {{
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  if (tab === 'preview') {{
+    document.querySelectorAll('.tab')[1].classList.add('active');
+    document.getElementById('yamlEditor').style.display = 'none';
+    var frame = document.getElementById('previewFrame');
+    frame.style.display = 'block';
+    // POST yaml to preview endpoint
+    var form = new FormData();
+    form.append('yaml_content', document.getElementById('yamlEditor').value);
+    form.append('preview', '1');
+    fetch('/crearPagina', {{method:'POST', body: form}})
+      .then(r => r.text())
+      .then(html => {{
+        frame.srcdoc = html;
+      }})
+      .catch(() => {{
+        frame.srcdoc = '<p style="padding:2rem;color:#991B1B;">Error al generar la vista previa. Revisa el YAML.</p>';
+      }});
+  }} else {{
+    document.querySelectorAll('.tab')[0].classList.add('active');
+    document.getElementById('yamlEditor').style.display = 'block';
+    document.getElementById('previewFrame').style.display = 'none';
+  }}
+}}
+
+// Tab key inserts spaces instead of changing focus
+document.getElementById('yamlEditor').addEventListener('keydown', function(e) {{
+  if (e.key === 'Tab') {{
+    e.preventDefault();
+    var s = this.selectionStart, end = this.selectionEnd;
+    this.value = this.value.substring(0, s) + '  ' + this.value.substring(end);
+    this.selectionStart = this.selectionEnd = s + 2;
+  }}
+}});
+</script>
+</body>
+</html>"""
+
+    def handle_crear_pagina(self):
+        try:
+            form = self._parse_form()
+            yaml_content = form.getvalue("yaml_content", "")
+            is_preview = form.getvalue("preview", "")
+
+            if not yaml_content.strip():
+                if is_preview:
+                    self._send_html("<p style='padding:2rem;color:#991B1B;'>El contenido YAML está vacío.</p>")
+                else:
+                    self._redirect_with_msg("/crearPagina", "El contenido YAML está vacío.", "err")
+                return
+
+            # Parsear YAML
+            try:
+                if _YAML_DISPONIBLE:
+                    data = yaml.safe_load(yaml_content)
+                else:
+                    data = json.loads(yaml_content)
+            except Exception as exc:
+                err_msg = f"Error de sintaxis en el YAML: {exc}"
+                if is_preview:
+                    self._send_html(f"<p style='padding:2rem;color:#991B1B;'>{html.escape(err_msg)}</p>")
+                else:
+                    self._redirect_with_msg("/crearPagina", err_msg, "err")
+                return
+
+            if not isinstance(data, dict) or "titulo" not in data:
+                err_msg = "La plantilla debe tener al menos un campo 'titulo'."
+                if is_preview:
+                    self._send_html(f"<p style='padding:2rem;color:#991B1B;'>{html.escape(err_msg)}</p>")
+                else:
+                    self._redirect_with_msg("/crearPagina", err_msg, "err")
+                return
+
+            # Generar HTML
+            html_content = generar_html(data)
+
+            # Si es preview, devolver el HTML directamente
+            if is_preview:
+                self._send_html(html_content)
+                return
+
+            # Guardar archivos
+            carpeta = form.getvalue("carpeta", "/")
+            nombre = form.getvalue("nombre", "").strip()
+            if not nombre:
+                nombre = data.get("titulo", "pagina").replace(" ", "_")
+
+            # Sanitizar nombre
+            nombre = "".join(c for c in nombre if c not in '/\\<>:"|?*.')
+
+            dir_path = self.safe_path(carpeta)
+            if dir_path is None or not os.path.isdir(dir_path):
+                dir_path = self.base_dir
+
+            # Guardar HTML
+            html_filename = asegurar_nombre_unico(dir_path, nombre + ".html")
+            with open(os.path.join(dir_path, html_filename), "w", encoding="utf-8") as fh:
+                fh.write(html_content)
+
+            # Guardar YAML original
+            yaml_filename = asegurar_nombre_unico(dir_path, nombre + ".yaml")
+            with open(os.path.join(dir_path, yaml_filename), "w", encoding="utf-8") as fh:
+                fh.write(yaml_content)
+
+            meta = cargar_metadata(dir_path)
+            meta.setdefault("files", {})[html_filename] = "📖"
+            meta.setdefault("files", {})[yaml_filename] = "📝"
+            guardar_metadata(dir_path, meta)
+
+            redirect = carpeta if carpeta.startswith("/") else "/" + carpeta
+            self._redirect(redirect)
+
+        except Exception as exc:
+            self.send_error(500, f"Error al crear la página: {exc}")
 
     # ── POST handlers ─────────────────────────────────────────────────────────
 

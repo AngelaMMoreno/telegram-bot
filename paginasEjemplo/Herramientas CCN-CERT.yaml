@@ -1,0 +1,171 @@
+titulo: "Herramientas CCN-CERT"
+descripcion: "Ecosistema de soluciones de ciberseguridad para la Administración Pública"
+
+banner:
+  etiqueta: "Plataforma integradora nacional"
+  titulo: "IRIS — Estado de ciberseguridad nacional en tiempo real"
+  descripcion: "Centraliza y unifica la información de 6 herramientas del ecosistema. Mapas interactivos, alertas en tiempo real, gestión de riesgo nacional."
+
+secciones:
+  - categorias:
+      - nombre: "Análisis de malware"
+        icono: "🦠"
+        color: "#b5431c"
+        items:
+          - nombre: "ADA"
+            descripcion: "Orquesta y unifica el análisis completo de malware desde un único interfaz"
+            etiqueta: "Plataforma"
+            detalle:
+              texto: "Plataforma de análisis avanzado de malware que integra capacidades dinámicas (MARTA) y estáticas (MARÍA) en un único interfaz. Enriquece los resultados con histórico, informes ejecutivos/técnicos y entornos de análisis aislados por organismo."
+              nota: "<strong>Contiene a:</strong> MARTA (sandboxing dinámico) y MARÍA (análisis estático). ADA es la capa superior que orquesta ambas, normaliza sus resultados y añade inteligencia. Los análisis deben realizarse a través de ADA, no directamente."
+          - nombre: "MARTA"
+            descripcion: "Multi-sandboxing — análisis dinámico de comportamiento"
+            nivel: 1
+            detalle:
+              texto: "Plataforma avanzada de multi-sandboxing para el análisis automatizado de ficheros potencialmente maliciosos. Ejecuta el código en una máquina virtual controlada y recoge comportamientos, acciones, patrones IOC y YARA."
+              nota: "<strong>Dependencia:</strong> Sus capacidades están integradas y accesibles desde ADA. No se usa de forma independiente para análisis nuevos."
+          - nombre: "MARÍA"
+            descripcion: "Análisis estático — firmas y metadatos del fichero"
+            nivel: 1
+            detalle:
+              texto: "Análisis estático de malware mediante firmas de virus, metadatos del fichero, información de cabecera y clasificación de tipo. Complementa el análisis dinámico de MARTA."
+              nota: "<strong>Dependencia:</strong> Integrada dentro de ADA. ADA la utiliza como motor de análisis estático en profundidad."
+
+      - nombre: "Detección APT / Endpoint"
+        icono: "🎯"
+        color: "#8a5510"
+        items:
+          - nombre: "CARMEN"
+            descripcion: "Detecta amenazas persistentes avanzadas (APT) en tráfico de red"
+            etiqueta: "Red"
+            detalle:
+              texto: "Primera capacidad española para la detección de amenazas persistentes avanzadas (APT) en redes. Analiza tráfico entrante, saliente e interno para detectar exfiltraciones, comunicaciones con C&C y movimientos laterales."
+              nota: "<strong>Integra a:</strong> CLAUDIA (endpoint). <strong>Alimenta a:</strong> IRIS con información sobre amenazas en red detectadas."
+          - nombre: "CLAUDIA"
+            descripcion: "Endpoint integrado con CARMEN — detección de movimiento lateral"
+            nivel: 1
+            detalle:
+              texto: "Solución de endpoint que se integra con CARMEN para ampliar la visibilidad al interior de los equipos. Su objetivo principal es la detección de malware complejo y movimiento lateral asociado a APTs."
+              nota: "<strong>Dependencia:</strong> Funciona integrada con CARMEN. <strong>Origen de:</strong> microCLAUDIA, que usa su motor de forma ligera."
+          - nombre: "microCLAUDIA"
+            descripcion: "Motor de CLAUDIA — vacunas anti-ransomware ligeras para Windows"
+            nivel: 2
+            detalle:
+              texto: "Versión ligera basada en el motor de CLAUDIA orientada exclusivamente a la protección contra ransomware. Utiliza un agente ligero para Windows que despliega y ejecuta vacunas contra código dañino."
+              nota: "<strong>Derivada de:</strong> El motor de CLAUDIA, en una versión reducida y especializada para despliegues masivos."
+
+      - nombre: "Gestión de eventos — SIEM"
+        icono: "📊"
+        color: "#1254a0"
+        items:
+          - nombre: "GLORIA"
+            descripcion: "Correlación compleja de eventos IT/OT — monitorización y orquestación"
+            etiqueta: "SIEM"
+            detalle:
+              texto: "Plataforma SIEM (Security Information and Event Management) que va más allá de la monitorización básica. Correlaciona eventos de múltiples fuentes (NIDS, HIDS, logs, etc.) en entornos IT/OT para detectar anomalías."
+              nota: "<strong>Es un SIEM completo.</strong> MÓNICA es similar en propósito pero no es un SIEM puro — añade UEBA y SOAR. <strong>Alimenta a:</strong> IRIS."
+          - nombre: "MÓNICA"
+            descripcion: "Gestión automatizada de eventos — comportamiento de usuario y respuesta automática"
+            etiqueta: "UEBA · SOAR"
+            detalle:
+              texto: "Sistema automatizado de gestión de información y eventos de seguridad. Detecta y resuelve amenazas en tiempo real, analiza comportamiento de usuario (UEBA) y responde de forma automática (SOAR). Se integra con LUCÍA para la gestión de incidentes ENS."
+              nota: "<strong>Similar a GLORIA pero no es SIEM puro:</strong> incluye UEBA (comportamiento de usuario) y SOAR (respuesta automática), capacidades que GLORIA no tiene de base. <strong>Alimenta a:</strong> IRIS."
+
+      - nombre: "Gobernanza ENS"
+        icono: "🏛️"
+        color: "#0a6b52"
+        items:
+          - nombre: "INÉS"
+            descripcion: "Evalúa la adecuación de sistemas al ENS — previo a la certificación"
+            etiqueta: "Paso 1"
+            detalle:
+              texto: "Evalúa regularmente el estado de la seguridad de sistemas TIC de organismos públicos y su adecuación al Esquema Nacional de Seguridad. Es el paso previo y necesario antes de la certificación formal."
+              nota: "<strong>Paso 1 del Marco de Gobernanza ENS.</strong> AMPARO es el paso 2 — la auditoría y certificación formal. Ambas forman parte del mismo marco de gobernanza desarrollado por el CCN. <strong>Alimenta a:</strong> IRIS."
+          - nombre: "AMPARO"
+            descripcion: "Auditoría y certificación de conformidad ENS — para EC y OAT"
+            nivel: 1
+            etiqueta: "Paso 2"
+            detalle:
+              texto: "Solución para Entidades de Certificación (EC) y Órganos de Auditoría Técnica (OAT). Gestiona el proceso completo de auditoría de conformidad, hallazgos, documentos y notificación de certificados al Portal de Gobernanza."
+              nota: "<strong>Paso 2 del Marco de Gobernanza ENS.</strong> Los pasos previos a la auditoría se realizan con INÉS."
+          - nombre: "CLARA"
+            descripcion: "Evaluación técnica de cumplimiento ENS — plantillas 500/600/800"
+            detalle:
+              texto: "Evalúa las características de seguridad técnicas definidas en el ENS (Real Decreto 3/2010, actualizado por RD 311/2022) usando plantillas de las guías de las series 500, 600 y 800."
+              nota: "<strong>Relacionada con INÉS y AMPARO</strong> dentro del marco ENS, pero es una herramienta independiente de evaluación técnica, no de gestión de procesos."
+          - nombre: "PILAR"
+            descripcion: "Análisis y gestión de riesgos según metodología MAGERIT"
+            detalle:
+              texto: "Herramienta para el análisis y la gestión de riesgos de sistemas de información siguiendo la metodología MAGERIT, el estándar oficial para la Administración Pública española."
+              nota: "<strong>Alimenta a:</strong> IRIS con información sobre el nivel de riesgo de los organismos."
+
+      - nombre: "Incidentes e inteligencia"
+        icono: "🚨"
+        color: "#4036b0"
+        items:
+          - nombre: "LUCÍA"
+            descripcion: "Gestión unificada de ciberincidentes en el ámbito ENS mediante sistema de ticketing"
+            detalle:
+              texto: "Listado Unificado de Coordinación de Incidentes y Amenazas. Gestiona los ciberincidentes del organismo, los del SAT-SARA y los del SAT-INET, ofreciendo lenguaje común de peligrosidad y trazabilidad completa."
+              nota: "<strong>Se integra con MÓNICA</strong> para la gestión de incidentes en el ámbito ENS. <strong>Alimenta a:</strong> IRIS con estado de incidentes."
+          - nombre: "REYES"
+            descripcion: "Inteligencia de amenazas basada en MISP — análisis rápido de ciberincidentes"
+            detalle:
+              texto: "Portal centralizado basado en tecnología MISP para análisis rápido de ciberincidentes y compartición de indicadores de compromiso. Enriquecido con fuentes públicas y privadas para agilizar la respuesta."
+              nota: "<strong>Complementa a LUCÍA:</strong> mientras LUCÍA gestiona el ciclo de vida del incidente, REYES aporta el contexto de inteligencia para la investigación."
+          - nombre: "ANA"
+            descripcion: "Auditoría continua — gestión de vulnerabilidades y exposición"
+            detalle:
+              texto: "Automatización y Normalización de Auditorías. Sistema de auditoría continua que centraliza inspecciones, detecta vulnerabilidades en tiempo real, genera informes dinámicos y conecta el trabajo de auditores con el de administradores."
+              nota: "<strong>Complementa a ELSA:</strong> ELSA monitoriza la superficie de ataque externa, ANA gestiona el trabajo continuo de auditoría y el ciclo de tratamiento de vulnerabilidades internas."
+          - nombre: "ELSA"
+            descripcion: "Monitorización de superficie de ataque externa — activos en Internet"
+            detalle:
+              texto: "Exposición Local y Superficie de Ataque. Monitoriza a nivel nacional todos los activos conectados a Internet de la Administración Pública para detectar vectores de ataque, vulnerabilidades y exposición no controlada."
+              nota: "<strong>Complementa a ANA:</strong> visión externa (desde Internet hacia dentro). ANA es visión interna (auditorías desde dentro). Juntas cubren el ciclo completo de exposición."
+
+      - nombre: "Borrado seguro / Privacidad"
+        icono: "🗑️"
+        color: "#4a4845"
+        items:
+          - nombre: "OLVIDO"
+            descripcion: "Sobreescritura y borrado seguro de ficheros, discos y volúmenes"
+            detalle:
+              texto: "Sobreescritura y borrado seguro de ficheros, carpetas, espacio libre, clústeres y discos completos. Implementa algoritmos estándar de borrado y permite personalizar pases y patrones. Integración con Syslog."
+              nota: "<strong>Origina a:</strong> metaOLVIDO, que aplica la misma filosofía de eliminación pero enfocada en metadatos de documentos, no en el borrado de ficheros completos."
+          - nombre: "metaOLVIDO"
+            descripcion: "Limpieza automática de metadatos en documentos ofimáticos y correo"
+            nivel: 1
+            detalle:
+              texto: "Aplica políticas corporativas de prevención de fugas de información limpiando automáticamente los metadatos de documentos ofimáticos en servidores de correo (Exchange, Zimbra), clientes (Outlook, Gmail, Thunderbird) y servidores web."
+              nota: "<strong>Derivado de la filosofía de OLVIDO</strong> pero especializado en metadatos. Cumple con ENS y GDPR, y protege contra campañas de phishing basadas en metadatos expuestos."
+
+      - nombre: "Formación y simulación"
+        icono: "🎓"
+        color: "#4f7d10"
+        items:
+          - nombre: "ATENEA"
+            descripcion: "Plataforma CTF — retos de criptografía, exploiting, forense, reversing…"
+            detalle:
+              texto: "Plataforma de retos de ciberseguridad (Capture The Flag) con desafíos de criptografía, esteganografía, exploiting, forense, análisis de tráfico y reversing. Orientada a todos los niveles de conocimiento."
+              nota: "<strong>Formación práctica</strong> orientada a demostración de destreza. ELENA es su complemento para entrenamiento en técnicas de cibervigilancia en entornos simulados."
+          - nombre: "ELENA"
+            descripcion: "Simulador de técnicas de cibervigilancia en entornos realistas"
+            detalle:
+              texto: "Simulador que permite al analista tomar el rol investigador en un entorno realista basado en situaciones reales. Desarrolla y practica técnicas, tácticas y procedimientos de ciberinvestigación."
+              nota: "<strong>Complementa a ATENEA:</strong> ATENEA son retos puntuales de seguridad ofensiva/defensiva; ELENA es un simulador de flujos de investigación de cibervigilancia más completos y realistas."
+          - nombre: "VANESA"
+            descripcion: "Streaming y retransmisión en directo para cursos y eventos"
+            detalle:
+              texto: "Plataforma de retransmisión de vídeo en directo y streaming para la organización de cursos y eventos de ciberseguridad del CCN-CERT."
+              nota: "<strong>Infraestructura de formación:</strong> da soporte técnico a la difusión de los contenidos formativos del CCN-CERT, complementando a ATENEA y ELENA."
+
+      - nombre: "Colaboración y productividad"
+        icono: "☁️"
+        color: "#12876a"
+        items:
+          - nombre: "LORETO"
+            descripcion: "Almacenamiento en la nube seguro — plataforma de colaboración de contenidos para el sector público"
+            detalle:
+              texto: "Plataforma de Colaboración de Contenidos (CCP) segura para el sector público. Permite compartir documentación entre usuarios internos y externos con control de acceso, desde cualquier ubicación, mediante protocolos seguros."
+              nota: "<strong>Infraestructura de productividad</strong> del ecosistema CCN-CERT. Facilita la colaboración segura que el resto de herramientas pueden necesitar para el intercambio de documentos y evidencias."
