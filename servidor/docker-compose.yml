@@ -1,7 +1,7 @@
 version: "3.8"
 
 services:
-  quizbot:
+  servidor:
     build: .
     environment:
       PUERTO_ARCHIVOS_PUBLICOS: ${PUERTO_ARCHIVOS_PUBLICOS:-8000}
