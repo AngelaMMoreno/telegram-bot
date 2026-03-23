@@ -4,6 +4,7 @@ import io
 import json
 import mimetypes
 import os
+import signal
 import threading
 import urllib.parse
 import warnings
@@ -648,13 +649,23 @@ def iniciar_servidor(base_dir: str, puerto: int) -> ThreadingHTTPServer:
     os.makedirs(base_dir, exist_ok=True)
     handler = crear_handler(base_dir)
     servidor = ThreadingHTTPServer(("", puerto), handler)
-    hilo = threading.Thread(target=servidor.serve_forever, daemon=True)
-    hilo.start()
     print(
         f"📂 Servidor de ficheros iniciado en http://0.0.0.0:{puerto} "
         f"(directorio: {base_dir})"
     )
     return servidor
 
+
 if __name__ == "__main__":
-    iniciar_servidor(RUTA_ARCHIVOS_PUBLICOS, PUERTO_ARCHIVOS_PUBLICOS)
+    servidor = iniciar_servidor(RUTA_ARCHIVOS_PUBLICOS, PUERTO_ARCHIVOS_PUBLICOS)
+
+    # Apagado limpio con Ctrl+C o SIGTERM (docker stop)
+    def _shutdown(sig, frame):
+        print("\n🛑 Apagando servidor...")
+        servidor.shutdown()
+
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
+
+    # serve_forever() bloquea el hilo principal → el proceso NO muere
+    servidor.serve_forever()
