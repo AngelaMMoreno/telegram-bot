@@ -65,7 +65,6 @@ def get_conn():
 
 
 def init_db():
-    os.makedirs(RUTA_DATOS, exist_ok=True)
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
