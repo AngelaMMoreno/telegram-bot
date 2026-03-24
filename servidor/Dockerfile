@@ -9,4 +9,6 @@ EXPOSE 8000
 
 COPY . .
 
+RUN pip install --no-cache-dir markdown
+
 CMD ["python", "servidor_archivos.py"]

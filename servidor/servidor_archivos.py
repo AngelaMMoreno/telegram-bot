@@ -11,6 +11,8 @@ import urllib.parse
 import warnings
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import markdown
+
 # ─── Emojis predefinidos ────────────────────────────────────────────────────
 
 EMOJIS = [
@@ -392,6 +394,60 @@ function initDrop(zoneId, inputId, nameId) {
 }
 """
 
+
+# ─── CSS para renderizar Markdown ──────────────────────────────────────────
+
+_CSS_MARKDOWN = """
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --pri:#6366F1;--pri-d:#4F46E5;--pri-light:#EEF2FF;
+  --bg:#F1F5F9;--card:#fff;--text:#1E293B;--sub:#64748B;
+  --border:#E2E8F0;
+}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+a{color:var(--pri);text-decoration:none}a:hover{text-decoration:underline}
+.md-header{background:linear-gradient(135deg,#6366F1,#8B5CF6);color:#fff;
+  padding:14px 24px;display:flex;align-items:center;justify-content:space-between;
+  box-shadow:0 2px 8px rgba(0,0,0,.2);gap:12px;flex-wrap:wrap}
+.md-header-title{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:700}
+.md-header a{color:#fff;font-size:14px;opacity:.85}
+.md-header a:hover{opacity:1}
+.md-wrap{max-width:900px;margin:32px auto;background:var(--card);
+  border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08);padding:40px 48px;
+  border:1px solid var(--border)}
+@media(max-width:640px){.md-wrap{margin:16px;padding:24px 20px;border-radius:8px}}
+
+/* ── tipografía markdown ── */
+.md-body{line-height:1.7;font-size:16px;color:var(--text)}
+.md-body h1{font-size:2em;font-weight:700;margin:1.2em 0 .6em;padding-bottom:.3em;border-bottom:2px solid var(--border)}
+.md-body h2{font-size:1.5em;font-weight:700;margin:1.1em 0 .5em;padding-bottom:.25em;border-bottom:1px solid var(--border)}
+.md-body h3{font-size:1.25em;font-weight:600;margin:1em 0 .4em}
+.md-body h4{font-size:1.1em;font-weight:600;margin:.9em 0 .3em}
+.md-body h5,.md-body h6{font-size:1em;font-weight:600;margin:.8em 0 .3em;color:var(--sub)}
+.md-body p{margin:.8em 0}
+.md-body ul,.md-body ol{margin:.8em 0;padding-left:2em}
+.md-body li{margin:.3em 0}
+.md-body li>ul,.md-body li>ol{margin:.2em 0}
+.md-body blockquote{margin:.8em 0;padding:.6em 1em;border-left:4px solid var(--pri);
+  background:var(--pri-light);border-radius:0 8px 8px 0;color:var(--sub)}
+.md-body blockquote p{margin:.3em 0}
+.md-body code{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:.9em;
+  background:#F1F5F9;padding:2px 6px;border-radius:4px;color:#E11D48}
+.md-body pre{margin:.8em 0;padding:16px 20px;background:#1E293B;color:#E2E8F0;
+  border-radius:8px;overflow-x:auto;font-size:.875em;line-height:1.6}
+.md-body pre code{background:none;padding:0;color:inherit;font-size:inherit}
+.md-body table{width:100%;border-collapse:collapse;margin:.8em 0;font-size:.95em}
+.md-body th{background:var(--pri-light);font-weight:600;text-align:left;
+  padding:10px 14px;border:1px solid var(--border)}
+.md-body td{padding:10px 14px;border:1px solid var(--border)}
+.md-body tr:nth-child(even){background:#FAFBFC}
+.md-body img{max-width:100%;border-radius:8px;margin:.8em 0}
+.md-body hr{border:none;border-top:2px solid var(--border);margin:1.5em 0}
+.md-body .codehilite{margin:.8em 0;padding:16px 20px;background:#1E293B;color:#E2E8F0;
+  border-radius:8px;overflow-x:auto;font-size:.875em;line-height:1.6}
+.md-body .codehilite pre{margin:0;padding:0;background:none}
+.md-body .codehilite code{background:none;padding:0;color:inherit}
+"""
 
 # ─── CSS de las páginas generadas ──────────────────────────────────────────
 
@@ -1594,6 +1650,8 @@ function confirmDelete(ruta, nombre, esDir) {{
     # ── file serving ─────────────────────────────────────────────────────────
 
     def serve_file(self, fs_path: str):
+        if fs_path.lower().endswith(".md"):
+            return self.serve_markdown(fs_path)
         mime, _ = mimetypes.guess_type(fs_path)
         mime = mime or "application/octet-stream"
         try:
@@ -1609,6 +1667,44 @@ function confirmDelete(ruta, nombre, esDir) {{
                     self.wfile.write(chunk)
         except Exception as e:
             self.send_error(500, str(e))
+
+    def serve_markdown(self, fs_path: str):
+        try:
+            with open(fs_path, "r", encoding="utf-8") as f:
+                md_text = f.read()
+        except Exception as e:
+            self.send_error(500, str(e))
+            return
+
+        md_html = markdown.markdown(
+            md_text,
+            extensions=["fenced_code", "tables", "toc", "nl2br", "sane_lists"],
+        )
+        name = os.path.basename(fs_path)
+        title = html.escape(os.path.splitext(name)[0])
+
+        rel = os.path.relpath(os.path.dirname(fs_path), self.base_dir)
+        parent_url = "/" if rel == "." else "/" + rel.replace(os.sep, "/") + "/"
+
+        page = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title}</title>
+<style>{_CSS_MARKDOWN}</style>
+</head>
+<body>
+<div class="md-header">
+  <div class="md-header-title">📝 {title}</div>
+  <a href="{html.escape(parent_url)}">← Volver</a>
+</div>
+<div class="md-wrap">
+  <div class="md-body">{md_html}</div>
+</div>
+</body>
+</html>"""
+        self._send_html(page)
 
     # ── upload page ──────────────────────────────────────────────────────────
 
