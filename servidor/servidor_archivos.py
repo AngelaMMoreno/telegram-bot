@@ -4,6 +4,7 @@ import io
 import json
 import mimetypes
 import os
+import shutil
 import signal
 import threading
 import urllib.parse
@@ -193,6 +194,25 @@ a{text-decoration:none;color:inherit}
 .card-name{font-size:12px;font-weight:600;word-break:break-word;
   max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%}
 .card-meta{font-size:11px;color:var(--sub)}
+.card-actions{display:flex;gap:4px;margin-top:4px;opacity:0;transition:opacity .15s}
+.card:hover .card-actions{opacity:1}
+.card-btn{background:none;border:1px solid var(--border);border-radius:6px;
+  padding:3px 8px;font-size:13px;cursor:pointer;transition:background .12s,border-color .12s;line-height:1}
+.card-btn:hover{background:var(--pri-light);border-color:var(--pri)}
+.card-btn.del:hover{background:#FEE2E2;border-color:#FCA5A5}
+
+/* ── confirm modal ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;
+  align-items:center;justify-content:center;z-index:9999}
+.modal-box{background:#fff;border-radius:16px;padding:28px 32px;max-width:420px;
+  width:90%;box-shadow:0 12px 40px rgba(0,0,0,.2);text-align:center}
+.modal-box h3{font-size:17px;margin-bottom:8px}
+.modal-box p{font-size:14px;color:var(--sub);margin-bottom:20px;word-break:break-word}
+.modal-btns{display:flex;gap:10px;justify-content:center}
+.modal-btns .btn{padding:9px 22px;font-size:14px}
+.btn-danger{background:#EF4444;color:#fff}
+.btn-danger:hover{background:#DC2626;opacity:1}
+.btn-cancel{background:var(--bg);color:var(--text);border:1px solid var(--border)}
 
 /* ── empty ── */
 .empty{text-align:center;padding:80px 24px;color:var(--sub)}
@@ -1400,6 +1420,8 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
             self.handle_create_folder()
         elif path == "/subirPlantilla":
             self.handle_plantilla()
+        elif path == "/eliminar":
+            self.handle_delete()
         else:
             self.send_error(404)
 
@@ -1470,11 +1492,15 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
                 subtxt = f"{n} elemento{'s' if n != 1 else ''}"
             except Exception:
                 subtxt = "carpeta"
+            del_path = html.escape(href, quote=True)
             cards.append(
                 f'<a href="{html.escape(href)}" class="card folder">'
                 f'<div class="card-emoji">{icon}</div>'
                 f'<div class="card-name" title="{html.escape(d.name)}">{html.escape(d.name)}</div>'
                 f'<div class="card-meta">{subtxt}</div>'
+                f'<div class="card-actions">'
+                f'<button class="card-btn del" onclick="event.preventDefault();event.stopPropagation();confirmDelete(\'{del_path}\',\'{html.escape(d.name, quote=True)}\',true)" title="Eliminar carpeta">🗑️</button>'
+                f'</div>'
                 f'</a>'
             )
         for f in files:
@@ -1483,11 +1509,24 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
             if not href.startswith("/"):
                 href = "/" + href
             size_str = format_size(f.stat().st_size)
+            has_source = os.path.exists(ruta_json_fuente(os.path.join(fs_path, f.name)))
+            edit_btn = ""
+            if has_source:
+                edit_href = f'/subirPlantilla?editar={urllib.parse.quote(href)}'
+                edit_btn = (
+                    f'<button class="card-btn" onclick="event.preventDefault();event.stopPropagation();'
+                    f'window.location.href=\'{html.escape(edit_href, quote=True)}\'" title="Editar página">✏️</button>'
+                )
+            del_path = html.escape(href, quote=True)
             cards.append(
                 f'<a href="{html.escape(href)}" class="card file" target="_blank">'
                 f'<div class="card-emoji">{icon}</div>'
                 f'<div class="card-name" title="{html.escape(f.name)}">{html.escape(f.name)}</div>'
                 f'<div class="card-meta">{size_str}</div>'
+                f'<div class="card-actions">'
+                f'{edit_btn}'
+                f'<button class="card-btn del" onclick="event.preventDefault();event.stopPropagation();confirmDelete(\'{del_path}\',\'{html.escape(f.name, quote=True)}\',false)" title="Eliminar archivo">🗑️</button>'
+                f'</div>'
                 f'</a>'
             )
 
@@ -1521,6 +1560,34 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
   <span>📄 {len(files)} archivo{'s' if len(files) != 1 else ''}</span>
 </div>
 <div class="grid">{grid_content}</div>
+<script>
+function confirmDelete(ruta, nombre, esDir) {{
+  var tipo = esDir ? 'la carpeta' : 'el archivo';
+  var extra = esDir ? '\\n\\nSe eliminará todo su contenido.' : '';
+  var overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML =
+    '<div class="modal-box">' +
+    '<h3>Eliminar ' + tipo + '</h3>' +
+    '<p>¿Seguro que quieres eliminar <strong>' + nombre + '</strong>?' + extra + '</p>' +
+    '<div class="modal-btns">' +
+    '<button class="btn btn-cancel" onclick="this.closest(\\'.modal-overlay\\').remove()">Cancelar</button>' +
+    '<button class="btn btn-danger" id="confirm-del-btn">Eliminar</button>' +
+    '</div></div>';
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', function(e) {{ if (e.target === overlay) overlay.remove(); }});
+  document.getElementById('confirm-del-btn').onclick = function() {{
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/eliminar';
+    var inp = document.createElement('input');
+    inp.type = 'hidden'; inp.name = 'ruta'; inp.value = ruta;
+    form.appendChild(inp);
+    document.body.appendChild(form);
+    form.submit();
+  }};
+}}
+</script>
 </body>
 </html>"""
 
@@ -1717,6 +1784,54 @@ initDrop('dz','file-inp','file-name');
         redirect = carpeta_padre if carpeta_padre.startswith("/") else "/" + carpeta_padre
         self._redirect(redirect)
 
+    # ── delete handler ────────────────────────────────────────────────────────
+
+    def handle_delete(self):
+        try:
+            form = self._parse_form()
+            ruta = form.getvalue("ruta", "")
+            if not ruta:
+                self.send_error(400, "No se especificó ruta.")
+                return
+
+            fs = self.safe_path(ruta)
+            if fs is None or not os.path.exists(fs):
+                self.send_error(404, "Elemento no encontrado.")
+                return
+
+            # No permitir eliminar el directorio raíz
+            if os.path.realpath(fs) == os.path.realpath(self.base_dir):
+                self.send_error(403, "No se puede eliminar el directorio raíz.")
+                return
+
+            nombre = os.path.basename(fs)
+            parent_dir = os.path.dirname(fs)
+
+            # Si es una página generada con JSON, eliminar también el .source.json
+            if os.path.isfile(fs):
+                source_json = ruta_json_fuente(fs)
+                if os.path.exists(source_json):
+                    os.remove(source_json)
+                os.remove(fs)
+            elif os.path.isdir(fs):
+                shutil.rmtree(fs)
+
+            # Eliminar la entrada del metadata.json
+            meta = cargar_metadata(parent_dir)
+            if nombre in meta.get("files", {}):
+                del meta["files"][nombre]
+                guardar_metadata(parent_dir, meta)
+
+            # Redirigir a la carpeta padre
+            parent_url = os.path.relpath(parent_dir, self.base_dir)
+            if parent_url == ".":
+                parent_url = "/"
+            else:
+                parent_url = "/" + parent_url.replace(os.sep, "/")
+            self._redirect(parent_url)
+        except Exception as exc:
+            self.send_error(500, f"Error al eliminar: {exc}")
+
     # ── API endpoints ────────────────────────────────────────────────────────
 
     def _send_json(self, data):
@@ -1755,15 +1870,46 @@ initDrop('dz','file-inp','file-name');
         msg = msg or query.get("msg", [""])[0]
         msg_type = msg_type or query.get("tipo", ["ok"])[0]
         carpeta = query.get("carpeta", ["/"])[0]
-        self._send_html(self._render_plantilla_form(carpeta, msg=msg, msg_type=msg_type))
+        editar = query.get("editar", [""])[0]
+        self._send_html(self._render_plantilla_form(carpeta, msg=msg, msg_type=msg_type, editar=editar))
 
-    def _render_plantilla_form(self, carpeta_sel: str = "/", *, msg: str = "", msg_type: str = "ok") -> str:
-        carpetas = obtener_todas_carpetas(self.base_dir)
-        opts = _carpeta_options_html(carpetas, carpeta_sel)
+    def _render_plantilla_form(self, carpeta_sel: str = "/", *, msg: str = "", msg_type: str = "ok", editar: str = "") -> str:
         alert_html = ""
         if msg:
             alert_html = f'<div class="alert alert-{html.escape(msg_type)}" style="margin:8px 16px">{html.escape(msg)}</div>'
         css_pagina_js = json.dumps(_CSS_PAGINA_GENERADA)
+
+        # Auto-load script si estamos editando una página existente
+        if editar:
+            editar_ruta_js = json.dumps(editar)
+            # Extraer carpeta y nombre del archivo para pre-rellenar el formulario
+            editar_parts = editar.rsplit("/", 1)
+            editar_carpeta = editar_parts[0] if len(editar_parts) > 1 else "/"
+            editar_nombre = editar_parts[-1].replace(".html", "") if editar_parts[-1].endswith(".html") else editar_parts[-1]
+            carpeta_sel = editar_carpeta or "/"
+            _editar_autoload_js = f"""
+// Auto-cargar plantilla para edición
+(function() {{
+  var ruta = {editar_ruta_js};
+  loadExisting(ruta);
+  var nameInput = document.querySelector('input[name="nombre_archivo"]');
+  if (nameInput) nameInput.value = {json.dumps(editar_nombre)};
+  var folderSelect = document.querySelector('select[name="carpeta"]');
+  if (folderSelect) {{
+    for (var i = 0; i < folderSelect.options.length; i++) {{
+      if (folderSelect.options[i].value === {json.dumps(editar_carpeta or "/")}) {{
+        folderSelect.selectedIndex = i;
+        break;
+      }}
+    }}
+  }}
+}})();
+"""
+        else:
+            _editar_autoload_js = ""
+
+        carpetas = obtener_todas_carpetas(self.base_dir)
+        opts = _carpeta_options_html(carpetas, carpeta_sel)
 
         # Opciones de plantillas existentes para el selector "Cargar existente"
         plantillas = listar_plantillas(self.base_dir)
@@ -1913,6 +2059,7 @@ var CSS_PAGINA = {css_pagina_js};
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 initEditor();
+{_editar_autoload_js}
 </script>
 </body>
 </html>"""
