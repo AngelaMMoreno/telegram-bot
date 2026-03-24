@@ -7,8 +7,9 @@ WORKDIR /app
 
 EXPOSE 8000
 
-COPY . .
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-RUN pip install --no-cache-dir markdown
+COPY . .
 
 CMD ["python", "servidor_archivos.py"]
