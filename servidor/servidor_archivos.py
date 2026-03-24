@@ -101,6 +101,51 @@ def obtener_todas_carpetas(base_dir: str, max_depth: int = 4) -> list[tuple[str,
     return carpetas
 
 
+# ─── JSON source (sidecar) helpers ──────────────────────────────────────────
+
+def ruta_json_fuente(html_path: str) -> str:
+    """Devuelve la ruta del fichero JSON fuente asociado a un HTML generado."""
+    base, _ = os.path.splitext(html_path)
+    return base + ".source.json"
+
+
+def guardar_json_fuente(html_path: str, data: dict) -> None:
+    """Guarda el JSON fuente junto al HTML generado."""
+    path = ruta_json_fuente(html_path)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def cargar_json_fuente(html_path: str) -> dict | None:
+    """Carga el JSON fuente de una página generada, si existe."""
+    path = ruta_json_fuente(html_path)
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return None
+
+
+def listar_plantillas(base_dir: str) -> list[dict]:
+    """Lista todas las páginas HTML que tienen un JSON fuente guardado."""
+    result = []
+    for root, dirs, files in os.walk(base_dir):
+        dirs[:] = sorted([d for d in dirs if not d.startswith(".")], key=str.lower)
+        for f in sorted(files, key=str.lower):
+            if f.endswith(".html"):
+                html_path = os.path.join(root, f)
+                json_path = ruta_json_fuente(html_path)
+                if os.path.exists(json_path):
+                    rel = os.path.relpath(html_path, base_dir)
+                    result.append({
+                        "nombre": f,
+                        "ruta": "/" + rel.replace(os.sep, "/"),
+                    })
+    return result
+
+
 # ─── CSS compartido ─────────────────────────────────────────────────────────
 
 _CSS_BASE = """
@@ -212,6 +257,89 @@ a{text-decoration:none;color:inherit}
 .alert{padding:10px 16px;border-radius:8px;font-size:13px;margin-bottom:16px}
 .alert-ok{background:#D1FAE5;color:#065F46;border:1px solid #6EE7B7}
 .alert-err{background:#FEE2E2;color:#991B1B;border:1px solid #FCA5A5}
+"""
+
+# ─── CSS del editor de plantillas ──────────────────────────────────────────
+
+_CSS_EDITOR = """
+/* Editor layout */
+.editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;height:calc(100vh - 100px);overflow:hidden}
+.editor-left{display:flex;flex-direction:column;border-right:1px solid var(--border);overflow:hidden}
+.editor-right{display:flex;flex-direction:column;overflow:hidden}
+.editor-toolbar{display:flex;align-items:center;gap:8px;padding:10px 16px;background:#fff;
+  border-bottom:1px solid var(--border);flex-wrap:wrap}
+.editor-toolbar-group{display:flex;align-items:center;gap:6px}
+.editor-toolbar .separator{width:1px;height:24px;background:var(--border);margin:0 4px}
+
+/* JSON editor area */
+.json-editor-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:12px;gap:6px}
+.json-editor-wrap textarea{flex:1;font-family:'JetBrains Mono',monospace;font-size:12px;
+  line-height:1.5;resize:none;border:1.5px solid var(--border);border-radius:8px;padding:12px;
+  background:#1e1e2e;color:#cdd6f4;tab-size:2}
+.json-editor-wrap textarea:focus{outline:none;border-color:var(--pri);
+  box-shadow:0 0 0 3px rgba(99,102,241,.12)}
+.json-error{color:#dc2626;font-size:12px;min-height:16px}
+
+/* Module injection panel */
+.module-section{padding:12px;border-top:1px solid var(--border);background:#f8fafc;
+  max-height:220px;overflow-y:auto;flex-shrink:0}
+.module-section h3{font-size:12px;font-weight:700;color:var(--sub);text-transform:uppercase;
+  letter-spacing:.05em;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.module-cat{background:#fff;border:1px solid var(--border);border-radius:8px;
+  padding:8px 10px;margin-bottom:6px}
+.module-cat-head{display:flex;align-items:center;justify-content:space-between;
+  font-size:13px;font-weight:600}
+.module-cat-count{font-size:11px;color:var(--sub);font-weight:400}
+.module-cat-actions{display:flex;gap:4px;margin-top:6px}
+.btn-mini{padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;
+  border:none;cursor:pointer;transition:opacity .15s}
+.btn-mini:hover{opacity:.8}
+.btn-mini-pri{background:var(--pri-light);color:var(--pri-d)}
+.btn-mini-edit{background:#f0f0f0;color:var(--text)}
+.btn-mini-danger{background:#FEE2E2;color:#991B1B}
+
+/* Preview section */
+.preview-section{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.preview-section .preview-header{flex-shrink:0;background:linear-gradient(135deg,#6366F1,#8B5CF6);
+  color:#fff;padding:10px 18px;font-size:13px;font-weight:700;
+  display:flex;align-items:center;justify-content:space-between}
+.preview-section .preview-body{flex:1;overflow:hidden;position:relative}
+.preview-section iframe{width:100%;height:100%;border:none;display:block}
+.preview-empty{text-align:center;padding:60px 20px;color:var(--sub);font-size:14px}
+
+/* Visual editor slide-in panel */
+.visual-editor{position:fixed;top:0;right:0;width:420px;height:100vh;background:#fff;
+  box-shadow:-4px 0 24px rgba(0,0,0,.15);transform:translateX(100%);
+  transition:transform .3s ease;z-index:1000;display:flex;flex-direction:column}
+.visual-editor.show{transform:translateX(0)}
+.ve-header{padding:14px 18px;background:linear-gradient(135deg,#6366F1,#8B5CF6);color:#fff;
+  display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.ve-header h3{font-size:15px;font-weight:700;margin:0}
+.ve-close{background:none;border:none;color:#fff;font-size:20px;cursor:pointer;opacity:.8;
+  padding:0 4px;line-height:1}
+.ve-close:hover{opacity:1}
+.ve-body{flex:1;overflow-y:auto;padding:18px}
+.ve-field{margin-bottom:14px}
+.ve-field label{display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:var(--text)}
+.ve-actions{display:flex;gap:8px;margin-top:20px;flex-wrap:wrap;padding-top:16px;
+  border-top:1px solid var(--border)}
+
+/* Save section */
+.save-section{padding:12px;border-top:1px solid var(--border);background:#fff;flex-shrink:0}
+.save-row{display:flex;gap:10px;align-items:end}
+.save-row .fg{flex:1;margin-bottom:0}
+.save-row label{font-size:12px;font-weight:600;margin-bottom:4px;display:block;color:var(--text)}
+
+/* Import file button */
+.import-btn{position:relative;overflow:hidden}
+.import-btn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer}
+
+@media(max-width:900px){
+  .editor-grid{grid-template-columns:1fr;height:auto}
+  .editor-left{min-height:50vh}
+  .editor-right{min-height:50vh}
+  .visual-editor{width:100%}
+}
 """
 
 # ─── JavaScript compartido ───────────────────────────────────────────────────
@@ -489,6 +617,565 @@ var JS_PAGINA = [
 ].join('\n');
 """
 
+# ─── JS del editor de plantillas ──────────────────────────────────────────
+
+_JS_EDITOR = r"""
+// ── Plantillas predefinidas ──────────────────────────────────────────────────
+var PLANTILLA_BASE = {
+  config: {
+    tituloPagina: "Mi Página",
+    subtituloPagina: "",
+    banner: { mostrar: false, etiqueta: "", titulo: "", descripcion: "" }
+  },
+  categorias: []
+};
+
+var PLANTILLA_COMPLETA = {
+  config: {
+    tituloPagina: "Guía Técnica",
+    subtituloPagina: "Descripción de la guía",
+    banner: {
+      mostrar: true,
+      etiqueta: "REFERENCIA",
+      titulo: "Título del Banner",
+      descripcion: "Descripción detallada del contenido de esta página."
+    }
+  },
+  categorias: [
+    {
+      colorClase: "c-siem",
+      nombre: "Primera Categoría",
+      icono: "\ud83d\udccb",
+      desplegable: true,
+      abierta: true,
+      items: [
+        {
+          id: "item-1",
+          nombre: "Primer Elemento",
+          resumen: "Descripción breve del elemento",
+          nivel: 0,
+          badges: ["etiqueta"],
+          descripcionLarga: "Descripción detallada que aparecerá en el panel de detalles.",
+          notaRelacionada: ""
+        }
+      ]
+    },
+    {
+      colorClase: "c-app",
+      nombre: "Segunda Categoría",
+      icono: "\ud83d\ude80",
+      desplegable: true,
+      abierta: true,
+      items: [
+        {
+          id: "item-2",
+          nombre: "Otro Elemento",
+          resumen: "Otro ejemplo de item",
+          nivel: 0,
+          badges: ["demo"],
+          descripcionLarga: "Contenido detallado del segundo item.",
+          notaRelacionada: ""
+        }
+      ]
+    }
+  ]
+};
+
+var COLOR_CLASSES = [
+  {value:'c-malware',label:'\ud83d\udd34 Malware',color:'#b5431c'},
+  {value:'c-apt',label:'\ud83d\udfe0 APT',color:'#8a5510'},
+  {value:'c-siem',label:'\ud83d\udd35 SIEM',color:'#1254a0'},
+  {value:'c-ens',label:'\ud83d\udfe2 ENS',color:'#0a6b52'},
+  {value:'c-incidentes',label:'\ud83d\udfe3 Incidentes',color:'#4036b0'},
+  {value:'c-borrado',label:'\u26ab Borrado',color:'#4a4845'},
+  {value:'c-formacion',label:'\ud83d\udfe2 Formación',color:'#4f7d10'},
+  {value:'c-colab',label:'\ud83d\udfe2 Colaboración',color:'#12876a'},
+  {value:'c-app',label:'\ud83d\udfe3 App',color:'#7c3aed'},
+  {value:'c-pres',label:'\ud83d\udd35 Presentación',color:'#5b5fc7'},
+  {value:'c-ses',label:'\ud83d\udd35 Sesiones',color:'#2563eb'},
+  {value:'c-trans',label:'\ud83d\udd35 Transmisión',color:'#0891b2'},
+  {value:'c-red',label:'\ud83d\udfe2 Red',color:'#059669'},
+  {value:'c-enlace',label:'\ud83d\udfe0 Enlace',color:'#b45309'},
+  {value:'c-fisica',label:'\ud83d\udd34 Física',color:'#dc2626'}
+];
+
+// ── Estado del editor ────────────────────────────────────────────────────────
+var editorState = null;
+var selectedElement = null;
+
+function initEditor() {
+  editorState = null;
+  selectedElement = null;
+}
+
+// ── Cargar plantillas ────────────────────────────────────────────────────────
+function loadTemplate(type) {
+  var tpl = (type === 'base') ? PLANTILLA_BASE : PLANTILLA_COMPLETA;
+  editorState = JSON.parse(JSON.stringify(tpl));
+  syncStateToTextarea();
+  renderEditorPreview();
+  updateModulePanel();
+}
+
+function loadExisting(ruta) {
+  if (!ruta) return;
+  fetch('/api/plantilla/cargar?ruta=' + encodeURIComponent(ruta))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { alert(data.error); return; }
+      editorState = data;
+      syncStateToTextarea();
+      renderEditorPreview();
+      updateModulePanel();
+    })
+    .catch(function(e) { alert('Error al cargar: ' + e.message); });
+  // Reset select
+  document.getElementById('load-existing').selectedIndex = 0;
+}
+
+function importJsonFile(input) {
+  var f = input.files[0];
+  if (!f) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      editorState = JSON.parse(e.target.result);
+      syncStateToTextarea();
+      renderEditorPreview();
+      updateModulePanel();
+    } catch(err) {
+      alert('JSON inválido: ' + err.message);
+    }
+  };
+  reader.readAsText(f);
+  input.value = '';
+}
+
+// ── Sincronización estado <-> textarea ───────────────────────────────────────
+function syncStateToTextarea() {
+  if (!editorState) return;
+  var ta = document.getElementById('json-input');
+  ta.value = JSON.stringify(editorState, null, 2);
+  document.getElementById('json-error').textContent = '';
+}
+
+function syncTextareaToState() {
+  var txt = document.getElementById('json-input').value;
+  if (!txt.trim()) { editorState = null; return false; }
+  try {
+    editorState = JSON.parse(txt);
+    document.getElementById('json-error').textContent = '';
+    return true;
+  } catch(e) {
+    document.getElementById('json-error').textContent = '\u26a0 JSON inválido: ' + e.message;
+    return false;
+  }
+}
+
+// ── Input handler del textarea ───────────────────────────────────────────────
+var _editorDebounce;
+function onJsonInput() {
+  clearTimeout(_editorDebounce);
+  _editorDebounce = setTimeout(function() {
+    if (syncTextareaToState()) {
+      renderEditorPreview();
+      updateModulePanel();
+    }
+  }, 400);
+}
+
+// ── Render preview ───────────────────────────────────────────────────────────
+function renderEditorPreview() {
+  var statusEl = document.getElementById('preview-status');
+  var iframe = document.getElementById('preview-iframe');
+  var empty = document.getElementById('preview-empty');
+
+  if (!editorState) {
+    iframe.style.display = 'none';
+    empty.style.display = '';
+    statusEl.textContent = 'Introduce JSON para previsualizar';
+    return;
+  }
+  try {
+    var html = buildPage(editorState);
+    iframe.style.display = 'block';
+    empty.style.display = 'none';
+    iframe.srcdoc = html;
+    iframe.onload = function() { injectEditorHandlers(); };
+    statusEl.textContent = '\u2705 Doble clic en elementos para editar';
+  } catch(e) {
+    document.getElementById('json-error').textContent = '\u26a0 Error: ' + e.message;
+    statusEl.textContent = 'Error en datos';
+  }
+}
+
+// ── Inyectar handlers de edición en el iframe ────────────────────────────────
+function injectEditorHandlers() {
+  var iframe = document.getElementById('preview-iframe');
+  var doc = iframe.contentDocument;
+  if (!doc) return;
+
+  var style = doc.createElement('style');
+  style.textContent = [
+    '.cat-head{transition:outline .15s ease}',
+    '.cat-head:hover{outline:2px dashed #6366F1;outline-offset:2px;cursor:pointer}',
+    '.tool{transition:outline .15s ease}',
+    '.tool:hover{outline:2px dashed #8B5CF6;outline-offset:2px}',
+    '.iris-banner{transition:outline .15s ease}',
+    '.iris-banner:hover{outline:2px dashed #6366F1;outline-offset:2px;cursor:pointer}',
+    '.page-header{transition:outline .15s ease}',
+    '.page-header:hover{outline:2px dashed #6366F1;outline-offset:2px;cursor:pointer}',
+    '.editor-selected{outline:3px solid #6366F1!important;outline-offset:3px;',
+    '  background:rgba(99,102,241,.05)!important}'
+  ].join('\n');
+  doc.head.appendChild(style);
+
+  // Doble clic en header de página
+  var ph = doc.querySelector('.page-header');
+  if (ph) ph.addEventListener('dblclick', function(e) {
+    e.preventDefault(); e.stopPropagation();
+    clearSelection(doc); ph.classList.add('editor-selected');
+    openVisualEditor('config');
+  });
+
+  // Doble clic en banner
+  var bn = doc.querySelector('.iris-banner');
+  if (bn) bn.addEventListener('dblclick', function(e) {
+    e.preventDefault(); e.stopPropagation();
+    clearSelection(doc); bn.classList.add('editor-selected');
+    openVisualEditor('banner');
+  });
+
+  // Doble clic en categorías e items
+  var cats = doc.querySelectorAll('.cat');
+  for (var ci = 0; ci < cats.length; ci++) {
+    (function(catIdx) {
+      var catEl = cats[catIdx];
+      var head = catEl.querySelector('.cat-head');
+      if (head) head.addEventListener('dblclick', function(e) {
+        e.preventDefault(); e.stopPropagation();
+        clearSelection(doc); head.classList.add('editor-selected');
+        openVisualEditor('category', catIdx);
+      });
+      var tools = catEl.querySelectorAll('.tool');
+      for (var ti = 0; ti < tools.length; ti++) {
+        (function(itemIdx) {
+          tools[itemIdx].addEventListener('dblclick', function(e) {
+            e.preventDefault(); e.stopPropagation();
+            clearSelection(doc); tools[itemIdx].classList.add('editor-selected');
+            openVisualEditor('item', catIdx, itemIdx);
+          });
+        })(ti);
+      }
+    })(ci);
+  }
+}
+
+function clearSelection(doc) {
+  var els = doc.querySelectorAll('.editor-selected');
+  for (var i = 0; i < els.length; i++) els[i].classList.remove('editor-selected');
+}
+
+// ── Panel de edición visual ──────────────────────────────────────────────────
+function openVisualEditor(type, catIdx, itemIdx) {
+  selectedElement = {type: type, catIdx: catIdx, itemIdx: itemIdx};
+  var panel = document.getElementById('visual-editor');
+  var content = document.getElementById('visual-editor-content');
+  var title = document.getElementById('visual-editor-title');
+  if (!editorState) return;
+
+  var h = '';
+  if (type === 'config') {
+    title.textContent = '\u2699\ufe0f Configuración de Página';
+    var cfg = editorState.config || {};
+    h = veField('Título de página', 'text', 've-tituloPagina', cfg.tituloPagina || '')
+      + veField('Subtítulo', 'text', 've-subtituloPagina', cfg.subtituloPagina || '');
+  }
+  else if (type === 'banner') {
+    title.textContent = '\ud83c\udfaf Banner';
+    var b = (editorState.config || {}).banner || {};
+    h = veCheck('Mostrar banner', 've-banner-mostrar', b.mostrar !== false)
+      + veField('Etiqueta', 'text', 've-banner-etiqueta', b.etiqueta || '')
+      + veField('Título', 'text', 've-banner-titulo', b.titulo || '')
+      + veTextarea('Descripción', 've-banner-descripcion', b.descripcion || '', 3);
+  }
+  else if (type === 'category') {
+    var cat = (editorState.categorias || [])[catIdx];
+    if (!cat) return;
+    title.textContent = '\ud83d\udcc2 Categoría: ' + (cat.nombre || '');
+    h = veField('Nombre', 'text', 've-cat-nombre', cat.nombre || '')
+      + veField('Icono (emoji)', 'text', 've-cat-icono', cat.icono || '\ud83d\udccb')
+      + veSelect('Color', 've-cat-color', COLOR_CLASSES.map(function(c) {
+          return {value: c.value, label: c.label, selected: cat.colorClase === c.value};
+        }))
+      + veCheck('Desplegable', 've-cat-desplegable', cat.desplegable !== false)
+      + veCheck('Abierta por defecto', 've-cat-abierta', cat.abierta !== false);
+  }
+  else if (type === 'item') {
+    var cat2 = (editorState.categorias || [])[catIdx];
+    if (!cat2) return;
+    var item = (cat2.items || [])[itemIdx];
+    if (!item) return;
+    title.textContent = '\ud83d\udcc4 Item: ' + (item.nombre || '');
+    h = veField('Nombre', 'text', 've-item-nombre', item.nombre || '')
+      + veField('Resumen', 'text', 've-item-resumen', item.resumen || '')
+      + veField('ID', 'text', 've-item-id', item.id || '')
+      + veSelect('Nivel', 've-item-nivel', [
+          {value:'0', label:'Normal', selected: !item.nivel || item.nivel === 0},
+          {value:'1', label:'Hijo (nivel 1)', selected: item.nivel === 1},
+          {value:'2', label:'Hijo (nivel 2)', selected: item.nivel === 2}
+        ])
+      + veField('Badges (separados por coma)', 'text', 've-item-badges',
+          (item.badges || []).join(', '))
+      + veTextarea('Descripción larga', 've-item-desc', item.descripcionLarga || '', 4)
+      + veTextarea('Nota relacionada (HTML)', 've-item-nota', item.notaRelacionada || '', 3);
+  }
+
+  // Botones de acción
+  h += '<div class="ve-actions">'
+    + '<button type="button" class="btn btn-pri" onclick="applyVisualEdit()">\u2713 Aplicar</button>';
+  if (type === 'category') {
+    h += ' <button type="button" class="btn-mini btn-mini-danger" onclick="deleteCategory('
+      + catIdx + ')">\ud83d\uddd1\ufe0f Eliminar categoría</button>';
+  } else if (type === 'item') {
+    h += ' <button type="button" class="btn-mini btn-mini-danger" onclick="deleteItem('
+      + catIdx + ',' + itemIdx + ')">\ud83d\uddd1\ufe0f Eliminar item</button>';
+  }
+  h += ' <button type="button" class="btn btn-sec" onclick="closeVisualEditor()">Cancelar</button></div>';
+
+  content.innerHTML = h;
+  panel.classList.add('show');
+}
+
+// ── Helpers para generar campos del editor visual ────────────────────────────
+function veField(label, type, id, value) {
+  return '<div class="ve-field"><label>' + escH(label) + '</label>'
+    + '<input type="' + type + '" class="fc" id="' + id + '" value="' + escA(value) + '"></div>';
+}
+function veTextarea(label, id, value, rows) {
+  return '<div class="ve-field"><label>' + escH(label) + '</label>'
+    + '<textarea class="fc" id="' + id + '" rows="' + rows + '">' + escH(value) + '</textarea></div>';
+}
+function veSelect(label, id, options) {
+  var opts = options.map(function(o) {
+    return '<option value="' + escA(o.value) + '"' + (o.selected ? ' selected' : '') + '>'
+      + escH(o.label) + '</option>';
+  }).join('');
+  return '<div class="ve-field"><label>' + escH(label) + '</label>'
+    + '<select class="fc" id="' + id + '">' + opts + '</select></div>';
+}
+function veCheck(label, id, checked) {
+  return '<div class="ve-field"><label><input type="checkbox" id="' + id + '"'
+    + (checked ? ' checked' : '') + '> ' + escH(label) + '</label></div>';
+}
+function escA(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escH(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Aplicar cambios del editor visual ────────────────────────────────────────
+function applyVisualEdit() {
+  if (!editorState || !selectedElement) return;
+  var t = selectedElement.type;
+
+  if (t === 'config') {
+    editorState.config = editorState.config || {};
+    editorState.config.tituloPagina = gv('ve-tituloPagina');
+    editorState.config.subtituloPagina = gv('ve-subtituloPagina');
+  }
+  else if (t === 'banner') {
+    editorState.config = editorState.config || {};
+    editorState.config.banner = {
+      mostrar: gc('ve-banner-mostrar'),
+      etiqueta: gv('ve-banner-etiqueta'),
+      titulo: gv('ve-banner-titulo'),
+      descripcion: gv('ve-banner-descripcion')
+    };
+  }
+  else if (t === 'category') {
+    var cat = editorState.categorias[selectedElement.catIdx];
+    if (cat) {
+      cat.nombre = gv('ve-cat-nombre');
+      cat.icono = gv('ve-cat-icono');
+      cat.colorClase = gv('ve-cat-color');
+      cat.desplegable = gc('ve-cat-desplegable');
+      cat.abierta = gc('ve-cat-abierta');
+    }
+  }
+  else if (t === 'item') {
+    var cat2 = editorState.categorias[selectedElement.catIdx];
+    if (cat2) {
+      var item = (cat2.items || [])[selectedElement.itemIdx];
+      if (item) {
+        item.nombre = gv('ve-item-nombre');
+        item.resumen = gv('ve-item-resumen');
+        item.id = gv('ve-item-id');
+        item.nivel = parseInt(gv('ve-item-nivel')) || 0;
+        var bs = gv('ve-item-badges');
+        item.badges = bs ? bs.split(',').map(function(s){return s.trim();}).filter(Boolean) : [];
+        item.descripcionLarga = gv('ve-item-desc');
+        item.notaRelacionada = gv('ve-item-nota');
+      }
+    }
+  }
+
+  syncStateToTextarea();
+  renderEditorPreview();
+  updateModulePanel();
+  closeVisualEditor();
+}
+
+function gv(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+function gc(id) { var el = document.getElementById(id); return el ? el.checked : false; }
+
+function closeVisualEditor() {
+  document.getElementById('visual-editor').classList.remove('show');
+  selectedElement = null;
+  // Limpiar selección en iframe
+  var iframe = document.getElementById('preview-iframe');
+  if (iframe && iframe.contentDocument) {
+    clearSelection(iframe.contentDocument);
+  }
+}
+
+// ── Inyección de módulos ─────────────────────────────────────────────────────
+function addCategory() {
+  if (!editorState) {
+    editorState = JSON.parse(JSON.stringify(PLANTILLA_BASE));
+  }
+  editorState.categorias = editorState.categorias || [];
+  var idx = editorState.categorias.length;
+  editorState.categorias.push({
+    colorClase: COLOR_CLASSES[idx % COLOR_CLASSES.length].value,
+    nombre: "Nueva Categoría " + (idx + 1),
+    icono: "\ud83d\udccb",
+    desplegable: true,
+    abierta: true,
+    items: []
+  });
+  syncStateToTextarea();
+  renderEditorPreview();
+  updateModulePanel();
+}
+
+function addItem(catIdx) {
+  if (!editorState || !editorState.categorias || !editorState.categorias[catIdx]) return;
+  var cat = editorState.categorias[catIdx];
+  cat.items = cat.items || [];
+  var n = cat.items.length;
+  cat.items.push({
+    id: "item-" + Date.now() + "-" + n,
+    nombre: "Nuevo Item",
+    resumen: "",
+    nivel: 0,
+    badges: [],
+    descripcionLarga: "",
+    notaRelacionada: ""
+  });
+  syncStateToTextarea();
+  renderEditorPreview();
+  updateModulePanel();
+}
+
+function deleteCategory(catIdx) {
+  if (!editorState || !editorState.categorias || !editorState.categorias[catIdx]) return;
+  if (!confirm('\u00bfEliminar "' + editorState.categorias[catIdx].nombre + '" y todos sus items?')) return;
+  editorState.categorias.splice(catIdx, 1);
+  syncStateToTextarea();
+  renderEditorPreview();
+  updateModulePanel();
+  closeVisualEditor();
+}
+
+function deleteItem(catIdx, itemIdx) {
+  if (!editorState || !editorState.categorias || !editorState.categorias[catIdx]) return;
+  var cat = editorState.categorias[catIdx];
+  if (!cat.items || !cat.items[itemIdx]) return;
+  if (!confirm('\u00bfEliminar "' + cat.items[itemIdx].nombre + '"?')) return;
+  cat.items.splice(itemIdx, 1);
+  syncStateToTextarea();
+  renderEditorPreview();
+  updateModulePanel();
+  closeVisualEditor();
+}
+
+// ── Panel de módulos (lista de categorías con acciones rápidas) ──────────────
+function updateModulePanel() {
+  var panel = document.getElementById('module-panel');
+  if (!editorState || !editorState.categorias || editorState.categorias.length === 0) {
+    panel.innerHTML = '<div style="color:var(--sub);font-size:13px;padding:8px 0">'
+      + 'Sin categorías. Usa los botones de plantilla o a\u00f1ade una categoría.</div>';
+    return;
+  }
+  var h = '';
+  editorState.categorias.forEach(function(cat, idx) {
+    var ic = (cat.items || []).length;
+    h += '<div class="module-cat">'
+      + '<div class="module-cat-head">'
+      + '<span>' + escH(cat.icono || '\ud83d\udccb') + ' ' + escH(cat.nombre || 'Sin nombre') + '</span>'
+      + '<span class="module-cat-count">' + ic + ' item' + (ic !== 1 ? 's' : '') + '</span>'
+      + '</div>'
+      + '<div class="module-cat-actions">'
+      + '<button type="button" class="btn-mini btn-mini-pri" onclick="addItem(' + idx + ')">+ Item</button>'
+      + '<button type="button" class="btn-mini btn-mini-edit" onclick="openVisualEditor(\'category\',' + idx + ')">\u270f\ufe0f Editar</button>'
+      + '<button type="button" class="btn-mini btn-mini-danger" onclick="deleteCategory(' + idx + ')">\u2715</button>'
+      + '</div></div>';
+  });
+  panel.innerHTML = h;
+}
+
+// ── Inyectar JSON parcial (módulo externo) ───────────────────────────────────
+function injectModule() {
+  var txt = prompt('Pega aquí el JSON del módulo a inyectar (una categoría o array de categorías):');
+  if (!txt) return;
+  try {
+    var mod = JSON.parse(txt);
+    if (!editorState) {
+      editorState = JSON.parse(JSON.stringify(PLANTILLA_BASE));
+    }
+    editorState.categorias = editorState.categorias || [];
+    // Aceptar una categoría suelta o un array de categorías
+    if (Array.isArray(mod)) {
+      mod.forEach(function(c) { editorState.categorias.push(c); });
+    } else if (mod.categorias && Array.isArray(mod.categorias)) {
+      // Si pegan un JSON completo con config+categorias, fusionar
+      if (mod.config) {
+        editorState.config = Object.assign(editorState.config || {}, mod.config);
+      }
+      mod.categorias.forEach(function(c) { editorState.categorias.push(c); });
+    } else if (mod.nombre && mod.items !== undefined) {
+      // Es una sola categoría
+      editorState.categorias.push(mod);
+    } else {
+      alert('Formato no reconocido. Pega una categoría, un array de categorías, o un JSON completo.');
+      return;
+    }
+    syncStateToTextarea();
+    renderEditorPreview();
+    updateModulePanel();
+  } catch(e) {
+    alert('JSON inválido: ' + e.message);
+  }
+}
+
+// ── Preparar form antes de enviar ────────────────────────────────────────────
+function prepareSubmit() {
+  var ta = document.getElementById('json-input');
+  document.getElementById('json-input-hidden').value = ta.value;
+  if (!ta.value.trim()) {
+    alert('No hay JSON para generar.');
+    return false;
+  }
+  try { JSON.parse(ta.value); } catch(e) {
+    alert('JSON inválido: ' + e.message);
+    return false;
+  }
+  return true;
+}
+"""
+
 
 def generar_pagina_html(data: dict) -> str:
     """Genera el HTML completo de una página a partir del JSON de plantilla."""
@@ -697,6 +1384,10 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
             self.serve_upload_page(query)
         elif path == "/subirPlantilla":
             self.serve_plantilla_page(query)
+        elif path == "/api/plantillas":
+            self.api_listar_plantillas()
+        elif path == "/api/plantilla/cargar":
+            self.api_cargar_plantilla(query)
         else:
             self.serve_path(path)
 
@@ -749,7 +1440,8 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
             key=lambda e: e.name.lower(),
         )
         files = sorted(
-            [e for e in entries if e.is_file() and not e.name.startswith(".")],
+            [e for e in entries if e.is_file() and not e.name.startswith(".")
+             and not e.name.endswith(".source.json")],
             key=lambda e: e.name.lower(),
         )
         self._send_html(self._render_directory(fs_path, url_path, dirs, files, meta))
@@ -1025,6 +1717,38 @@ initDrop('dz','file-inp','file-name');
         redirect = carpeta_padre if carpeta_padre.startswith("/") else "/" + carpeta_padre
         self._redirect(redirect)
 
+    # ── API endpoints ────────────────────────────────────────────────────────
+
+    def _send_json(self, data):
+        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def api_listar_plantillas(self):
+        try:
+            plantillas = listar_plantillas(self.base_dir)
+            self._send_json(plantillas)
+        except Exception as e:
+            self._send_json({"error": str(e)})
+
+    def api_cargar_plantilla(self, query: dict):
+        ruta = query.get("ruta", [""])[0]
+        if not ruta:
+            self._send_json({"error": "No se especificó ruta."})
+            return
+        fs = self.safe_path(ruta)
+        if fs is None or not os.path.isfile(fs):
+            self._send_json({"error": "Archivo no encontrado."})
+            return
+        data = cargar_json_fuente(fs)
+        if data is None:
+            self._send_json({"error": "No se encontró el JSON fuente de esta página."})
+            return
+        self._send_json(data)
+
     # ── plantilla page ────────────────────────────────────────────────────────
 
     def serve_plantilla_page(self, query: dict, *, msg: str = "", msg_type: str = "ok"):
@@ -1038,173 +1762,157 @@ initDrop('dz','file-inp','file-name');
         opts = _carpeta_options_html(carpetas, carpeta_sel)
         alert_html = ""
         if msg:
-            alert_html = f'<div class="alert alert-{msg_type}">{html.escape(msg)}</div>'
+            alert_html = f'<div class="alert alert-{html.escape(msg_type)}" style="margin:8px 16px">{html.escape(msg)}</div>'
         css_pagina_js = json.dumps(_CSS_PAGINA_GENERADA)
+
+        # Opciones de plantillas existentes para el selector "Cargar existente"
+        plantillas = listar_plantillas(self.base_dir)
+        existing_opts = ""
+        for p in plantillas:
+            existing_opts += f'<option value="{html.escape(p["ruta"])}">{html.escape(p["nombre"])} ({html.escape(p["ruta"])})</option>\n'
 
         return f"""<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>🧩 Plantilla JSON → Página Web</title>
+<title>🧩 Editor de Plantillas JSON</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
 {_CSS_BASE}
-{_CSS_PAGINA_GENERADA}
-.preview-wrap{{margin-top:28px;border:2px solid var(--border);border-radius:14px;overflow:hidden;background:#f5f6f8}}
-.preview-header{{background:linear-gradient(135deg,#6366F1,#8B5CF6);color:#fff;padding:10px 18px;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between}}
-.preview-body{{padding:0;min-height:300px;max-height:720px;overflow:auto}}
-.preview-body iframe{{width:100%;border:none;min-height:600px;display:block}}
-.preview-empty{{text-align:center;padding:60px 20px;color:var(--sub);font-size:14px}}
-.json-error{{color:#dc2626;font-size:12px;margin-top:6px;min-height:18px}}
-.tabs{{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:0}}
-.tab{{padding:9px 20px;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--sub);transition:all .15s}}
-.tab.active{{color:var(--pri);border-bottom-color:var(--pri)}}
-.tab-panel{{display:none}}.tab-panel.active{{display:block}}
+{_CSS_EDITOR}
 </style>
 </head>
 <body>
+
+<!-- ══ Header ══════════════════════════════════════════════════════════════ -->
 <div class="hdr">
-  <div class="hdr-title">🧩 Plantilla JSON → Página Web</div>
+  <div class="hdr-title">🧩 Editor de Plantillas JSON</div>
   <div class="hdr-actions">
     <a href="/" class="btn btn-ghost">← Volver</a>
   </div>
 </div>
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:24px;max-width:1600px;margin:0 auto">
-
-<!-- ══ Panel izquierdo: formulario ══════════════════════════════════════════ -->
-<div>
 {alert_html}
-<div class="form-card">
-  <h2>📋 Configurar plantilla</h2>
 
-  <div class="tabs">
-    <div class="tab active" onclick="switchTab('texto')">✏️ Pegar JSON</div>
-    <div class="tab" onclick="switchTab('archivo')">📂 Subir archivo</div>
+<!-- ══ Toolbar ═════════════════════════════════════════════════════════════ -->
+<div class="editor-toolbar">
+  <div class="editor-toolbar-group">
+    <button type="button" class="btn btn-sec" onclick="loadTemplate('base')">📝 Plantilla Base</button>
+    <button type="button" class="btn btn-sec" onclick="loadTemplate('completa')">📋 Plantilla Completa</button>
   </div>
+  <div class="separator"></div>
+  <div class="editor-toolbar-group">
+    <select class="fc" id="load-existing" onchange="loadExisting(this.value)"
+            style="width:auto;padding:6px 10px;font-size:13px">
+      <option value="">📂 Cargar página existente...</option>
+      {existing_opts}
+    </select>
+  </div>
+  <div class="separator"></div>
+  <div class="editor-toolbar-group">
+    <label class="btn btn-sec import-btn" style="margin:0">
+      📎 Importar JSON
+      <input type="file" accept=".json,application/json" onchange="importJsonFile(this)" style="display:none">
+    </label>
+  </div>
+  <div class="separator"></div>
+  <div class="editor-toolbar-group">
+    <button type="button" class="btn btn-pri" onclick="addCategory()">+ Categoría</button>
+    <button type="button" class="btn btn-sec" onclick="injectModule()">📦 Inyectar módulo</button>
+  </div>
+</div>
 
-  <form method="POST" action="/subirPlantilla" enctype="multipart/form-data" id="plantilla-form">
+<!-- ══ Editor Grid ═════════════════════════════════════════════════════════ -->
+<div class="editor-grid">
 
-    <div class="tab-panel active" id="tab-texto" style="padding-top:16px">
-      <div class="fg">
-        <label>📝 JSON de la plantilla</label>
-        <textarea name="json_texto" id="json-input" class="fc" rows="18"
-          style="font-family:monospace;font-size:12px;resize:vertical"
-          placeholder='{{"config":{{"tituloPagina":"Mi Guía",...}},"categorias":[...]}}'
-          oninput="onJsonChange(this.value)"></textarea>
-        <div class="json-error" id="json-error"></div>
-      </div>
+  <!-- ── Panel izquierdo: JSON + módulos + guardar ── -->
+  <div class="editor-left">
+    <div class="json-editor-wrap">
+      <textarea id="json-input" oninput="onJsonInput()"
+        placeholder='{{"config":{{"tituloPagina":"Mi Página",...}},"categorias":[...]}}'></textarea>
+      <div class="json-error" id="json-error"></div>
     </div>
 
-    <div class="tab-panel" id="tab-archivo" style="padding-top:16px">
-      <div class="fg">
-        <label>📎 Archivo JSON</label>
-        <div class="drop-zone" id="dz-json">
-          <input type="file" name="json_archivo" id="json-file-inp" accept=".json,application/json">
-          <div class="drop-ico">📄</div>
-          <div class="drop-hint">Arrastra tu .json o haz clic para seleccionar</div>
-          <div class="drop-name" id="json-file-name"></div>
+    <div class="module-section">
+      <h3>📦 Módulos / Categorías</h3>
+      <div id="module-panel">
+        <div style="color:var(--sub);font-size:13px;padding:8px 0">
+          Sin categorías. Usa los botones de plantilla o añade una categoría.
         </div>
       </div>
     </div>
 
-    <div class="fg" style="margin-top:16px">
-      <label>📁 Guardar en carpeta</label>
-      <select name="carpeta" class="fc">{opts}</select>
+    <div class="save-section">
+      <form method="POST" action="/subirPlantilla" enctype="multipart/form-data"
+            id="plantilla-form" onsubmit="return prepareSubmit()">
+        <input type="hidden" name="json_texto" id="json-input-hidden">
+        <div class="save-row">
+          <div class="fg">
+            <label>📁 Carpeta</label>
+            <select name="carpeta" class="fc" style="padding:7px 10px">{opts}</select>
+          </div>
+          <div class="fg">
+            <label>🏷️ Nombre (.html)</label>
+            <input type="text" name="nombre_archivo" class="fc" placeholder="mi-pagina"
+                   pattern="[\\w\\-]+" style="padding:7px 10px"
+                   title="Solo letras, números, guiones y guiones bajos">
+          </div>
+          <div style="flex-shrink:0">
+            <button type="submit" class="btn btn-pri" style="white-space:nowrap;padding:9px 20px">
+              💾 Guardar HTML
+            </button>
+          </div>
+        </div>
+      </form>
     </div>
+  </div>
 
-    <div class="fg">
-      <label>🏷️ Nombre del archivo (sin .html)</label>
-      <input type="text" name="nombre_archivo" id="nombre-archivo" class="fc"
-             placeholder="mi-guia-tecnica" pattern="[\\w\\-]+" title="Solo letras, números, guiones y guiones bajos">
-    </div>
-
-    <button type="submit" class="btn-submit">🚀 Generar página HTML</button>
-  </form>
-</div>
-</div>
-
-<!-- ══ Panel derecho: vista previa ══════════════════════════════════════════ -->
-<div>
-  <div class="preview-wrap">
-    <div class="preview-header">
-      <span>👁️ Vista previa</span>
-      <span id="preview-status" style="font-weight:400;opacity:.75;font-size:12px">Introduce JSON para previsualizar</span>
-    </div>
-    <div class="preview-body">
-      <div class="preview-empty" id="preview-empty">
-        <div style="font-size:48px;margin-bottom:12px">🧩</div>
-        <div>La vista previa aparecerá aquí<br>mientras escribes el JSON</div>
+  <!-- ── Panel derecho: vista previa ── -->
+  <div class="editor-right">
+    <div class="preview-section">
+      <div class="preview-header">
+        <span>👁️ Vista previa en tiempo real</span>
+        <span id="preview-status" style="font-weight:400;opacity:.75;font-size:12px">
+          Doble clic en elementos para editar
+        </span>
       </div>
-      <iframe id="preview-iframe" style="display:none"></iframe>
+      <div class="preview-body">
+        <div class="preview-empty" id="preview-empty">
+          <div style="font-size:48px;margin-bottom:12px">🧩</div>
+          <div>Selecciona una plantilla o pega JSON para empezar</div>
+          <div style="margin-top:16px;font-size:12px;color:var(--sub)">
+            Usa <strong>📝 Plantilla Base</strong> para empezar desde cero<br>
+            o <strong>📋 Plantilla Completa</strong> para ver un ejemplo
+          </div>
+        </div>
+        <iframe id="preview-iframe" style="display:none"></iframe>
+      </div>
     </div>
   </div>
 </div>
 
-</div><!-- /grid -->
+<!-- ══ Panel de edición visual (slide-in) ══════════════════════════════════ -->
+<div class="visual-editor" id="visual-editor">
+  <div class="ve-header">
+    <h3 id="visual-editor-title">Editar elemento</h3>
+    <button type="button" class="ve-close" onclick="closeVisualEditor()">✕</button>
+  </div>
+  <div class="ve-body" id="visual-editor-content"></div>
+</div>
 
 <script>
-{_JS}
 var CSS_PAGINA = {css_pagina_js};
-initDrop('dz-json','json-file-inp','json-file-name');
 
-// ── tab switch ──────────────────────────────────────────────────────────────
-function switchTab(name){{
-  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active', (i===0&&name==='texto')||(i===1&&name==='archivo')));
-  document.getElementById('tab-texto').classList.toggle('active', name==='texto');
-  document.getElementById('tab-archivo').classList.toggle('active', name==='archivo');
-}}
-
-// ── file reader for preview ──────────────────────────────────────────────────
-document.getElementById('json-file-inp').addEventListener('change', function(){{
-  const f = this.files[0];
-  if(!f) return;
-  const r = new FileReader();
-  r.onload = e => onJsonChange(e.target.result);
-  r.readAsText(f);
-}});
-
-// ── live preview ─────────────────────────────────────────────────────────────
-let _debounce;
-function onJsonChange(txt){{
-  clearTimeout(_debounce);
-  _debounce = setTimeout(()=>renderPreview(txt), 400);
-}}
-
-function renderPreview(txt){{
-  const errEl = document.getElementById('json-error');
-  const statusEl = document.getElementById('preview-status');
-  if(!txt.trim()){{
-    errEl.textContent='';
-    showEmpty();
-    statusEl.textContent='Introduce JSON para previsualizar';
-    return;
-  }}
-  let data;
-  try{{ data = JSON.parse(txt); }}
-  catch(e){{ errEl.textContent='⚠ JSON inválido: '+e.message; showEmpty(); statusEl.textContent='JSON inválido'; return; }}
-  errEl.textContent='';
-  try{{
-    const generatedHtml = buildPage(data);
-    const iframe = document.getElementById('preview-iframe');
-    const empty = document.getElementById('preview-empty');
-    iframe.style.display='block';
-    empty.style.display='none';
-    iframe.srcdoc = generatedHtml;
-    statusEl.textContent='✅ Vista previa actualizada';
-  }} catch(e){{
-    errEl.textContent='⚠ Error al generar vista previa: '+e.message;
-    statusEl.textContent='Error en datos';
-  }}
-}}
-
-function showEmpty(){{
-  document.getElementById('preview-iframe').style.display='none';
-  document.getElementById('preview-empty').style.display='';
-}}
-
-// ── page builder (client-side mirror of server generator) ────────────────────
+// ── Page builder (client-side mirror of server generator) ────────────────────
 {_JS_BUILDPAGE}
+
+// ── Editor logic ─────────────────────────────────────────────────────────────
+{_JS_EDITOR}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+initEditor();
 </script>
 </body>
 </html>"""
@@ -1247,6 +1955,9 @@ function showEmpty(){{
             filepath = os.path.join(dir_path, filename)
             with open(filepath, "w", encoding="utf-8") as fh:
                 fh.write(html_content)
+
+            # Guardar JSON fuente junto al HTML para edición posterior
+            guardar_json_fuente(filepath, data)
 
             meta = cargar_metadata(dir_path)
             meta.setdefault("files", {})[filename] = "🌐"
