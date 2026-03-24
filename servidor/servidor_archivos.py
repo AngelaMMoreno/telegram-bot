@@ -12,6 +12,8 @@ import warnings
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import markdown
+import pymdownx.emoji
+from pygments.formatters import HtmlFormatter
 
 # ─── Emojis predefinidos ────────────────────────────────────────────────────
 
@@ -433,7 +435,7 @@ a{color:var(--pri);text-decoration:none}a:hover{text-decoration:underline}
 .md-body blockquote p{margin:.3em 0}
 .md-body code{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:.9em;
   background:#F1F5F9;padding:2px 6px;border-radius:4px;color:#E11D48}
-.md-body pre{margin:.8em 0;padding:16px 20px;background:#1E293B;color:#E2E8F0;
+.md-body pre{margin:.8em 0;padding:16px 20px;background:#272822;color:#F8F8F2;
   border-radius:8px;overflow-x:auto;font-size:.875em;line-height:1.6}
 .md-body pre code{background:none;padding:0;color:inherit;font-size:inherit}
 .md-body table{width:100%;border-collapse:collapse;margin:.8em 0;font-size:.95em}
@@ -443,10 +445,35 @@ a{color:var(--pri);text-decoration:none}a:hover{text-decoration:underline}
 .md-body tr:nth-child(even){background:#FAFBFC}
 .md-body img{max-width:100%;border-radius:8px;margin:.8em 0}
 .md-body hr{border:none;border-top:2px solid var(--border);margin:1.5em 0}
-.md-body .codehilite{margin:.8em 0;padding:16px 20px;background:#1E293B;color:#E2E8F0;
-  border-radius:8px;overflow-x:auto;font-size:.875em;line-height:1.6}
-.md-body .codehilite pre{margin:0;padding:0;background:none}
-.md-body .codehilite code{background:none;padding:0;color:inherit}
+.md-body del{color:var(--sub);text-decoration:line-through}
+.md-body mark{background:#FEF08A;padding:2px 4px;border-radius:3px}
+
+/* ── task lists (pymdownx.tasklist) ── */
+.md-body .task-list-item{list-style:none;margin-left:-1.5em}
+.md-body .task-list-control{margin-right:.4em}
+.md-body .task-list-control input[type=checkbox]{width:1.1em;height:1.1em;accent-color:var(--pri);vertical-align:middle}
+
+/* ── syntax highlighting – Pygments monokai ── */
+.md-body .highlight{margin:.8em 0;padding:16px 20px;background:#272822;color:#F8F8F2;
+  border-radius:8px;overflow-x:auto;font-size:.875em;line-height:1.6;
+  font-family:'JetBrains Mono',ui-monospace,monospace}
+.md-body .highlight pre{margin:0;padding:0;background:none}
+.md-body .highlight code{background:none;padding:0;color:inherit}
+.highlight .hll{background-color:#49483e}
+.highlight .c,.highlight .ch,.highlight .cm,.highlight .cp,.highlight .cpf,.highlight .c1,.highlight .cs{color:#959077}
+.highlight .gd{color:#FF4689}.highlight .gi{color:#A6E22E}
+.highlight .ge{font-style:italic}.highlight .gs{font-weight:bold}
+.highlight .go{color:#66D9EF}.highlight .gp{color:#FF4689;font-weight:bold}
+.highlight .gu{color:#959077}
+.highlight .k,.highlight .kc,.highlight .kd,.highlight .kp,.highlight .kr,.highlight .kt{color:#66D9EF}
+.highlight .kn{color:#FF4689}
+.highlight .l,.highlight .m,.highlight .mb,.highlight .mf,.highlight .mh,.highlight .mi,.highlight .mo,.highlight .il{color:#AE81FF}
+.highlight .s,.highlight .sa,.highlight .sb,.highlight .sc,.highlight .dl,.highlight .sd,.highlight .s2,.highlight .sh,.highlight .si,.highlight .sx,.highlight .sr,.highlight .s1,.highlight .ss,.highlight .ld{color:#E6DB74}
+.highlight .se{color:#AE81FF}
+.highlight .na,.highlight .nc,.highlight .nd,.highlight .ne,.highlight .nf,.highlight .nx,.highlight .fm{color:#A6E22E}
+.highlight .o,.highlight .ow{color:#FF4689}
+.highlight .nt{color:#FF4689}
+.highlight .err{color:#ED007E;background-color:#1E0010}
 """
 
 # ─── CSS de las páginas generadas ──────────────────────────────────────────
@@ -1678,7 +1705,28 @@ function confirmDelete(ruta, nombre, esDir) {{
 
         md_html = markdown.markdown(
             md_text,
-            extensions=["fenced_code", "tables", "toc", "nl2br", "sane_lists"],
+            extensions=[
+                "fenced_code",
+                "codehilite",
+                "tables",
+                "toc",
+                "nl2br",
+                "sane_lists",
+                "pymdownx.tasklist",
+                "pymdownx.tilde",
+                "pymdownx.mark",
+                "pymdownx.emoji",
+                "pymdownx.superfences",
+                "pymdownx.betterem",
+            ],
+            extension_configs={
+                "codehilite": {"css_class": "highlight", "guess_lang": True},
+                "pymdownx.emoji": {
+                    "emoji_index": pymdownx.emoji.gemoji,
+                    "emoji_generator": pymdownx.emoji.to_alt,
+                },
+                "pymdownx.tasklist": {"custom_checkbox": True},
+            },
         )
         name = os.path.basename(fs_path)
         title = html.escape(os.path.splitext(name)[0])
