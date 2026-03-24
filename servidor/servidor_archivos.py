@@ -11,6 +11,10 @@ import urllib.parse
 import warnings
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import markdown
+import pymdownx.emoji
+from pygments.formatters import HtmlFormatter
+
 # ─── Emojis predefinidos ────────────────────────────────────────────────────
 
 EMOJIS = [
@@ -392,6 +396,85 @@ function initDrop(zoneId, inputId, nameId) {
 }
 """
 
+
+# ─── CSS para renderizar Markdown ──────────────────────────────────────────
+
+_CSS_MARKDOWN = """
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --pri:#6366F1;--pri-d:#4F46E5;--pri-light:#EEF2FF;
+  --bg:#F1F5F9;--card:#fff;--text:#1E293B;--sub:#64748B;
+  --border:#E2E8F0;
+}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+a{color:var(--pri);text-decoration:none}a:hover{text-decoration:underline}
+.md-header{background:linear-gradient(135deg,#6366F1,#8B5CF6);color:#fff;
+  padding:14px 24px;display:flex;align-items:center;justify-content:space-between;
+  box-shadow:0 2px 8px rgba(0,0,0,.2);gap:12px;flex-wrap:wrap}
+.md-header-title{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:700}
+.md-header a{color:#fff;font-size:14px;opacity:.85}
+.md-header a:hover{opacity:1}
+.md-wrap{max-width:900px;margin:32px auto;background:var(--card);
+  border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08);padding:40px 48px;
+  border:1px solid var(--border)}
+@media(max-width:640px){.md-wrap{margin:16px;padding:24px 20px;border-radius:8px}}
+
+/* ── tipografía markdown ── */
+.md-body{line-height:1.7;font-size:16px;color:var(--text)}
+.md-body h1{font-size:2em;font-weight:700;margin:1.2em 0 .6em;padding-bottom:.3em;border-bottom:2px solid var(--border)}
+.md-body h2{font-size:1.5em;font-weight:700;margin:1.1em 0 .5em;padding-bottom:.25em;border-bottom:1px solid var(--border)}
+.md-body h3{font-size:1.25em;font-weight:600;margin:1em 0 .4em}
+.md-body h4{font-size:1.1em;font-weight:600;margin:.9em 0 .3em}
+.md-body h5,.md-body h6{font-size:1em;font-weight:600;margin:.8em 0 .3em;color:var(--sub)}
+.md-body p{margin:.8em 0}
+.md-body ul,.md-body ol{margin:.8em 0;padding-left:2em}
+.md-body li{margin:.3em 0}
+.md-body li>ul,.md-body li>ol{margin:.2em 0}
+.md-body blockquote{margin:.8em 0;padding:.6em 1em;border-left:4px solid var(--pri);
+  background:var(--pri-light);border-radius:0 8px 8px 0;color:var(--sub)}
+.md-body blockquote p{margin:.3em 0}
+.md-body code{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:.9em;
+  background:#F1F5F9;padding:2px 6px;border-radius:4px;color:#E11D48}
+.md-body pre{margin:.8em 0;padding:16px 20px;background:#272822;color:#F8F8F2;
+  border-radius:8px;overflow-x:auto;font-size:.875em;line-height:1.6}
+.md-body pre code{background:none;padding:0;color:inherit;font-size:inherit}
+.md-body table{width:100%;border-collapse:collapse;margin:.8em 0;font-size:.95em}
+.md-body th{background:var(--pri-light);font-weight:600;text-align:left;
+  padding:10px 14px;border:1px solid var(--border)}
+.md-body td{padding:10px 14px;border:1px solid var(--border)}
+.md-body tr:nth-child(even){background:#FAFBFC}
+.md-body img{max-width:100%;border-radius:8px;margin:.8em 0}
+.md-body hr{border:none;border-top:2px solid var(--border);margin:1.5em 0}
+.md-body del{color:var(--sub);text-decoration:line-through}
+.md-body mark{background:#FEF08A;padding:2px 4px;border-radius:3px}
+
+/* ── task lists (pymdownx.tasklist) ── */
+.md-body .task-list-item{list-style:none;margin-left:-1.5em}
+.md-body .task-list-control{margin-right:.4em}
+.md-body .task-list-control input[type=checkbox]{width:1.1em;height:1.1em;accent-color:var(--pri);vertical-align:middle}
+
+/* ── syntax highlighting – Pygments monokai ── */
+.md-body .highlight{margin:.8em 0;padding:16px 20px;background:#272822;color:#F8F8F2;
+  border-radius:8px;overflow-x:auto;font-size:.875em;line-height:1.6;
+  font-family:'JetBrains Mono',ui-monospace,monospace}
+.md-body .highlight pre{margin:0;padding:0;background:none}
+.md-body .highlight code{background:none;padding:0;color:inherit}
+.highlight .hll{background-color:#49483e}
+.highlight .c,.highlight .ch,.highlight .cm,.highlight .cp,.highlight .cpf,.highlight .c1,.highlight .cs{color:#959077}
+.highlight .gd{color:#FF4689}.highlight .gi{color:#A6E22E}
+.highlight .ge{font-style:italic}.highlight .gs{font-weight:bold}
+.highlight .go{color:#66D9EF}.highlight .gp{color:#FF4689;font-weight:bold}
+.highlight .gu{color:#959077}
+.highlight .k,.highlight .kc,.highlight .kd,.highlight .kp,.highlight .kr,.highlight .kt{color:#66D9EF}
+.highlight .kn{color:#FF4689}
+.highlight .l,.highlight .m,.highlight .mb,.highlight .mf,.highlight .mh,.highlight .mi,.highlight .mo,.highlight .il{color:#AE81FF}
+.highlight .s,.highlight .sa,.highlight .sb,.highlight .sc,.highlight .dl,.highlight .sd,.highlight .s2,.highlight .sh,.highlight .si,.highlight .sx,.highlight .sr,.highlight .s1,.highlight .ss,.highlight .ld{color:#E6DB74}
+.highlight .se{color:#AE81FF}
+.highlight .na,.highlight .nc,.highlight .nd,.highlight .ne,.highlight .nf,.highlight .nx,.highlight .fm{color:#A6E22E}
+.highlight .o,.highlight .ow{color:#FF4689}
+.highlight .nt{color:#FF4689}
+.highlight .err{color:#ED007E;background-color:#1E0010}
+"""
 
 # ─── CSS de las páginas generadas ──────────────────────────────────────────
 
@@ -1594,6 +1677,8 @@ function confirmDelete(ruta, nombre, esDir) {{
     # ── file serving ─────────────────────────────────────────────────────────
 
     def serve_file(self, fs_path: str):
+        if fs_path.lower().endswith(".md"):
+            return self.serve_markdown(fs_path)
         mime, _ = mimetypes.guess_type(fs_path)
         mime = mime or "application/octet-stream"
         try:
@@ -1609,6 +1694,65 @@ function confirmDelete(ruta, nombre, esDir) {{
                     self.wfile.write(chunk)
         except Exception as e:
             self.send_error(500, str(e))
+
+    def serve_markdown(self, fs_path: str):
+        try:
+            with open(fs_path, "r", encoding="utf-8") as f:
+                md_text = f.read()
+        except Exception as e:
+            self.send_error(500, str(e))
+            return
+
+        md_html = markdown.markdown(
+            md_text,
+            extensions=[
+                "fenced_code",
+                "codehilite",
+                "tables",
+                "toc",
+                "nl2br",
+                "sane_lists",
+                "pymdownx.tasklist",
+                "pymdownx.tilde",
+                "pymdownx.mark",
+                "pymdownx.emoji",
+                "pymdownx.superfences",
+                "pymdownx.betterem",
+            ],
+            extension_configs={
+                "codehilite": {"css_class": "highlight", "guess_lang": True},
+                "pymdownx.emoji": {
+                    "emoji_index": pymdownx.emoji.gemoji,
+                    "emoji_generator": pymdownx.emoji.to_alt,
+                },
+                "pymdownx.tasklist": {"custom_checkbox": True},
+            },
+        )
+        name = os.path.basename(fs_path)
+        title = html.escape(os.path.splitext(name)[0])
+
+        rel = os.path.relpath(os.path.dirname(fs_path), self.base_dir)
+        parent_url = "/" if rel == "." else "/" + rel.replace(os.sep, "/") + "/"
+
+        page = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title}</title>
+<style>{_CSS_MARKDOWN}</style>
+</head>
+<body>
+<div class="md-header">
+  <div class="md-header-title">📝 {title}</div>
+  <a href="{html.escape(parent_url)}">← Volver</a>
+</div>
+<div class="md-wrap">
+  <div class="md-body">{md_html}</div>
+</div>
+</body>
+</html>"""
+        self._send_html(page)
 
     # ── upload page ──────────────────────────────────────────────────────────
 
