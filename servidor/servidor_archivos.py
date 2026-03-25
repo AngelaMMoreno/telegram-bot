@@ -189,6 +189,15 @@ a{text-decoration:none;color:inherit}
   padding:3px 8px;font-size:13px;cursor:pointer;transition:background .12s,border-color .12s;line-height:1}
 .card-btn:hover{background:var(--pri-light);border-color:var(--pri)}
 .card-btn.del:hover{background:#FEE2E2;border-color:#FCA5A5}
+.selector-item{position:absolute;top:8px;left:8px;z-index:2}
+.selector-item input{width:18px;height:18px;cursor:pointer}
+.card{position:relative}
+.card.seleccionada{outline:2px solid var(--pri);border-color:var(--pri)}
+.barra-seleccion{padding:10px 24px;background:#fff;border-bottom:1px solid var(--border);
+  display:none;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.barra-seleccion.visible{display:flex}
+.seleccion-texto{font-size:13px;color:var(--text);font-weight:600}
+.seleccion-acciones{display:flex;gap:8px;flex-wrap:wrap}
 
 /* ── confirm modal ── */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;
@@ -1546,6 +1555,7 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
             del_path = html.escape(href, quote=True)
             cards.append(
                 f'<a href="{html.escape(href)}" class="card folder item-arrastrable destino-carpeta" draggable="true" data-ruta="{del_path}" data-es-carpeta="1">'
+                f'<div class="selector-item"><input type="checkbox" class="selector-multiple" data-ruta="{del_path}" data-es-carpeta="1" title="Seleccionar {html.escape(d.name, quote=True)}"></div>'
                 f'<div class="card-emoji">{icon}</div>'
                 f'<div class="card-name" title="{html.escape(d.name)}">{html.escape(d.name)}</div>'
                 f'<div class="card-meta">{subtxt}</div>'
@@ -1572,6 +1582,7 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
             del_path = html.escape(href, quote=True)
             cards.append(
                 f'<a href="{html.escape(href)}" class="card file item-arrastrable" target="_blank" draggable="true" data-ruta="{del_path}" data-es-carpeta="0">'
+                f'<div class="selector-item"><input type="checkbox" class="selector-multiple" data-ruta="{del_path}" data-es-carpeta="0" title="Seleccionar {html.escape(f.name, quote=True)}"></div>'
                 f'<div class="card-emoji">{icon}</div>'
                 f'<div class="card-name" title="{html.escape(f.name)}">{html.escape(f.name)}</div>'
                 f'<div class="card-meta">{size_str}</div>'
@@ -1611,6 +1622,13 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
   <span>📁 {len(dirs)} carpeta{'s' if len(dirs) != 1 else ''}</span>
   <span>·</span>
   <span>📄 {len(files)} archivo{'s' if len(files) != 1 else ''}</span>
+</div>
+<div class="barra-seleccion" id="barra-seleccion">
+  <div class="seleccion-texto" id="seleccion-texto">0 elementos seleccionados</div>
+  <div class="seleccion-acciones">
+    <button class="btn btn-sec" type="button" onclick="moverSeleccionados()">📦 Mover seleccionados</button>
+    <button class="btn btn-danger" type="button" onclick="eliminarSeleccionados()">🗑️ Eliminar seleccionados</button>
+  </div>
 </div>
 <div class="grid">{grid_content}</div>
 <script>
@@ -1652,6 +1670,92 @@ function renombrarElemento(ruta, esDir) {{
   nuevoNombre = (nuevoNombre || '').trim();
   if (!nuevoNombre || nuevoNombre === nombreActual) return;
   postMover(ruta, rutaActual, nuevoNombre);
+}}
+
+function obtenerRutasSeleccionadas() {{
+  var checks = document.querySelectorAll('.selector-multiple:checked');
+  return Array.from(checks).map(function(chk) {{ return chk.dataset.ruta || ''; }}).filter(Boolean);
+}}
+
+function actualizarBarraSeleccion() {{
+  var checks = document.querySelectorAll('.selector-multiple');
+  var total = 0;
+  checks.forEach(function(chk) {{
+    var card = chk.closest('.card');
+    if (chk.checked) {{
+      total += 1;
+      if (card) card.classList.add('seleccionada');
+    }} else if (card) {{
+      card.classList.remove('seleccionada');
+    }}
+  }});
+  var barra = document.getElementById('barra-seleccion');
+  var texto = document.getElementById('seleccion-texto');
+  if (!barra || !texto) return;
+  texto.textContent = total + ' elemento' + (total === 1 ? '' : 's') + ' seleccionado' + (total === 1 ? '' : 's');
+  barra.classList.toggle('visible', total > 0);
+}}
+
+function moverSeleccionados() {{
+  var rutas = obtenerRutasSeleccionadas();
+  if (!rutas.length) return;
+  var destino = prompt('Ruta destino (ejemplo: /documentos/subcarpeta):', rutaActual);
+  if (destino === null) return;
+  destino = (destino || '').trim();
+  if (!destino) return;
+
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/mover';
+
+  rutas.forEach(function(ruta) {{
+    var inp = document.createElement('input');
+    inp.type = 'hidden';
+    inp.name = 'origen';
+    inp.value = ruta;
+    form.appendChild(inp);
+  }});
+
+  var inpDestino = document.createElement('input');
+  inpDestino.type = 'hidden';
+  inpDestino.name = 'destino';
+  inpDestino.value = destino;
+  form.appendChild(inpDestino);
+
+  document.body.appendChild(form);
+  form.submit();
+}}
+
+function eliminarSeleccionados() {{
+  var rutas = obtenerRutasSeleccionadas();
+  if (!rutas.length) return;
+  var confirmar = confirm('¿Eliminar ' + rutas.length + ' elemento' + (rutas.length === 1 ? '' : 's') + ' seleccionado' + (rutas.length === 1 ? '' : 's') + '?');
+  if (!confirmar) return;
+
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/eliminar';
+  rutas.forEach(function(ruta) {{
+    var inp = document.createElement('input');
+    inp.type = 'hidden';
+    inp.name = 'ruta';
+    inp.value = ruta;
+    form.appendChild(inp);
+  }});
+  document.body.appendChild(form);
+  form.submit();
+}}
+
+function initSeleccionMultiple() {{
+  var checks = document.querySelectorAll('.selector-multiple');
+  checks.forEach(function(chk) {{
+    chk.addEventListener('click', function(e) {{
+      e.stopPropagation();
+    }});
+    chk.addEventListener('change', function() {{
+      actualizarBarraSeleccion();
+    }});
+  }});
 }}
 
 function initArrastreMover() {{
@@ -1713,6 +1817,8 @@ function confirmDelete(ruta, nombre, esDir) {{
     form.submit();
   }};
 }}
+initSeleccionMultiple();
+actualizarBarraSeleccion();
 initArrastreMover();
 </script>
 </body>
@@ -1963,41 +2069,52 @@ initDrop('dz','file-inp','file-name');
     def handle_delete(self):
         try:
             form = self._parse_form()
-            ruta = form.getvalue("ruta", "")
-            if not ruta:
+            rutas = [r for r in form.getlist("ruta") if r]
+            if not rutas:
+                ruta_unica = form.getvalue("ruta", "")
+                if ruta_unica:
+                    rutas = [ruta_unica]
+            if not rutas:
                 self.send_error(400, "No se especificó ruta.")
                 return
 
-            fs = self.safe_path(ruta)
-            if fs is None or not os.path.exists(fs):
-                self.send_error(404, "Elemento no encontrado.")
-                return
+            parent_dir_retorno = None
+            for ruta in rutas:
+                fs = self.safe_path(ruta)
+                if fs is None or not os.path.exists(fs):
+                    self.send_error(404, "Elemento no encontrado.")
+                    return
 
-            # No permitir eliminar el directorio raíz
-            if os.path.realpath(fs) == os.path.realpath(self.base_dir):
-                self.send_error(403, "No se puede eliminar el directorio raíz.")
-                return
+                # No permitir eliminar el directorio raíz
+                if os.path.realpath(fs) == os.path.realpath(self.base_dir):
+                    self.send_error(403, "No se puede eliminar el directorio raíz.")
+                    return
 
-            nombre = os.path.basename(fs)
-            parent_dir = os.path.dirname(fs)
+                nombre = os.path.basename(fs)
+                parent_dir = os.path.dirname(fs)
+                if parent_dir_retorno is None:
+                    parent_dir_retorno = parent_dir
 
-            # Si es una página generada con JSON, eliminar también el .source.json
-            if os.path.isfile(fs):
-                source_json = ruta_json_fuente(fs)
-                if os.path.exists(source_json):
-                    os.remove(source_json)
-                os.remove(fs)
-            elif os.path.isdir(fs):
-                shutil.rmtree(fs)
+                # Si es una página generada con JSON, eliminar también el .source.json
+                if os.path.isfile(fs):
+                    source_json = ruta_json_fuente(fs)
+                    if os.path.exists(source_json):
+                        os.remove(source_json)
+                    os.remove(fs)
+                elif os.path.isdir(fs):
+                    shutil.rmtree(fs)
 
-            # Eliminar la entrada del metadata.json
-            meta = cargar_metadata(parent_dir)
-            if nombre in meta.get("files", {}):
-                del meta["files"][nombre]
-                guardar_metadata(parent_dir, meta)
+                # Eliminar la entrada del metadata.json
+                meta = cargar_metadata(parent_dir)
+                if nombre in meta.get("files", {}):
+                    del meta["files"][nombre]
+                    guardar_metadata(parent_dir, meta)
+
+            if parent_dir_retorno is None:
+                parent_dir_retorno = self.base_dir
 
             # Redirigir a la carpeta padre
-            parent_url = os.path.relpath(parent_dir, self.base_dir)
+            parent_url = os.path.relpath(parent_dir_retorno, self.base_dir)
             if parent_url == ".":
                 parent_url = "/"
             else:
@@ -2009,70 +2126,79 @@ initDrop('dz','file-inp','file-name');
     def handle_move(self):
         try:
             form = self._parse_form()
-            origen = form.getvalue("origen", "")
+            origenes = [o for o in form.getlist("origen") if o]
+            if not origenes:
+                origen_unico = form.getvalue("origen", "")
+                if origen_unico:
+                    origenes = [origen_unico]
             destino = form.getvalue("destino", "")
             nuevo_nombre = (form.getvalue("nuevo_nombre", "") or "").strip()
 
-            if not origen or not destino:
+            if not origenes or not destino:
                 self.send_error(400, "Faltan datos para mover.")
                 return
 
-            ruta_origen = self.safe_path(origen)
             ruta_destino_dir = self.safe_path(destino)
-            if ruta_origen is None or not os.path.exists(ruta_origen):
-                self.send_error(404, "Elemento origen no encontrado.")
-                return
             if ruta_destino_dir is None or not os.path.isdir(ruta_destino_dir):
                 self.send_error(404, "Carpeta destino no encontrada.")
                 return
-            if os.path.realpath(ruta_origen) == os.path.realpath(self.base_dir):
-                self.send_error(403, "No se puede mover la carpeta raíz.")
+
+            if len(origenes) > 1 and nuevo_nombre:
+                self.send_error(400, "No se puede renombrar en movimiento múltiple.")
                 return
 
-            nombre_origen = os.path.basename(ruta_origen)
-            nombre_final = (nuevo_nombre or nombre_origen).strip()
-            if (not nombre_final or ".." in nombre_final or "/" in nombre_final or
-                    "\\" in nombre_final):
-                self.send_error(400, "Nombre inválido.")
-                return
-
-            ruta_final = os.path.join(ruta_destino_dir, nombre_final)
-            ruta_origen_real = os.path.realpath(ruta_origen)
-            ruta_final_real = os.path.realpath(ruta_final)
-
-            if ruta_origen_real == ruta_final_real:
-                self._redirect(self._ruta_url_desde_fs(ruta_destino_dir))
-                return
-
-            if os.path.exists(ruta_final):
-                self.send_error(409, f'Ya existe "{nombre_final}" en destino.')
-                return
-
-            if os.path.isdir(ruta_origen):
-                if ruta_final_real.startswith(ruta_origen_real + os.sep):
-                    self.send_error(409, "No se puede mover una carpeta dentro de sí misma.")
+            for origen in origenes:
+                ruta_origen = self.safe_path(origen)
+                if ruta_origen is None or not os.path.exists(ruta_origen):
+                    self.send_error(404, "Elemento origen no encontrado.")
+                    return
+                if os.path.realpath(ruta_origen) == os.path.realpath(self.base_dir):
+                    self.send_error(403, "No se puede mover la carpeta raíz.")
                     return
 
-            ruta_json_origen = ""
-            ruta_json_destino = ""
-            if os.path.isfile(ruta_origen) and ruta_origen.lower().endswith(".html"):
-                ruta_json_origen = ruta_json_fuente(ruta_origen)
-                ruta_json_destino = ruta_json_fuente(ruta_final)
+                nombre_origen = os.path.basename(ruta_origen)
+                nombre_final = (nuevo_nombre or nombre_origen).strip()
+                if (not nombre_final or ".." in nombre_final or "/" in nombre_final or
+                        "\\" in nombre_final):
+                    self.send_error(400, "Nombre inválido.")
+                    return
 
-            shutil.move(ruta_origen, ruta_final)
+                ruta_final = os.path.join(ruta_destino_dir, nombre_final)
+                ruta_origen_real = os.path.realpath(ruta_origen)
+                ruta_final_real = os.path.realpath(ruta_final)
 
-            if ruta_json_origen and os.path.exists(ruta_json_origen):
-                shutil.move(ruta_json_origen, ruta_json_destino)
+                if ruta_origen_real == ruta_final_real:
+                    continue
 
-            padre_origen = os.path.dirname(ruta_origen)
-            meta_origen = cargar_metadata(padre_origen)
-            if nombre_origen in meta_origen.get("files", {}):
-                del meta_origen["files"][nombre_origen]
-                guardar_metadata(padre_origen, meta_origen)
+                if os.path.exists(ruta_final):
+                    self.send_error(409, f'Ya existe "{nombre_final}" en destino.')
+                    return
 
-            meta_destino = cargar_metadata(ruta_destino_dir)
-            meta_destino.setdefault("files", {})[nombre_final] = "📁" if os.path.isdir(ruta_final) else "📄"
-            guardar_metadata(ruta_destino_dir, meta_destino)
+                if os.path.isdir(ruta_origen):
+                    if ruta_final_real.startswith(ruta_origen_real + os.sep):
+                        self.send_error(409, "No se puede mover una carpeta dentro de sí misma.")
+                        return
+
+                ruta_json_origen = ""
+                ruta_json_destino = ""
+                if os.path.isfile(ruta_origen) and ruta_origen.lower().endswith(".html"):
+                    ruta_json_origen = ruta_json_fuente(ruta_origen)
+                    ruta_json_destino = ruta_json_fuente(ruta_final)
+
+                shutil.move(ruta_origen, ruta_final)
+
+                if ruta_json_origen and os.path.exists(ruta_json_origen):
+                    shutil.move(ruta_json_origen, ruta_json_destino)
+
+                padre_origen = os.path.dirname(ruta_origen)
+                meta_origen = cargar_metadata(padre_origen)
+                if nombre_origen in meta_origen.get("files", {}):
+                    del meta_origen["files"][nombre_origen]
+                    guardar_metadata(padre_origen, meta_origen)
+
+                meta_destino = cargar_metadata(ruta_destino_dir)
+                meta_destino.setdefault("files", {})[nombre_final] = "📁" if os.path.isdir(ruta_final) else "📄"
+                guardar_metadata(ruta_destino_dir, meta_destino)
 
             self._redirect(self._ruta_url_desde_fs(ruta_destino_dir))
         except Exception as exc:
