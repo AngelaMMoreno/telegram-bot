@@ -60,7 +60,9 @@ def guardar_metadata(directorio: str, metadata: dict) -> None:
 
 
 def obtener_icono(metadata: dict, nombre: str, es_dir: bool) -> str:
-    return metadata.get("files", {}).get(nombre, "📁" if es_dir else "📄")
+    # Requisito funcional: mostrar siempre carpetas con icono de carpeta
+    # y ficheros con icono de fichero, sin depender del metadata.
+    return "📁" if es_dir else "📄"
 
 
 def format_size(size: int) -> str:
