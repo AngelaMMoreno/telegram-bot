@@ -15,23 +15,6 @@ import markdown
 import pymdownx.emoji
 from pygments.formatters import HtmlFormatter
 
-# ─── Emojis predefinidos ────────────────────────────────────────────────────
-
-EMOJIS = [
-    "📁", "📂", "📄", "📝", "📊", "📈", "📉", "📋", "📌", "📍",
-    "📎", "🗂️", "🗃️", "🗄️", "🖨️", "💼", "🗑️", "📬", "📯", "🔖",
-    "🖼️", "🎵", "🎬", "📹", "📷", "📸", "🎤", "📻", "🎙️", "🎧",
-    "🔑", "🔒", "🔓", "📦", "🎁", "💾", "💿", "📀", "🖥️", "💻",
-    "📱", "⌨️", "🖱️", "🖲️", "🔌", "🔋", "📡", "☎️", "🔧", "🔩",
-    "⭐", "❤️", "🔥", "✅", "❌", "⚠️", "ℹ️", "💡", "🔔", "🎯",
-    "🏠", "🏢", "🚀", "🌍", "🌟", "🎨", "🎭", "🎪", "🎉", "🏆",
-    "📚", "📖", "🔬", "🔭", "🧪", "🧬", "💊", "🏥", "🏫", "🏦",
-    "🍕", "🍔", "☕", "🍺", "🎂", "🌈", "⚡", "❄️", "🌊", "🌺",
-    "🐶", "🐱", "🦁", "🐘", "🦋", "🌳", "🌵", "🍀", "🌸", "🍁",
-    "🎓", "🏅", "🎖️", "🥇", "🎗️", "🔐", "🛡️", "⚙️", "🔎", "📐",
-    "🧲", "💎", "🪙", "💰", "📮", "🗺️", "🧭", "⛺", "🏕️", "🚁",
-]
-
 METADATA_FILE = ".metadata.json"
 
 RUTA_ARCHIVOS_PUBLICOS = os.getenv(
@@ -256,18 +239,6 @@ a{text-decoration:none;color:inherit}
 .drop-hint{font-size:13px}
 .drop-name{font-size:14px;font-weight:600;color:var(--pri);margin-top:6px}
 
-/* ── emoji picker ── */
-.ep-wrap{border:1.5px solid var(--border);border-radius:12px;overflow:hidden}
-.ep-preview{text-align:center;font-size:44px;padding:14px;
-  background:var(--pri-light);border-bottom:1px solid var(--border)}
-.ep-grid{display:grid;grid-template-columns:repeat(12,1fr);
-  max-height:190px;overflow-y:auto;padding:8px;gap:3px}
-@media(max-width:480px){.ep-grid{grid-template-columns:repeat(8,1fr)}}
-.ep-btn{font-size:20px;background:none;border:2px solid transparent;border-radius:6px;
-  padding:3px;cursor:pointer;transition:background .1s,border-color .1s;line-height:1}
-.ep-btn:hover{background:var(--pri-light)}
-.ep-btn.sel{border-color:var(--pri);background:var(--pri-light)}
-
 /* ── submit ── */
 .btn-submit{width:100%;padding:13px;background:linear-gradient(135deg,var(--pri),#8B5CF6);
   color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;
@@ -371,14 +342,6 @@ _CSS_EDITOR = """
 # ─── JavaScript compartido ───────────────────────────────────────────────────
 
 _JS = """
-function selectEmoji(btn, previewId, inputId) {
-  var grid = btn.closest('.ep-grid');
-  grid.querySelectorAll('.ep-btn').forEach(function(b){ b.classList.remove('sel'); });
-  btn.classList.add('sel');
-  document.getElementById(previewId).textContent = btn.dataset.e;
-  document.getElementById(inputId).value = btn.dataset.e;
-}
-
 function initDrop(zoneId, inputId, nameId) {
   var zone = document.getElementById(zoneId);
   var inp  = document.getElementById(inputId);
@@ -824,6 +787,24 @@ function loadTemplate(type) {
 
 function loadExisting(ruta) {
   if (!ruta) return;
+  var editarInput = document.getElementById('editar-ruta');
+  if (editarInput) editarInput.value = ruta;
+  var nameInput = document.querySelector('input[name="nombre_archivo"]');
+  var carpetaSelect = document.querySelector('select[name="carpeta"]');
+  var partes = (ruta || '').split('/');
+  var archivo = partes.pop() || '';
+  if (nameInput && archivo.toLowerCase().endsWith('.html')) {
+    nameInput.value = archivo.slice(0, -5);
+  }
+  var carpetaRuta = '/' + partes.filter(Boolean).join('/');
+  if (carpetaSelect) {
+    for (var i = 0; i < carpetaSelect.options.length; i++) {
+      if (carpetaSelect.options[i].value === (carpetaRuta || '/')) {
+        carpetaSelect.selectedIndex = i;
+        break;
+      }
+    }
+  }
   fetch('/api/plantilla/cargar?ruta=' + encodeURIComponent(ruta))
     .then(function(r) { return r.json(); })
     .then(function(data) {
@@ -1448,23 +1429,6 @@ var data={js_data_str};
 </html>"""
 
 
-def _emoji_picker_html(picker_id: str, default: str) -> str:
-    preview_id = f"ep-prev-{picker_id}"
-    input_id = f"ep-inp-{picker_id}"
-    btns = "\n".join(
-        f'<button type="button" class="ep-btn{" sel" if e == default else ""}" '
-        f'data-e="{e}" onclick="selectEmoji(this,\'{preview_id}\',\'{input_id}\')">{e}</button>'
-        for e in EMOJIS
-    )
-    return f"""
-<div class="ep-wrap">
-  <div class="ep-preview" id="{preview_id}">{default}</div>
-  <div class="ep-grid">{btns}</div>
-</div>
-<input type="hidden" name="icono" id="{input_id}" value="{default}">
-"""
-
-
 def _carpeta_options_html(carpetas: list, selected: str = "/") -> str:
     opts = []
     for val, label in carpetas:
@@ -1507,6 +1471,8 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
             self.handle_plantilla()
         elif path == "/eliminar":
             self.handle_delete()
+        elif path == "/mover":
+            self.handle_move()
         else:
             self.send_error(404)
 
@@ -1579,11 +1545,12 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
                 subtxt = "carpeta"
             del_path = html.escape(href, quote=True)
             cards.append(
-                f'<a href="{html.escape(href)}" class="card folder">'
+                f'<a href="{html.escape(href)}" class="card folder item-arrastrable destino-carpeta" draggable="true" data-ruta="{del_path}" data-es-carpeta="1">'
                 f'<div class="card-emoji">{icon}</div>'
                 f'<div class="card-name" title="{html.escape(d.name)}">{html.escape(d.name)}</div>'
                 f'<div class="card-meta">{subtxt}</div>'
                 f'<div class="card-actions">'
+                f'<button class="card-btn" onclick="event.preventDefault();event.stopPropagation();renombrarElemento(\'{del_path}\', true)" title="Renombrar carpeta">✏️</button>'
                 f'<button class="card-btn del" onclick="event.preventDefault();event.stopPropagation();confirmDelete(\'{del_path}\',\'{html.escape(d.name, quote=True)}\',true)" title="Eliminar carpeta">🗑️</button>'
                 f'</div>'
                 f'</a>'
@@ -1604,12 +1571,13 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
                 )
             del_path = html.escape(href, quote=True)
             cards.append(
-                f'<a href="{html.escape(href)}" class="card file" target="_blank">'
+                f'<a href="{html.escape(href)}" class="card file item-arrastrable" target="_blank" draggable="true" data-ruta="{del_path}" data-es-carpeta="0">'
                 f'<div class="card-emoji">{icon}</div>'
                 f'<div class="card-name" title="{html.escape(f.name)}">{html.escape(f.name)}</div>'
                 f'<div class="card-meta">{size_str}</div>'
                 f'<div class="card-actions">'
                 f'{edit_btn}'
+                f'<button class="card-btn" onclick="event.preventDefault();event.stopPropagation();renombrarElemento(\'{del_path}\', false)" title="Renombrar archivo">✏️</button>'
                 f'<button class="card-btn del" onclick="event.preventDefault();event.stopPropagation();confirmDelete(\'{del_path}\',\'{html.escape(f.name, quote=True)}\',false)" title="Eliminar archivo">🗑️</button>'
                 f'</div>'
                 f'</a>'
@@ -1646,6 +1614,79 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
 </div>
 <div class="grid">{grid_content}</div>
 <script>
+var rutaActual = {json.dumps(url_path or "/")};
+
+function postMover(origen, destino, nuevoNombre) {{
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/mover';
+
+  var inpOrigen = document.createElement('input');
+  inpOrigen.type = 'hidden';
+  inpOrigen.name = 'origen';
+  inpOrigen.value = origen;
+  form.appendChild(inpOrigen);
+
+  var inpDestino = document.createElement('input');
+  inpDestino.type = 'hidden';
+  inpDestino.name = 'destino';
+  inpDestino.value = destino;
+  form.appendChild(inpDestino);
+
+  if (nuevoNombre) {{
+    var inpNombre = document.createElement('input');
+    inpNombre.type = 'hidden';
+    inpNombre.name = 'nuevo_nombre';
+    inpNombre.value = nuevoNombre;
+    form.appendChild(inpNombre);
+  }}
+  document.body.appendChild(form);
+  form.submit();
+}}
+
+function renombrarElemento(ruta, esDir) {{
+  var nombreActual = decodeURIComponent((ruta || '').split('/').pop() || '');
+  var tipo = esDir ? 'carpeta' : 'archivo';
+  var nuevoNombre = prompt('Nuevo nombre de ' + tipo + ':', nombreActual);
+  if (nuevoNombre === null) return;
+  nuevoNombre = (nuevoNombre || '').trim();
+  if (!nuevoNombre || nuevoNombre === nombreActual) return;
+  postMover(ruta, rutaActual, nuevoNombre);
+}}
+
+function initArrastreMover() {{
+  var elementos = document.querySelectorAll('.item-arrastrable');
+  var destinos = document.querySelectorAll('.destino-carpeta');
+  var rutaArrastrada = '';
+
+  elementos.forEach(function(el) {{
+    el.addEventListener('dragstart', function(e) {{
+      rutaArrastrada = el.dataset.ruta || '';
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', rutaArrastrada);
+    }});
+  }});
+
+  destinos.forEach(function(destino) {{
+    destino.addEventListener('dragover', function(e) {{
+      e.preventDefault();
+      destino.style.borderColor = 'var(--pri)';
+      e.dataTransfer.dropEffect = 'move';
+    }});
+    destino.addEventListener('dragleave', function() {{
+      destino.style.borderColor = '';
+    }});
+    destino.addEventListener('drop', function(e) {{
+      e.preventDefault();
+      destino.style.borderColor = '';
+      var origen = e.dataTransfer.getData('text/plain') || rutaArrastrada;
+      var destinoCarpeta = destino.dataset.ruta || '';
+      if (!origen || !destinoCarpeta || origen === destinoCarpeta) return;
+      postMover(origen, destinoCarpeta, '');
+    }});
+  }});
+}}
+
 function confirmDelete(ruta, nombre, esDir) {{
   var tipo = esDir ? 'la carpeta' : 'el archivo';
   var extra = esDir ? '\\n\\nSe eliminará todo su contenido.' : '';
@@ -1672,6 +1713,7 @@ function confirmDelete(ruta, nombre, esDir) {{
     form.submit();
   }};
 }}
+initArrastreMover();
 </script>
 </body>
 </html>"""
@@ -1768,8 +1810,6 @@ function confirmDelete(ruta, nombre, esDir) {{
         carpetas = obtener_todas_carpetas(self.base_dir)
         opts_file = _carpeta_options_html(carpetas, carpeta_sel)
         opts_folder = _carpeta_options_html(carpetas, carpeta_sel)
-        ep_file = _emoji_picker_html("file", "📄")
-        ep_folder = _emoji_picker_html("folder", "📁")
 
         alert_html = ""
         if msg:
@@ -1816,11 +1856,6 @@ function confirmDelete(ruta, nombre, esDir) {{
       </div>
     </div>
 
-    <div class="fg">
-      <label>🎨 Icono del archivo</label>
-      {ep_file}
-    </div>
-
     <button type="submit" class="btn-submit">📤 Subir archivo</button>
   </form>
 </div>
@@ -1839,11 +1874,6 @@ function confirmDelete(ruta, nombre, esDir) {{
     <div class="fg">
       <label>📁 Carpeta padre</label>
       <select name="carpeta_padre" class="fc">{opts_folder}</select>
-    </div>
-
-    <div class="fg">
-      <label>🎨 Icono de la carpeta</label>
-      {ep_folder}
     </div>
 
     <button type="submit" class="btn-submit">📁 Crear carpeta</button>
@@ -1878,7 +1908,6 @@ initDrop('dz','file-inp','file-name');
         try:
             form = self._parse_form()
             carpeta = form.getvalue("carpeta", "/")
-            icono = form.getvalue("icono", "📄")
 
             file_item = form["archivo"] if "archivo" in form else None
             if file_item is None or not getattr(file_item, "filename", None):
@@ -1895,7 +1924,7 @@ initDrop('dz','file-inp','file-name');
                 fh.write(file_item.file.read())
 
             meta = cargar_metadata(dir_path)
-            meta.setdefault("files", {})[filename] = icono
+            meta.setdefault("files", {})[filename] = "📄"
             guardar_metadata(dir_path, meta)
 
             redirect = carpeta if carpeta.startswith("/") else "/" + carpeta
@@ -1906,7 +1935,6 @@ initDrop('dz','file-inp','file-name');
     def handle_create_folder(self):
         form = self._parse_form()
         nombre = form.getvalue("nombre", "").strip()
-        icono = form.getvalue("icono", "📁")
         carpeta_padre = form.getvalue("carpeta_padre", "/")
 
         if not nombre or ".." in nombre or "/" in nombre or "\\" in nombre:
@@ -1924,7 +1952,7 @@ initDrop('dz','file-inp','file-name');
 
         os.makedirs(new_folder, exist_ok=True)
         meta = cargar_metadata(parent_path)
-        meta.setdefault("files", {})[nombre] = icono
+        meta.setdefault("files", {})[nombre] = "📁"
         guardar_metadata(parent_path, meta)
 
         redirect = carpeta_padre if carpeta_padre.startswith("/") else "/" + carpeta_padre
@@ -1977,6 +2005,78 @@ initDrop('dz','file-inp','file-name');
             self._redirect(parent_url)
         except Exception as exc:
             self.send_error(500, f"Error al eliminar: {exc}")
+
+    def handle_move(self):
+        try:
+            form = self._parse_form()
+            origen = form.getvalue("origen", "")
+            destino = form.getvalue("destino", "")
+            nuevo_nombre = (form.getvalue("nuevo_nombre", "") or "").strip()
+
+            if not origen or not destino:
+                self.send_error(400, "Faltan datos para mover.")
+                return
+
+            ruta_origen = self.safe_path(origen)
+            ruta_destino_dir = self.safe_path(destino)
+            if ruta_origen is None or not os.path.exists(ruta_origen):
+                self.send_error(404, "Elemento origen no encontrado.")
+                return
+            if ruta_destino_dir is None or not os.path.isdir(ruta_destino_dir):
+                self.send_error(404, "Carpeta destino no encontrada.")
+                return
+            if os.path.realpath(ruta_origen) == os.path.realpath(self.base_dir):
+                self.send_error(403, "No se puede mover la carpeta raíz.")
+                return
+
+            nombre_origen = os.path.basename(ruta_origen)
+            nombre_final = (nuevo_nombre or nombre_origen).strip()
+            if (not nombre_final or ".." in nombre_final or "/" in nombre_final or
+                    "\\" in nombre_final):
+                self.send_error(400, "Nombre inválido.")
+                return
+
+            ruta_final = os.path.join(ruta_destino_dir, nombre_final)
+            ruta_origen_real = os.path.realpath(ruta_origen)
+            ruta_final_real = os.path.realpath(ruta_final)
+
+            if ruta_origen_real == ruta_final_real:
+                self._redirect(self._ruta_url_desde_fs(ruta_destino_dir))
+                return
+
+            if os.path.exists(ruta_final):
+                self.send_error(409, f'Ya existe "{nombre_final}" en destino.')
+                return
+
+            if os.path.isdir(ruta_origen):
+                if ruta_final_real.startswith(ruta_origen_real + os.sep):
+                    self.send_error(409, "No se puede mover una carpeta dentro de sí misma.")
+                    return
+
+            ruta_json_origen = ""
+            ruta_json_destino = ""
+            if os.path.isfile(ruta_origen) and ruta_origen.lower().endswith(".html"):
+                ruta_json_origen = ruta_json_fuente(ruta_origen)
+                ruta_json_destino = ruta_json_fuente(ruta_final)
+
+            shutil.move(ruta_origen, ruta_final)
+
+            if ruta_json_origen and os.path.exists(ruta_json_origen):
+                shutil.move(ruta_json_origen, ruta_json_destino)
+
+            padre_origen = os.path.dirname(ruta_origen)
+            meta_origen = cargar_metadata(padre_origen)
+            if nombre_origen in meta_origen.get("files", {}):
+                del meta_origen["files"][nombre_origen]
+                guardar_metadata(padre_origen, meta_origen)
+
+            meta_destino = cargar_metadata(ruta_destino_dir)
+            meta_destino.setdefault("files", {})[nombre_final] = "📁" if os.path.isdir(ruta_final) else "📄"
+            guardar_metadata(ruta_destino_dir, meta_destino)
+
+            self._redirect(self._ruta_url_desde_fs(ruta_destino_dir))
+        except Exception as exc:
+            self.send_error(500, f"Error al mover: {exc}")
 
     # ── API endpoints ────────────────────────────────────────────────────────
 
@@ -2040,6 +2140,8 @@ initDrop('dz','file-inp','file-name');
   loadExisting(ruta);
   var nameInput = document.querySelector('input[name="nombre_archivo"]');
   if (nameInput) nameInput.value = {json.dumps(editar_nombre)};
+  var editarInput = document.getElementById('editar-ruta');
+  if (editarInput) editarInput.value = ruta;
   var folderSelect = document.querySelector('select[name="carpeta"]');
   if (folderSelect) {{
     for (var i = 0; i < folderSelect.options.length; i++) {{
@@ -2140,6 +2242,7 @@ initDrop('dz','file-inp','file-name');
       <form method="POST" action="/subirPlantilla" enctype="multipart/form-data"
             id="plantilla-form" onsubmit="return prepareSubmit()">
         <input type="hidden" name="json_texto" id="json-input-hidden">
+        <input type="hidden" name="editar_ruta" id="editar-ruta">
         <div class="save-row">
           <div class="fg">
             <label>📁 Carpeta</label>
@@ -2215,6 +2318,7 @@ initEditor();
             form = self._parse_form()
             carpeta = form.getvalue("carpeta", "/")
             nombre_archivo = (form.getvalue("nombre_archivo", "") or "").strip()
+            editar_ruta = (form.getvalue("editar_ruta", "") or "").strip()
 
             # Get JSON from textarea or file upload
             json_txt = form.getvalue("json_texto", "") or ""
@@ -2244,13 +2348,41 @@ initEditor();
                 titulo = config.get("tituloPagina", "pagina")
                 nombre_archivo = "".join(c if c.isalnum() or c in "-_ " else "" for c in titulo).strip().replace(" ", "-").lower()[:60] or "pagina"
 
-            filename = asegurar_nombre_unico(dir_path, nombre_archivo + ".html")
+            if editar_ruta:
+                filename = nombre_archivo + ".html"
+            else:
+                filename = asegurar_nombre_unico(dir_path, nombre_archivo + ".html")
             filepath = os.path.join(dir_path, filename)
+
+            ruta_anterior = ""
+            if editar_ruta:
+                ruta_anterior = self.safe_path(editar_ruta)
+                if ruta_anterior is None or not os.path.isfile(ruta_anterior):
+                    self._redirect_with_msg("/subirPlantilla", "No se encontró la página original para editar.", "err", carpeta)
+                    return
+                if os.path.exists(filepath) and os.path.realpath(filepath) != os.path.realpath(ruta_anterior):
+                    self._redirect_with_msg("/subirPlantilla", f'Ya existe un archivo llamado "{filename}".', "err", carpeta)
+                    return
+
             with open(filepath, "w", encoding="utf-8") as fh:
                 fh.write(html_content)
 
             # Guardar JSON fuente junto al HTML para edición posterior
             guardar_json_fuente(filepath, data)
+
+            if ruta_anterior and os.path.realpath(ruta_anterior) != os.path.realpath(filepath):
+                ruta_anterior_json = ruta_json_fuente(ruta_anterior)
+                if os.path.exists(ruta_anterior):
+                    os.remove(ruta_anterior)
+                if os.path.exists(ruta_anterior_json):
+                    os.remove(ruta_anterior_json)
+
+                nombre_anterior = os.path.basename(ruta_anterior)
+                dir_anterior = os.path.dirname(ruta_anterior)
+                meta_anterior = cargar_metadata(dir_anterior)
+                if nombre_anterior in meta_anterior.get("files", {}):
+                    del meta_anterior["files"][nombre_anterior]
+                    guardar_metadata(dir_anterior, meta_anterior)
 
             meta = cargar_metadata(dir_path)
             meta.setdefault("files", {})[filename] = "🌐"
@@ -2280,6 +2412,12 @@ initEditor();
     def _redirect_with_msg(self, base: str, msg: str, tipo: str, carpeta: str = "/"):
         loc = f"{base}?carpeta={urllib.parse.quote(carpeta)}&msg={urllib.parse.quote(msg)}&tipo={tipo}"
         self._redirect(loc)
+
+    def _ruta_url_desde_fs(self, ruta_fs: str) -> str:
+        rel = os.path.relpath(ruta_fs, self.base_dir)
+        if rel == ".":
+            return "/"
+        return "/" + rel.replace(os.sep, "/")
 
     def log_message(self, *_):
         pass  # silenciar logs HTTP por defecto
