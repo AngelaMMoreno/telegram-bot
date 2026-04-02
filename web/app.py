@@ -454,14 +454,28 @@ def get_test_questions(quiz_id):
 def _obtener_preguntas_por_tests(cur, quiz_ids):
     if not quiz_ids:
         return []
+
+    def _normalizar_texto_pregunta(texto):
+        return " ".join((texto or "").strip().lower().split())
+
+    def _crear_huella_pregunta(texto, opciones):
+        texto_normalizado = _normalizar_texto_pregunta(texto)
+        opciones_normalizadas = tuple(_normalizar_texto_pregunta(opcion) for opcion in opciones)
+        return texto_normalizado, opciones_normalizadas
+
     placeholders = ",".join("?" for _ in quiz_ids)
     cur.execute(f"SELECT id, text, explicacion FROM questions WHERE quiz_id IN ({placeholders})", quiz_ids)
     preguntas = []
+    huellas_vistas = set()
     for row in cur.fetchall():
         cur.execute("SELECT text FROM options WHERE question_id = ? ORDER BY position ASC", (row["id"],))
         opciones = [o["text"] for o in cur.fetchall()]
         if len(opciones) < 2:
             continue
+        huella = _crear_huella_pregunta(row["text"], opciones)
+        if huella in huellas_vistas:
+            continue
+        huellas_vistas.add(huella)
         preguntas.append({
             "id": row["id"],
             "text": row["text"],
