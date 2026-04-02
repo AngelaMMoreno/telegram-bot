@@ -314,6 +314,15 @@ body {
   font-weight: 600;
   white-space: nowrap;
 }
+.quiz-timer {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--primary);
+  white-space: nowrap;
+}
+.quiz-timer.agotado {
+  color: var(--danger);
+}
 .question-text {
   font-size: 1rem;
   font-weight: 500;

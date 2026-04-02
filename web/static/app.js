@@ -4,6 +4,7 @@
 
   const PENALIZACION = 1 / 3;
   const PREGUNTAS_P1 = 80;
+  const TIEMPO_POR_PREGUNTA_POR_DEFECTO_SEGUNDOS = 20;
 
   /* ── State ── */
   let state = {
@@ -18,6 +19,8 @@
     wrong: 0,
     blank: 0,
     answered: false,
+    tiempoRestante: TIEMPO_POR_PREGUNTA_POR_DEFECTO_SEGUNDOS,
+    temporizadorPreguntaId: null,
     favQuestionIds: new Set(),
     megaModo: false,
     megaSeleccionados: new Set(),
@@ -220,6 +223,7 @@
   }
 
   function inicializar_estado_quiz(quiz) {
+    quiz.tiempoPorPreguntaSegundos = quiz.tiempoPorPreguntaSegundos || TIEMPO_POR_PREGUNTA_POR_DEFECTO_SEGUNDOS;
     state.quiz = quiz;
     state.qi = 0;
     state.correct = quiz.correct || 0;
@@ -229,6 +233,20 @@
     document.getElementById("quiz-title").textContent = quiz.title;
     showView("quiz");
     renderQuestion();
+  }
+
+  async function solicitar_tiempo_por_pregunta(valorInicial = TIEMPO_POR_PREGUNTA_POR_DEFECTO_SEGUNDOS) {
+    const entrada = prompt(
+      "¿Cuántos segundos por pregunta quieres usar?",
+      String(valorInicial)
+    );
+    if (entrada === null) return null;
+    const segundos = parseInt(entrada.trim(), 10);
+    if (!Number.isInteger(segundos) || segundos < 5 || segundos > 600) {
+      toast("Introduce un tiempo válido entre 5 y 600 segundos");
+      return null;
+    }
+    return segundos;
   }
 
   function obtener_total_preguntas_quiz() {
@@ -250,7 +268,7 @@
     return d.attempt || null;
   }
 
-  async function reanudar_intento(attemptId, tituloFallback) {
+  async function reanudar_intento(attemptId, tituloFallback, tiempoPorPreguntaSegundos) {
     const d = await api(`/attempts/${attemptId}/resume`, {
       method: "POST",
       body: { user_id: state.userId },
@@ -269,6 +287,7 @@
       wrong: d.wrong,
       totalOriginal: d.total_original,
       respondidas: d.respondidas,
+      tiempoPorPreguntaSegundos,
     });
     return true;
   }
@@ -281,7 +300,9 @@
       "Tienes un test a medias. ¿Quieres continuarlo donde lo dejaste?"
     );
     if (continuar) {
-      const ok = await reanudar_intento(pendiente.id, pendiente.nombre || titulo);
+      const tiempoPorPreguntaSegundos = await solicitar_tiempo_por_pregunta();
+      if (tiempoPorPreguntaSegundos === null) return null;
+      const ok = await reanudar_intento(pendiente.id, pendiente.nombre || titulo, tiempoPorPreguntaSegundos);
       if (ok) return "reanudo";
     } else {
       await api(`/attempts/${pendiente.id}/discard`, {
@@ -586,6 +607,8 @@
     try {
       const estadoReanudacion = await comprobar_reanudacion("quiz", quizId, "Test");
       if (estadoReanudacion === "reanudo") return;
+      const tiempoPorPreguntaSegundos = await solicitar_tiempo_por_pregunta();
+      if (tiempoPorPreguntaSegundos === null) return;
       const d = await api(`/tests/${quizId}/questions`);
       if (!d.questions.length) { toast("El test no tiene preguntas"); return; }
       const preguntasMezcladas = shuffle(d.questions);
@@ -605,6 +628,7 @@
         attemptId: att.attempt_id,
         type: "quiz",
         quizId: quizId,
+        tiempoPorPreguntaSegundos,
       });
     } catch (err) { toast(err.message); }
   }
@@ -614,6 +638,8 @@
     try {
       const estadoReanudacion = await comprobar_reanudacion("test_fallos", null, "Test de fallos");
       if (estadoReanudacion === "reanudo") return;
+      const tiempoPorPreguntaSegundos = await solicitar_tiempo_por_pregunta();
+      if (tiempoPorPreguntaSegundos === null) return;
       const d = await api("/failures/questions?user_id=" + state.userId);
       if (!d.questions.length) { toast("No tienes preguntas falladas"); return; }
       const preguntasMezcladas = shuffle(d.questions);
@@ -632,6 +658,7 @@
         title: "Test de fallos",
         attemptId: att.attempt_id,
         type: "test_fallos",
+        tiempoPorPreguntaSegundos,
       });
     } catch (err) { toast(err.message); }
   }
@@ -641,6 +668,8 @@
     try {
       const estadoReanudacion = await comprobar_reanudacion("test_favoritas", null, "Test de favoritas");
       if (estadoReanudacion === "reanudo") return;
+      const tiempoPorPreguntaSegundos = await solicitar_tiempo_por_pregunta();
+      if (tiempoPorPreguntaSegundos === null) return;
       const d = await api("/favorites/questions?user_id=" + state.userId);
       if (!d.questions.length) { toast("No tienes preguntas favoritas"); return; }
       const preguntasMezcladas = shuffle(d.questions);
@@ -659,6 +688,7 @@
         title: "Test de favoritas",
         attemptId: att.attempt_id,
         type: "test_favoritas",
+        tiempoPorPreguntaSegundos,
       });
     } catch (err) { toast(err.message); }
   }
@@ -676,6 +706,7 @@
     document.getElementById("question-text").textContent = q.text;
     document.getElementById("question-explanation").classList.add("hidden");
     state.answered = false;
+    iniciar_temporizador_pregunta();
 
     // Shuffle options but track correct
     const optionsWithIndex = q.options.map((text, i) => ({ text, isCorrect: i === q.correct_index }));
@@ -698,11 +729,62 @@
     document.getElementById("btn-next-question").classList.add("hidden");
   }
 
+  function detener_temporizador_pregunta() {
+    if (state.temporizadorPreguntaId) {
+      clearInterval(state.temporizadorPreguntaId);
+      state.temporizadorPreguntaId = null;
+    }
+  }
+
+  function actualizar_etiqueta_temporizador() {
+    const etiqueta = document.getElementById("quiz-timer");
+    etiqueta.textContent = `${state.tiempoRestante}s`;
+    etiqueta.classList.toggle("agotado", state.tiempoRestante <= 5);
+  }
+
+  function iniciar_temporizador_pregunta() {
+    detener_temporizador_pregunta();
+    const tiempoConfigurado = state.quiz?.tiempoPorPreguntaSegundos || TIEMPO_POR_PREGUNTA_POR_DEFECTO_SEGUNDOS;
+    state.tiempoRestante = tiempoConfigurado;
+    actualizar_etiqueta_temporizador();
+    state.temporizadorPreguntaId = setInterval(() => {
+      if (state.answered) {
+        detener_temporizador_pregunta();
+        return;
+      }
+      state.tiempoRestante -= 1;
+      actualizar_etiqueta_temporizador();
+      if (state.tiempoRestante <= 0) {
+        gestionar_tiempo_agotado();
+      }
+    }, 1000);
+  }
+
+  async function gestionar_tiempo_agotado() {
+    if (state.answered || !state.quiz) return;
+    state.answered = true;
+    detener_temporizador_pregunta();
+    document.querySelectorAll(".option-btn").forEach((b, i) => {
+      b.classList.add("disabled");
+      const q = state.quiz.questions[state.qi];
+      if (q._shuffled[i].isCorrect) b.classList.add("correct");
+    });
+    toast("Tiempo agotado. Pregunta en blanco.");
+    document.getElementById("btn-next-question").classList.remove("hidden");
+    state.qi++;
+    if (state.qi >= state.quiz.questions.length) {
+      await finishQuiz();
+      return;
+    }
+    renderQuestion();
+  }
+
   /* ── Option click ── */
   document.getElementById("options-list").addEventListener("click", async (e) => {
     const btn = e.target.closest(".option-btn");
     if (!btn || state.answered) return;
     state.answered = true;
+    detener_temporizador_pregunta();
 
     const oi = parseInt(btn.dataset.oi);
     const q = state.quiz.questions[state.qi];
@@ -757,6 +839,7 @@
   /* ── Quit quiz ── */
   document.getElementById("btn-quit-quiz").addEventListener("click", async () => {
     if (await confirm("Pausar test", "Se guardará tu progreso para retomarlo después.")) {
+      detener_temporizador_pregunta();
       state.quiz = null;
       showView("menu");
       loadMenuStats();
@@ -880,6 +963,7 @@
 
   /* ── Finish quiz ── */
   async function finishQuiz() {
+    detener_temporizador_pregunta();
     const total = state.quiz.questions.length;
     state.blank = total - state.correct - state.wrong;
 
@@ -979,6 +1063,8 @@
 
   async function startSimulacro(simId) {
     try {
+      const tiempoPorPreguntaSegundos = await solicitar_tiempo_por_pregunta();
+      if (tiempoPorPreguntaSegundos === null) return;
       const d = await api(`/simulacros/${simId}/start`, { method: "POST", body: { user_id: state.userId } });
       if (!d.questions.length) { toast("El simulacro no tiene preguntas"); return; }
       const att = await api("/attempts/start", {
@@ -991,6 +1077,7 @@
         attemptId: att.attempt_id,
         type: "simulacro",
         simulacro: d.simulacro,
+        tiempoPorPreguntaSegundos,
       };
       state.qi = 0; state.correct = 0; state.wrong = 0; state.blank = 0; state.answered = false;
       document.getElementById("quiz-title").textContent = d.simulacro.nombre;
