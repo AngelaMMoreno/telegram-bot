@@ -64,6 +64,45 @@ E_MAX_SIMULACRO = 100
 MIN_DIRECTA_SIMULACRO = N_MAX_SIMULACRO * 0.30
 
 
+def cargar_lista_usuarios_desde_entorno(nombre_variable):
+    valor = (os.getenv(nombre_variable) or "").strip()
+    if not valor:
+        return set()
+    try:
+        datos = json.loads(valor)
+        if isinstance(datos, list):
+            return {str(item).strip() for item in datos if str(item).strip()}
+    except json.JSONDecodeError:
+        pass
+    return {item.strip() for item in valor.split(",") if item.strip()}
+
+
+USUARIOS_GESTION_TESTS = cargar_lista_usuarios_desde_entorno("USUARIOS_GESTION_TESTS")
+
+
+def _obtener_username_desde_user_id(cur, user_id):
+    cur.execute("SELECT username FROM web_users WHERE user_id = ?", (user_id,))
+    fila = cur.fetchone()
+    return fila["username"] if fila else None
+
+
+def usuario_tiene_permiso_gestion(user_id):
+    if not user_id:
+        return False
+    with get_conn() as conn:
+        cur = conn.cursor()
+        username = _obtener_username_desde_user_id(cur, user_id)
+    return bool(username and username in USUARIOS_GESTION_TESTS)
+
+
+def validar_permiso_gestion(user_id):
+    if not user_id:
+        return jsonify({"error": "user_id requerido"}), 400
+    if not usuario_tiene_permiso_gestion(user_id):
+        return jsonify({"error": "No tienes permisos para esta accion"}), 403
+    return None
+
+
 # ─────────────── DB ───────────────
 def get_conn():
     conn = sqlite3.connect(DB_FILE)
@@ -393,8 +432,9 @@ def get_test_questions(quiz_id):
 @app.route("/api/tests/upload", methods=["POST"])
 def upload_tests():
     user_id = request.form.get("user_id", type=int)
-    if not user_id:
-        return jsonify({"error": "user_id requerido"}), 400
+    error_permiso = validar_permiso_gestion(user_id)
+    if error_permiso:
+        return error_permiso
 
     file = request.files.get("file")
     if not file:
@@ -476,6 +516,11 @@ def _create_quiz_from_payload(payload, filename=""):
 # ─────────────── Delete test ───────────────
 @app.route("/api/tests/<int:quiz_id>", methods=["DELETE"])
 def delete_test(quiz_id):
+    user_id = request.args.get("user_id", type=int)
+    error_permiso = validar_permiso_gestion(user_id)
+    if error_permiso:
+        return error_permiso
+
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("SELECT 1 FROM quizzes WHERE id = ?", (quiz_id,))
@@ -519,6 +564,11 @@ def download_test(quiz_id):
 
 @app.route("/api/tests/download-all")
 def download_all_tests():
+    user_id = request.args.get("user_id", type=int)
+    error_permiso = validar_permiso_gestion(user_id)
+    if error_permiso:
+        return error_permiso
+
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("SELECT id FROM quizzes ORDER BY id")
@@ -877,6 +927,11 @@ def calculate_simulacro():
 # ─────────────── DB download ───────────────
 @app.route("/api/db/download")
 def download_db():
+    user_id = request.args.get("user_id", type=int)
+    error_permiso = validar_permiso_gestion(user_id)
+    if error_permiso:
+        return error_permiso
+
     db_dir = os.path.dirname(DB_FILE)
     db_name = os.path.basename(DB_FILE)
     return send_from_directory(db_dir, db_name, as_attachment=True, download_name="bot.db")
