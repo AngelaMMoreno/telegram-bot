@@ -9,6 +9,7 @@ import signal
 import threading
 import urllib.parse
 import warnings
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import markdown
@@ -1466,6 +1467,8 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
             self.api_listar_plantillas()
         elif path == "/api/plantilla/cargar":
             self.api_cargar_plantilla(query)
+        elif path == "/descargarCarpeta":
+            self.descargar_carpeta_como_zip(query)
         else:
             self.serve_path(path)
 
@@ -1560,6 +1563,7 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
                 f'<div class="card-name" title="{html.escape(d.name)}">{html.escape(d.name)}</div>'
                 f'<div class="card-meta">{subtxt}</div>'
                 f'<div class="card-actions">'
+                f'<button class="card-btn" onclick="event.preventDefault();event.stopPropagation();descargarCarpeta(\'{del_path}\')" title="Descargar carpeta en ZIP">⬇️</button>'
                 f'<button class="card-btn" onclick="event.preventDefault();event.stopPropagation();renombrarElemento(\'{del_path}\', true)" title="Renombrar carpeta">✏️</button>'
                 f'<button class="card-btn del" onclick="event.preventDefault();event.stopPropagation();confirmDelete(\'{del_path}\',\'{html.escape(d.name, quote=True)}\',true)" title="Eliminar carpeta">🗑️</button>'
                 f'</div>'
@@ -1633,6 +1637,10 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
 <div class="grid">{grid_content}</div>
 <script>
 var rutaActual = {json.dumps(url_path or "/")};
+
+function descargarCarpeta(ruta) {{
+  window.location.href = '/descargarCarpeta?ruta=' + encodeURIComponent(ruta);
+}}
 
 function postMover(origen, destino, nuevoNombre) {{
   var form = document.createElement('form');
@@ -1823,6 +1831,39 @@ initArrastreMover();
 </script>
 </body>
 </html>"""
+
+    def descargar_carpeta_como_zip(self, query: dict):
+        ruta = query.get("ruta", [""])[0]
+        if not ruta:
+            self.send_error(400, "Ruta de carpeta requerida.")
+            return
+
+        ruta_carpeta = self.safe_path(ruta)
+        if ruta_carpeta is None or not os.path.isdir(ruta_carpeta):
+            self.send_error(404, "Carpeta no encontrada.")
+            return
+
+        nombre_carpeta = os.path.basename(ruta_carpeta.rstrip(os.sep)) or "carpeta"
+        nombre_zip = f"{nombre_carpeta}.zip"
+        buffer_zip = io.BytesIO()
+
+        with zipfile.ZipFile(buffer_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+            for raiz, _, archivos in os.walk(ruta_carpeta):
+                for archivo in archivos:
+                    ruta_archivo = os.path.join(raiz, archivo)
+                    ruta_relativa = os.path.relpath(ruta_archivo, ruta_carpeta)
+                    zf.write(ruta_archivo, arcname=ruta_relativa)
+
+        contenido = buffer_zip.getvalue()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Length", str(len(contenido)))
+        self.send_header(
+            "Content-Disposition",
+            f'attachment; filename="{nombre_zip}"',
+        )
+        self.end_headers()
+        self.wfile.write(contenido)
 
     # ── file serving ─────────────────────────────────────────────────────────
 
