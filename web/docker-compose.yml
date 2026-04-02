@@ -1,0 +1,39 @@
+version: "3.8"
+
+services:
+  testweb:
+    build: .
+    environment:
+      HISTORICO_2024: ${HISTORICO_2024:-}
+      HISTORICO_2022: ${HISTORICO_2022:-}
+      PLAZAS_REFERENCIA_SIMULACRO: ${PLAZAS_REFERENCIA_SIMULACRO:-844}
+    restart: unless-stopped
+    volumes:
+      - /mnt/data/bot:/app/bd
+    labels:
+      - "traefik.enable=true"
+
+      # Middlewares
+      - "traefik.http.middlewares.redireccion_https_tests.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.redireccion_https_tests.redirectscheme.permanent=true"
+
+      # Router HTTPS
+      - "traefik.http.routers.testweb.rule=Host(`test.aprentix.es`)"
+      - "traefik.http.routers.testweb.entrypoints=websecure"
+      - "traefik.http.routers.testweb.tls=true"
+      - "traefik.http.routers.testweb.service=testweb"
+
+      # Service
+      - "traefik.http.services.testweb.loadbalancer.server.port=5000"
+
+      # Router HTTP → redirect
+      - "traefik.http.routers.testweb_http.rule=Host(`test.aprentix.es`)"
+      - "traefik.http.routers.testweb_http.entrypoints=web"
+      - "traefik.http.routers.testweb_http.middlewares=redireccion_https_tests"
+
+    networks:
+      - dokploy-network
+
+networks:
+  dokploy-network:
+    external: true
