@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Tests{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Tests</h1>
+</div>
+
+<div class="tabs">
+    <a href="{{ url_for('main.tests', tab='all') }}" class="tab {% if tab == 'all' %}active{% endif %}">Todos</a>
+    <a href="{{ url_for('main.tests', tab='favorites') }}" class="tab {% if tab == 'favorites' %}active{% endif %}">Favoritos</a>
+</div>
+
+{% if tests|length == 0 %}
+<div class="empty-state">
+    <p>{% if tab == 'favorites' %}No tienes tests favoritos.{% else %}No hay tests disponibles.{% endif %}</p>
+</div>
+{% else %}
+<div class="test-list">
+    {% for test in tests %}
+    <div class="test-card">
+        <div class="test-card-body">
+            <div class="test-card-header">
+                <h3 class="test-title">{{ test.title }}</h3>
+                <button class="btn-icon fav-btn {% if test.id in favoritos %}active{% endif %}"
+                        data-quiz-id="{{ test.id }}" onclick="toggleTestFav(this)" title="Favorito">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="{% if test.id in favoritos %}currentColor{% else %}none{% endif %}" stroke="currentColor" stroke-width="2">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                    </svg>
+                </button>
+            </div>
+            {% if test.description %}
+            <p class="test-desc">{{ test.description }}</p>
+            {% endif %}
+            <div class="test-meta">
+                <span>{{ test.total_preguntas }} preguntas</span>
+                {% if test.id in intentos %}
+                <span class="badge badge-info">{{ intentos[test.id] }}x realizado</span>
+                {% endif %}
+                {% if test.id in pendientes %}
+                <span class="badge badge-warning">En curso</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="test-card-actions">
+            <a href="{{ url_for('quiz.quiz_page', quiz_id=test.id) }}" class="btn btn-primary btn-sm">
+                {% if test.id in pendientes %}Continuar{% else %}Empezar{% endif %}
+            </a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if total_pages > 1 %}
+<div class="pagination">
+    {% if page > 1 %}
+    <a href="{{ url_for('main.tests', page=page-1, tab=tab) }}" class="btn btn-outline btn-sm">Anterior</a>
+    {% endif %}
+    <span class="pagination-info">{{ page }} / {{ total_pages }}</span>
+    {% if page < total_pages %}
+    <a href="{{ url_for('main.tests', page=page+1, tab=tab) }}" class="btn btn-outline btn-sm">Siguiente</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endif %}
+
+<script>
+function toggleTestFav(btn) {
+    const quizId = parseInt(btn.dataset.quizId);
+    fetch('/api/toggle-test-fav', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({quiz_id: quizId})
+    })
+    .then(r => r.json())
+    .then(data => {
+        const svg = btn.querySelector('svg polygon');
+        if (data.favorito) {
+            btn.classList.add('active');
+            svg.setAttribute('fill', 'currentColor');
+        } else {
+            btn.classList.remove('active');
+            svg.setAttribute('fill', 'none');
+        }
+    });
+}
+</script>
+{% endblock %}

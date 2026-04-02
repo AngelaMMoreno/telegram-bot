@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Registro{% endblock %}
+
+{% block body %}
+<div class="auth-page">
+    <div class="auth-card">
+        <div class="auth-logo">Aprentix</div>
+        <h1>Crear cuenta</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="flash flash-{{ category }}">{{ message }}</div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <form method="POST" class="auth-form">
+            <div class="form-group">
+                <label for="username">Usuario</label>
+                <input type="text" id="username" name="username" required autocomplete="username"
+                       placeholder="Elige un nombre de usuario" autofocus>
+            </div>
+            <div class="form-group">
+                <label for="password">Contrasena</label>
+                <input type="password" id="password" name="password" required autocomplete="new-password"
+                       placeholder="Minimo 4 caracteres">
+            </div>
+            <div class="form-group">
+                <label for="password2">Repetir contrasena</label>
+                <input type="password" id="password2" name="password2" required autocomplete="new-password"
+                       placeholder="Repite la contrasena">
+            </div>
+            <button type="submit" class="btn btn-primary btn-full">Crear cuenta</button>
+        </form>
+        <p class="auth-link">Ya tienes cuenta? <a href="{{ url_for('auth.login') }}">Inicia sesion</a></p>
+    </div>
+</div>
+{% endblock %}

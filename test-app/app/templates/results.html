@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Resultados{% endblock %}
+
+{% block body %}
+<div class="results-page" id="resultsPage">
+    <div class="results-card">
+        <h1>Resultado</h1>
+        <div class="results-nota" id="resultsNota">-</div>
+        <p class="results-nota-label">sobre 10</p>
+
+        <div class="results-stats">
+            <div class="results-stat">
+                <div class="results-stat-value text-success" id="resCorrect">0</div>
+                <div class="results-stat-label">Aciertos</div>
+            </div>
+            <div class="results-stat">
+                <div class="results-stat-value text-danger" id="resWrong">0</div>
+                <div class="results-stat-label">Fallos</div>
+            </div>
+            <div class="results-stat">
+                <div class="results-stat-value" id="resTotal">0</div>
+                <div class="results-stat-label">Total</div>
+            </div>
+        </div>
+
+        <div class="results-bar">
+            <div class="results-bar-fill results-bar-correct" id="resBarCorrect"></div>
+            <div class="results-bar-fill results-bar-wrong" id="resBarWrong"></div>
+        </div>
+
+        <div class="results-actions">
+            <a href="{{ url_for('main.home') }}" class="btn btn-primary btn-full">Volver al inicio</a>
+            <a href="{{ url_for('main.tests') }}" class="btn btn-outline btn-full">Ver tests</a>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const data = JSON.parse(sessionStorage.getItem('quizResult') || '{}');
+    if (!data.total) {
+        window.location.href = '/';
+        return;
+    }
+    document.getElementById('resultsNota').textContent = data.nota.toFixed(1);
+    const notaEl = document.getElementById('resultsNota');
+    notaEl.classList.add(data.nota >= 5 ? 'text-success' : 'text-danger');
+    document.getElementById('resCorrect').textContent = data.correct;
+    document.getElementById('resWrong').textContent = data.wrong;
+    document.getElementById('resTotal').textContent = data.total;
+    const pctCorrect = (data.correct / data.total * 100).toFixed(1);
+    const pctWrong = (data.wrong / data.total * 100).toFixed(1);
+    document.getElementById('resBarCorrect').style.width = pctCorrect + '%';
+    document.getElementById('resBarWrong').style.width = pctWrong + '%';
+    sessionStorage.removeItem('quizResult');
+});
+</script>
+{% endblock %}

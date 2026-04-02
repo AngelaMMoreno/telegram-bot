@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Simulacros{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Simulacros</h1>
+    <p class="subtitle">Examenes completos con puntuacion oficial</p>
+</div>
+
+{% if simulacros|length == 0 %}
+<div class="empty-state">
+    <p>No hay simulacros disponibles.</p>
+    <p class="text-muted">Los simulacros se crean desde el bot de Telegram.</p>
+</div>
+{% else %}
+<div class="test-list">
+    {% for sim in simulacros %}
+    <div class="test-card">
+        <div class="test-card-body">
+            <h3 class="test-title">{{ sim.nombre }}</h3>
+            <p class="test-desc">Test: {{ sim.test_titulo }}</p>
+            <div class="test-meta">
+                <span>Nota corte: {{ sim.nota_corte_directa }}</span>
+                <span>Escala: {{ sim.escala_maxima }}</span>
+            </div>
+        </div>
+        <div class="test-card-actions">
+            <a href="{{ url_for('quiz.quiz_simulacro', simulacro_id=sim.id) }}" class="btn btn-primary btn-sm">
+                Empezar
+            </a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

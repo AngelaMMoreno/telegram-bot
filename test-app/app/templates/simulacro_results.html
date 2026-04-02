@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Resultados Simulacro{% endblock %}
+
+{% block body %}
+<div class="results-page" id="simResultsPage">
+    <div class="results-card">
+        <h1 id="simTitle">Resultado del Simulacro</h1>
+
+        <div class="sim-section">
+            <h2>Puntuacion Directa</h2>
+            <div class="results-stats">
+                <div class="results-stat">
+                    <div class="results-stat-value" id="simDirectaP1">-</div>
+                    <div class="results-stat-label">Parte 1</div>
+                </div>
+                <div class="results-stat">
+                    <div class="results-stat-value" id="simDirectaP2">-</div>
+                    <div class="results-stat-label">Parte 2</div>
+                </div>
+                <div class="results-stat">
+                    <div class="results-stat-value text-primary" id="simDirectaTotal">-</div>
+                    <div class="results-stat-label">Total</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="sim-section">
+            <h2>Desglose</h2>
+            <div class="results-stats">
+                <div class="results-stat">
+                    <div class="results-stat-value text-success" id="simCorrect">-</div>
+                    <div class="results-stat-label">Aciertos</div>
+                </div>
+                <div class="results-stat">
+                    <div class="results-stat-value text-danger" id="simWrong">-</div>
+                    <div class="results-stat-label">Fallos</div>
+                </div>
+                <div class="results-stat">
+                    <div class="results-stat-value text-muted" id="simBlancos">-</div>
+                    <div class="results-stat-label">En blanco</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="sim-section" id="simTransformada" style="display:none;">
+            <h2>Nota Transformada</h2>
+            <div class="sim-notas">
+                <div class="sim-nota-row">
+                    <span>Escenario optimista</span>
+                    <strong id="simTpsOpt">-</strong>
+                </div>
+                <div class="sim-nota-row">
+                    <span>Escenario medio</span>
+                    <strong id="simTpsMed">-</strong>
+                </div>
+                <div class="sim-nota-row">
+                    <span>Escenario pesimista</span>
+                    <strong id="simTpsPes">-</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="sim-section" id="simAprobado" style="display:none;">
+            <h2>Estado</h2>
+            <div class="sim-status" id="simStatusBox">
+                <span id="simStatusText"></span>
+            </div>
+        </div>
+
+        <div class="sim-section" id="simPosiciones" style="display:none;">
+            <h2>Posicion estimada</h2>
+            <div class="sim-notas">
+                <div class="sim-nota-row" id="simPos2024Row" style="display:none;">
+                    <span>Ranking 2024</span>
+                    <strong id="simPos2024">-</strong>
+                </div>
+                <div class="sim-nota-row" id="simPos2022Row" style="display:none;">
+                    <span>Ranking 2022</span>
+                    <strong id="simPos2022">-</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="results-actions">
+            <a href="/" class="btn btn-primary btn-full">Volver al inicio</a>
+            <a href="/simulacros" class="btn btn-outline btn-full">Ver simulacros</a>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const data = JSON.parse(sessionStorage.getItem('quizResult') || '{}');
+    if (!data.simulacro) {
+        // Fallback to normal results
+        if (data.total) {
+            window.location.href = '/results';
+            return;
+        }
+        window.location.href = '/';
+        return;
+    }
+
+    const s = data.simulacro;
+    document.getElementById('simCorrect').textContent = data.correct;
+    document.getElementById('simWrong').textContent = data.wrong;
+    document.getElementById('simBlancos').textContent = (s.blancos_p1 || 0) + (s.blancos_p2 || 0);
+    document.getElementById('simDirectaP1').textContent = s.directa_p1;
+    document.getElementById('simDirectaP2').textContent = s.directa_p2;
+    document.getElementById('simDirectaTotal').textContent = s.directa_total;
+
+    if (s.tps_optimista !== undefined) {
+        document.getElementById('simTransformada').style.display = '';
+        document.getElementById('simTpsOpt').textContent = s.tps_optimista.toFixed(2);
+        document.getElementById('simTpsMed').textContent = s.tps_medio.toFixed(2);
+        document.getElementById('simTpsPes').textContent = s.tps_pesimista.toFixed(2);
+    }
+
+    document.getElementById('simAprobado').style.display = '';
+    const statusBox = document.getElementById('simStatusBox');
+    const statusText = document.getElementById('simStatusText');
+    if (s.aprobado_optimista && s.aprobado_pesimista) {
+        statusBox.classList.add('sim-status-pass');
+        statusText.textContent = 'APROBADO en todos los escenarios';
+    } else if (s.aprobado_optimista) {
+        statusBox.classList.add('sim-status-maybe');
+        statusText.textContent = 'APROBADO solo en escenario optimista';
+    } else {
+        statusBox.classList.add('sim-status-fail');
+        statusText.textContent = 'NO APROBADO';
+    }
+
+    if (s.pos_2024 !== null || s.pos_2022 !== null) {
+        document.getElementById('simPosiciones').style.display = '';
+        if (s.pos_2024 !== null) {
+            document.getElementById('simPos2024Row').style.display = '';
+            document.getElementById('simPos2024').textContent = '#' + s.pos_2024;
+        }
+        if (s.pos_2022 !== null) {
+            document.getElementById('simPos2022Row').style.display = '';
+            document.getElementById('simPos2022').textContent = '#' + s.pos_2022;
+        }
+    }
+
+    sessionStorage.removeItem('quizResult');
+});
+</script>
+{% endblock %}

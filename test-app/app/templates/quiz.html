@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block body %}
+<div class="quiz-page" id="quizApp">
+    <!-- Loading state -->
+    <div id="quizLoading" class="quiz-loading">
+        <div class="spinner"></div>
+        <p>Cargando test...</p>
+    </div>
+
+    <!-- Error state -->
+    <div id="quizError" class="quiz-error" style="display:none;">
+        <div class="error-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <p id="quizErrorMsg"></p>
+        <a href="{{ url_for('main.home') }}" class="btn btn-primary">Volver al inicio</a>
+    </div>
+
+    <!-- Quiz interface -->
+    <div id="quizInterface" style="display:none;">
+        <div class="quiz-topbar">
+            <button class="btn-icon" onclick="confirmExit()" title="Salir">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            <div class="quiz-progress-text">
+                <span id="qCurrent">1</span>/<span id="qTotal">0</span>
+            </div>
+            <div class="quiz-score">
+                <span class="score-correct" id="scoreCorrect">0</span>
+                <span class="score-wrong" id="scoreWrong">0</span>
+            </div>
+            <div class="quiz-timer" id="quizTimer">20</div>
+        </div>
+
+        <div class="quiz-progress-bar">
+            <div class="quiz-progress-fill" id="quizProgressFill"></div>
+        </div>
+
+        <div class="quiz-content">
+            <div class="question-card">
+                <div class="question-header">
+                    <span class="question-number" id="questionNumber">Pregunta 1</span>
+                    <button class="btn-icon fav-question-btn" id="favBtn" onclick="toggleQuestionFav()" title="Favorita">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                        </svg>
+                    </button>
+                </div>
+                <p class="question-text" id="questionText"></p>
+            </div>
+
+            <div class="options-list" id="optionsList"></div>
+
+            <div class="question-feedback" id="questionFeedback" style="display:none;">
+                <div id="feedbackContent"></div>
+                <div id="feedbackExplanation" class="feedback-explanation" style="display:none;"></div>
+            </div>
+        </div>
+
+        <div class="quiz-bottom-actions">
+            <button class="btn btn-primary btn-full" id="nextBtn" onclick="nextQuestion()" style="display:none;">
+                Siguiente
+            </button>
+            {% if mode == 'simulacro' %}
+            <button class="btn btn-outline btn-full" id="skipBtn" onclick="skipQuestion()" style="display:none;">
+                Dejar en blanco
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Confirm exit modal -->
+    <div class="modal-overlay" id="exitModal" style="display:none;">
+        <div class="modal-card">
+            <h3>Salir del test?</h3>
+            <p>Tu progreso se guardara y podras continuar despues.</p>
+            <div class="modal-actions">
+                <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+                <button class="btn btn-danger" onclick="exitQuiz()">Salir</button>
+                <button class="btn btn-warning" onclick="discardQuiz()">Descartar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const QUIZ_CONFIG = {
+        quizId: {{ quiz_id|tojson }},
+        mode: {{ mode|tojson }},
+        simulacroId: {{ simulacro_id|tojson }},
+        title: {{ title|tojson }},
+        timerSeconds: {{ 20 if mode != 'simulacro' else 0 }},
+    };
+</script>
+<script src="{{ url_for('static', filename='js/quiz.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Progreso{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Progreso</h1>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card stat-card-lg">
+        <div class="stat-value {% if general.nota >= 5 %}text-success{% else %}text-danger{% endif %}">
+            {{ "%.1f"|format(general.nota) }}
+        </div>
+        <div class="stat-label">Nota media global</div>
+        <div class="stat-sublabel">(ultimo intento por test)</div>
+    </div>
+</div>
+
+<div class="stats-grid stats-grid-3">
+    <div class="stat-card">
+        <div class="stat-value text-success">{{ summary.total_correct }}</div>
+        <div class="stat-label">Aciertos</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value text-danger">{{ summary.total_wrong }}</div>
+        <div class="stat-label">Fallos</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ summary.failed_q }}</div>
+        <div class="stat-label">Preguntas falladas</div>
+    </div>
+</div>
+
+{% if por_tests %}
+<h2 class="section-title">Por test</h2>
+<div class="progress-tests-list">
+    {% for test in por_tests %}
+    <div class="progress-test-card">
+        <h3>{{ test.titulo }}</h3>
+        <div class="progress-attempts">
+            {% for intento in test.intentos %}
+            <div class="progress-attempt">
+                <span class="attempt-number">Intento {{ loop.index }}</span>
+                <div class="attempt-bar">
+                    <div class="attempt-bar-fill attempt-bar-correct"
+                         style="width: {{ (intento.correct / (intento.correct + intento.wrong) * 100) if (intento.correct + intento.wrong) > 0 else 0 }}%"></div>
+                </div>
+                <span class="attempt-nota {% if intento.nota >= 5 %}text-success{% else %}text-danger{% endif %}">
+                    {{ "%.1f"|format(intento.nota) }}
+                </span>
+                <span class="attempt-detail">{{ intento.correct }}/{{ intento.correct + intento.wrong }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <p>Aun no has completado ningun test.</p>
+    <a href="{{ url_for('main.tests') }}" class="btn btn-primary">Ver tests</a>
+</div>
+{% endif %}
+{% endblock %}
