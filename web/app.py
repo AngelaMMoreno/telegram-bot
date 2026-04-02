@@ -446,6 +446,137 @@ def get_test_questions(quiz_id):
     return jsonify({"quiz": quiz, "questions": questions})
 
 
+def _obtener_preguntas_por_tests(cur, quiz_ids):
+    if not quiz_ids:
+        return []
+    placeholders = ",".join("?" for _ in quiz_ids)
+    cur.execute(f"SELECT id, text, explicacion FROM questions WHERE quiz_id IN ({placeholders})", quiz_ids)
+    preguntas = []
+    for row in cur.fetchall():
+        cur.execute("SELECT text FROM options WHERE question_id = ? ORDER BY position ASC", (row["id"],))
+        opciones = [o["text"] for o in cur.fetchall()]
+        if len(opciones) < 2:
+            continue
+        preguntas.append({
+            "id": row["id"],
+            "text": row["text"],
+            "explicacion": row["explicacion"],
+            "options": opciones,
+            "correct_index": 0,
+        })
+    random.shuffle(preguntas)
+    return preguntas
+
+
+@app.route("/api/tests/mega/questions", methods=["POST"])
+def get_mega_test_questions():
+    data = request.get_json(force=True)
+    user_id = data.get("user_id")
+    quiz_ids = data.get("quiz_ids") or []
+    solo_favoritos = bool(data.get("solo_favoritos"))
+
+    error_permiso = validar_permiso_gestion(user_id)
+    if error_permiso:
+        return error_permiso
+    if not isinstance(quiz_ids, list) or not quiz_ids:
+        return jsonify({"error": "Debes indicar al menos un test"}), 400
+
+    try:
+        quiz_ids = [int(qid) for qid in quiz_ids]
+    except (TypeError, ValueError):
+        return jsonify({"error": "Lista de tests no valida"}), 400
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        placeholders = ",".join("?" for _ in quiz_ids)
+        cur.execute(f"SELECT id, title FROM quizzes WHERE id IN ({placeholders})", quiz_ids)
+        filas = cur.fetchall()
+        if not filas:
+            return jsonify({"error": "No se encontraron tests"}), 404
+
+        ids_existentes = {f["id"] for f in filas}
+        quiz_ids_validos = [qid for qid in quiz_ids if qid in ids_existentes]
+        if solo_favoritos:
+            p = ",".join("?" for _ in quiz_ids_validos)
+            cur.execute(f"""
+                SELECT quiz_id FROM tests_favoritos
+                WHERE user_id = ? AND quiz_id IN ({p})
+            """, [user_id, *quiz_ids_validos])
+            ids_favoritos = {f["quiz_id"] for f in cur.fetchall()}
+            quiz_ids_validos = [qid for qid in quiz_ids_validos if qid in ids_favoritos]
+        preguntas = _obtener_preguntas_por_tests(cur, quiz_ids_validos)
+
+    return jsonify({
+        "titulo": "Mega test",
+        "total_tests": len(quiz_ids_validos),
+        "questions": preguntas,
+    })
+
+
+@app.route("/api/questions/<int:question_id>", methods=["PUT"])
+def editar_pregunta(question_id):
+    data = request.get_json(force=True)
+    user_id = data.get("user_id")
+    error_permiso = validar_permiso_gestion(user_id)
+    if error_permiso:
+        return error_permiso
+
+    text = (data.get("text") or "").strip()
+    explicacion = (data.get("explicacion") or "").strip() or None
+    opciones = data.get("opciones") or []
+
+    if not text:
+        return jsonify({"error": "El enunciado es obligatorio"}), 400
+    if not isinstance(opciones, list):
+        return jsonify({"error": "Las opciones no son validas"}), 400
+    opciones_limpias = [str(op).strip() for op in opciones if str(op).strip()]
+    if len(opciones_limpias) < 2:
+        return jsonify({"error": "Debes indicar al menos dos respuestas"}), 400
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM questions WHERE id = ?", (question_id,))
+        if not cur.fetchone():
+            return jsonify({"error": "Pregunta no encontrada"}), 404
+        cur.execute("UPDATE questions SET text = ?, explicacion = ? WHERE id = ?", (text, explicacion, question_id))
+        cur.execute("DELETE FROM options WHERE question_id = ?", (question_id,))
+        for i, opcion in enumerate(opciones_limpias):
+            cur.execute(
+                "INSERT INTO options (question_id, text, position) VALUES (?, ?, ?)",
+                (question_id, opcion, i),
+            )
+        conn.commit()
+    return jsonify({
+        "ok": True,
+        "question": {
+            "id": question_id,
+            "text": text,
+            "explicacion": explicacion,
+            "options": opciones_limpias,
+        },
+    })
+
+
+@app.route("/api/questions/<int:question_id>", methods=["DELETE"])
+def eliminar_pregunta(question_id):
+    user_id = request.args.get("user_id", type=int)
+    error_permiso = validar_permiso_gestion(user_id)
+    if error_permiso:
+        return error_permiso
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM questions WHERE id = ?", (question_id,))
+        if not cur.fetchone():
+            return jsonify({"error": "Pregunta no encontrada"}), 404
+        cur.execute("DELETE FROM failures WHERE question_id = ?", (question_id,))
+        cur.execute("DELETE FROM favorites WHERE question_id = ?", (question_id,))
+        cur.execute("DELETE FROM attempt_items WHERE question_id = ?", (question_id,))
+        cur.execute("DELETE FROM options WHERE question_id = ?", (question_id,))
+        cur.execute("DELETE FROM questions WHERE id = ?", (question_id,))
+        conn.commit()
+    return jsonify({"ok": True})
+
+
 # ─────────────── Upload tests ───────────────
 @app.route("/api/tests/upload", methods=["POST"])
 def upload_tests():
@@ -877,6 +1008,10 @@ def listar_simulacros():
 @app.route("/api/simulacros", methods=["POST"])
 def crear_simulacro():
     data = request.get_json(force=True)
+    user_id = data.get("user_id")
+    error_permiso = validar_permiso_gestion(user_id)
+    if error_permiso:
+        return error_permiso
     nombre = (data.get("nombre") or "").strip()
     quiz_id = data.get("quiz_id")
     nota_corte = data.get("nota_corte_directa")
@@ -894,6 +1029,10 @@ def crear_simulacro():
 
 @app.route("/api/simulacros/<int:sim_id>", methods=["DELETE"])
 def eliminar_simulacro(sim_id):
+    user_id = request.args.get("user_id", type=int)
+    error_permiso = validar_permiso_gestion(user_id)
+    if error_permiso:
+        return error_permiso
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM simulacros WHERE id = ?", (sim_id,))
