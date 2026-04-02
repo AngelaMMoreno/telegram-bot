@@ -4,7 +4,6 @@ services:
   test-web:
     build: .
     environment:
-      SECRET_KEY: ${SECRET_KEY:-cambiar-esta-clave-secreta-en-produccion}
       HISTORICO_2024: ${HISTORICO_2024:-}
       HISTORICO_2022: ${HISTORICO_2022:-}
       PLAZAS_REFERENCIA_SIMULACRO: ${PLAZAS_REFERENCIA_SIMULACRO:-844}
