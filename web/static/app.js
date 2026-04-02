@@ -298,7 +298,7 @@
       const qid = parseInt(delBtn.dataset.del);
       if (await confirm("Borrar test", "Se eliminara el test y todos sus datos asociados.")) {
         try {
-          await api(`/tests/${qid}`, { method: "DELETE" });
+          await api(`/tests/${qid}?user_id=${state.userId}`, { method: "DELETE" });
           toast("Test borrado");
           loadTests(1);
         } catch (err) { toast(err.message); }
@@ -331,7 +331,7 @@
   async function downloadAll() {
     try {
       toast("Preparando descarga...");
-      const res = await api("/tests/download-all");
+      const res = await api(`/tests/download-all?user_id=${state.userId}`);
       const blob = await res.blob();
       triggerDownload(blob, "tests.zip");
     } catch (err) { toast(err.message); }
@@ -339,7 +339,7 @@
 
   async function downloadDb() {
     try {
-      const res = await api("/db/download");
+      const res = await api(`/db/download?user_id=${state.userId}`);
       const blob = await res.blob();
       triggerDownload(blob, "bot.db");
     } catch (err) { toast(err.message); }
