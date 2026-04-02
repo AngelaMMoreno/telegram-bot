@@ -22,6 +22,7 @@
     megaModo: false,
     megaSeleccionados: new Set(),
     megaTestsPagina: [],
+    testsPaginaActual: 1,
   };
 
   /* ── API helper ── */
@@ -244,12 +245,14 @@
 
   /* ── Tests list ── */
   async function loadTests(page) {
+    state.testsPaginaActual = page;
     showView("tests");
     const listEl = document.getElementById("test-list");
     const pagEl = document.getElementById("test-pagination");
     const titleEl = document.getElementById("tests-title");
     const panelMega = document.getElementById("panel-mega-test");
     const botonMegaModo = document.getElementById("btn-mega-modo");
+    const resumenMega = document.getElementById("mega-seleccion-resumen");
     listEl.innerHTML = '<div class="spinner"></div>';
     pagEl.innerHTML = "";
 
@@ -258,6 +261,7 @@
     titleEl.textContent = state.favFilter ? "Tests favoritos" : "Mis tests";
     panelMega.classList.toggle("hidden", !state.megaModo || !state.puedeGestionar);
     botonMegaModo.classList.toggle("active", state.megaModo);
+    resumenMega.textContent = `${state.megaSeleccionados.size} tests seleccionados`;
     state.megaTestsPagina = [];
 
     try {
@@ -380,11 +384,11 @@
   });
   document.getElementById("btn-seleccionar-pagina").addEventListener("click", () => {
     for (const id of state.megaTestsPagina) state.megaSeleccionados.add(id);
-    loadTests(1);
+    loadTests(state.testsPaginaActual);
   });
   document.getElementById("btn-deseleccionar-pagina").addEventListener("click", () => {
     for (const id of state.megaTestsPagina) state.megaSeleccionados.delete(id);
-    loadTests(1);
+    loadTests(state.testsPaginaActual);
   });
   document.getElementById("btn-iniciar-mega-test").addEventListener("click", async () => {
     if (!state.puedeGestionar) return;

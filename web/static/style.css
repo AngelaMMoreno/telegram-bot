@@ -266,6 +266,11 @@ body {
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
+.mega-seleccion-resumen {
+  width: 100%;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
 
 /* ── Upload ── */
 .upload-area { padding: 16px; }
