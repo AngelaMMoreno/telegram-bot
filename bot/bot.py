@@ -75,10 +75,10 @@ def cargar_lista_usuarios_desde_entorno(nombre_variable):
     try:
         datos = json.loads(valor)
         if isinstance(datos, list):
-            return {str(item).strip() for item in datos if str(item).strip()}
+            return {str(item).strip().lower() for item in datos if str(item).strip()}
     except json.JSONDecodeError:
         pass
-    return {item.strip() for item in valor.split(",") if item.strip()}
+    return {item.strip().lower() for item in valor.split(",") if item.strip()}
 
 
 USUARIOS_GESTION_TESTS = cargar_lista_usuarios_desde_entorno("USUARIOS_GESTION_TESTS")
@@ -269,6 +269,8 @@ def obtener_username_autenticado(context):
 
 def usuario_tiene_permiso_gestion_en_bot(context):
     username = obtener_username_autenticado(context)
+    if username:
+        username = username.strip().lower()
     return bool(username and username in USUARIOS_GESTION_TESTS)
 
 

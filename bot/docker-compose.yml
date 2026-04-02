@@ -5,6 +5,7 @@ services:
     build: .
     environment:
       TOKEN: ${TOKEN}
+      USUARIOS_GESTION_TESTS: ${USUARIOS_GESTION_TESTS:-}
     restart: unless-stopped
     volumes:
       - /mnt/data/bot:/app/bd
@@ -14,4 +15,3 @@ services:
 networks:
   dokploy-network:
     external: true
-
