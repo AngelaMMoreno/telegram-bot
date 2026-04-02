@@ -2640,14 +2640,23 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     elif modo == "login_contrasenya":
         contrasenya = (update.message.text or "").strip()
+        if update.message:
+            try:
+                await update.message.delete()
+            except Exception:
+                pass
         username = context.user_data.get("usuario_login_temporal")
         if not username or not contrasenya:
-            await update.message.reply_text("❌ Usuario o contrasenya no validos.")
+            await context.bot.send_message(
+                update.effective_chat.id,
+                "❌ Usuario o contrasenya no validos.",
+            )
             context.user_data["modo"] = "login_usuario"
             return
         user_id = autenticar_usuario_web(username, contrasenya)
         if not user_id:
-            await update.message.reply_text(
+            await context.bot.send_message(
+                update.effective_chat.id,
                 "❌ Credenciales incorrectas. Escribe de nuevo tu usuario:"
             )
             context.user_data["modo"] = "login_usuario"
