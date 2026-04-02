@@ -3,6 +3,7 @@ import os
 import json
 import random
 import sqlite3
+import hashlib
 import zipfile
 from math import ceil
 from datetime import datetime
@@ -55,6 +56,32 @@ PLAZAS_REFERENCIA_SIMULACRO = int(os.getenv("PLAZAS_REFERENCIA_SIMULACRO", "844"
 N_MAX_SIMULACRO = 160       # Puntuación directa máxima (80 + 80)
 E_MAX_SIMULACRO = 100       # Calificación máxima transformada
 MIN_DIRECTA_SIMULACRO = N_MAX_SIMULACRO * 0.30  # 48 pts — mínimo 30%
+
+
+def verificar_contrasenya(contrasenya_plana, almacenada):
+    if ":" not in almacenada:
+        return False
+    salt = almacenada.split(":")[0]
+    hash_calculado = hashlib.pbkdf2_hmac(
+        "sha256", contrasenya_plana.encode(), salt.encode(), 200_000
+    )
+    return f"{salt}:{hash_calculado.hex()}" == almacenada
+
+
+def cargar_lista_usuarios_desde_entorno(nombre_variable):
+    valor = (os.getenv(nombre_variable) or "").strip()
+    if not valor:
+        return set()
+    try:
+        datos = json.loads(valor)
+        if isinstance(datos, list):
+            return {str(item).strip().lower() for item in datos if str(item).strip()}
+    except json.JSONDecodeError:
+        pass
+    return {item.strip().lower() for item in valor.split(",") if item.strip()}
+
+
+USUARIOS_GESTION_TESTS = cargar_lista_usuarios_desde_entorno("USUARIOS_GESTION_TESTS")
 
 
 # ─────────────── DB ───────────────
@@ -220,6 +247,49 @@ def get_or_create_user(chat_id):
         )
         conn.commit()
         return cur.lastrowid
+
+
+def obtener_sesion(context):
+    return context.user_data.get("sesion")
+
+
+def obtener_user_id_autenticado(context):
+    sesion = obtener_sesion(context)
+    if not sesion:
+        return None
+    return sesion.get("user_id")
+
+
+def obtener_username_autenticado(context):
+    sesion = obtener_sesion(context)
+    if not sesion:
+        return None
+    return sesion.get("username")
+
+
+def usuario_tiene_permiso_gestion_en_bot(context):
+    username = obtener_username_autenticado(context)
+    if username:
+        username = username.strip().lower()
+    return bool(username and username in USUARIOS_GESTION_TESTS)
+
+
+def autenticar_usuario_web(username, contrasenya):
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT user_id, password_hash FROM web_users WHERE username = ?",
+                (username,),
+            )
+            fila = cur.fetchone()
+            if not fila:
+                return None
+            if not verificar_contrasenya(contrasenya, fila["password_hash"]):
+                return None
+            return fila["user_id"]
+    except sqlite3.OperationalError:
+        return None
 
 
 def asegurar_columna_descripcion(conn):
@@ -1802,7 +1872,34 @@ async def tiempo_agotado(context: ContextTypes.DEFAULT_TYPE):
 
 # ─────────────── /start ───────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await mostrar_menu(update.message.chat.id, context, "👋 Bienvenido al TestBot")
+    chat_id = update.message.chat.id
+    if obtener_sesion(context):
+        await mostrar_menu(chat_id, context, "👋 Bienvenido al TestBot")
+        return
+    context.user_data["modo"] = "login_usuario"
+    context.user_data.pop("usuario_login_temporal", None)
+    await context.bot.send_message(
+        chat_id,
+        "🔐 Para usar el bot tienes que iniciar sesión.\n"
+        "Escribe tu nombre de usuario de la web:",
+    )
+
+
+async def notificar_login_requerido(chat_id, context):
+    context.user_data["modo"] = "login_usuario"
+    context.user_data.pop("usuario_login_temporal", None)
+    await context.bot.send_message(
+        chat_id,
+        "🔐 Debes iniciar sesión para usar el bot.\n"
+        "Escribe tu nombre de usuario de la web:",
+    )
+
+
+async def notificar_permiso_admin_requerido(chat_id, context):
+    await context.bot.send_message(
+        chat_id,
+        "⛔ Esta acción está restringida a los usuarios administradores.",
+    )
 
 
 # ─────────────── Menú principal ───────────────
@@ -1939,6 +2036,26 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
     chat_id = query.message.chat.id
+    if not obtener_sesion(context):
+        await notificar_login_requerido(chat_id, context)
+        return
+
+    acciones_restringidas = (
+        data == "subir_zip"
+        or data == "borrar_tests"
+        or data == "descargar_todos_tests"
+        or data == "descargar_bd"
+        or data.startswith("borrar_tests_pagina_")
+        or data.startswith("borrar_")
+        or data.startswith("confirmar_borrar_")
+        or data.startswith("editar_pregunta_json_")
+        or data.startswith("explicacion_")
+        or data.startswith("eliminar_pregunta_")
+        or data.startswith("confirmar_eliminar_pregunta_")
+    )
+    if acciones_restringidas and not usuario_tiene_permiso_gestion_en_bot(context):
+        await notificar_permiso_admin_requerido(chat_id, context)
+        return
 
     if data == "ver_mas":
         quiz = context.user_data.get("quiz")
@@ -2007,7 +2124,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await mostrar_tests_para_descargar(chat_id, context, pagina=pagina)
     elif data.startswith("favorito_test_"):
         quiz_id = int(data.split("_")[-1])
-        user_id = get_or_create_user(chat_id)
+        user_id = obtener_user_id_autenticado(context)
         if es_test_favorito(user_id, quiz_id):
             quitar_test_favorito(user_id, quiz_id)
             await query.message.reply_text("✅ Test quitado de favoritos.")
@@ -2018,7 +2135,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await mostrar_tests(chat_id, context, pagina=pagina)
     elif data.startswith("empezar_"):
         quiz_id = int(data.split("_")[1])
-        user_id = get_or_create_user(chat_id)
+        user_id = obtener_user_id_autenticado(context)
         quiz_en_curso = context.user_data.get("quiz")
         # Primero comprobar estado en memoria
         reanudable_memoria = obtener_quiz_reanudable(quiz_en_curso, quiz_id)
@@ -2083,7 +2200,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tipo_pendiente = pendiente.get("tipo", "quiz")
         if pendiente.get("desde_bd") and tipo_pendiente == "quiz":
             # Reconstruir estado desde la BD
-            user_id = get_or_create_user(chat_id)
+            user_id = obtener_user_id_autenticado(context)
             quiz_reconstruido = reconstruir_quiz_desde_db(
                 user_id, pendiente["quiz_id"], pendiente["telegram_user_id"]
             )
@@ -2101,7 +2218,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             await enviar_pregunta(chat_id, context)
         elif pendiente.get("desde_bd") and tipo_pendiente in {"failures", "favoritas"}:
-            user_id = get_or_create_user(chat_id)
+            user_id = obtener_user_id_autenticado(context)
             quiz_reconstruido = reconstruir_test_temporal_desde_db(
                 user_id, tipo_pendiente, pendiente["telegram_user_id"]
             )
@@ -2125,7 +2242,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not pendiente:
             await query.message.reply_text("No hay ningún test pendiente para reiniciar.")
             return
-        user_id = get_or_create_user(chat_id)
+        user_id = obtener_user_id_autenticado(context)
         tipo_pendiente = pendiente.get("tipo", "quiz")
         cerrar_intento_en_curso(context)
         # También cerrar intentos pendientes en BD
@@ -2190,7 +2307,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "progreso":
         await mostrar_progreso(chat_id, context)
     elif data == "test_fallos":
-        user_id = get_or_create_user(chat_id)
+        user_id = obtener_user_id_autenticado(context)
         quiz_en_curso = context.user_data.get("quiz")
         reanudable_memoria = obtener_test_temporal_reanudable(quiz_en_curso, "failures")
         reanudable_bd = False
@@ -2235,7 +2352,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id, context, telegram_user_id=query.from_user.id
             )
     elif data == "test_favoritas":
-        user_id = get_or_create_user(chat_id)
+        user_id = obtener_user_id_autenticado(context)
         quiz_en_curso = context.user_data.get("quiz")
         reanudable_memoria = obtener_test_temporal_reanudable(quiz_en_curso, "favoritas")
         reanudable_bd = False
@@ -2484,7 +2601,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await mostrar_opciones_post_respuesta(chat_id, context, pregunta_id)
     elif data.startswith("favorita_"):
         quiz = context.user_data.get("quiz", {})
-        user_id = quiz.get("user_id") or get_or_create_user(chat_id)
+        user_id = quiz.get("user_id") or obtener_user_id_autenticado(context)
         pregunta_id = int(data.split("_")[1])
         if es_pregunta_favorita(user_id, pregunta_id):
             quitar_favorita(user_id, pregunta_id)
@@ -2499,7 +2616,42 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─────────────── Texto pegado ───────────────
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     modo = context.user_data.get("modo")
-    if modo == "editar_explicacion":
+    if modo == "login_usuario":
+        username = (update.message.text or "").strip()
+        if not username:
+            await update.message.reply_text("❌ El usuario no puede estar vacío.")
+            return
+        context.user_data["usuario_login_temporal"] = username
+        context.user_data["modo"] = "login_contrasenya"
+        await update.message.reply_text("🔑 Escribe tu contraseña:")
+        return
+    elif modo == "login_contrasenya":
+        contrasenya = (update.message.text or "").strip()
+        username = context.user_data.get("usuario_login_temporal")
+        if not username or not contrasenya:
+            await update.message.reply_text("❌ Usuario o contraseña no válidos.")
+            context.user_data["modo"] = "login_usuario"
+            return
+        user_id = autenticar_usuario_web(username, contrasenya)
+        if not user_id:
+            await update.message.reply_text(
+                "❌ Credenciales incorrectas. Escribe de nuevo tu usuario:"
+            )
+            context.user_data["modo"] = "login_usuario"
+            context.user_data.pop("usuario_login_temporal", None)
+            return
+        context.user_data["sesion"] = {"user_id": user_id, "username": username}
+        context.user_data.pop("usuario_login_temporal", None)
+        context.user_data.pop("modo", None)
+        await mostrar_menu(update.message.chat.id, context, f"✅ Sesión iniciada como {username}")
+        return
+    elif not obtener_sesion(context):
+        await notificar_login_requerido(update.message.chat.id, context)
+        return
+    elif modo == "editar_explicacion":
+        if not usuario_tiene_permiso_gestion_en_bot(context):
+            await notificar_permiso_admin_requerido(update.message.chat.id, context)
+            return
         explicacion = update.message.text.strip()
         if not explicacion:
             await update.message.reply_text("❌ La explicación no puede estar vacía.")
@@ -2515,6 +2667,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=obtener_markup_volver_pregunta(),
         )
     elif modo == "editar_pregunta_json":
+        if not usuario_tiene_permiso_gestion_en_bot(context):
+            await notificar_permiso_admin_requerido(update.message.chat.id, context)
+            return
         pregunta_id = context.user_data.get("pregunta_json_id")
         if not pregunta_id:
             context.user_data.pop("modo", None)
@@ -2637,6 +2792,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def fin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not obtener_sesion(context):
+        await notificar_login_requerido(update.message.chat.id, context)
+        return
     modo = context.user_data.get("modo")
     if modo == "crear_test_json":
         text = context.user_data.pop("buffer", "")
@@ -2648,8 +2806,15 @@ async def fin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not obtener_sesion(context):
+        await notificar_login_requerido(update.message.chat.id, context)
+        return
     modo = context.user_data.get("modo")
     if modo == "subir_zip":
+        if not usuario_tiene_permiso_gestion_en_bot(context):
+            await notificar_permiso_admin_requerido(update.message.chat.id, context)
+            context.user_data.pop("modo", None)
+            return
         documento = update.message.document
         if not documento:
             return
@@ -2816,7 +2981,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─────────────── Mostrar tests ───────────────
 async def mostrar_tests(chat_id, context, pagina=1):
-    user_id = get_or_create_user(chat_id)
+    user_id = obtener_user_id_autenticado(context)
     total_tests = contar_tests()
     if total_tests == 0:
         await context.bot.send_message(chat_id, "No hay tests creados.")
@@ -2885,7 +3050,7 @@ async def mostrar_tests(chat_id, context, pagina=1):
 
 
 async def mostrar_tests_favoritos(chat_id, context, pagina=1):
-    user_id = get_or_create_user(chat_id)
+    user_id = obtener_user_id_autenticado(context)
     total_tests_favoritos = contar_tests_favoritos(user_id)
     if total_tests_favoritos == 0:
         await context.bot.send_message(chat_id, "No tienes tests favoritos guardados.")
@@ -3051,7 +3216,7 @@ async def iniciar_quiz(
     telegram_user_id=None,
     configuracion_simulacro=None,
 ):
-    user_id = get_or_create_user(chat_id)
+    user_id = obtener_user_id_autenticado(context)
     # Cerrar cualquier quiz en memoria antes de empezar uno nuevo
     cerrar_intento_en_curso(context)
     questions = load_quiz_questions(quiz_id)
@@ -3100,7 +3265,7 @@ async def iniciar_test_favoritas(chat_id, context, telegram_user_id=None):
 async def iniciar_test_temporal(
     chat_id, context, tipo_intento, telegram_user_id=None, forzar_nuevo=False
 ):
-    user_id = get_or_create_user(chat_id)
+    user_id = obtener_user_id_autenticado(context)
     if forzar_nuevo:
         descartar_intentos_pendientes_por_tipo(user_id, tipo_intento)
 
@@ -3329,7 +3494,7 @@ def construir_botones_post_respuesta(user_id, question_id):
 
 async def mostrar_opciones_post_respuesta(chat_id, context, question_id):
     quiz = context.user_data.get("quiz", {})
-    user_id = quiz.get("user_id") or get_or_create_user(chat_id)
+    user_id = quiz.get("user_id") or obtener_user_id_autenticado(context)
     markup = construir_botones_post_respuesta(user_id, question_id)
     await context.bot.send_message(
         chat_id,
@@ -3349,6 +3514,9 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     chat_id = query.message.chat.id
+    if not obtener_sesion(context):
+        await notificar_login_requerido(chat_id, context)
+        return
 
     quiz = context.user_data.get("quiz")
     if not quiz:
@@ -3392,7 +3560,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─────────────── Progreso ───────────────
 async def mostrar_progreso(chat_id, context):
-    user_id = get_or_create_user(chat_id)
+    user_id = obtener_user_id_autenticado(context)
     progreso_general = get_progreso_general(user_id)
     progreso_tests = get_progreso_por_tests(user_id)
     preguntas_respondidas_hoy = contar_preguntas_respondidas_hoy(user_id)
