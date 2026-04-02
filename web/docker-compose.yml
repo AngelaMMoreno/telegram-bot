@@ -21,6 +21,7 @@ services:
       - "traefik.http.routers.testweb.rule=Host(`test.aprentix.es`)"
       - "traefik.http.routers.testweb.entrypoints=websecure"
       - "traefik.http.routers.testweb.tls=true"
+      - "traefik.http.routers.testweb.tls.certresolver=letsencrypt"
       - "traefik.http.routers.testweb.service=testweb"
 
       # Service
