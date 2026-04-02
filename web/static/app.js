@@ -155,7 +155,7 @@
     const chatId = document.getElementById("reg-chatid").value.trim();
 
     if (!username || !password) return;
-    if (password !== password2) { toast("Las contrasenyas no coinciden"); return; }
+    if (password !== password2) { toast("Las contraseñas no coinciden"); return; }
 
     const body = { username, password };
     if (linkTelegram && chatId) body.chat_id = chatId;

@@ -246,11 +246,11 @@ def register():
     chat_id = (data.get("chat_id") or "").strip()
 
     if not username or not password:
-        return jsonify({"error": "Usuario y contrasenya requeridos"}), 400
+        return jsonify({"error": "Usuario y contraseña requeridos"}), 400
     if len(username) < 3:
         return jsonify({"error": "El usuario debe tener al menos 3 caracteres"}), 400
     if len(password) < 4:
-        return jsonify({"error": "La contrasenya debe tener al menos 4 caracteres"}), 400
+        return jsonify({"error": "La contraseña debe tener al menos 4 caracteres"}), 400
 
     with get_conn() as conn:
         cur = conn.cursor()
@@ -300,14 +300,14 @@ def login():
     password = (data.get("password") or "")
 
     if not username or not password:
-        return jsonify({"error": "Usuario y contrasenya requeridos"}), 400
+        return jsonify({"error": "Usuario y contraseña requeridos"}), 400
 
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("SELECT id, password_hash, user_id FROM web_users WHERE username = ?", (username,))
         row = cur.fetchone()
         if not row or not verify_password(password, row["password_hash"]):
-            return jsonify({"error": "Usuario o contrasenya incorrectos"}), 401
+            return jsonify({"error": "Usuario o contraseña incorrectos"}), 401
 
     return jsonify({
         "user_id": row["user_id"],
