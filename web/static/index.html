@@ -18,10 +18,38 @@
         <h1>Aprentix</h1>
         <p class="login-subtitle">Plataforma de tests</p>
       </div>
+
+      <!-- Login form -->
       <form id="login-form" class="login-form">
-        <label for="chat-id-input">Identificador de usuario</label>
-        <input type="text" id="chat-id-input" placeholder="Tu ID de Telegram" required autocomplete="username">
+        <label for="login-username">Usuario</label>
+        <input type="text" id="login-username" placeholder="Tu nombre de usuario" required autocomplete="username">
+        <label for="login-password">Contrasenya</label>
+        <input type="password" id="login-password" placeholder="Tu contrasenya" required autocomplete="current-password">
         <button type="submit" class="btn btn-primary btn-block">Entrar</button>
+        <p class="auth-switch">No tienes cuenta? <a href="#" id="show-register">Registrate</a></p>
+      </form>
+
+      <!-- Register form -->
+      <form id="register-form" class="login-form hidden">
+        <label for="reg-username">Usuario</label>
+        <input type="text" id="reg-username" placeholder="Elige un nombre de usuario" required autocomplete="username" minlength="3">
+        <label for="reg-password">Contrasenya</label>
+        <input type="password" id="reg-password" placeholder="Elige una contrasenya" required autocomplete="new-password" minlength="4">
+        <label for="reg-password2">Repetir contrasenya</label>
+        <input type="password" id="reg-password2" placeholder="Repite la contrasenya" required autocomplete="new-password">
+        <div class="link-telegram-section">
+          <label class="checkbox-label">
+            <input type="checkbox" id="reg-link-telegram">
+            <span>Vincular cuenta de Telegram existente</span>
+          </label>
+          <div id="reg-chatid-wrapper" class="hidden">
+            <label for="reg-chatid">Chat ID de Telegram</label>
+            <input type="text" id="reg-chatid" placeholder="Tu chat_id numerico">
+            <p class="input-hint">Escribe a @userinfobot en Telegram para obtener tu ID</p>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Registrarse</button>
+        <p class="auth-switch">Ya tienes cuenta? <a href="#" id="show-login">Inicia sesion</a></p>
       </form>
     </div>
   </div>

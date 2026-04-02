@@ -8,7 +8,7 @@
   /* ── State ── */
   let state = {
     userId: null,
-    chatId: null,
+    username: null,
     favFilter: false,
     // quiz state
     quiz: null,        // { questions, title, attemptId, type, simulacro }
@@ -78,31 +78,76 @@
 
   /* ── Session ── */
   function saveSession() {
-    localStorage.setItem("aprentix_session", JSON.stringify({ userId: state.userId, chatId: state.chatId }));
+    localStorage.setItem("aprentix_session", JSON.stringify({ userId: state.userId, username: state.username }));
   }
   function loadSession() {
     try {
       const s = JSON.parse(localStorage.getItem("aprentix_session"));
-      if (s && s.userId) { state.userId = s.userId; state.chatId = s.chatId; return true; }
+      if (s && s.userId) { state.userId = s.userId; state.username = s.username; return true; }
     } catch (_) {}
     return false;
   }
   function clearSession() {
     state.userId = null;
-    state.chatId = null;
+    state.username = null;
     localStorage.removeItem("aprentix_session");
   }
+
+  /* ── Auth: toggle forms ── */
+  document.getElementById("show-register").addEventListener("click", (e) => {
+    e.preventDefault();
+    document.getElementById("login-form").classList.add("hidden");
+    document.getElementById("register-form").classList.remove("hidden");
+  });
+  document.getElementById("show-login").addEventListener("click", (e) => {
+    e.preventDefault();
+    document.getElementById("register-form").classList.add("hidden");
+    document.getElementById("login-form").classList.remove("hidden");
+  });
+
+  /* ── Auth: link telegram checkbox ── */
+  document.getElementById("reg-link-telegram").addEventListener("change", (e) => {
+    document.getElementById("reg-chatid-wrapper").classList.toggle("hidden", !e.target.checked);
+  });
 
   /* ── Login ── */
   document.getElementById("login-form").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const chatId = document.getElementById("chat-id-input").value.trim();
-    if (!chatId) return;
+    const username = document.getElementById("login-username").value.trim();
+    const password = document.getElementById("login-password").value;
+    if (!username || !password) return;
     try {
-      const data = await api("/auth/login", { method: "POST", body: { chat_id: chatId } });
+      const data = await api("/auth/login", { method: "POST", body: { username, password } });
       state.userId = data.user_id;
-      state.chatId = data.chat_id;
+      state.username = data.username;
       saveSession();
+      enterApp();
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+
+  /* ── Register ── */
+  document.getElementById("register-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const username = document.getElementById("reg-username").value.trim();
+    const password = document.getElementById("reg-password").value;
+    const password2 = document.getElementById("reg-password2").value;
+    const linkTelegram = document.getElementById("reg-link-telegram").checked;
+    const chatId = document.getElementById("reg-chatid").value.trim();
+
+    if (!username || !password) return;
+    if (password !== password2) { toast("Las contrasenyas no coinciden"); return; }
+
+    const body = { username, password };
+    if (linkTelegram && chatId) body.chat_id = chatId;
+
+    try {
+      const data = await api("/auth/register", { method: "POST", body });
+      state.userId = data.user_id;
+      state.username = data.username;
+      saveSession();
+      toast("Cuenta creada correctamente");
       enterApp();
     } catch (err) {
       toast(err.message);
@@ -111,6 +156,8 @@
 
   document.getElementById("btn-logout").addEventListener("click", () => {
     clearSession();
+    document.getElementById("register-form").classList.add("hidden");
+    document.getElementById("login-form").classList.remove("hidden");
     showView("login");
   });
 
