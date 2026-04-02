@@ -506,7 +506,7 @@ def obtener_tests_realizados(user_id):
             SELECT DISTINCT quiz_id
             FROM attempts
             WHERE user_id = ?
-              AND attempt_type = 'quiz'
+              AND attempt_type IN ('quiz', 'mega_test')
               AND finished_at IS NOT NULL
               AND quiz_id IS NOT NULL
             """,
@@ -694,7 +694,7 @@ def get_progreso_por_tests(user_id):
             FROM attempts a
             JOIN quizzes q ON q.id = a.quiz_id
             WHERE a.user_id = ?
-              AND a.attempt_type = 'quiz'
+              AND a.attempt_type IN ('quiz', 'mega_test')
               AND a.finished_at IS NOT NULL
             ORDER BY q.id, a.started_at
             """,
@@ -877,7 +877,7 @@ def obtener_tests_pendientes(user_id):
             SELECT DISTINCT quiz_id
             FROM attempts
             WHERE user_id = ?
-              AND attempt_type = 'quiz'
+              AND attempt_type IN ('quiz', 'mega_test')
               AND finished_at IS NULL
               AND quiz_id IS NOT NULL
             """,
@@ -896,7 +896,7 @@ def obtener_intento_pendiente(user_id, quiz_id):
             FROM attempts
             WHERE user_id = ?
               AND quiz_id = ?
-              AND attempt_type = 'quiz'
+              AND attempt_type IN ('quiz', 'mega_test')
               AND finished_at IS NULL
             ORDER BY started_at DESC
             LIMIT 1
@@ -915,7 +915,6 @@ def obtener_intento_pendiente_por_tipo(user_id, tipo_intento):
         "test_fallos": ["failures", "test_fallos"],
         "favoritas": ["favoritas", "test_favoritas"],
         "test_favoritas": ["favoritas", "test_favoritas"],
-        "mega_test": ["mega_test"],
     }
     tipos = equivalencias.get(tipo_intento, [tipo_intento])
     with get_conn() as conn:
@@ -956,40 +955,6 @@ def obtener_preguntas_respondidas(attempt_id):
         return {fila["question_id"] for fila in cur.fetchall()}
 
 
-def listar_intentos_pendientes_por_tipo(user_id, tipo_intento):
-    with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT id, nombre, started_at
-            FROM attempts
-            WHERE user_id = ?
-              AND attempt_type = ?
-              AND finished_at IS NULL
-            ORDER BY started_at DESC
-            """,
-            (user_id, tipo_intento),
-        )
-        return [dict(fila) for fila in cur.fetchall()]
-
-
-def obtener_intento_pendiente_por_id(user_id, intento_id):
-    with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT id, attempt_type, nombre
-            FROM attempts
-            WHERE id = ?
-              AND user_id = ?
-              AND finished_at IS NULL
-            """,
-            (intento_id, user_id),
-        )
-        fila = cur.fetchone()
-        return dict(fila) if fila else None
-
-
 def descartar_intentos_pendientes(user_id, quiz_id=None):
     """Elimina intentos sin terminar de un usuario (opcionalmente para un quiz específico)."""
     with get_conn() as conn:
@@ -999,7 +964,10 @@ def descartar_intentos_pendientes(user_id, quiz_id=None):
                 """
                 SELECT id
                 FROM attempts
-                WHERE user_id = ? AND quiz_id = ? AND finished_at IS NULL AND attempt_type = 'quiz'
+                WHERE user_id = ?
+                  AND quiz_id = ?
+                  AND finished_at IS NULL
+                  AND attempt_type IN ('quiz', 'mega_test')
                 """,
                 (user_id, quiz_id),
             )
@@ -1008,7 +976,9 @@ def descartar_intentos_pendientes(user_id, quiz_id=None):
                 """
                 SELECT id
                 FROM attempts
-                WHERE user_id = ? AND finished_at IS NULL AND attempt_type = 'quiz'
+                WHERE user_id = ?
+                  AND finished_at IS NULL
+                  AND attempt_type IN ('quiz', 'mega_test')
                 """,
                 (user_id,),
             )
@@ -1026,7 +996,6 @@ def descartar_intentos_pendientes_por_tipo(user_id, tipo_intento):
         "test_fallos": ["failures", "test_fallos"],
         "favoritas": ["favoritas", "test_favoritas"],
         "test_favoritas": ["favoritas", "test_favoritas"],
-        "mega_test": ["mega_test"],
     }
     tipos = equivalencias.get(tipo_intento, [tipo_intento])
     with get_conn() as conn:
@@ -1851,45 +1820,6 @@ def reconstruir_test_temporal_desde_db(user_id, tipo_intento, telegram_user_id):
     }
 
 
-def reconstruir_test_temporal_desde_db_por_intento(user_id, intento_id, telegram_user_id):
-    info_intento = obtener_intento_pendiente_por_id(user_id, intento_id)
-    if not info_intento:
-        return None
-    tipo_intento = info_intento["attempt_type"]
-    preguntas = obtener_test_temporal(intento_id)
-    if not preguntas:
-        return None
-    respondidas = obtener_preguntas_respondidas(intento_id)
-    ok = 0
-    fail = 0
-    with get_conn() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT is_correct FROM attempt_items WHERE attempt_id = ?",
-            (intento_id,),
-        )
-        for fila in cur.fetchall():
-            if fila["is_correct"]:
-                ok += 1
-            else:
-                fail += 1
-    preguntas_pendientes = [q for q in preguntas if q["id"] not in respondidas]
-    if not preguntas_pendientes:
-        return None
-    return {
-        "questions": preguntas_pendientes,
-        "i": 0,
-        "ok": ok,
-        "fail": fail,
-        "attempt_id": intento_id,
-        "attempt_type": tipo_intento,
-        "user_id": user_id,
-        "telegram_user_id": telegram_user_id,
-        "total_original": len(preguntas),
-        "respondidas_count": len(respondidas),
-    }
-
-
 async def volver_a_contexto_anterior(chat_id, context):
     contexto = context.user_data.pop("contexto_cancelable", None)
     if not contexto:
@@ -2049,7 +1979,6 @@ async def mostrar_menu(chat_id, context, texto="Selecciona una opción:"):
             [InlineKeyboardButton("⚠️ Test de fallos", callback_data="test_fallos")],
             [InlineKeyboardButton("⭐ Hacer tests favoritos", callback_data="tests_favoritos")],
             [InlineKeyboardButton("⭐ Test de favoritas", callback_data="test_favoritas")],
-            [InlineKeyboardButton("🧠 Mega tests (web)", callback_data="mega_tests_web")],
             [InlineKeyboardButton("🧪 Simulacros", callback_data="menu_simulacros")],
         ]
     )
@@ -2531,32 +2460,6 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await iniciar_test_favoritas(
                 chat_id, context, telegram_user_id=query.from_user.id
             )
-    elif data == "mega_tests_web":
-        await mostrar_mega_tests_web(chat_id, context)
-    elif data.startswith("mega_test_web_"):
-        intento_id = int(data.split("_")[-1])
-        user_id = obtener_user_id_autenticado(context)
-        intento = obtener_intento_pendiente_por_id(user_id, intento_id)
-        if not intento or intento.get("attempt_type") != "mega_test":
-            await query.message.reply_text("Ese mega test ya no está disponible.")
-            await mostrar_menu(chat_id, context)
-            return
-        quiz_reconstruido = reconstruir_test_temporal_desde_db_por_intento(
-            user_id, intento_id, query.from_user.id
-        )
-        if not quiz_reconstruido:
-            await query.message.reply_text("No se pudo recuperar el mega test.")
-            await mostrar_menu(chat_id, context)
-            return
-        cerrar_intento_en_curso(context)
-        context.user_data["quiz"] = quiz_reconstruido
-        total = quiz_reconstruido["total_original"]
-        respondidas = quiz_reconstruido["respondidas_count"]
-        await query.message.reply_text(
-            f"▶️ Reanudando mega test: {respondidas}/{total} preguntas respondidas "
-            f"(✔️ {quiz_reconstruido['ok']} ❌ {quiz_reconstruido['fail']})"
-        )
-        await enviar_pregunta(chat_id, context)
     elif data == "simulacro_sin_contestar":
         quiz = context.user_data.get("quiz")
         if not quiz or quiz.get("attempt_type") != "simulacro":
@@ -3271,31 +3174,6 @@ async def mostrar_tests_favoritos(chat_id, context, pagina=1):
     await context.bot.send_message(
         chat_id,
         f"Selecciona un test favorito (página {pagina}/{total_paginas}):",
-        reply_markup=InlineKeyboardMarkup(botones),
-    )
-
-
-async def mostrar_mega_tests_web(chat_id, context):
-    user_id = obtener_user_id_autenticado(context)
-    intentos = listar_intentos_pendientes_por_tipo(user_id, "mega_test")
-    if not intentos:
-        await context.bot.send_message(chat_id, "No tienes mega tests web pendientes.")
-        return
-
-    botones = []
-    for intento in intentos[:20]:
-        preguntas = obtener_test_temporal(intento["id"])
-        respondidas = len(obtener_preguntas_respondidas(intento["id"]))
-        total = len(preguntas)
-        nombre = intento.get("nombre") or f"Mega test #{intento['id']}"
-        etiqueta = f"{nombre} ({respondidas}/{total})"
-        botones.append(
-            [InlineKeyboardButton(etiqueta, callback_data=f"mega_test_web_{intento['id']}")]
-        )
-    botones.append([InlineKeyboardButton("☰ Menú", callback_data="menu")])
-    await context.bot.send_message(
-        chat_id,
-        "Selecciona un mega test web para retomarlo:",
         reply_markup=InlineKeyboardMarkup(botones),
     )
 
