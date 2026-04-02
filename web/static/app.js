@@ -292,7 +292,6 @@
     else if (action === "upload") showView("upload");
     else if (action === "fallos") startFailuresTest();
     else if (action === "favoritas") startFavoritesTest();
-    else if (action === "mega-pausados") listarMegaTestsPausados();
     else if (action === "simulacros") loadSimulacros();
     else if (action === "progreso") loadProgress();
     else if (action === "download-all") downloadAll();
@@ -462,43 +461,24 @@
       return;
     }
     try {
-      const estadoReanudacion = await comprobar_reanudacion("mega_test", null, "Mega test");
-      if (estadoReanudacion === "reanudo") return;
-
-      const d = await api("/tests/mega/questions", {
-        method: "POST",
-        body: {
-          user_id: state.userId,
-          quiz_ids: Array.from(state.megaSeleccionados),
-          solo_favoritos: state.favFilter,
-        },
-      });
-      if (!d.questions.length) {
-        toast("No hay preguntas disponibles");
-        return;
-      }
       const nombreMegaTest = (prompt("Nombre del mega test", `Mega test ${new Date().toLocaleDateString("es-ES")}`) || "").trim();
       if (!nombreMegaTest) {
         toast("Debes indicar un nombre para el mega test");
         return;
       }
-      const preguntasMezcladas = shuffle(d.questions);
-      const att = await api("/attempts/start", {
+      const d = await api("/tests/mega/crear", {
         method: "POST",
         body: {
           user_id: state.userId,
-          quiz_id: null,
-          attempt_type: "mega_test",
           nombre: nombreMegaTest,
-          question_ids: preguntasMezcladas.map((p) => p.id),
+          quiz_ids: Array.from(state.megaSeleccionados),
+          solo_favoritos: state.favFilter,
         },
       });
-      inicializar_estado_quiz({
-        questions: preguntasMezcladas,
-        title: nombreMegaTest,
-        attemptId: att.attempt_id,
-        type: "mega_test",
-      });
+      state.megaSeleccionados.clear();
+      state.megaModo = false;
+      toast(`Mega test creado como test normal (${d.total_preguntas} preguntas)`);
+      loadTests(1);
     } catch (err) {
       toast(err.message);
     }
@@ -528,24 +508,6 @@
       const blob = await res.blob();
       triggerDownload(blob, "bot.db");
     } catch (err) { toast(err.message); }
-  }
-
-  async function listarMegaTestsPausados() {
-    try {
-      const d = await api(`/attempts/pending?user_id=${state.userId}&attempt_type=mega_test`);
-      if (!d.attempt) {
-        toast("No tienes mega tests pausados");
-        return;
-      }
-      const continuar = await confirm(
-        "Mega test pausado",
-        `Se encontró "${d.attempt.nombre || "Mega test"}". ¿Quieres retomarlo ahora?`
-      );
-      if (!continuar) return;
-      await reanudar_intento(d.attempt.id, d.attempt.nombre || "Mega test");
-    } catch (err) {
-      toast(err.message);
-    }
   }
 
   function triggerDownload(blob, name) {
