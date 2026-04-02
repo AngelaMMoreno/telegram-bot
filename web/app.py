@@ -3,12 +3,28 @@ import io
 import json
 import random
 import sqlite3
+import hashlib
+import secrets
 import zipfile
 from math import ceil
 from datetime import datetime
 from flask import Flask, request, jsonify, send_from_directory, send_file
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
+
+
+def hash_password(password, salt=None):
+    if salt is None:
+        salt = secrets.token_hex(16)
+    h = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 200_000)
+    return salt + ":" + h.hex()
+
+
+def verify_password(password, stored):
+    if ":" not in stored:
+        return False
+    salt = stored.split(":")[0]
+    return hash_password(password, salt) == stored
 
 DB_FILE = os.path.join("/app/bd", "bot.db")
 
@@ -154,23 +170,93 @@ def index():
     return send_from_directory("static", "index.html")
 
 
+# ─────────────── DB init (web_users table) ───────────────
+def init_web_db():
+    with get_conn() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS web_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
+        conn.commit()
+
+init_web_db()
+
+
 # ─────────────── Auth / User ───────────────
+@app.route("/api/auth/register", methods=["POST"])
+def register():
+    data = request.get_json(force=True)
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "")
+    chat_id = (data.get("chat_id") or "").strip()
+
+    if not username or not password:
+        return jsonify({"error": "Usuario y contrasenya requeridos"}), 400
+    if len(username) < 3:
+        return jsonify({"error": "El usuario debe tener al menos 3 caracteres"}), 400
+    if len(password) < 4:
+        return jsonify({"error": "La contrasenya debe tener al menos 4 caracteres"}), 400
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        # Check if username already taken
+        cur.execute("SELECT 1 FROM web_users WHERE username = ?", (username,))
+        if cur.fetchone():
+            return jsonify({"error": "Ese nombre de usuario ya existe"}), 409
+
+        now = datetime.utcnow().isoformat()
+
+        if chat_id:
+            # Link to existing Telegram user
+            cur.execute("SELECT id FROM users WHERE chat_id = ?", (chat_id,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "No se encontro un usuario con ese chat_id de Telegram"}), 404
+            user_id = row["id"]
+            # Check if this chat_id is already linked
+            cur.execute("SELECT 1 FROM web_users WHERE user_id = ?", (user_id,))
+            if cur.fetchone():
+                return jsonify({"error": "Ese chat_id ya esta vinculado a otra cuenta"}), 409
+        else:
+            # Create new user entry with a generated chat_id
+            generated_chat_id = "web_" + secrets.token_hex(8)
+            cur.execute("INSERT INTO users (chat_id, created_at) VALUES (?, ?)", (generated_chat_id, now))
+            user_id = cur.lastrowid
+
+        password_hash = hash_password(password)
+        cur.execute(
+            "INSERT INTO web_users (username, password_hash, user_id, created_at) VALUES (?, ?, ?, ?)",
+            (username, password_hash, user_id, now),
+        )
+        conn.commit()
+
+    return jsonify({"user_id": user_id, "username": username})
+
+
 @app.route("/api/auth/login", methods=["POST"])
 def login():
     data = request.get_json(force=True)
-    chat_id = (data.get("chat_id") or "").strip()
-    if not chat_id:
-        return jsonify({"error": "chat_id requerido"}), 400
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "")
+
+    if not username or not password:
+        return jsonify({"error": "Usuario y contrasenya requeridos"}), 400
+
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id FROM users WHERE chat_id = ?", (chat_id,))
+        cur.execute("SELECT id, password_hash, user_id FROM web_users WHERE username = ?", (username,))
         row = cur.fetchone()
-        if row:
-            return jsonify({"user_id": row["id"], "chat_id": chat_id})
-        now = datetime.utcnow().isoformat()
-        cur.execute("INSERT INTO users (chat_id, created_at) VALUES (?, ?)", (chat_id, now))
-        conn.commit()
-        return jsonify({"user_id": cur.lastrowid, "chat_id": chat_id})
+        if not row or not verify_password(password, row["password_hash"]):
+            return jsonify({"error": "Usuario o contrasenya incorrectos"}), 401
+
+    return jsonify({"user_id": row["user_id"], "username": username})
 
 
 # ─────────────── Tests (quizzes) ───────────────

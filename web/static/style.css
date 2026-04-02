@@ -138,6 +138,24 @@ body {
   transition: border-color 0.15s;
 }
 .login-form input:focus { border-color: var(--primary); }
+.auth-switch { text-align: center; font-size: 0.9rem; color: var(--text-secondary); margin-top: 8px; }
+.auth-switch a { color: var(--primary); text-decoration: none; font-weight: 600; }
+.link-telegram-section { margin-bottom: 16px; }
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+.checkbox-label input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--primary);
+}
+.input-hint { font-size: 0.78rem; color: var(--text-secondary); margin-top: -10px; margin-bottom: 12px; }
+#reg-chatid-wrapper label { margin-top: 8px; }
 
 /* ── Menu ── */
 .menu-stats {
