@@ -219,6 +219,70 @@
     } catch (_) {}
   }
 
+  function inicializar_estado_quiz(quiz) {
+    state.quiz = quiz;
+    state.qi = 0;
+    state.correct = quiz.correct || 0;
+    state.wrong = quiz.wrong || 0;
+    state.blank = 0;
+    state.answered = false;
+    document.getElementById("quiz-title").textContent = quiz.title;
+    showView("quiz");
+    renderQuestion();
+  }
+
+  async function obtener_intento_pendiente(tipo, quizId = null) {
+    const qs = new URLSearchParams({
+      user_id: String(state.userId),
+      attempt_type: tipo,
+    });
+    if (quizId !== null && quizId !== undefined) qs.set("quiz_id", String(quizId));
+    const d = await api(`/attempts/pending?${qs.toString()}`);
+    return d.attempt || null;
+  }
+
+  async function reanudar_intento(attemptId, tituloFallback) {
+    const d = await api(`/attempts/${attemptId}/resume`, {
+      method: "POST",
+      body: { user_id: state.userId },
+    });
+    if (!d.questions.length) {
+      toast("Ese intento ya no tiene preguntas pendientes");
+      return false;
+    }
+    inicializar_estado_quiz({
+      questions: d.questions,
+      title: d.nombre || tituloFallback || "Test",
+      attemptId: d.attempt_id,
+      type: d.attempt_type,
+      quizId: d.quiz_id || null,
+      correct: d.correct,
+      wrong: d.wrong,
+      totalOriginal: d.total_original,
+      respondidas: d.respondidas,
+    });
+    return true;
+  }
+
+  async function comprobar_reanudacion(tipo, quizId, titulo) {
+    const pendiente = await obtener_intento_pendiente(tipo, quizId);
+    if (!pendiente) return null;
+    const continuar = await confirm(
+      "Test pendiente",
+      "Tienes un test a medias. ¿Quieres continuarlo donde lo dejaste?"
+    );
+    if (continuar) {
+      const ok = await reanudar_intento(pendiente.id, pendiente.nombre || titulo);
+      if (ok) return "reanudo";
+    } else {
+      await api(`/attempts/${pendiente.id}/discard`, {
+        method: "POST",
+        body: { user_id: state.userId },
+      });
+    }
+    return "reiniciar";
+  }
+
   /* ── Menu actions ── */
   document.querySelector(".menu-grid").addEventListener("click", (e) => {
     const card = e.target.closest(".menu-card");
@@ -228,6 +292,7 @@
     else if (action === "upload") showView("upload");
     else if (action === "fallos") startFailuresTest();
     else if (action === "favoritas") startFavoritesTest();
+    else if (action === "mega-pausados") listarMegaTestsPausados();
     else if (action === "simulacros") loadSimulacros();
     else if (action === "progreso") loadProgress();
     else if (action === "download-all") downloadAll();
@@ -397,6 +462,9 @@
       return;
     }
     try {
+      const estadoReanudacion = await comprobar_reanudacion("mega_test", null, "Mega test");
+      if (estadoReanudacion === "reanudo") return;
+
       const d = await api("/tests/mega/questions", {
         method: "POST",
         body: {
@@ -409,24 +477,28 @@
         toast("No hay preguntas disponibles");
         return;
       }
+      const nombreMegaTest = (prompt("Nombre del mega test", `Mega test ${new Date().toLocaleDateString("es-ES")}`) || "").trim();
+      if (!nombreMegaTest) {
+        toast("Debes indicar un nombre para el mega test");
+        return;
+      }
+      const preguntasMezcladas = shuffle(d.questions);
       const att = await api("/attempts/start", {
         method: "POST",
-        body: { user_id: state.userId, quiz_id: null, attempt_type: "mega_test" },
+        body: {
+          user_id: state.userId,
+          quiz_id: null,
+          attempt_type: "mega_test",
+          nombre: nombreMegaTest,
+          question_ids: preguntasMezcladas.map((p) => p.id),
+        },
       });
-      state.quiz = {
-        questions: shuffle(d.questions),
-        title: d.titulo || "Mega test",
+      inicializar_estado_quiz({
+        questions: preguntasMezcladas,
+        title: nombreMegaTest,
         attemptId: att.attempt_id,
         type: "mega_test",
-      };
-      state.qi = 0;
-      state.correct = 0;
-      state.wrong = 0;
-      state.blank = 0;
-      state.answered = false;
-      document.getElementById("quiz-title").textContent = state.quiz.title;
-      showView("quiz");
-      renderQuestion();
+      });
     } catch (err) {
       toast(err.message);
     }
@@ -456,6 +528,24 @@
       const blob = await res.blob();
       triggerDownload(blob, "bot.db");
     } catch (err) { toast(err.message); }
+  }
+
+  async function listarMegaTestsPausados() {
+    try {
+      const d = await api(`/attempts/pending?user_id=${state.userId}&attempt_type=mega_test`);
+      if (!d.attempt) {
+        toast("No tienes mega tests pausados");
+        return;
+      }
+      const continuar = await confirm(
+        "Mega test pausado",
+        `Se encontró "${d.attempt.nombre || "Mega test"}". ¿Quieres retomarlo ahora?`
+      );
+      if (!continuar) return;
+      await reanudar_intento(d.attempt.id, d.attempt.nombre || "Mega test");
+    } catch (err) {
+      toast(err.message);
+    }
   }
 
   function triggerDownload(blob, name) {
@@ -523,71 +613,82 @@
   /* ── Start quiz ── */
   async function startQuiz(quizId) {
     try {
+      const estadoReanudacion = await comprobar_reanudacion("quiz", quizId, "Test");
+      if (estadoReanudacion === "reanudo") return;
       const d = await api(`/tests/${quizId}/questions`);
       if (!d.questions.length) { toast("El test no tiene preguntas"); return; }
+      const preguntasMezcladas = shuffle(d.questions);
       const att = await api("/attempts/start", {
         method: "POST",
-        body: { user_id: state.userId, quiz_id: quizId, attempt_type: "quiz" },
+        body: {
+          user_id: state.userId,
+          quiz_id: quizId,
+          attempt_type: "quiz",
+          nombre: d.quiz.title,
+          question_ids: preguntasMezcladas.map((p) => p.id),
+        },
       });
-      state.quiz = {
-        questions: shuffle(d.questions),
+      inicializar_estado_quiz({
+        questions: preguntasMezcladas,
         title: d.quiz.title,
         attemptId: att.attempt_id,
         type: "quiz",
         quizId: quizId,
-      };
-      state.qi = 0;
-      state.correct = 0;
-      state.wrong = 0;
-      state.blank = 0;
-      state.answered = false;
-      document.getElementById("quiz-title").textContent = d.quiz.title;
-      showView("quiz");
-      renderQuestion();
+      });
     } catch (err) { toast(err.message); }
   }
 
   /* ── Failures test ── */
   async function startFailuresTest() {
     try {
+      const estadoReanudacion = await comprobar_reanudacion("test_fallos", null, "Test de fallos");
+      if (estadoReanudacion === "reanudo") return;
       const d = await api("/failures/questions?user_id=" + state.userId);
       if (!d.questions.length) { toast("No tienes preguntas falladas"); return; }
+      const preguntasMezcladas = shuffle(d.questions);
       const att = await api("/attempts/start", {
         method: "POST",
-        body: { user_id: state.userId, quiz_id: null, attempt_type: "test_fallos" },
+        body: {
+          user_id: state.userId,
+          quiz_id: null,
+          attempt_type: "test_fallos",
+          nombre: "Test de fallos",
+          question_ids: preguntasMezcladas.map((p) => p.id),
+        },
       });
-      state.quiz = {
-        questions: shuffle(d.questions),
+      inicializar_estado_quiz({
+        questions: preguntasMezcladas,
         title: "Test de fallos",
         attemptId: att.attempt_id,
         type: "test_fallos",
-      };
-      state.qi = 0; state.correct = 0; state.wrong = 0; state.blank = 0; state.answered = false;
-      document.getElementById("quiz-title").textContent = "Test de fallos";
-      showView("quiz");
-      renderQuestion();
+      });
     } catch (err) { toast(err.message); }
   }
 
   /* ── Favorites test ── */
   async function startFavoritesTest() {
     try {
+      const estadoReanudacion = await comprobar_reanudacion("test_favoritas", null, "Test de favoritas");
+      if (estadoReanudacion === "reanudo") return;
       const d = await api("/favorites/questions?user_id=" + state.userId);
       if (!d.questions.length) { toast("No tienes preguntas favoritas"); return; }
+      const preguntasMezcladas = shuffle(d.questions);
       const att = await api("/attempts/start", {
         method: "POST",
-        body: { user_id: state.userId, quiz_id: null, attempt_type: "test_favoritas" },
+        body: {
+          user_id: state.userId,
+          quiz_id: null,
+          attempt_type: "test_favoritas",
+          nombre: "Test de favoritas",
+          question_ids: preguntasMezcladas.map((p) => p.id),
+        },
       });
-      state.quiz = {
-        questions: shuffle(d.questions),
+      inicializar_estado_quiz({
+        questions: preguntasMezcladas,
         title: "Test de favoritas",
         attemptId: att.attempt_id,
         type: "test_favoritas",
-      };
-      state.qi = 0; state.correct = 0; state.wrong = 0; state.blank = 0; state.answered = false;
-      document.getElementById("quiz-title").textContent = "Test de favoritas";
-      showView("quiz");
-      renderQuestion();
+      });
     } catch (err) { toast(err.message); }
   }
 
@@ -681,8 +782,10 @@
 
   /* ── Quit quiz ── */
   document.getElementById("btn-quit-quiz").addEventListener("click", async () => {
-    if (await confirm("Salir del test", "Se guardara tu progreso actual.")) {
-      await finishQuiz();
+    if (await confirm("Pausar test", "Se guardará tu progreso para retomarlo después.")) {
+      state.quiz = null;
+      showView("menu");
+      loadMenuStats();
     }
   });
 

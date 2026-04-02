@@ -232,6 +232,11 @@ def init_web_db():
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
         """)
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(attempts)")
+        columnas = {fila["name"] for fila in cur.fetchall()}
+        if "nombre" not in columnas:
+            cur.execute("ALTER TABLE attempts ADD COLUMN nombre TEXT")
         conn.commit()
 
 init_web_db()
@@ -465,6 +470,27 @@ def _obtener_preguntas_por_tests(cur, quiz_ids):
             "correct_index": 0,
         })
     random.shuffle(preguntas)
+    return preguntas
+
+
+def _obtener_preguntas_por_ids(cur, preguntas_ids):
+    preguntas = []
+    for pregunta_id in preguntas_ids:
+        cur.execute("SELECT id, text, explicacion FROM questions WHERE id = ?", (pregunta_id,))
+        fila = cur.fetchone()
+        if not fila:
+            continue
+        cur.execute("SELECT text FROM options WHERE question_id = ? ORDER BY position ASC", (pregunta_id,))
+        opciones = [op["text"] for op in cur.fetchall()]
+        if not opciones:
+            continue
+        preguntas.append({
+            "id": fila["id"],
+            "text": fila["text"],
+            "explicacion": fila["explicacion"],
+            "options": opciones,
+            "correct_index": 0,
+        })
     return preguntas
 
 
@@ -775,17 +801,175 @@ def start_attempt():
     user_id = data.get("user_id")
     quiz_id = data.get("quiz_id")
     attempt_type = data.get("attempt_type", "quiz")
+    nombre = (data.get("nombre") or "").strip() or None
+    question_ids = data.get("question_ids") or []
     if not user_id:
         return jsonify({"error": "user_id requerido"}), 400
+    if not isinstance(question_ids, list):
+        return jsonify({"error": "question_ids debe ser una lista"}), 400
 
     now = datetime.utcnow().isoformat()
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("INSERT INTO attempts (user_id, quiz_id, attempt_type, started_at) VALUES (?, ?, ?, ?)",
-                     (user_id, quiz_id, attempt_type, now))
+        cur.execute(
+            "INSERT INTO attempts (user_id, quiz_id, attempt_type, started_at, nombre) VALUES (?, ?, ?, ?, ?)",
+            (user_id, quiz_id, attempt_type, now, nombre),
+        )
         conn.commit()
         attempt_id = cur.lastrowid
+        for posicion, question_id in enumerate(question_ids):
+            try:
+                question_id_int = int(question_id)
+            except (TypeError, ValueError):
+                continue
+            cur.execute(
+                """
+                INSERT INTO tests_temporales (attempt_id, question_id, posicion)
+                VALUES (?, ?, ?)
+                """,
+                (attempt_id, question_id_int, posicion),
+            )
+        conn.commit()
     return jsonify({"attempt_id": attempt_id})
+
+
+def _obtener_preguntas_intento(cur, attempt_id, quiz_id):
+    cur.execute(
+        """
+        SELECT question_id
+        FROM tests_temporales
+        WHERE attempt_id = ?
+        ORDER BY posicion ASC
+        """,
+        (attempt_id,),
+    )
+    preguntas_ids = [fila["question_id"] for fila in cur.fetchall()]
+    if preguntas_ids:
+        return _obtener_preguntas_por_ids(cur, preguntas_ids)
+    if quiz_id:
+        cur.execute("SELECT id FROM questions WHERE quiz_id = ? ORDER BY id ASC", (quiz_id,))
+        return _obtener_preguntas_por_ids(cur, [fila["id"] for fila in cur.fetchall()])
+    return []
+
+
+@app.route("/api/attempts/pending")
+def pending_attempt():
+    user_id = request.args.get("user_id", type=int)
+    attempt_type = request.args.get("attempt_type", type=str, default="quiz")
+    quiz_id = request.args.get("quiz_id", type=int)
+    if not user_id:
+        return jsonify({"error": "user_id requerido"}), 400
+    with get_conn() as conn:
+        cur = conn.cursor()
+        equivalencias = {
+            "test_fallos": ["test_fallos", "failures"],
+            "failures": ["test_fallos", "failures"],
+            "test_favoritas": ["test_favoritas", "favoritas"],
+            "favoritas": ["test_favoritas", "favoritas"],
+            "quiz": ["quiz"],
+            "mega_test": ["mega_test"],
+        }
+        tipos = equivalencias.get(attempt_type, [attempt_type])
+        placeholders = ",".join("?" for _ in tipos)
+        if quiz_id is not None:
+            cur.execute(
+                f"""
+                SELECT id, attempt_type, quiz_id, nombre, started_at
+                FROM attempts
+                WHERE user_id = ? AND attempt_type IN ({placeholders}) AND quiz_id = ? AND finished_at IS NULL
+                ORDER BY started_at DESC
+                LIMIT 1
+                """,
+                [user_id, *tipos, quiz_id],
+            )
+        else:
+            cur.execute(
+                f"""
+                SELECT id, attempt_type, quiz_id, nombre, started_at
+                FROM attempts
+                WHERE user_id = ? AND attempt_type IN ({placeholders}) AND finished_at IS NULL
+                ORDER BY started_at DESC
+                LIMIT 1
+                """,
+                [user_id, *tipos],
+            )
+        intento = dict_row(cur.fetchone())
+        if not intento:
+            return jsonify({"attempt": None})
+
+        cur.execute("SELECT COUNT(*) AS total FROM attempt_items WHERE attempt_id = ?", (intento["id"],))
+        respondidas = cur.fetchone()["total"]
+        preguntas = _obtener_preguntas_intento(cur, intento["id"], intento["quiz_id"])
+        return jsonify({
+            "attempt": intento,
+            "respondidas": respondidas,
+            "total": len(preguntas),
+        })
+
+
+@app.route("/api/attempts/<int:attempt_id>/resume", methods=["POST"])
+def resume_attempt(attempt_id):
+    data = request.get_json(force=True)
+    user_id = data.get("user_id")
+    if not user_id:
+        return jsonify({"error": "user_id requerido"}), 400
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT id, quiz_id, attempt_type, nombre
+            FROM attempts
+            WHERE id = ? AND user_id = ? AND finished_at IS NULL
+            """,
+            (attempt_id, user_id),
+        )
+        intento = cur.fetchone()
+        if not intento:
+            return jsonify({"error": "Intento no encontrado"}), 404
+
+        preguntas = _obtener_preguntas_intento(cur, intento["id"], intento["quiz_id"])
+        if not preguntas:
+            return jsonify({"error": "No hay preguntas para reanudar"}), 404
+
+        cur.execute("SELECT question_id, is_correct FROM attempt_items WHERE attempt_id = ?", (attempt_id,))
+        filas_respondidas = cur.fetchall()
+        respondidas_ids = {fila["question_id"] for fila in filas_respondidas}
+        correctas = sum(1 for fila in filas_respondidas if fila["is_correct"])
+        incorrectas = sum(1 for fila in filas_respondidas if not fila["is_correct"])
+        pendientes = [q for q in preguntas if q["id"] not in respondidas_ids]
+
+        return jsonify({
+            "attempt_id": intento["id"],
+            "quiz_id": intento["quiz_id"],
+            "attempt_type": intento["attempt_type"],
+            "nombre": intento["nombre"],
+            "questions": pendientes,
+            "total_original": len(preguntas),
+            "respondidas": len(respondidas_ids),
+            "correct": correctas,
+            "wrong": incorrectas,
+        })
+
+
+@app.route("/api/attempts/<int:attempt_id>/discard", methods=["POST"])
+def discard_attempt(attempt_id):
+    data = request.get_json(force=True)
+    user_id = data.get("user_id")
+    if not user_id:
+        return jsonify({"error": "user_id requerido"}), 400
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT 1 FROM attempts WHERE id = ? AND user_id = ? AND finished_at IS NULL",
+            (attempt_id, user_id),
+        )
+        if not cur.fetchone():
+            return jsonify({"error": "Intento no encontrado"}), 404
+        cur.execute("DELETE FROM attempt_items WHERE attempt_id = ?", (attempt_id,))
+        cur.execute("DELETE FROM tests_temporales WHERE attempt_id = ?", (attempt_id,))
+        cur.execute("DELETE FROM attempts WHERE id = ?", (attempt_id,))
+        conn.commit()
+    return jsonify({"ok": True})
 
 
 @app.route("/api/attempts/<int:attempt_id>/answer", methods=["POST"])
