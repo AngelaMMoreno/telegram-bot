@@ -238,10 +238,33 @@ def init_web_db():
         columnas = {fila["name"] for fila in cur.fetchall()}
         if "nombre" not in columnas:
             cur.execute("ALTER TABLE attempts ADD COLUMN nombre TEXT")
-        # Índices para acelerar las queries JOIN de preguntas y opciones
+        # Tabla junction quiz_questions (relación muchos a muchos)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS quiz_questions (
+                quiz_id INTEGER NOT NULL,
+                question_id INTEGER NOT NULL,
+                position INTEGER,
+                PRIMARY KEY (quiz_id, question_id),
+                FOREIGN KEY (quiz_id) REFERENCES quizzes(id),
+                FOREIGN KEY (question_id) REFERENCES questions(id)
+            )
+        """)
+        # Migrar datos existentes de questions.quiz_id a quiz_questions
+        cur.execute("SELECT COUNT(*) AS c FROM quiz_questions")
+        if cur.fetchone()["c"] == 0:
+            cur.execute("SELECT id, quiz_id FROM questions WHERE quiz_id IS NOT NULL")
+            filas = cur.fetchall()
+            if filas:
+                cur.executemany(
+                    "INSERT OR IGNORE INTO quiz_questions (quiz_id, question_id) VALUES (?, ?)",
+                    [(f["quiz_id"], f["id"]) for f in filas],
+                )
+        # Índices para acelerar las queries JOIN
         cur.execute("CREATE INDEX IF NOT EXISTS idx_options_question_id ON options(question_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_questions_quiz_id ON questions(quiz_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tests_temporales_attempt_id ON tests_temporales(attempt_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_quiz_questions_quiz_id ON quiz_questions(quiz_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_quiz_questions_question_id ON quiz_questions(question_id)")
         conn.commit()
 
 init_web_db()
@@ -337,9 +360,9 @@ def listar_tests():
         cur.execute("SELECT COUNT(*) AS total FROM quizzes")
         total = cur.fetchone()["total"]
         cur.execute("""
-            SELECT q.id, q.title, q.description, COUNT(que.id) AS total_preguntas
+            SELECT q.id, q.title, q.description, COUNT(qq.question_id) AS total_preguntas
             FROM quizzes q
-            LEFT JOIN questions que ON que.quiz_id = q.id
+            LEFT JOIN quiz_questions qq ON qq.quiz_id = q.id
             GROUP BY q.id ORDER BY q.id DESC
             LIMIT ? OFFSET ?
         """, (TAMANO_PAGINA_TESTS, offset))
@@ -391,10 +414,10 @@ def listar_tests_favoritos():
         cur.execute("SELECT COUNT(*) AS total FROM tests_favoritos WHERE user_id = ?", (user_id,))
         total = cur.fetchone()["total"]
         cur.execute("""
-            SELECT q.id, q.title, q.description, COUNT(que.id) AS total_preguntas
+            SELECT q.id, q.title, q.description, COUNT(qq.question_id) AS total_preguntas
             FROM tests_favoritos tf
             JOIN quizzes q ON q.id = tf.quiz_id
-            LEFT JOIN questions que ON que.quiz_id = q.id
+            LEFT JOIN quiz_questions qq ON qq.quiz_id = q.id
             WHERE tf.user_id = ?
             GROUP BY q.id ORDER BY tf.created_at DESC
             LIMIT ? OFFSET ?
@@ -441,9 +464,10 @@ def get_test_questions(quiz_id):
             return jsonify({"error": "Test no encontrado"}), 404
         cur.execute("""
             SELECT q.id, q.text, q.explicacion, o.text AS opt_text, o.position AS opt_position
-            FROM questions q
+            FROM quiz_questions qq
+            JOIN questions q ON q.id = qq.question_id
             LEFT JOIN options o ON o.question_id = q.id
-            WHERE q.quiz_id = ?
+            WHERE qq.quiz_id = ?
             ORDER BY q.id, o.position
         """, (quiz_id,))
         questions = _agrupar_preguntas_desde_filas(cur.fetchall())
@@ -490,9 +514,10 @@ def _obtener_preguntas_por_tests(cur, quiz_ids):
     placeholders = ",".join("?" for _ in quiz_ids)
     cur.execute(f"""
         SELECT q.id, q.text, q.explicacion, o.text AS opt_text, o.position AS opt_position
-        FROM questions q
+        FROM quiz_questions qq
+        JOIN questions q ON q.id = qq.question_id
         LEFT JOIN options o ON o.question_id = q.id
-        WHERE q.quiz_id IN ({placeholders})
+        WHERE qq.quiz_id IN ({placeholders})
         ORDER BY q.id, o.position
     """, quiz_ids)
     todas = _agrupar_preguntas_desde_filas(cur.fetchall(), min_opciones=2)
@@ -572,45 +597,25 @@ def get_mega_test_questions():
 
 
 def _crear_test_desde_preguntas(cur, nombre_test, preguntas_ids):
+    """Crea un test nuevo enlazando preguntas existentes (sin copiarlas)."""
     ahora = datetime.utcnow().isoformat()
     cur.execute(
         "INSERT INTO quizzes (title, description, created_at) VALUES (?, ?, ?)",
         (nombre_test, None, ahora),
     )
     quiz_id_nuevo = cur.lastrowid
-    total_preguntas = 0
-
-    for pregunta_id in preguntas_ids:
-        cur.execute(
-            "SELECT text, explicacion, bloque, tema FROM questions WHERE id = ?",
-            (pregunta_id,),
-        )
-        pregunta = cur.fetchone()
-        if not pregunta:
-            continue
-
-        cur.execute(
-            "INSERT INTO questions (quiz_id, text, explicacion, bloque, tema) VALUES (?, ?, ?, ?, ?)",
-            (quiz_id_nuevo, pregunta["text"], pregunta["explicacion"], pregunta["bloque"], pregunta["tema"]),
-        )
-        pregunta_nueva_id = cur.lastrowid
-
-        cur.execute(
-            "SELECT text, position FROM options WHERE question_id = ? ORDER BY position ASC",
-            (pregunta_id,),
-        )
-        opciones = cur.fetchall()
-        if len(opciones) < 2:
-            cur.execute("DELETE FROM questions WHERE id = ?", (pregunta_nueva_id,))
-            continue
-
-        for opcion in opciones:
-            cur.execute(
-                "INSERT INTO options (question_id, text, position) VALUES (?, ?, ?)",
-                (pregunta_nueva_id, opcion["text"], opcion["position"]),
+    # Verificar que las preguntas existen
+    if preguntas_ids:
+        placeholders = ",".join("?" for _ in preguntas_ids)
+        cur.execute(f"SELECT id FROM questions WHERE id IN ({placeholders})", preguntas_ids)
+        ids_existentes = {row["id"] for row in cur.fetchall()}
+        enlaces = [(quiz_id_nuevo, pid) for pid in preguntas_ids if pid in ids_existentes]
+        if enlaces:
+            cur.executemany(
+                "INSERT OR IGNORE INTO quiz_questions (quiz_id, question_id) VALUES (?, ?)",
+                enlaces,
             )
-        total_preguntas += 1
-
+    total_preguntas = len(enlaces) if preguntas_ids else 0
     return quiz_id_nuevo, total_preguntas
 
 
@@ -722,6 +727,7 @@ def eliminar_pregunta(question_id):
         cur.execute("SELECT id FROM questions WHERE id = ?", (question_id,))
         if not cur.fetchone():
             return jsonify({"error": "Pregunta no encontrada"}), 404
+        cur.execute("DELETE FROM quiz_questions WHERE question_id = ?", (question_id,))
         cur.execute("DELETE FROM failures WHERE question_id = ?", (question_id,))
         cur.execute("DELETE FROM favorites WHERE question_id = ?", (question_id,))
         cur.execute("DELETE FROM attempt_items WHERE question_id = ?", (question_id,))
@@ -809,6 +815,8 @@ def _create_quiz_from_payload(payload, filename=""):
             cur.execute("INSERT INTO questions (quiz_id, text, explicacion, bloque, tema) VALUES (?, ?, ?, ?, ?)",
                          (quiz_id, texto, explicacion, bloque, tema))
             q_id = cur.lastrowid
+            cur.execute("INSERT INTO quiz_questions (quiz_id, question_id) VALUES (?, ?)",
+                         (quiz_id, q_id))
             for idx, opt in enumerate(opciones):
                 cur.execute("INSERT INTO options (question_id, text, position) VALUES (?, ?, ?)",
                              (q_id, str(opt).strip(), idx))
@@ -832,15 +840,26 @@ def delete_test(quiz_id):
 
         cur.execute("DELETE FROM tests_favoritos WHERE quiz_id = ?", (quiz_id,))
         cur.execute("DELETE FROM simulacros WHERE quiz_id = ?", (quiz_id,))
-        cur.execute("SELECT id FROM questions WHERE quiz_id = ?", (quiz_id,))
-        q_ids = [r["id"] for r in cur.fetchall()]
+        # Obtener preguntas del test y eliminar enlaces
+        cur.execute("SELECT question_id FROM quiz_questions WHERE quiz_id = ?", (quiz_id,))
+        q_ids = [r["question_id"] for r in cur.fetchall()]
+        cur.execute("DELETE FROM quiz_questions WHERE quiz_id = ?", (quiz_id,))
+        # Solo borrar preguntas huérfanas (no usadas en otros tests)
         if q_ids:
             ph = ",".join("?" for _ in q_ids)
-            cur.execute(f"DELETE FROM failures WHERE question_id IN ({ph})", q_ids)
-            cur.execute(f"DELETE FROM favorites WHERE question_id IN ({ph})", q_ids)
-            cur.execute(f"DELETE FROM options WHERE question_id IN ({ph})", q_ids)
-            cur.execute(f"DELETE FROM attempt_items WHERE question_id IN ({ph})", q_ids)
-            cur.execute(f"DELETE FROM questions WHERE id IN ({ph})", q_ids)
+            cur.execute(
+                f"SELECT DISTINCT question_id FROM quiz_questions WHERE question_id IN ({ph})",
+                q_ids,
+            )
+            ids_en_uso = {r["question_id"] for r in cur.fetchall()}
+            ids_huerfanas = [qid for qid in q_ids if qid not in ids_en_uso]
+            if ids_huerfanas:
+                ph2 = ",".join("?" for _ in ids_huerfanas)
+                cur.execute(f"DELETE FROM failures WHERE question_id IN ({ph2})", ids_huerfanas)
+                cur.execute(f"DELETE FROM favorites WHERE question_id IN ({ph2})", ids_huerfanas)
+                cur.execute(f"DELETE FROM options WHERE question_id IN ({ph2})", ids_huerfanas)
+                cur.execute(f"DELETE FROM attempt_items WHERE question_id IN ({ph2})", ids_huerfanas)
+                cur.execute(f"DELETE FROM questions WHERE id IN ({ph2})", ids_huerfanas)
         cur.execute("SELECT id FROM attempts WHERE quiz_id = ?", (quiz_id,))
         a_ids = [r["id"] for r in cur.fetchall()]
         if a_ids:
@@ -906,9 +925,10 @@ def _get_test_as_json(quiz_id):
         cur.execute("""
             SELECT q.id, q.text, q.explicacion, q.bloque, q.tema,
                    o.text AS opt_text, o.position AS opt_position
-            FROM questions q
+            FROM quiz_questions qq
+            JOIN questions q ON q.id = qq.question_id
             LEFT JOIN options o ON o.question_id = q.id
-            WHERE q.quiz_id = ?
+            WHERE qq.quiz_id = ?
             ORDER BY q.id, o.position
         """, (quiz_id,))
         preg_dict = OrderedDict()
@@ -988,8 +1008,8 @@ def _obtener_preguntas_intento(cur, attempt_id, quiz_id):
     if preguntas_ids:
         return _obtener_preguntas_por_ids(cur, preguntas_ids)
     if quiz_id:
-        cur.execute("SELECT id FROM questions WHERE quiz_id = ? ORDER BY id ASC", (quiz_id,))
-        return _obtener_preguntas_por_ids(cur, [fila["id"] for fila in cur.fetchall()])
+        cur.execute("SELECT question_id FROM quiz_questions WHERE quiz_id = ? ORDER BY question_id ASC", (quiz_id,))
+        return _obtener_preguntas_por_ids(cur, [fila["question_id"] for fila in cur.fetchall()])
     return []
 
 
@@ -1374,9 +1394,10 @@ def start_simulacro(sim_id):
 
         cur.execute("""
             SELECT q.id, q.text, q.explicacion, o.text AS opt_text, o.position AS opt_position
-            FROM questions q
+            FROM quiz_questions qq
+            JOIN questions q ON q.id = qq.question_id
             LEFT JOIN options o ON o.question_id = q.id
-            WHERE q.quiz_id = ?
+            WHERE qq.quiz_id = ?
             ORDER BY q.id, o.position
         """, (sim["quiz_id"],))
         questions = _agrupar_preguntas_desde_filas(cur.fetchall())

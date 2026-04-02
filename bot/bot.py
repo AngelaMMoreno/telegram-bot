@@ -228,10 +228,38 @@ def init_db():
             )
             """
         )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS quiz_questions (
+                quiz_id INTEGER NOT NULL,
+                question_id INTEGER NOT NULL,
+                position INTEGER,
+                PRIMARY KEY (quiz_id, question_id),
+                FOREIGN KEY (quiz_id) REFERENCES quizzes(id),
+                FOREIGN KEY (question_id) REFERENCES questions(id)
+            )
+            """
+        )
         asegurar_columna_descripcion(conn)
         asegurar_columnas_preguntas(conn)
         asegurar_columna_nombre_intento(conn)
+        _migrar_quiz_questions(conn)
         conn.commit()
+
+
+def _migrar_quiz_questions(conn):
+    """Migra datos de questions.quiz_id a la tabla quiz_questions si no se ha hecho."""
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) AS c FROM quiz_questions")
+    if cur.fetchone()["c"] > 0:
+        return  # Ya migrado
+    cur.execute("SELECT id, quiz_id FROM questions WHERE quiz_id IS NOT NULL")
+    filas = cur.fetchall()
+    if filas:
+        cur.executemany(
+            "INSERT OR IGNORE INTO quiz_questions (quiz_id, question_id) VALUES (?, ?)",
+            [(f["quiz_id"], f["id"]) for f in filas],
+        )
 
 
 def asegurar_columna_nombre_intento(conn):
@@ -351,6 +379,10 @@ def create_quiz(quiz, titulo=None, descripcion=None):
                 (quiz_id, texto, explicacion, bloque, tema),
             )
             q_id = cur.lastrowid
+            cur.execute(
+                "INSERT INTO quiz_questions (quiz_id, question_id) VALUES (?, ?)",
+                (quiz_id, q_id),
+            )
             for idx, opt in enumerate(opciones):
                 cur.execute(
                     "INSERT INTO options (question_id, text, position) VALUES (?, ?, ?)",
@@ -365,9 +397,9 @@ def listar_tests_con_conteo():
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT q.id, q.title, q.description, COUNT(que.id) AS total_preguntas
+            SELECT q.id, q.title, q.description, COUNT(qq.question_id) AS total_preguntas
             FROM quizzes q
-            LEFT JOIN questions que ON que.quiz_id = q.id
+            LEFT JOIN quiz_questions qq ON qq.quiz_id = q.id
             GROUP BY q.id
             ORDER BY q.id DESC
             """
@@ -388,9 +420,9 @@ def listar_tests_con_conteo_paginado(desplazamiento, limite):
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT q.id, q.title, q.description, COUNT(que.id) AS total_preguntas
+            SELECT q.id, q.title, q.description, COUNT(qq.question_id) AS total_preguntas
             FROM quizzes q
-            LEFT JOIN questions que ON que.quiz_id = q.id
+            LEFT JOIN quiz_questions qq ON qq.quiz_id = q.id
             GROUP BY q.id
             ORDER BY q.id DESC
             LIMIT ? OFFSET ?
@@ -438,10 +470,10 @@ def listar_tests_favoritos_con_conteo_paginado(user_id, desplazamiento, limite):
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT q.id, q.title, q.description, COUNT(que.id) AS total_preguntas
+            SELECT q.id, q.title, q.description, COUNT(qq.question_id) AS total_preguntas
             FROM tests_favoritos tf
             JOIN quizzes q ON q.id = tf.quiz_id
-            LEFT JOIN questions que ON que.quiz_id = q.id
+            LEFT JOIN quiz_questions qq ON qq.quiz_id = q.id
             WHERE tf.user_id = ?
             GROUP BY q.id
             ORDER BY tf.created_at DESC
@@ -660,28 +692,36 @@ def obtener_titulo_test(quiz_id):
 def load_quiz_questions(quiz_id):
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute(
-            "SELECT id, text, explicacion FROM questions WHERE quiz_id = ?",
-            (quiz_id,),
-        )
-        questions = []
+        cur.execute("""
+            SELECT q.id, q.text, q.explicacion,
+                   o.text AS opt_text, o.position AS opt_position
+            FROM quiz_questions qq
+            JOIN questions q ON q.id = qq.question_id
+            LEFT JOIN options o ON o.question_id = q.id
+            WHERE qq.quiz_id = ?
+            ORDER BY q.id, o.position
+        """, (quiz_id,))
+        from collections import OrderedDict
+        preg_dict = OrderedDict()
         for row in cur.fetchall():
-            cur.execute(
-                "SELECT text, position FROM options WHERE question_id = ? ORDER BY position ASC",
-                (row["id"],),
-            )
-            options = [o["text"] for o in cur.fetchall()]
-            if not options:
-                continue
-            questions.append(
-                {
-                    "id": row["id"],
+            qid = row["id"]
+            if qid not in preg_dict:
+                preg_dict[qid] = {
+                    "id": qid,
                     "text": row["text"],
                     "explicacion": row["explicacion"],
-                    "options": options,
-                    "correct_text": options[0],
+                    "options": [],
                 }
-            )
+            if row["opt_text"] is not None:
+                preg_dict[qid]["options"].append((row["opt_position"], row["opt_text"]))
+        questions = []
+        for p in preg_dict.values():
+            p["options"].sort()
+            p["options"] = [texto for _, texto in p["options"]]
+            if not p["options"]:
+                continue
+            p["correct_text"] = p["options"][0]
+            questions.append(p)
         return questions
 
 
@@ -732,38 +772,35 @@ def obtener_test_como_json(quiz_id):
         quiz = cur.fetchone()
         if not quiz:
             return None
-        cur.execute(
-            """
-            SELECT id, text, explicacion, bloque, tema
-            FROM questions
-            WHERE quiz_id = ?
-            ORDER BY id ASC
-            """,
-            (quiz_id,),
-        )
-        preguntas = []
+        cur.execute("""
+            SELECT q.id, q.text, q.explicacion, q.bloque, q.tema,
+                   o.text AS opt_text, o.position AS opt_position
+            FROM quiz_questions qq
+            JOIN questions q ON q.id = qq.question_id
+            LEFT JOIN options o ON o.question_id = q.id
+            WHERE qq.quiz_id = ?
+            ORDER BY q.id, o.position
+        """, (quiz_id,))
+        from collections import OrderedDict
+        preg_dict = OrderedDict()
         for fila in cur.fetchall():
-            cur.execute(
-                """
-                SELECT text
-                FROM options
-                WHERE question_id = ?
-                ORDER BY position ASC
-                """,
-                (fila["id"],),
-            )
-            opciones = [item["text"] for item in cur.fetchall()]
-            if len(opciones) < 2:
-                continue
-            preguntas.append(
-                {
+            qid = fila["id"]
+            if qid not in preg_dict:
+                preg_dict[qid] = {
                     "pregunta": fila["text"],
-                    "opciones": opciones,
+                    "opciones": [],
                     "bloque": fila["bloque"],
                     "tema": fila["tema"],
                     "explicacion": fila["explicacion"],
                 }
-            )
+            if fila["opt_text"] is not None:
+                preg_dict[qid]["opciones"].append((fila["opt_position"], fila["opt_text"]))
+        preguntas = []
+        for p in preg_dict.values():
+            p["opciones"].sort()
+            p["opciones"] = [texto for _, texto in p["opciones"]]
+            if len(p["opciones"]) >= 2:
+                preguntas.append(p)
     return {
         "titulo": quiz["title"],
         "descripcion": quiz["description"],
@@ -1312,30 +1349,27 @@ def borrar_test(quiz_id):
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("DELETE FROM tests_favoritos WHERE quiz_id = ?", (quiz_id,))
-        cur.execute("SELECT id FROM questions WHERE quiz_id = ?", (quiz_id,))
-        preguntas_ids = [row["id"] for row in cur.fetchall()]
+        # Obtener preguntas del test via junction table
+        cur.execute("SELECT question_id FROM quiz_questions WHERE quiz_id = ?", (quiz_id,))
+        preguntas_ids = [row["question_id"] for row in cur.fetchall()]
+        # Eliminar enlaces del test
+        cur.execute("DELETE FROM quiz_questions WHERE quiz_id = ?", (quiz_id,))
+        # Solo borrar preguntas que no estén en ningún otro test
         if preguntas_ids:
             placeholders = ",".join("?" for _ in preguntas_ids)
             cur.execute(
-                f"DELETE FROM failures WHERE question_id IN ({placeholders})",
+                f"SELECT DISTINCT question_id FROM quiz_questions WHERE question_id IN ({placeholders})",
                 preguntas_ids,
             )
-            cur.execute(
-                f"DELETE FROM favorites WHERE question_id IN ({placeholders})",
-                preguntas_ids,
-            )
-            cur.execute(
-                f"DELETE FROM options WHERE question_id IN ({placeholders})",
-                preguntas_ids,
-            )
-            cur.execute(
-                f"DELETE FROM attempt_items WHERE question_id IN ({placeholders})",
-                preguntas_ids,
-            )
-            cur.execute(
-                f"DELETE FROM questions WHERE id IN ({placeholders})",
-                preguntas_ids,
-            )
+            ids_en_uso = {row["question_id"] for row in cur.fetchall()}
+            ids_huerfanas = [pid for pid in preguntas_ids if pid not in ids_en_uso]
+            if ids_huerfanas:
+                ph = ",".join("?" for _ in ids_huerfanas)
+                cur.execute(f"DELETE FROM failures WHERE question_id IN ({ph})", ids_huerfanas)
+                cur.execute(f"DELETE FROM favorites WHERE question_id IN ({ph})", ids_huerfanas)
+                cur.execute(f"DELETE FROM options WHERE question_id IN ({ph})", ids_huerfanas)
+                cur.execute(f"DELETE FROM attempt_items WHERE question_id IN ({ph})", ids_huerfanas)
+                cur.execute(f"DELETE FROM questions WHERE id IN ({ph})", ids_huerfanas)
         cur.execute("SELECT id FROM attempts WHERE quiz_id = ?", (quiz_id,))
         intentos_ids = [row["id"] for row in cur.fetchall()]
         if intentos_ids:
@@ -1359,10 +1393,11 @@ def borrar_test(quiz_id):
 def borrar_pregunta(question_id):
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT quiz_id FROM questions WHERE id = ?", (question_id,))
+        cur.execute("SELECT id FROM questions WHERE id = ?", (question_id,))
         fila = cur.fetchone()
         if not fila:
             return False
+        cur.execute("DELETE FROM quiz_questions WHERE question_id = ?", (question_id,))
         cur.execute("DELETE FROM failures WHERE question_id = ?", (question_id,))
         cur.execute("DELETE FROM favorites WHERE question_id = ?", (question_id,))
         cur.execute("DELETE FROM options WHERE question_id = ?", (question_id,))
