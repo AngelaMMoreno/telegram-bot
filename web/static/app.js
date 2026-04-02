@@ -19,6 +19,9 @@
     blank: 0,
     answered: false,
     favQuestionIds: new Set(),
+    megaModo: false,
+    megaSeleccionados: new Set(),
+    megaTestsPagina: [],
   };
 
   /* ── API helper ── */
@@ -245,12 +248,17 @@
     const listEl = document.getElementById("test-list");
     const pagEl = document.getElementById("test-pagination");
     const titleEl = document.getElementById("tests-title");
+    const panelMega = document.getElementById("panel-mega-test");
+    const botonMegaModo = document.getElementById("btn-mega-modo");
     listEl.innerHTML = '<div class="spinner"></div>';
     pagEl.innerHTML = "";
 
     const filterBtn = document.getElementById("btn-toggle-fav-filter");
     filterBtn.classList.toggle("active", state.favFilter);
     titleEl.textContent = state.favFilter ? "Tests favoritos" : "Mis tests";
+    panelMega.classList.toggle("hidden", !state.megaModo || !state.puedeGestionar);
+    botonMegaModo.classList.toggle("active", state.megaModo);
+    state.megaTestsPagina = [];
 
     try {
       const endpoint = state.favFilter
@@ -261,6 +269,7 @@
         listEl.innerHTML = '<div class="empty-state"><p>No hay tests</p></div>';
         return;
       }
+      state.megaTestsPagina = d.tests.map((t) => t.id);
       listEl.innerHTML = d.tests.map((t) => {
         const badges = [];
         if (t.realizado) badges.push('<span class="test-badge done">Hecho</span>');
@@ -271,6 +280,7 @@
             <div class="test-item-meta">${badges.join("")}${t.total_preguntas} preguntas</div>
           </div>
           <div class="test-item-actions">
+            ${state.megaModo && state.puedeGestionar ? `<input type="checkbox" class="mega-checkbox" data-mega-id="${t.id}" ${state.megaSeleccionados.has(t.id) ? "checked" : ""}>` : ""}
             <button class="btn-icon test-fav-btn ${t.es_favorito ? "active" : ""}" data-fav="${t.id}" title="Favorito">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="${t.es_favorito ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
             </button>
@@ -301,6 +311,12 @@
 
   // Test list events
   document.getElementById("test-list").addEventListener("click", async (e) => {
+    if (e.target.matches(".mega-checkbox")) {
+      const quizId = parseInt(e.target.dataset.megaId);
+      if (e.target.checked) state.megaSeleccionados.add(quizId);
+      else state.megaSeleccionados.delete(quizId);
+      return;
+    }
     const favBtn = e.target.closest("[data-fav]");
     if (favBtn) {
       e.stopPropagation();
@@ -333,7 +349,18 @@
       return;
     }
     const item = e.target.closest(".test-item");
-    if (item) startQuiz(parseInt(item.dataset.id));
+    if (item) {
+      const quizId = parseInt(item.dataset.id);
+      if (state.megaModo && state.puedeGestionar) {
+        const checkbox = item.querySelector(".mega-checkbox");
+        if (!checkbox) return;
+        checkbox.checked = !checkbox.checked;
+        if (checkbox.checked) state.megaSeleccionados.add(quizId);
+        else state.megaSeleccionados.delete(quizId);
+        return;
+      }
+      startQuiz(quizId);
+    }
   });
 
   document.getElementById("test-pagination").addEventListener("click", (e) => {
@@ -344,6 +371,61 @@
   document.getElementById("btn-toggle-fav-filter").addEventListener("click", () => {
     state.favFilter = !state.favFilter;
     loadTests(1);
+  });
+  document.getElementById("btn-mega-modo").addEventListener("click", () => {
+    if (!state.puedeGestionar) return;
+    state.megaModo = !state.megaModo;
+    if (!state.megaModo) state.megaSeleccionados.clear();
+    loadTests(1);
+  });
+  document.getElementById("btn-seleccionar-pagina").addEventListener("click", () => {
+    for (const id of state.megaTestsPagina) state.megaSeleccionados.add(id);
+    loadTests(1);
+  });
+  document.getElementById("btn-deseleccionar-pagina").addEventListener("click", () => {
+    for (const id of state.megaTestsPagina) state.megaSeleccionados.delete(id);
+    loadTests(1);
+  });
+  document.getElementById("btn-iniciar-mega-test").addEventListener("click", async () => {
+    if (!state.puedeGestionar) return;
+    if (!state.megaSeleccionados.size) {
+      toast("Selecciona al menos un test");
+      return;
+    }
+    try {
+      const d = await api("/tests/mega/questions", {
+        method: "POST",
+        body: {
+          user_id: state.userId,
+          quiz_ids: Array.from(state.megaSeleccionados),
+          solo_favoritos: state.favFilter,
+        },
+      });
+      if (!d.questions.length) {
+        toast("No hay preguntas disponibles");
+        return;
+      }
+      const att = await api("/attempts/start", {
+        method: "POST",
+        body: { user_id: state.userId, quiz_id: null, attempt_type: "mega_test" },
+      });
+      state.quiz = {
+        questions: shuffle(d.questions),
+        title: d.titulo || "Mega test",
+        attemptId: att.attempt_id,
+        type: "mega_test",
+      };
+      state.qi = 0;
+      state.correct = 0;
+      state.wrong = 0;
+      state.blank = 0;
+      state.answered = false;
+      document.getElementById("quiz-title").textContent = state.quiz.title;
+      showView("quiz");
+      renderQuestion();
+    } catch (err) {
+      toast(err.message);
+    }
   });
 
   /* ── Download helpers ── */
@@ -529,6 +611,8 @@
     // Fav button
     const favBtn = document.getElementById("btn-fav-question");
     favBtn.classList.toggle("is-fav", state.favQuestionIds.has(q.id));
+    document.getElementById("btn-editar-pregunta").classList.toggle("hidden", !state.puedeGestionar);
+    document.getElementById("btn-eliminar-pregunta").classList.toggle("hidden", !state.puedeGestionar);
 
     document.getElementById("btn-next-question").textContent =
       state.qi < total - 1 ? "Siguiente" : "Finalizar";
@@ -613,6 +697,106 @@
     } catch (err) { toast(err.message); }
   });
 
+  document.getElementById("btn-editar-pregunta").addEventListener("click", async () => {
+    if (!state.puedeGestionar || !state.quiz) return;
+    const q = state.quiz.questions[state.qi];
+    const resultado = await abrirEditorPregunta(q);
+    if (!resultado) return;
+    try {
+      const actualizado = await api(`/questions/${q.id}`, {
+        method: "PUT",
+        body: { user_id: state.userId, ...resultado },
+      });
+      state.quiz.questions[state.qi] = {
+        ...q,
+        text: actualizado.question.text,
+        explicacion: actualizado.question.explicacion,
+        options: actualizado.question.options,
+        correct_index: 0,
+      };
+      toast("Pregunta actualizada");
+      renderQuestion();
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+
+  document.getElementById("btn-eliminar-pregunta").addEventListener("click", async () => {
+    if (!state.puedeGestionar || !state.quiz) return;
+    const q = state.quiz.questions[state.qi];
+    if (!await confirm("Eliminar pregunta", "Esta accion eliminara la pregunta de forma permanente.")) return;
+    try {
+      await api(`/questions/${q.id}?user_id=${state.userId}`, { method: "DELETE" });
+      state.quiz.questions.splice(state.qi, 1);
+      if (!state.quiz.questions.length) {
+        toast("No quedan preguntas en este test");
+        await finishQuiz();
+        return;
+      }
+      if (state.qi >= state.quiz.questions.length) state.qi = state.quiz.questions.length - 1;
+      toast("Pregunta eliminada");
+      renderQuestion();
+    } catch (err) {
+      toast(err.message);
+    }
+  });
+
+  function abrirEditorPregunta(pregunta) {
+    return new Promise((resolve) => {
+      const opciones = pregunta.options || [];
+      const opcionCorrecta = opciones[pregunta.correct_index || 0] || "";
+      const opcionesIncorrectas = opciones.filter((_, i) => i !== (pregunta.correct_index || 0));
+      const overlay = document.createElement("div");
+      overlay.className = "dialog-overlay";
+      overlay.innerHTML = `<div class="dialog dialog-editor-pregunta">
+        <h3>Editar pregunta</h3>
+        <label>Enunciado</label>
+        <textarea id="editar-enunciado">${esc(pregunta.text)}</textarea>
+        <label>Respuesta correcta</label>
+        <textarea id="editar-respuesta-correcta">${esc(opcionCorrecta)}</textarea>
+        <label>Respuesta 2</label>
+        <textarea id="editar-respuesta-2">${esc(opcionesIncorrectas[0] || "")}</textarea>
+        <label>Respuesta 3</label>
+        <textarea id="editar-respuesta-3">${esc(opcionesIncorrectas[1] || "")}</textarea>
+        <label>Respuesta 4</label>
+        <textarea id="editar-respuesta-4">${esc(opcionesIncorrectas[2] || "")}</textarea>
+        <label>Explicacion</label>
+        <textarea id="editar-explicacion">${esc(pregunta.explicacion || "")}</textarea>
+        <div class="dialog-actions">
+          <button class="btn btn-outline btn-sm" data-cancelar="1">Cancelar</button>
+          <button class="btn btn-primary btn-sm" data-guardar="1">Guardar</button>
+        </div>
+      </div>`;
+      overlay.addEventListener("click", (e) => {
+        if (e.target.dataset.cancelar) {
+          overlay.remove();
+          resolve(null);
+          return;
+        }
+        if (e.target.dataset.guardar) {
+          const text = overlay.querySelector("#editar-enunciado").value.trim();
+          const correcta = overlay.querySelector("#editar-respuesta-correcta").value.trim();
+          const r2 = overlay.querySelector("#editar-respuesta-2").value.trim();
+          const r3 = overlay.querySelector("#editar-respuesta-3").value.trim();
+          const r4 = overlay.querySelector("#editar-respuesta-4").value.trim();
+          const explicacion = overlay.querySelector("#editar-explicacion").value.trim();
+          const opcionesActualizadas = [correcta, r2, r3, r4].filter((v) => v);
+          if (!text || !correcta || !r2) {
+            toast("Enunciado, respuesta correcta y respuesta 2 son obligatorios");
+            return;
+          }
+          overlay.remove();
+          resolve({
+            text,
+            explicacion,
+            opciones: opcionesActualizadas,
+          });
+        }
+      });
+      document.body.appendChild(overlay);
+    });
+  }
+
   /* ── Finish quiz ── */
   async function finishQuiz() {
     const total = state.quiz.questions.length;
@@ -683,9 +867,9 @@
             <div class="test-item-meta">Test: ${esc(s.test_titulo)} &middot; Corte: ${s.nota_corte_directa}</div>
           </div>
           <div class="test-item-actions">
-            <button class="btn-icon sim-del-btn" data-sim-del="${s.id}" title="Borrar">
+            ${state.puedeGestionar ? `<button class="btn-icon sim-del-btn" data-sim-del="${s.id}" title="Borrar">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
-            </button>
+            </button>` : ""}
           </div>
         </div>`
       ).join("");
@@ -701,7 +885,7 @@
       const simId = parseInt(delBtn.dataset.simDel);
       if (await confirm("Borrar simulacro", "Se eliminara este simulacro.")) {
         try {
-          await api(`/simulacros/${simId}`, { method: "DELETE" });
+          await api(`/simulacros/${simId}?user_id=${state.userId}`, { method: "DELETE" });
           toast("Simulacro borrado");
           loadSimulacros();
         } catch (err) { toast(err.message); }
