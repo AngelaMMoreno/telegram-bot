@@ -1896,32 +1896,44 @@ async def notificar_login_requerido(chat_id, context):
 
 
 async def notificar_permiso_admin_requerido(chat_id, context):
-    await context.bot.send_message(
-        chat_id,
-        "⛔ Esta acción está restringida a los usuarios administradores.",
-    )
+    await mostrar_menu(chat_id, context)
 
 
 # ─────────────── Menú principal ───────────────
 async def mostrar_menu(chat_id, context, texto="Selecciona una opción:"):
-    botones = [
-        [InlineKeyboardButton("🧩 Crear test", callback_data="crear_test")],
-        [InlineKeyboardButton("📦 Subir tests (ZIP)", callback_data="subir_zip")],
-        [InlineKeyboardButton("📋 Mis tests", callback_data="mis_tests")],
-        [InlineKeyboardButton("🗑️ Borrar test", callback_data="borrar_tests")],
-        [InlineKeyboardButton("⬇️ Descargar test", callback_data="descargar_tests")],
+    usuario_con_permiso = usuario_tiene_permiso_gestion_en_bot(context)
+    botones = []
+    if usuario_con_permiso:
+        botones.extend(
+            [
+                [InlineKeyboardButton("🧩 Crear test", callback_data="crear_test")],
+                [InlineKeyboardButton("📦 Subir tests (ZIP)", callback_data="subir_zip")],
+            ]
+        )
+    botones.append([InlineKeyboardButton("📋 Mis tests", callback_data="mis_tests")])
+    if usuario_con_permiso:
+        botones.extend(
+            [
+                [InlineKeyboardButton("🗑️ Borrar test", callback_data="borrar_tests")],
+                [InlineKeyboardButton("⬇️ Descargar test", callback_data="descargar_tests")],
+                [
+                    InlineKeyboardButton(
+                        "⬇️ Descargar todos los tests", callback_data="descargar_todos_tests"
+                    )
+                ],
+            ]
+        )
+    botones.extend(
         [
-            InlineKeyboardButton(
-                "⬇️ Descargar todos los tests", callback_data="descargar_todos_tests"
-            )
-        ],
-        [InlineKeyboardButton("📈 Progreso", callback_data="progreso")],
-        [InlineKeyboardButton("⚠️ Test de fallos", callback_data="test_fallos")],
-        [InlineKeyboardButton("⭐ Hacer tests favoritos", callback_data="tests_favoritos")],
-        [InlineKeyboardButton("⭐ Test de favoritas", callback_data="test_favoritas")],
-        [InlineKeyboardButton("🧪 Simulacros", callback_data="menu_simulacros")],
-        [InlineKeyboardButton("⬇️ Descargar BD", callback_data="descargar_bd")],
-    ]
+            [InlineKeyboardButton("📈 Progreso", callback_data="progreso")],
+            [InlineKeyboardButton("⚠️ Test de fallos", callback_data="test_fallos")],
+            [InlineKeyboardButton("⭐ Hacer tests favoritos", callback_data="tests_favoritos")],
+            [InlineKeyboardButton("⭐ Test de favoritas", callback_data="test_favoritas")],
+            [InlineKeyboardButton("🧪 Simulacros", callback_data="menu_simulacros")],
+        ]
+    )
+    if usuario_con_permiso:
+        botones.append([InlineKeyboardButton("⬇️ Descargar BD", callback_data="descargar_bd")])
     await context.bot.send_message(
         chat_id, texto, reply_markup=InlineKeyboardMarkup(botones)
     )
@@ -2080,7 +2092,8 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton(ensanchar_etiqueta_opcion(o), callback_data=str(idx))]
             for idx, o in enumerate(opciones)
         ]
-        botones.append([InlineKeyboardButton("🧾 Editar pregunta", callback_data=f"editar_pregunta_json_{q['id']}")])
+        if usuario_tiene_permiso_gestion_en_bot(context):
+            botones.append([InlineKeyboardButton("🧾 Editar pregunta", callback_data=f"editar_pregunta_json_{q['id']}")])
         botones.append([InlineKeyboardButton("☰ Menú", callback_data="menu")])
         await query.message.edit_text(
             texto_expandido,
@@ -2623,18 +2636,27 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         context.user_data["usuario_login_temporal"] = username
         context.user_data["modo"] = "login_contrasenya"
-        await update.message.reply_text("🔑 Escribe tu contraseña:")
+        await update.message.reply_text("🔑 Escribe tu contrasenya:")
         return
     elif modo == "login_contrasenya":
         contrasenya = (update.message.text or "").strip()
+        if update.message:
+            try:
+                await update.message.delete()
+            except Exception:
+                pass
         username = context.user_data.get("usuario_login_temporal")
         if not username or not contrasenya:
-            await update.message.reply_text("❌ Usuario o contraseña no válidos.")
+            await context.bot.send_message(
+                update.effective_chat.id,
+                "❌ Usuario o contrasenya no validos.",
+            )
             context.user_data["modo"] = "login_usuario"
             return
         user_id = autenticar_usuario_web(username, contrasenya)
         if not user_id:
-            await update.message.reply_text(
+            await context.bot.send_message(
+                update.effective_chat.id,
                 "❌ Credenciales incorrectas. Escribe de nuevo tu usuario:"
             )
             context.user_data["modo"] = "login_usuario"
@@ -3405,15 +3427,16 @@ async def enviar_pregunta(chat_id, context):
         botones_opciones.append(
             [InlineKeyboardButton("⏭️ Dejar sin contestar", callback_data="simulacro_sin_contestar")]
         )
-    botones_opciones.append(
-        [
+    fila_acciones = [InlineKeyboardButton("☰ Menú", callback_data="menu")]
+    if usuario_tiene_permiso_gestion_en_bot(context):
+        fila_acciones.insert(
+            0,
             InlineKeyboardButton(
                 "🧾 Editar pregunta",
                 callback_data=f"editar_pregunta_json_{q['id']}",
             ),
-            InlineKeyboardButton("☰ Menú", callback_data="menu"),
-        ]
-    )
+        )
+    botones_opciones.append(fila_acciones)
 
     for parte in partes[:-1]:
         await context.bot.send_message(chat_id, parte)
@@ -3436,7 +3459,7 @@ def obtener_texto_boton_favorita(user_id, question_id):
     return "⭐ Guardar favorita"
 
 
-def construir_botones_post_respuesta(user_id, question_id):
+def construir_botones_post_respuesta(user_id, question_id, usuario_con_permiso):
     explicacion_actual = obtener_explicacion_pregunta(question_id)
     filas = []
     if explicacion_actual:
@@ -3448,30 +3471,31 @@ def construir_botones_post_respuesta(user_id, question_id):
                 )
             ]
         )
-    filas.append(
-        [
-            InlineKeyboardButton(
-                "✍️ Añadir/editar explicación",
-                callback_data=f"explicacion_{question_id}",
-            )
-        ]
-    )
-    filas.append(
-        [
-            InlineKeyboardButton(
-                "🧾 Editar pregunta",
-                callback_data=f"editar_pregunta_json_{question_id}",
-            )
-        ]
-    )
-    filas.append(
-        [
-            InlineKeyboardButton(
-                "🗑️ Eliminar pregunta",
-                callback_data=f"eliminar_pregunta_{question_id}",
-            )
-        ]
-    )
+    if usuario_con_permiso:
+        filas.append(
+            [
+                InlineKeyboardButton(
+                    "✍️ Añadir/editar explicación",
+                    callback_data=f"explicacion_{question_id}",
+                )
+            ]
+        )
+        filas.append(
+            [
+                InlineKeyboardButton(
+                    "🧾 Editar pregunta",
+                    callback_data=f"editar_pregunta_json_{question_id}",
+                )
+            ]
+        )
+        filas.append(
+            [
+                InlineKeyboardButton(
+                    "🗑️ Eliminar pregunta",
+                    callback_data=f"eliminar_pregunta_{question_id}",
+                )
+            ]
+        )
     filas.append(
         [
             InlineKeyboardButton(
@@ -3495,7 +3519,8 @@ def construir_botones_post_respuesta(user_id, question_id):
 async def mostrar_opciones_post_respuesta(chat_id, context, question_id):
     quiz = context.user_data.get("quiz", {})
     user_id = quiz.get("user_id") or obtener_user_id_autenticado(context)
-    markup = construir_botones_post_respuesta(user_id, question_id)
+    usuario_con_permiso = usuario_tiene_permiso_gestion_en_bot(context)
+    markup = construir_botones_post_respuesta(user_id, question_id, usuario_con_permiso)
     await context.bot.send_message(
         chat_id,
         "📝 Opciones de la pregunta:",

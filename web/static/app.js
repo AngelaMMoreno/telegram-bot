@@ -9,6 +9,7 @@
   let state = {
     userId: null,
     username: null,
+    puedeGestionar: false,
     favFilter: false,
     // quiz state
     quiz: null,        // { questions, title, attemptId, type, simulacro }
@@ -78,19 +79,35 @@
 
   /* ── Session ── */
   function saveSession() {
-    localStorage.setItem("aprentix_session", JSON.stringify({ userId: state.userId, username: state.username }));
+    localStorage.setItem("aprentix_session", JSON.stringify({
+      userId: state.userId,
+      username: state.username,
+      puedeGestionar: state.puedeGestionar,
+    }));
   }
   function loadSession() {
     try {
       const s = JSON.parse(localStorage.getItem("aprentix_session"));
-      if (s && s.userId) { state.userId = s.userId; state.username = s.username; return true; }
+      if (s && s.userId) {
+        state.userId = s.userId;
+        state.username = s.username;
+        state.puedeGestionar = !!s.puedeGestionar;
+        return true;
+      }
     } catch (_) {}
     return false;
   }
   function clearSession() {
     state.userId = null;
     state.username = null;
+    state.puedeGestionar = false;
     localStorage.removeItem("aprentix_session");
+  }
+
+  function actualizarVisibilidadGestion() {
+    document.querySelectorAll("[data-gestion='si']").forEach((el) => {
+      el.classList.toggle("hidden", !state.puedeGestionar);
+    });
   }
 
   /* ── Auth: toggle forms ── */
@@ -120,6 +137,7 @@
       const data = await api("/auth/login", { method: "POST", body: { username, password } });
       state.userId = data.user_id;
       state.username = data.username;
+      state.puedeGestionar = !!data.puede_gestionar;
       saveSession();
       enterApp();
     } catch (err) {
@@ -146,6 +164,7 @@
       const data = await api("/auth/register", { method: "POST", body });
       state.userId = data.user_id;
       state.username = data.username;
+      state.puedeGestionar = !!data.puede_gestionar;
       saveSession();
       toast("Cuenta creada correctamente");
       enterApp();
@@ -156,6 +175,7 @@
 
   document.getElementById("btn-logout").addEventListener("click", () => {
     clearSession();
+    actualizarVisibilidadGestion();
     document.getElementById("register-form").classList.add("hidden");
     document.getElementById("login-form").classList.remove("hidden");
     showView("login");
@@ -163,6 +183,13 @@
 
   /* ── Enter app ── */
   async function enterApp() {
+    try {
+      const permisos = await api(`/auth/permisos?user_id=${state.userId}`);
+      state.puedeGestionar = !!permisos.puede_gestionar;
+    } catch (_) {
+      state.puedeGestionar = false;
+    }
+    actualizarVisibilidadGestion();
     showView("menu");
     loadMenuStats();
     loadFavoriteQuestionIds();
@@ -247,12 +274,12 @@
             <button class="btn-icon test-fav-btn ${t.es_favorito ? "active" : ""}" data-fav="${t.id}" title="Favorito">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="${t.es_favorito ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
             </button>
-            <button class="btn-icon test-dl-btn" data-dl="${t.id}" title="Descargar">
+            ${state.puedeGestionar ? `<button class="btn-icon test-dl-btn" data-dl="${t.id}" title="Descargar">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            </button>
-            <button class="btn-icon test-del-btn" data-del="${t.id}" title="Borrar">
+            </button>` : ""}
+            ${state.puedeGestionar ? `<button class="btn-icon test-del-btn" data-del="${t.id}" title="Borrar">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-            </button>
+            </button>` : ""}
           </div>
         </div>`;
       }).join("");
@@ -322,7 +349,7 @@
   /* ── Download helpers ── */
   async function downloadTest(quizId) {
     try {
-      const res = await api(`/tests/${quizId}/download`);
+      const res = await api(`/tests/${quizId}/download?user_id=${state.userId}`);
       const blob = await res.blob();
       triggerDownload(blob, res.headers.get("content-disposition"));
     } catch (err) { toast(err.message); }

@@ -105,6 +105,14 @@ def validar_permiso_gestion(user_id):
     return None
 
 
+@app.route("/api/auth/permisos")
+def permisos_usuario():
+    user_id = request.args.get("user_id", type=int)
+    if not user_id:
+        return jsonify({"error": "user_id requerido"}), 400
+    return jsonify({"puede_gestionar": usuario_tiene_permiso_gestion(user_id)})
+
+
 # ─────────────── DB ───────────────
 def get_conn():
     conn = sqlite3.connect(DB_FILE)
@@ -278,7 +286,11 @@ def register():
         )
         conn.commit()
 
-    return jsonify({"user_id": user_id, "username": username})
+    return jsonify({
+        "user_id": user_id,
+        "username": username,
+        "puede_gestionar": usuario_tiene_permiso_gestion(user_id),
+    })
 
 
 @app.route("/api/auth/login", methods=["POST"])
@@ -297,7 +309,11 @@ def login():
         if not row or not verify_password(password, row["password_hash"]):
             return jsonify({"error": "Usuario o contrasenya incorrectos"}), 401
 
-    return jsonify({"user_id": row["user_id"], "username": username})
+    return jsonify({
+        "user_id": row["user_id"],
+        "username": username,
+        "puede_gestionar": usuario_tiene_permiso_gestion(row["user_id"]),
+    })
 
 
 # ─────────────── Tests (quizzes) ───────────────
@@ -555,6 +571,11 @@ def delete_test(quiz_id):
 # ─────────────── Download test ───────────────
 @app.route("/api/tests/<int:quiz_id>/download")
 def download_test(quiz_id):
+    user_id = request.args.get("user_id", type=int)
+    error_permiso = validar_permiso_gestion(user_id)
+    if error_permiso:
+        return error_permiso
+
     data = _get_test_as_json(quiz_id)
     if not data:
         return jsonify({"error": "Test no encontrado"}), 404
