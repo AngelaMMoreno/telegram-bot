@@ -7,6 +7,7 @@ import hashlib
 import secrets
 import zipfile
 from math import ceil
+from collections import OrderedDict
 from datetime import datetime
 from flask import Flask, request, jsonify, send_from_directory, send_file
 
@@ -237,6 +238,10 @@ def init_web_db():
         columnas = {fila["name"] for fila in cur.fetchall()}
         if "nombre" not in columnas:
             cur.execute("ALTER TABLE attempts ADD COLUMN nombre TEXT")
+        # Índices para acelerar las queries JOIN de preguntas y opciones
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_options_question_id ON options(question_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_questions_quiz_id ON questions(quiz_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tests_temporales_attempt_id ON tests_temporales(attempt_id)")
         conn.commit()
 
 init_web_db()
@@ -434,21 +439,40 @@ def get_test_questions(quiz_id):
         quiz = dict_row(cur.fetchone())
         if not quiz:
             return jsonify({"error": "Test no encontrado"}), 404
-        cur.execute("SELECT id, text, explicacion FROM questions WHERE quiz_id = ?", (quiz_id,))
-        questions = []
-        for row in cur.fetchall():
-            cur.execute("SELECT text, position FROM options WHERE question_id = ? ORDER BY position ASC", (row["id"],))
-            options = [o["text"] for o in cur.fetchall()]
-            if not options:
-                continue
-            questions.append({
-                "id": row["id"],
-                "text": row["text"],
-                "explicacion": row["explicacion"],
-                "options": options,
-                "correct_index": 0,
-            })
+        cur.execute("""
+            SELECT q.id, q.text, q.explicacion, o.text AS opt_text, o.position AS opt_position
+            FROM questions q
+            LEFT JOIN options o ON o.question_id = q.id
+            WHERE q.quiz_id = ?
+            ORDER BY q.id, o.position
+        """, (quiz_id,))
+        questions = _agrupar_preguntas_desde_filas(cur.fetchall())
     return jsonify({"quiz": quiz, "questions": questions})
+
+
+def _agrupar_preguntas_desde_filas(filas, min_opciones=1):
+    """Agrupa filas JOIN (question+option) en lista de preguntas con sus opciones.
+    Usa una sola query en vez del patrón N+1."""
+    preguntas_dict = OrderedDict()
+    for fila in filas:
+        qid = fila["id"]
+        if qid not in preguntas_dict:
+            preguntas_dict[qid] = {
+                "id": qid,
+                "text": fila["text"],
+                "explicacion": fila["explicacion"],
+                "options": [],
+                "correct_index": 0,
+            }
+        if fila["opt_text"] is not None:
+            preguntas_dict[qid]["options"].append((fila["opt_position"], fila["opt_text"]))
+    resultado = []
+    for p in preguntas_dict.values():
+        p["options"].sort()
+        p["options"] = [texto for _, texto in p["options"]]
+        if len(p["options"]) >= min_opciones:
+            resultado.append(p)
+    return resultado
 
 
 def _obtener_preguntas_por_tests(cur, quiz_ids):
@@ -464,48 +488,42 @@ def _obtener_preguntas_por_tests(cur, quiz_ids):
         return texto_normalizado, opciones_normalizadas
 
     placeholders = ",".join("?" for _ in quiz_ids)
-    cur.execute(f"SELECT id, text, explicacion FROM questions WHERE quiz_id IN ({placeholders})", quiz_ids)
+    cur.execute(f"""
+        SELECT q.id, q.text, q.explicacion, o.text AS opt_text, o.position AS opt_position
+        FROM questions q
+        LEFT JOIN options o ON o.question_id = q.id
+        WHERE q.quiz_id IN ({placeholders})
+        ORDER BY q.id, o.position
+    """, quiz_ids)
+    todas = _agrupar_preguntas_desde_filas(cur.fetchall(), min_opciones=2)
     preguntas = []
     huellas_vistas = set()
-    for row in cur.fetchall():
-        cur.execute("SELECT text FROM options WHERE question_id = ? ORDER BY position ASC", (row["id"],))
-        opciones = [o["text"] for o in cur.fetchall()]
-        if len(opciones) < 2:
-            continue
-        huella = _crear_huella_pregunta(row["text"], opciones)
+    for p in todas:
+        huella = _crear_huella_pregunta(p["text"], p["options"])
         if huella in huellas_vistas:
             continue
         huellas_vistas.add(huella)
-        preguntas.append({
-            "id": row["id"],
-            "text": row["text"],
-            "explicacion": row["explicacion"],
-            "options": opciones,
-            "correct_index": 0,
-        })
+        preguntas.append(p)
     random.shuffle(preguntas)
     return preguntas
 
 
 def _obtener_preguntas_por_ids(cur, preguntas_ids):
-    preguntas = []
-    for pregunta_id in preguntas_ids:
-        cur.execute("SELECT id, text, explicacion FROM questions WHERE id = ?", (pregunta_id,))
-        fila = cur.fetchone()
-        if not fila:
-            continue
-        cur.execute("SELECT text FROM options WHERE question_id = ? ORDER BY position ASC", (pregunta_id,))
-        opciones = [op["text"] for op in cur.fetchall()]
-        if not opciones:
-            continue
-        preguntas.append({
-            "id": fila["id"],
-            "text": fila["text"],
-            "explicacion": fila["explicacion"],
-            "options": opciones,
-            "correct_index": 0,
-        })
-    return preguntas
+    if not preguntas_ids:
+        return []
+    placeholders = ",".join("?" for _ in preguntas_ids)
+    cur.execute(f"""
+        SELECT q.id, q.text, q.explicacion, o.text AS opt_text, o.position AS opt_position
+        FROM questions q
+        LEFT JOIN options o ON o.question_id = q.id
+        WHERE q.id IN ({placeholders})
+        ORDER BY q.id, o.position
+    """, preguntas_ids)
+    preguntas_por_id = {}
+    for p in _agrupar_preguntas_desde_filas(cur.fetchall()):
+        preguntas_por_id[p["id"]] = p
+    # Mantener el orden original de preguntas_ids
+    return [preguntas_por_id[pid] for pid in preguntas_ids if pid in preguntas_por_id]
 
 
 @app.route("/api/tests/mega/questions", methods=["POST"])
@@ -885,17 +903,30 @@ def _get_test_as_json(quiz_id):
         quiz = cur.fetchone()
         if not quiz:
             return None
-        cur.execute("SELECT id, text, explicacion, bloque, tema FROM questions WHERE quiz_id = ? ORDER BY id", (quiz_id,))
-        preguntas = []
+        cur.execute("""
+            SELECT q.id, q.text, q.explicacion, q.bloque, q.tema,
+                   o.text AS opt_text, o.position AS opt_position
+            FROM questions q
+            LEFT JOIN options o ON o.question_id = q.id
+            WHERE q.quiz_id = ?
+            ORDER BY q.id, o.position
+        """, (quiz_id,))
+        preg_dict = OrderedDict()
         for f in cur.fetchall():
-            cur.execute("SELECT text FROM options WHERE question_id = ? ORDER BY position ASC", (f["id"],))
-            opciones = [i["text"] for i in cur.fetchall()]
-            if len(opciones) < 2:
-                continue
-            preguntas.append({
-                "pregunta": f["text"], "opciones": opciones,
-                "bloque": f["bloque"], "tema": f["tema"], "explicacion": f["explicacion"],
-            })
+            qid = f["id"]
+            if qid not in preg_dict:
+                preg_dict[qid] = {
+                    "pregunta": f["text"], "opciones": [],
+                    "bloque": f["bloque"], "tema": f["tema"], "explicacion": f["explicacion"],
+                }
+            if f["opt_text"] is not None:
+                preg_dict[qid]["opciones"].append((f["opt_position"], f["opt_text"]))
+        preguntas = []
+        for p in preg_dict.values():
+            p["opciones"].sort()
+            p["opciones"] = [texto for _, texto in p["opciones"]]
+            if len(p["opciones"]) >= 2:
+                preguntas.append(p)
     return {"titulo": quiz["title"], "descripcion": quiz["description"], "preguntas": preguntas}
 
 
@@ -927,17 +958,17 @@ def start_attempt():
         )
         conn.commit()
         attempt_id = cur.lastrowid
+        filas_temporales = []
         for posicion, question_id in enumerate(question_ids):
             try:
                 question_id_int = int(question_id)
             except (TypeError, ValueError):
                 continue
-            cur.execute(
-                """
-                INSERT INTO tests_temporales (attempt_id, question_id, posicion)
-                VALUES (?, ?, ?)
-                """,
-                (attempt_id, question_id_int, posicion),
+            filas_temporales.append((attempt_id, question_id_int, posicion))
+        if filas_temporales:
+            cur.executemany(
+                "INSERT INTO tests_temporales (attempt_id, question_id, posicion) VALUES (?, ?, ?)",
+                filas_temporales,
             )
         conn.commit()
     return jsonify({"attempt_id": attempt_id})
@@ -1163,20 +1194,15 @@ def get_favorite_questions():
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            SELECT q.id, q.text, q.explicacion FROM favorites f
+            SELECT q.id, q.text, q.explicacion, o.text AS opt_text, o.position AS opt_position
+            FROM favorites f
             JOIN questions q ON q.id = f.question_id
-            WHERE f.user_id = ? ORDER BY f.created_at DESC LIMIT ?
-        """, (user_id, TAMANO_TEST_FAVORITAS))
-        questions = []
-        for row in cur.fetchall():
-            cur.execute("SELECT text, position FROM options WHERE question_id = ? ORDER BY position ASC", (row["id"],))
-            options = [o["text"] for o in cur.fetchall()]
-            if not options:
-                continue
-            questions.append({
-                "id": row["id"], "text": row["text"], "explicacion": row["explicacion"],
-                "options": options, "correct_index": 0,
-            })
+            LEFT JOIN options o ON o.question_id = q.id
+            WHERE f.user_id = ?
+            ORDER BY f.created_at DESC, o.position
+        """, (user_id,))
+        todas = _agrupar_preguntas_desde_filas(cur.fetchall())
+        questions = todas[:TAMANO_TEST_FAVORITAS]
     return jsonify({"questions": questions})
 
 
@@ -1201,20 +1227,15 @@ def get_failure_questions():
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            SELECT q.id, q.text, q.explicacion FROM failures f
+            SELECT q.id, q.text, q.explicacion, o.text AS opt_text, o.position AS opt_position
+            FROM failures f
             JOIN questions q ON q.id = f.question_id
-            WHERE f.user_id = ? ORDER BY f.last_failed_at DESC LIMIT ?
-        """, (user_id, FAILURES_TEST_SIZE))
-        questions = []
-        for row in cur.fetchall():
-            cur.execute("SELECT text, position FROM options WHERE question_id = ? ORDER BY position ASC", (row["id"],))
-            options = [o["text"] for o in cur.fetchall()]
-            if not options:
-                continue
-            questions.append({
-                "id": row["id"], "text": row["text"], "explicacion": row["explicacion"],
-                "options": options, "correct_index": 0,
-            })
+            LEFT JOIN options o ON o.question_id = q.id
+            WHERE f.user_id = ?
+            ORDER BY f.last_failed_at DESC, o.position
+        """, (user_id,))
+        todas = _agrupar_preguntas_desde_filas(cur.fetchall())
+        questions = todas[:FAILURES_TEST_SIZE]
     return jsonify({"questions": questions})
 
 
@@ -1351,17 +1372,14 @@ def start_simulacro(sim_id):
         if not sim:
             return jsonify({"error": "Simulacro no encontrado"}), 404
 
-        cur.execute("SELECT id, text, explicacion FROM questions WHERE quiz_id = ?", (sim["quiz_id"],))
-        questions = []
-        for row in cur.fetchall():
-            cur.execute("SELECT text, position FROM options WHERE question_id = ? ORDER BY position ASC", (row["id"],))
-            options = [o["text"] for o in cur.fetchall()]
-            if not options:
-                continue
-            questions.append({
-                "id": row["id"], "text": row["text"], "explicacion": row["explicacion"],
-                "options": options, "correct_index": 0,
-            })
+        cur.execute("""
+            SELECT q.id, q.text, q.explicacion, o.text AS opt_text, o.position AS opt_position
+            FROM questions q
+            LEFT JOIN options o ON o.question_id = q.id
+            WHERE q.quiz_id = ?
+            ORDER BY q.id, o.position
+        """, (sim["quiz_id"],))
+        questions = _agrupar_preguntas_desde_filas(cur.fetchall())
 
     return jsonify({"simulacro": sim, "questions": questions})
 
