@@ -539,6 +539,102 @@ def get_mega_test_questions():
     })
 
 
+def _crear_test_desde_preguntas(cur, nombre_test, preguntas_ids):
+    ahora = datetime.utcnow().isoformat()
+    cur.execute(
+        "INSERT INTO quizzes (title, description, created_at) VALUES (?, ?, ?)",
+        (nombre_test, None, ahora),
+    )
+    quiz_id_nuevo = cur.lastrowid
+    total_preguntas = 0
+
+    for pregunta_id in preguntas_ids:
+        cur.execute(
+            "SELECT text, explicacion, bloque, tema FROM questions WHERE id = ?",
+            (pregunta_id,),
+        )
+        pregunta = cur.fetchone()
+        if not pregunta:
+            continue
+
+        cur.execute(
+            "INSERT INTO questions (quiz_id, text, explicacion, bloque, tema) VALUES (?, ?, ?, ?, ?)",
+            (quiz_id_nuevo, pregunta["text"], pregunta["explicacion"], pregunta["bloque"], pregunta["tema"]),
+        )
+        pregunta_nueva_id = cur.lastrowid
+
+        cur.execute(
+            "SELECT text, position FROM options WHERE question_id = ? ORDER BY position ASC",
+            (pregunta_id,),
+        )
+        opciones = cur.fetchall()
+        if len(opciones) < 2:
+            cur.execute("DELETE FROM questions WHERE id = ?", (pregunta_nueva_id,))
+            continue
+
+        for opcion in opciones:
+            cur.execute(
+                "INSERT INTO options (question_id, text, position) VALUES (?, ?, ?)",
+                (pregunta_nueva_id, opcion["text"], opcion["position"]),
+            )
+        total_preguntas += 1
+
+    return quiz_id_nuevo, total_preguntas
+
+
+@app.route("/api/tests/mega/crear", methods=["POST"])
+def crear_mega_test_como_normal():
+    data = request.get_json(force=True)
+    user_id = data.get("user_id")
+    quiz_ids = data.get("quiz_ids") or []
+    solo_favoritos = bool(data.get("solo_favoritos"))
+    nombre = (data.get("nombre") or "").strip()
+
+    error_permiso = validar_permiso_gestion(user_id)
+    if error_permiso:
+        return error_permiso
+    if not nombre:
+        return jsonify({"error": "Debes indicar un nombre para el test"}), 400
+    if not isinstance(quiz_ids, list) or not quiz_ids:
+        return jsonify({"error": "Debes indicar al menos un test"}), 400
+
+    try:
+        quiz_ids = [int(qid) for qid in quiz_ids]
+    except (TypeError, ValueError):
+        return jsonify({"error": "Lista de tests no valida"}), 400
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        placeholders = ",".join("?" for _ in quiz_ids)
+        cur.execute(f"SELECT id FROM quizzes WHERE id IN ({placeholders})", quiz_ids)
+        quiz_ids_validos = [fila["id"] for fila in cur.fetchall()]
+        if not quiz_ids_validos:
+            return jsonify({"error": "No se encontraron tests"}), 404
+
+        if solo_favoritos:
+            p = ",".join("?" for _ in quiz_ids_validos)
+            cur.execute(f"""
+                SELECT quiz_id FROM tests_favoritos
+                WHERE user_id = ? AND quiz_id IN ({p})
+            """, [user_id, *quiz_ids_validos])
+            favoritos_ids = {fila["quiz_id"] for fila in cur.fetchall()}
+            quiz_ids_validos = [qid for qid in quiz_ids_validos if qid in favoritos_ids]
+
+        preguntas = _obtener_preguntas_por_tests(cur, quiz_ids_validos)
+        preguntas_ids = [pregunta["id"] for pregunta in preguntas]
+        if not preguntas_ids:
+            return jsonify({"error": "No hay preguntas disponibles"}), 400
+
+        quiz_id_nuevo, total_preguntas = _crear_test_desde_preguntas(cur, nombre, preguntas_ids)
+        if total_preguntas == 0:
+            cur.execute("DELETE FROM quizzes WHERE id = ?", (quiz_id_nuevo,))
+            conn.commit()
+            return jsonify({"error": "No se pudo crear el test"}), 400
+
+        conn.commit()
+        return jsonify({"quiz_id": quiz_id_nuevo, "total_preguntas": total_preguntas})
+
+
 @app.route("/api/questions/<int:question_id>", methods=["PUT"])
 def editar_pregunta(question_id):
     data = request.get_json(force=True)
