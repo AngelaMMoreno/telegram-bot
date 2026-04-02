@@ -1923,6 +1923,18 @@ def cerrar_intento_en_curso(context):
     context.user_data.pop("quiz", None)
 
 
+def avanzar_a_siguiente_pregunta_si_toca(quiz):
+    if not quiz:
+        return
+    if not quiz.get("esperando_siguiente"):
+        return
+    if quiz.get("ultimo_pregunta_id") is None:
+        return
+    quiz["esperando_siguiente"] = False
+    quiz["ultimo_pregunta_id"] = None
+    quiz["i"] = quiz.get("i", 0) + 1
+
+
 def programar_temporizador_pregunta(context, chat_id, indice_pregunta, pregunta_id):
     telegram_user_id = context.user_data.get("quiz", {}).get("telegram_user_id")
     if not telegram_user_id:
@@ -2358,6 +2370,7 @@ async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             await enviar_pregunta(chat_id, context)
         else:
+            avanzar_a_siguiente_pregunta_si_toca(context.user_data.get("quiz"))
             await mostrar_pregunta_actual(chat_id, context)
     elif data == "reiniciar_test_pendiente":
         pendiente = context.user_data.pop("quiz_pendiente", None)

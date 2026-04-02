@@ -231,6 +231,15 @@
     renderQuestion();
   }
 
+  function obtener_total_preguntas_quiz() {
+    return state.quiz?.totalOriginal || state.quiz?.questions?.length || 0;
+  }
+
+  function obtener_posicion_absoluta_actual() {
+    const respondidasPrevias = state.quiz?.respondidas || 0;
+    return respondidasPrevias + state.qi + 1;
+  }
+
   async function obtener_intento_pendiente(tipo, quizId = null) {
     const qs = new URLSearchParams({
       user_id: String(state.userId),
@@ -657,10 +666,13 @@
   /* ── Render question ── */
   function renderQuestion() {
     const q = state.quiz.questions[state.qi];
-    const total = state.quiz.questions.length;
+    const totalActual = state.quiz.questions.length;
+    const totalOriginal = obtener_total_preguntas_quiz();
+    const posicionActual = obtener_posicion_absoluta_actual();
 
-    document.getElementById("quiz-counter").textContent = `${state.qi + 1} / ${total}`;
-    document.getElementById("quiz-progress").style.width = `${((state.qi + 1) / total) * 100}%`;
+    const totalSeguro = totalOriginal || totalActual || 1;
+    document.getElementById("quiz-counter").textContent = `${posicionActual} / ${totalSeguro}`;
+    document.getElementById("quiz-progress").style.width = `${(posicionActual / totalSeguro) * 100}%`;
     document.getElementById("question-text").textContent = q.text;
     document.getElementById("question-explanation").classList.add("hidden");
     state.answered = false;
@@ -682,7 +694,7 @@
     document.getElementById("btn-eliminar-pregunta").classList.toggle("hidden", !state.puedeGestionar);
 
     document.getElementById("btn-next-question").textContent =
-      state.qi < total - 1 ? "Siguiente" : "Finalizar";
+      state.qi < totalActual - 1 ? "Siguiente" : "Finalizar";
     document.getElementById("btn-next-question").classList.add("hidden");
   }
 
