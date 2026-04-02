@@ -318,20 +318,24 @@
 
   /* ── Tests list ── */
   async function loadTests(page) {
-    state.megaModo = false;
-    state.megaSeleccionados.clear();
-    state.megaTestsPagina = [];
     state.testsPaginaActual = page;
     showView("tests");
     const listEl = document.getElementById("test-list");
     const pagEl = document.getElementById("test-pagination");
     const titleEl = document.getElementById("tests-title");
+    const panelMega = document.getElementById("panel-mega-test");
+    const botonMegaModo = document.getElementById("btn-mega-modo");
+    const resumenMega = document.getElementById("mega-seleccion-resumen");
     listEl.innerHTML = '<div class="spinner"></div>';
     pagEl.innerHTML = "";
 
     const filterBtn = document.getElementById("btn-toggle-fav-filter");
     filterBtn.classList.toggle("active", state.favFilter);
     titleEl.textContent = state.favFilter ? "Tests favoritos" : "Mis tests";
+    panelMega.classList.toggle("hidden", !state.megaModo || !state.puedeGestionar);
+    botonMegaModo.classList.toggle("active", state.megaModo);
+    resumenMega.textContent = `${state.megaSeleccionados.size} tests seleccionados`;
+    state.megaTestsPagina = [];
 
     try {
       const endpoint = state.favFilter
@@ -353,6 +357,7 @@
             <div class="test-item-meta">${badges.join("")}${t.total_preguntas} preguntas</div>
           </div>
           <div class="test-item-actions">
+            ${state.megaModo && state.puedeGestionar ? `<input type="checkbox" class="mega-checkbox" data-mega-id="${t.id}" ${state.megaSeleccionados.has(t.id) ? "checked" : ""}>` : ""}
             <button class="btn-icon test-fav-btn ${t.es_favorito ? "active" : ""}" data-fav="${t.id}" title="Favorito">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="${t.es_favorito ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
             </button>
@@ -383,6 +388,12 @@
 
   // Test list events
   document.getElementById("test-list").addEventListener("click", async (e) => {
+    if (e.target.matches(".mega-checkbox")) {
+      const quizId = parseInt(e.target.dataset.megaId);
+      if (e.target.checked) state.megaSeleccionados.add(quizId);
+      else state.megaSeleccionados.delete(quizId);
+      return;
+    }
     const favBtn = e.target.closest("[data-fav]");
     if (favBtn) {
       e.stopPropagation();
@@ -417,6 +428,14 @@
     const item = e.target.closest(".test-item");
     if (item) {
       const quizId = parseInt(item.dataset.id);
+      if (state.megaModo && state.puedeGestionar) {
+        const checkbox = item.querySelector(".mega-checkbox");
+        if (!checkbox) return;
+        checkbox.checked = !checkbox.checked;
+        if (checkbox.checked) state.megaSeleccionados.add(quizId);
+        else state.megaSeleccionados.delete(quizId);
+        return;
+      }
       startQuiz(quizId);
     }
   });
@@ -429,6 +448,49 @@
   document.getElementById("btn-toggle-fav-filter").addEventListener("click", () => {
     state.favFilter = !state.favFilter;
     loadTests(1);
+  });
+  document.getElementById("btn-mega-modo").addEventListener("click", () => {
+    if (!state.puedeGestionar) return;
+    state.megaModo = !state.megaModo;
+    if (!state.megaModo) state.megaSeleccionados.clear();
+    loadTests(1);
+  });
+  document.getElementById("btn-seleccionar-pagina").addEventListener("click", () => {
+    for (const id of state.megaTestsPagina) state.megaSeleccionados.add(id);
+    loadTests(state.testsPaginaActual);
+  });
+  document.getElementById("btn-deseleccionar-pagina").addEventListener("click", () => {
+    for (const id of state.megaTestsPagina) state.megaSeleccionados.delete(id);
+    loadTests(state.testsPaginaActual);
+  });
+  document.getElementById("btn-iniciar-mega-test").addEventListener("click", async () => {
+    if (!state.puedeGestionar) return;
+    if (!state.megaSeleccionados.size) {
+      toast("Selecciona al menos un test");
+      return;
+    }
+    try {
+      const nombreMegaTest = (prompt("Nombre del mega test", `Mega test ${new Date().toLocaleDateString("es-ES")}`) || "").trim();
+      if (!nombreMegaTest) {
+        toast("Debes indicar un nombre para el mega test");
+        return;
+      }
+      const d = await api("/tests/mega/crear", {
+        method: "POST",
+        body: {
+          user_id: state.userId,
+          nombre: nombreMegaTest,
+          quiz_ids: Array.from(state.megaSeleccionados),
+          solo_favoritos: state.favFilter,
+        },
+      });
+      state.megaSeleccionados.clear();
+      state.megaModo = false;
+      toast(`Mega test creado como test normal (${d.total_preguntas} preguntas)`);
+      loadTests(1);
+    } catch (err) {
+      toast(err.message);
+    }
   });
 
   /* ── Download helpers ── */

@@ -107,11 +107,20 @@
       </button>
       <h1 id="tests-title">Mis tests</h1>
       <div class="header-actions">
+        <button id="btn-mega-modo" class="btn-icon hidden" data-gestion="si" title="Modo mega test">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
+        </button>
         <button id="btn-toggle-fav-filter" class="btn-icon" title="Filtrar favoritos">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
         </button>
       </div>
     </header>
+    <div id="panel-mega-test" class="panel-mega-test hidden" data-gestion="si">
+      <div id="mega-seleccion-resumen" class="mega-seleccion-resumen">0 tests seleccionados</div>
+      <button id="btn-seleccionar-pagina" class="btn btn-outline btn-sm">Seleccionar pagina</button>
+      <button id="btn-deseleccionar-pagina" class="btn btn-outline btn-sm">Deseleccionar pagina</button>
+      <button id="btn-iniciar-mega-test" class="btn btn-primary btn-sm">Iniciar mega test</button>
+    </div>
     <div id="test-list" class="test-list"></div>
     <div id="test-pagination" class="pagination"></div>
   </div>
