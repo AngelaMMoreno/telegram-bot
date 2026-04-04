@@ -228,6 +228,12 @@ def init_db():
             )
             """
         )
+        # Índices para acelerar consultas de preguntas y opciones
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_questions_quiz_id ON questions(quiz_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_options_question_id ON options(question_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_attempt_items_attempt_id ON attempt_items(attempt_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tests_temporales_attempt_id ON tests_temporales(attempt_id)")
+
         asegurar_columna_descripcion(conn)
         asegurar_columnas_preguntas(conn)
         asegurar_columna_nombre_intento(conn)
