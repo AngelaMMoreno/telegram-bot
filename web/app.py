@@ -130,6 +130,30 @@ def dict_rows(rows):
     return [dict(r) for r in rows]
 
 
+def _cargar_opciones_por_pregunta_ids(cur, question_ids):
+    """Carga todas las opciones de varias preguntas en una sola query.
+    Devuelve dict {question_id: [texto_opcion, ...]} ordenado por position."""
+    if not question_ids:
+        return {}
+    opciones_por_pregunta = {}
+    # SQLite soporta hasta 999 variables; partimos en bloques
+    BLOQUE = 900
+    for i in range(0, len(question_ids), BLOQUE):
+        bloque = question_ids[i:i + BLOQUE]
+        placeholders = ",".join("?" for _ in bloque)
+        cur.execute(
+            f"SELECT question_id, text, position FROM options "
+            f"WHERE question_id IN ({placeholders}) ORDER BY question_id, position ASC",
+            bloque,
+        )
+        for row in cur.fetchall():
+            qid = row["question_id"]
+            if qid not in opciones_por_pregunta:
+                opciones_por_pregunta[qid] = []
+            opciones_por_pregunta[qid].append(row["text"])
+    return opciones_por_pregunta
+
+
 # ─────────────── Simulacro helpers ───────────────
 def estimar_posicion_en_historico(puntuacion, historico):
     if not historico:
@@ -237,6 +261,11 @@ def init_web_db():
         columnas = {fila["name"] for fila in cur.fetchall()}
         if "nombre" not in columnas:
             cur.execute("ALTER TABLE attempts ADD COLUMN nombre TEXT")
+        # Índices para acelerar consultas de preguntas y opciones
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_questions_quiz_id ON questions(quiz_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_options_question_id ON options(question_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_attempt_items_attempt_id ON attempt_items(attempt_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tests_temporales_attempt_id ON tests_temporales(attempt_id)")
         conn.commit()
 
 init_web_db()
@@ -435,10 +464,12 @@ def get_test_questions(quiz_id):
         if not quiz:
             return jsonify({"error": "Test no encontrado"}), 404
         cur.execute("SELECT id, text, explicacion FROM questions WHERE quiz_id = ?", (quiz_id,))
+        filas = cur.fetchall()
+        question_ids = [row["id"] for row in filas]
+        opciones_map = _cargar_opciones_por_pregunta_ids(cur, question_ids)
         questions = []
-        for row in cur.fetchall():
-            cur.execute("SELECT text, position FROM options WHERE question_id = ? ORDER BY position ASC", (row["id"],))
-            options = [o["text"] for o in cur.fetchall()]
+        for row in filas:
+            options = opciones_map.get(row["id"], [])
             if not options:
                 continue
             questions.append({
@@ -465,11 +496,13 @@ def _obtener_preguntas_por_tests(cur, quiz_ids):
 
     placeholders = ",".join("?" for _ in quiz_ids)
     cur.execute(f"SELECT id, text, explicacion FROM questions WHERE quiz_id IN ({placeholders})", quiz_ids)
+    filas = cur.fetchall()
+    question_ids = [row["id"] for row in filas]
+    opciones_map = _cargar_opciones_por_pregunta_ids(cur, question_ids)
     preguntas = []
     huellas_vistas = set()
-    for row in cur.fetchall():
-        cur.execute("SELECT text FROM options WHERE question_id = ? ORDER BY position ASC", (row["id"],))
-        opciones = [o["text"] for o in cur.fetchall()]
+    for row in filas:
+        opciones = opciones_map.get(row["id"], [])
         if len(opciones) < 2:
             continue
         huella = _crear_huella_pregunta(row["text"], opciones)
@@ -488,14 +521,26 @@ def _obtener_preguntas_por_tests(cur, quiz_ids):
 
 
 def _obtener_preguntas_por_ids(cur, preguntas_ids):
+    if not preguntas_ids:
+        return []
+    # Cargar todas las preguntas en batch
+    BLOQUE = 900
+    preguntas_map = {}
+    for i in range(0, len(preguntas_ids), BLOQUE):
+        bloque = preguntas_ids[i:i + BLOQUE]
+        placeholders = ",".join("?" for _ in bloque)
+        cur.execute(f"SELECT id, text, explicacion FROM questions WHERE id IN ({placeholders})", bloque)
+        for fila in cur.fetchall():
+            preguntas_map[fila["id"]] = fila
+    # Cargar todas las opciones en batch
+    opciones_map = _cargar_opciones_por_pregunta_ids(cur, list(preguntas_map.keys()))
+    # Reconstruir en el orden original
     preguntas = []
     for pregunta_id in preguntas_ids:
-        cur.execute("SELECT id, text, explicacion FROM questions WHERE id = ?", (pregunta_id,))
-        fila = cur.fetchone()
+        fila = preguntas_map.get(pregunta_id)
         if not fila:
             continue
-        cur.execute("SELECT text FROM options WHERE question_id = ? ORDER BY position ASC", (pregunta_id,))
-        opciones = [op["text"] for op in cur.fetchall()]
+        opciones = opciones_map.get(pregunta_id, [])
         if not opciones:
             continue
         preguntas.append({
@@ -886,10 +931,12 @@ def _get_test_as_json(quiz_id):
         if not quiz:
             return None
         cur.execute("SELECT id, text, explicacion, bloque, tema FROM questions WHERE quiz_id = ? ORDER BY id", (quiz_id,))
+        filas = cur.fetchall()
+        question_ids = [f["id"] for f in filas]
+        opciones_map = _cargar_opciones_por_pregunta_ids(cur, question_ids)
         preguntas = []
-        for f in cur.fetchall():
-            cur.execute("SELECT text FROM options WHERE question_id = ? ORDER BY position ASC", (f["id"],))
-            opciones = [i["text"] for i in cur.fetchall()]
+        for f in filas:
+            opciones = opciones_map.get(f["id"], [])
             if len(opciones) < 2:
                 continue
             preguntas.append({
@@ -1167,10 +1214,12 @@ def get_favorite_questions():
             JOIN questions q ON q.id = f.question_id
             WHERE f.user_id = ? ORDER BY f.created_at DESC LIMIT ?
         """, (user_id, TAMANO_TEST_FAVORITAS))
+        filas = cur.fetchall()
+        question_ids = [row["id"] for row in filas]
+        opciones_map = _cargar_opciones_por_pregunta_ids(cur, question_ids)
         questions = []
-        for row in cur.fetchall():
-            cur.execute("SELECT text, position FROM options WHERE question_id = ? ORDER BY position ASC", (row["id"],))
-            options = [o["text"] for o in cur.fetchall()]
+        for row in filas:
+            options = opciones_map.get(row["id"], [])
             if not options:
                 continue
             questions.append({
@@ -1205,10 +1254,12 @@ def get_failure_questions():
             JOIN questions q ON q.id = f.question_id
             WHERE f.user_id = ? ORDER BY f.last_failed_at DESC LIMIT ?
         """, (user_id, FAILURES_TEST_SIZE))
+        filas = cur.fetchall()
+        question_ids = [row["id"] for row in filas]
+        opciones_map = _cargar_opciones_por_pregunta_ids(cur, question_ids)
         questions = []
-        for row in cur.fetchall():
-            cur.execute("SELECT text, position FROM options WHERE question_id = ? ORDER BY position ASC", (row["id"],))
-            options = [o["text"] for o in cur.fetchall()]
+        for row in filas:
+            options = opciones_map.get(row["id"], [])
             if not options:
                 continue
             questions.append({
@@ -1352,10 +1403,12 @@ def start_simulacro(sim_id):
             return jsonify({"error": "Simulacro no encontrado"}), 404
 
         cur.execute("SELECT id, text, explicacion FROM questions WHERE quiz_id = ?", (sim["quiz_id"],))
+        filas = cur.fetchall()
+        question_ids = [row["id"] for row in filas]
+        opciones_map = _cargar_opciones_por_pregunta_ids(cur, question_ids)
         questions = []
-        for row in cur.fetchall():
-            cur.execute("SELECT text, position FROM options WHERE question_id = ? ORDER BY position ASC", (row["id"],))
-            options = [o["text"] for o in cur.fetchall()]
+        for row in filas:
+            options = opciones_map.get(row["id"], [])
             if not options:
                 continue
             questions.append({
