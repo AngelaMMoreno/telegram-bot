@@ -1910,15 +1910,11 @@ async def tiempo_agotado(context: ContextTypes.DEFAULT_TYPE):
     correcta = wrap_text(actual["options"][actual["correct_index"]])
     await context.bot.send_message(chat_id, "⏰ Tiempo agotado.")
 
-    if quiz.get("attempt_type") == "simulacro":
-        quiz["sin_responder"] = quiz.get("sin_responder", 0) + 1
-        await context.bot.send_message(chat_id, "Pregunta dejada sin contestar.")
-        add_attempt_item(quiz["attempt_id"], pregunta_id, "Sin respuesta", False)
-    else:
-        quiz["fail"] += 1
-        await context.bot.send_message(chat_id, f"💡 Respuesta correcta:\n{correcta}")
-        add_attempt_item(quiz["attempt_id"], pregunta_id, "Sin respuesta", False)
-        record_failure(quiz["user_id"], pregunta_id)
+    quiz["fail"] += 1
+    await context.bot.send_message(chat_id, f"❌ Tiempo agotado. Se cuenta como fallo.")
+    await context.bot.send_message(chat_id, f"💡 Respuesta correcta:\n{correcta}")
+    add_attempt_item(quiz["attempt_id"], pregunta_id, "Sin respuesta", False)
+    record_failure(quiz["user_id"], pregunta_id)
 
 
     quiz["esperando_siguiente"] = True

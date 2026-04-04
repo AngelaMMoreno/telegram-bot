@@ -769,7 +769,8 @@
       const q = state.quiz.questions[state.qi];
       if (q._shuffled[i].isCorrect) b.classList.add("correct");
     });
-    toast("Tiempo agotado. Pregunta en blanco.");
+    state.wrong++;
+    toast("Tiempo agotado. Se cuenta como fallo.");
     document.getElementById("btn-next-question").classList.remove("hidden");
     state.qi++;
     if (state.qi >= state.quiz.questions.length) {
