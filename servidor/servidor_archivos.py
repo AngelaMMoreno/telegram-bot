@@ -154,6 +154,12 @@ a{text-decoration:none;color:inherit}
   padding:14px 24px;display:flex;align-items:center;justify-content:space-between;
   box-shadow:0 2px 8px rgba(0,0,0,.2);gap:12px;flex-wrap:wrap}
 .hdr-title{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:700}
+.hdr-search{flex:1;max-width:400px;min-width:150px}
+.hdr-search input{width:100%;padding:8px 14px;border:none;border-radius:8px;
+  font-size:14px;background:rgba(255,255,255,.2);color:#fff;
+  outline:none;transition:background .15s}
+.hdr-search input::placeholder{color:rgba(255,255,255,.6)}
+.hdr-search input:focus{background:rgba(255,255,255,.3)}
 .hdr-actions{display:flex;gap:8px;flex-wrap:wrap}
 
 /* ── breadcrumb ── */
@@ -1616,6 +1622,9 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
 <body>
 <div class="hdr">
   <div class="hdr-title">🗂️ Ficheros</div>
+  <div class="hdr-search">
+    <input type="text" id="buscador" placeholder="🔍 Buscar ficheros..." oninput="filtrarFicheros(this.value)">
+  </div>
   <div class="hdr-actions">
     <a href="/subirPlantilla" class="btn btn-ghost">🧩 Nueva página desde JSON</a>
     <a href="{upload_link}" class="btn btn-white">📤 Subir / Nueva carpeta</a>
@@ -1637,6 +1646,21 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
 <div class="grid">{grid_content}</div>
 <script>
 var rutaActual = {json.dumps(url_path or "/")};
+
+function filtrarFicheros(texto) {{
+  var termino = texto.toLowerCase().trim();
+  var cards = document.querySelectorAll('.grid .card');
+  var visibles = 0;
+  cards.forEach(function(card) {{
+    var nombre = card.querySelector('.card-name');
+    if (!nombre) return;
+    var coincide = !termino || nombre.textContent.toLowerCase().indexOf(termino) !== -1;
+    card.style.display = coincide ? '' : 'none';
+    if (coincide) visibles++;
+  }});
+  var empty = document.querySelector('.grid .empty');
+  if (empty) empty.style.display = termino ? 'none' : '';
+}}
 
 function descargarCarpeta(ruta) {{
   window.location.href = '/descargarCarpeta?ruta=' + encodeURIComponent(ruta);
