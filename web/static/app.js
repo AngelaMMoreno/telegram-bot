@@ -764,19 +764,33 @@
     if (state.answered || !state.quiz) return;
     state.answered = true;
     detener_temporizador_pregunta();
+    const q = state.quiz.questions[state.qi];
     document.querySelectorAll(".option-btn").forEach((b, i) => {
       b.classList.add("disabled");
-      const q = state.quiz.questions[state.qi];
       if (q._shuffled[i].isCorrect) b.classList.add("correct");
     });
-    toast("Tiempo agotado. Pregunta en blanco.");
-    document.getElementById("btn-next-question").classList.remove("hidden");
-    state.qi++;
-    if (state.qi >= state.quiz.questions.length) {
-      await finishQuiz();
-      return;
+    state.wrong++;
+    toast("⏰ Tiempo agotado. Pregunta marcada como incorrecta.");
+
+    try {
+      await api(`/attempts/${state.quiz.attemptId}/answer`, {
+        method: "POST",
+        body: {
+          question_id: q.id,
+          selected_option: "Sin respuesta",
+          is_correct: false,
+          user_id: state.userId,
+        },
+      });
+    } catch (_) {}
+
+    if (q.explicacion) {
+      const expEl = document.getElementById("question-explanation");
+      expEl.textContent = q.explicacion;
+      expEl.classList.remove("hidden");
     }
-    renderQuestion();
+
+    document.getElementById("btn-next-question").classList.remove("hidden");
   }
 
   /* ── Option click ── */
