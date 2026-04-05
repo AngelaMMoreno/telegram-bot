@@ -850,6 +850,24 @@
     }
   });
 
+  /* ── Keyboard shortcuts for quiz ── */
+  document.addEventListener("keydown", async (e) => {
+    if (!state.quiz) return;
+    const view = document.getElementById("view-quiz");
+    if (!view.classList.contains("active")) return;
+
+    if (!state.answered) {
+      const num = parseInt(e.key);
+      if (num >= 1 && num <= 4) {
+        const btns = document.querySelectorAll(".option-btn");
+        if (btns[num - 1]) btns[num - 1].click();
+      }
+    } else {
+      const nextBtn = document.getElementById("btn-next-question");
+      if (!nextBtn.classList.contains("hidden")) nextBtn.click();
+    }
+  });
+
   /* ── Quit quiz ── */
   document.getElementById("btn-quit-quiz").addEventListener("click", async () => {
     if (await confirm("Pausar test", "Se guardará tu progreso para retomarlo después.")) {
