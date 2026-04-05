@@ -265,6 +265,18 @@ def init_web_db():
         columnas_items = {fila["name"] for fila in cur.fetchall()}
         if "answered_at" not in columnas_items:
             cur.execute("ALTER TABLE attempt_items ADD COLUMN answered_at TEXT")
+        # Rellenar answered_at retroactivamente para intentos ya terminados
+        cur.execute("""
+            UPDATE attempt_items
+            SET answered_at = (
+                SELECT finished_at FROM attempts WHERE id = attempt_items.attempt_id
+            )
+            WHERE answered_at IS NULL
+              AND EXISTS (
+                SELECT 1 FROM attempts
+                WHERE id = attempt_items.attempt_id AND finished_at IS NOT NULL
+              )
+        """)
         # Índices para acelerar consultas de preguntas y opciones
         cur.execute("CREATE INDEX IF NOT EXISTS idx_questions_quiz_id ON questions(quiz_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_options_question_id ON options(question_id)")

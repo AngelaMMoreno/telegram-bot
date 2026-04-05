@@ -255,6 +255,18 @@ def asegurar_columna_answered_at_items(conn):
     columnas = {fila["name"] for fila in cur.fetchall()}
     if "answered_at" not in columnas:
         cur.execute("ALTER TABLE attempt_items ADD COLUMN answered_at TEXT")
+    # Rellenar answered_at retroactivamente para intentos ya terminados
+    cur.execute("""
+        UPDATE attempt_items
+        SET answered_at = (
+            SELECT finished_at FROM attempts WHERE id = attempt_items.attempt_id
+        )
+        WHERE answered_at IS NULL
+          AND EXISTS (
+            SELECT 1 FROM attempts
+            WHERE id = attempt_items.attempt_id AND finished_at IS NOT NULL
+          )
+    """)
 
 
 def get_or_create_user(chat_id):
