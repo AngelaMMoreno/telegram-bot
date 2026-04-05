@@ -863,6 +863,7 @@
         if (btns[num - 1]) btns[num - 1].click();
       }
     } else {
+      if (e.key !== "Escape") {return}
       const nextBtn = document.getElementById("btn-next-question");
       if (!nextBtn.classList.contains("hidden")) nextBtn.click();
     }
