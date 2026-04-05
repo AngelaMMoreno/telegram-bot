@@ -237,6 +237,7 @@ def init_db():
         asegurar_columna_descripcion(conn)
         asegurar_columnas_preguntas(conn)
         asegurar_columna_nombre_intento(conn)
+        asegurar_columna_answered_at_items(conn)
         conn.commit()
 
 
@@ -246,6 +247,14 @@ def asegurar_columna_nombre_intento(conn):
     columnas = {fila["name"] for fila in cur.fetchall()}
     if "nombre" not in columnas:
         cur.execute("ALTER TABLE attempts ADD COLUMN nombre TEXT")
+
+
+def asegurar_columna_answered_at_items(conn):
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(attempt_items)")
+    columnas = {fila["name"] for fila in cur.fetchall()}
+    if "answered_at" not in columnas:
+        cur.execute("ALTER TABLE attempt_items ADD COLUMN answered_at TEXT")
 
 
 def get_or_create_user(chat_id):
@@ -822,7 +831,7 @@ def contar_preguntas_respondidas_hoy(user_id):
             FROM attempt_items ai
             JOIN attempts a ON a.id = ai.attempt_id
             WHERE a.user_id = ?
-              AND date(a.started_at) = date('now')
+              AND date(COALESCE(ai.answered_at, a.started_at)) = date('now')
             """,
             (user_id,),
         )
@@ -862,14 +871,15 @@ def finish_attempt(attempt_id, correct, wrong):
 
 
 def add_attempt_item(attempt_id, question_id, selected_option, is_correct):
+    now = datetime.utcnow().isoformat()
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute(
             """
-            INSERT INTO attempt_items (attempt_id, question_id, selected_option, is_correct)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO attempt_items (attempt_id, question_id, selected_option, is_correct, answered_at)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (attempt_id, question_id, selected_option, int(is_correct)),
+            (attempt_id, question_id, selected_option, int(is_correct), now),
         )
         conn.commit()
 

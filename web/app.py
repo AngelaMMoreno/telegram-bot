@@ -261,6 +261,10 @@ def init_web_db():
         columnas = {fila["name"] for fila in cur.fetchall()}
         if "nombre" not in columnas:
             cur.execute("ALTER TABLE attempts ADD COLUMN nombre TEXT")
+        cur.execute("PRAGMA table_info(attempt_items)")
+        columnas_items = {fila["name"] for fila in cur.fetchall()}
+        if "answered_at" not in columnas_items:
+            cur.execute("ALTER TABLE attempt_items ADD COLUMN answered_at TEXT")
         # Índices para acelerar consultas de preguntas y opciones
         cur.execute("CREATE INDEX IF NOT EXISTS idx_questions_quiz_id ON questions(quiz_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_options_question_id ON options(question_id)")
@@ -1137,10 +1141,11 @@ def answer_question(attempt_id):
     is_correct = data.get("is_correct", False)
     user_id = data.get("user_id")
 
+    now = datetime.utcnow().isoformat()
     with get_conn() as conn:
         cur = conn.cursor()
-        cur.execute("INSERT INTO attempt_items (attempt_id, question_id, selected_option, is_correct) VALUES (?, ?, ?, ?)",
-                     (attempt_id, question_id, selected_option, int(is_correct)))
+        cur.execute("INSERT INTO attempt_items (attempt_id, question_id, selected_option, is_correct, answered_at) VALUES (?, ?, ?, ?, ?)",
+                     (attempt_id, question_id, selected_option, int(is_correct), now))
         conn.commit()
 
     if user_id and question_id:
@@ -1298,7 +1303,7 @@ def get_progress():
         cur.execute("""
             SELECT COUNT(ai.id) AS total FROM attempt_items ai
             JOIN attempts a ON a.id = ai.attempt_id
-            WHERE a.user_id = ? AND date(a.started_at) = date('now')
+            WHERE a.user_id = ? AND date(COALESCE(ai.answered_at, a.started_at)) = date('now')
         """, (user_id,))
         stats["respondidas_hoy"] = cur.fetchone()["total"]
 
