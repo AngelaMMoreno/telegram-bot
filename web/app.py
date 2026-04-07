@@ -1234,6 +1234,36 @@ def get_favorite_questions():
     return jsonify({"questions": questions})
 
 
+@app.route("/api/favorites/all")
+def get_all_favorite_questions():
+    user_id = request.args.get("user_id", type=int)
+    if not user_id:
+        return jsonify({"error": "user_id requerido"}), 400
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT q.id, q.text, q.explicacion, qz.title AS quiz_title
+            FROM favorites f
+            JOIN questions q ON q.id = f.question_id
+            JOIN quizzes qz ON qz.id = q.quiz_id
+            WHERE f.user_id = ?
+            ORDER BY qz.title ASC, f.created_at DESC
+        """, (user_id,))
+        filas = cur.fetchall()
+        question_ids = [row["id"] for row in filas]
+        opciones_map = _cargar_opciones_por_pregunta_ids(cur, question_ids)
+        questions = []
+        for row in filas:
+            options = opciones_map.get(row["id"], [])
+            if not options:
+                continue
+            questions.append({
+                "id": row["id"], "text": row["text"], "explicacion": row["explicacion"],
+                "options": options, "correct_index": 0, "quiz_title": row["quiz_title"],
+            })
+    return jsonify({"questions": questions})
+
+
 @app.route("/api/favorites/check")
 def check_favorites():
     user_id = request.args.get("user_id", type=int)

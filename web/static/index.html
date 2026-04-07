@@ -80,6 +80,10 @@
         <span class="menu-icon">&#x2B50;</span>
         <span>Test de favoritas</span>
       </button>
+      <button class="menu-card" data-action="ver-favoritas">
+        <span class="menu-icon">&#x1F4D6;</span>
+        <span>Ver favoritas</span>
+      </button>
       <button class="menu-card" data-action="simulacros">
         <span class="menu-icon">&#x1F9EA;</span>
         <span>Simulacros</span>
@@ -215,6 +219,17 @@
       <h1>Resultado Simulacro</h1>
     </header>
     <div class="results-body" id="simulacro-results-body"></div>
+  </div>
+
+  <!-- Favorite questions viewer -->
+  <div id="view-ver-favoritas" class="view">
+    <header class="app-header">
+      <button class="btn-icon btn-back" data-back="menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <h1>Mis favoritas</h1>
+    </header>
+    <div class="fav-viewer-body" id="fav-viewer-body"></div>
   </div>
 
   <!-- Toast -->

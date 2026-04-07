@@ -322,6 +322,7 @@
     else if (action === "upload") showView("upload");
     else if (action === "fallos") startFailuresTest();
     else if (action === "favoritas") startFavoritesTest();
+    else if (action === "ver-favoritas") loadFavoritesViewer();
     else if (action === "simulacros") loadSimulacros();
     else if (action === "progreso") loadProgress();
     else if (action === "download-all") downloadAll();
@@ -693,6 +694,58 @@
     } catch (err) { toast(err.message); }
   }
 
+  /* ── Favorites viewer ── */
+  async function loadFavoritesViewer() {
+    showView("ver-favoritas");
+    const body = document.getElementById("fav-viewer-body");
+    body.innerHTML = '<div class="spinner"></div>';
+
+    try {
+      const d = await api("/favorites/all?user_id=" + state.userId);
+      if (!d.questions.length) {
+        body.innerHTML = '<div class="empty-state"><p>No tienes preguntas favoritas</p></div>';
+        return;
+      }
+
+      let currentQuiz = null;
+      let html = "";
+      for (const q of d.questions) {
+        if (q.quiz_title !== currentQuiz) {
+          currentQuiz = q.quiz_title;
+          html += `<div class="fav-viewer-section-title">${esc(currentQuiz)}</div>`;
+        }
+        const correctAnswer = q.options[q.correct_index] || q.options[0];
+        html += `<div class="fav-viewer-card">
+          <div class="fav-viewer-question">${esc(q.text)}</div>
+          <div class="fav-viewer-answer">${esc(correctAnswer)}</div>
+          ${q.explicacion ? `<div class="fav-viewer-explanation">${esc(q.explicacion)}</div>` : ""}
+          <button class="btn-icon fav-viewer-remove" data-unfav="${q.id}" title="Quitar de favoritas">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          </button>
+        </div>`;
+      }
+
+      body.innerHTML = html;
+    } catch (err) {
+      body.innerHTML = `<div class="empty-state"><p>${esc(err.message)}</p></div>`;
+    }
+  }
+
+  document.getElementById("fav-viewer-body").addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-unfav]");
+    if (!btn) return;
+    const qid = parseInt(btn.dataset.unfav);
+    try {
+      await api("/favorites/toggle", {
+        method: "POST",
+        body: { user_id: state.userId, question_id: qid },
+      });
+      state.favQuestionIds.delete(qid);
+      btn.closest(".fav-viewer-card").remove();
+      toast("Quitada de favoritas");
+    } catch (err) { toast(err.message); }
+  });
+
   /* ── Render question ── */
   function renderQuestion() {
     const q = state.quiz.questions[state.qi];
@@ -863,6 +916,10 @@
         if (btns[num - 1]) btns[num - 1].click();
       }
     } else {
+      if (e.key === "1") {
+        document.getElementById("btn-fav-question").click();
+        return;
+      }
       if (e.key !== "Escape") {return}
       const nextBtn = document.getElementById("btn-next-question");
       if (!nextBtn.classList.contains("hidden")) nextBtn.click();
