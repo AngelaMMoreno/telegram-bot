@@ -575,4 +575,48 @@ body {
   .upload-area { max-width: 480px; margin: 0 auto; }
   .login-container { max-width: 400px; margin: 0 auto; }
   .menu-stats { justify-content: center; max-width: 640px; margin: 0 auto; }
+  .fav-viewer-body { max-width: 640px; margin: 0 auto; }
+}
+
+/* ── Favorites viewer ── */
+.fav-viewer-body { padding: 16px; }
+.fav-viewer-section-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--primary);
+  margin: 20px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 2px solid var(--primary-light);
+}
+.fav-viewer-section-title:first-child { margin-top: 0; }
+.fav-viewer-card {
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow);
+  position: relative;
+}
+.fav-viewer-question {
+  font-weight: 600;
+  margin-bottom: 8px;
+  padding-right: 30px;
+}
+.fav-viewer-answer {
+  color: var(--success);
+  font-size: 0.93rem;
+  padding-left: 10px;
+  border-left: 3px solid var(--success);
+}
+.fav-viewer-explanation {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+.fav-viewer-remove {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  color: var(--warning);
 }
