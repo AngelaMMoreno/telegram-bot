@@ -224,6 +224,9 @@
 
   function inicializar_estado_quiz(quiz) {
     quiz.tiempoPorPreguntaSegundos = quiz.tiempoPorPreguntaSegundos || TIEMPO_POR_PREGUNTA_POR_DEFECTO_SEGUNDOS;
+    if (!quiz.totalOriginal) {
+      quiz.totalOriginal = (quiz.questions ? quiz.questions.length : 0) + (quiz.respondidas || 0);
+    }
     state.quiz = quiz;
     state.qi = 0;
     state.correct = quiz.correct || 0;
@@ -1054,8 +1057,8 @@
   /* ── Finish quiz ── */
   async function finishQuiz() {
     detener_temporizador_pregunta();
-    const total = state.quiz.questions.length;
-    state.blank = total - state.correct - state.wrong;
+    const total = obtener_total_preguntas_quiz() || state.quiz.questions.length;
+    state.blank = Math.max(0, total - state.correct - state.wrong);
 
     try {
       await api(`/attempts/${state.quiz.attemptId}/finish`, {
