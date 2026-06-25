@@ -1,0 +1,69 @@
+version: "3.8"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stack Aprentix sobre PostgreSQL + PostgREST + servicio de embeddings.
+# Los servicios bot/, web/ y servidor/ siguen funcionando contra SQLite hasta
+# completar la migración; se incorporarán a este compose cuando se reescriban.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: aprentix
+      POSTGRES_USER: aprentix
+      POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS requerida}
+      # Disponible para los scripts de init/*.sql vía current_setting().
+      PGOPTIONS: >-
+        -c app.jwt_secret=${JWT_SECRET:?JWT_SECRET requerida}
+        -c app.admin_pass=${ADMIN_PASS:?ADMIN_PASS requerida}
+    volumes:
+      - /mnt/data/pg:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - ./db/backups:/backups
+    restart: unless-stopped
+    networks: [dokploy-network]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aprentix -d aprentix"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgrest:
+    image: postgrest/postgrest:v12.2.3
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://autenticador:${AUTH_PASS:?AUTH_PASS requerida}@db:5432/aprentix
+      PGRST_DB_ANON_ROLE: web_anon
+      PGRST_DB_SCHEMAS: public
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_OPENAPI_SERVER_PROXY_URI: https://api.aprentix.es
+    restart: unless-stopped
+    networks: [dokploy-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`api.aprentix.es`)"
+      - "traefik.http.routers.api.entrypoints=websecure"
+      - "traefik.http.routers.api.tls=true"
+      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.api.loadbalancer.server.port=3000"
+
+  embeddings:
+    build: ./embeddings
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://aprentix:${DB_PASS}@db:5432/aprentix
+      EMB_LOTE: "32"
+    volumes:
+      - /mnt/data/embeddings_cache:/cache
+    restart: unless-stopped
+    networks: [dokploy-network]
+
+networks:
+  dokploy-network:
+    external: true
