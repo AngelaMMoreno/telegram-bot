@@ -472,12 +472,20 @@ body:not(.puede-gestionar) .gestion { display: none !important; }
   }
   .topbar {
     grid-area: header; position: sticky;
-    padding: 0 1.4rem;            /* más aire en los laterales */
-    gap: 1.2rem;                  /* y entre bloques */
+    padding: 0 1.5rem;
+    gap: 1.5rem;
   }
   .brand { font-size: 1.15rem; }
-  .search-wrap { max-width: 520px; }
-  .user-chip { padding-left: 0.4rem; }
+  /* La barra de búsqueda queda centrada en el espacio sobrante;
+     el chip de usuario se empuja al borde derecho con margin auto. */
+  .search-wrap {
+    flex: 0 1 520px;
+    margin: 0 auto;
+  }
+  .user-chip {
+    margin-left: auto;
+    padding-left: 0.4rem;
+  }
   .user-chip .user-name { max-width: 180px; }
   .hamburger { display: none; }
   .sidebar {
