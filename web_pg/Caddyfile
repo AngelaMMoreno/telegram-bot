@@ -1,0 +1,19 @@
+# Servidor estático para la SPA + reverse proxy hacia PostgREST.
+# Traefik termina TLS en :443 y nos envía HTTP plano por :80.
+
+:80 {
+    encode zstd gzip
+
+    # API → PostgREST. Tira /api del path para que llegue como /rpc, /tests…
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy postgrest:3000
+    }
+
+    # SPA: sirve estáticos y cae a index.html para rutas del cliente.
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+}

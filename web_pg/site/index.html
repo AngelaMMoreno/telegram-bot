@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#6C63FF">
+<title>Aprentix Tests</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+  <!-- Login -->
+  <div id="view-login" class="view active">
+    <div class="login-container">
+      <div class="login-logo">
+        <div class="logo-icon">A</div>
+        <h1>Aprentix</h1>
+        <p class="login-subtitle">Plataforma de tests</p>
+      </div>
+
+      <!-- Login form -->
+      <form id="login-form" class="login-form">
+        <label for="login-username">Usuario</label>
+        <input type="text" id="login-username" placeholder="Tu nombre de usuario" required autocomplete="username">
+        <label for="login-password">Contraseña</label>
+        <input type="password" id="login-password" placeholder="Tu contraseña" required autocomplete="current-password">
+        <button type="submit" class="btn btn-primary btn-block">Entrar</button>
+        <p class="auth-switch">No tienes cuenta? <a href="#" id="show-register">Registrate</a></p>
+      </form>
+
+      <!-- Register form -->
+      <form id="register-form" class="login-form hidden">
+        <label for="reg-username">Usuario</label>
+        <input type="text" id="reg-username" placeholder="Elige un nombre de usuario" required autocomplete="username" minlength="3">
+        <label for="reg-password">Contraseña</label>
+        <input type="password" id="reg-password" placeholder="Elige una contraseña" required autocomplete="new-password" minlength="4">
+        <label for="reg-password2">Repetir contraseña</label>
+        <input type="password" id="reg-password2" placeholder="Repite la contraseña" required autocomplete="new-password">
+        <div class="link-telegram-section">
+          <label class="checkbox-label">
+            <input type="checkbox" id="reg-link-telegram">
+            <span>Vincular cuenta de Telegram existente</span>
+          </label>
+          <div id="reg-chatid-wrapper" class="hidden">
+            <label for="reg-chatid">Chat ID de Telegram</label>
+            <input type="text" id="reg-chatid" placeholder="Tu chat_id numerico">
+            <p class="input-hint">Escribe a @userinfobot en Telegram para obtener tu ID</p>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Registrarse</button>
+        <p class="auth-switch">Ya tienes cuenta? <a href="#" id="show-login">Inicia sesion</a></p>
+      </form>
+    </div>
+  </div>
+
+  <!-- Main menu -->
+  <div id="view-menu" class="view">
+    <header class="app-header">
+      <h1>Aprentix</h1>
+      <button id="btn-logout" class="btn-icon" title="Salir">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
+    </header>
+    <div class="menu-stats" id="menu-stats"></div>
+    <nav class="menu-grid">
+      <button class="menu-card" data-action="tests">
+        <span class="menu-icon">&#x1F9E9;</span>
+        <span>Mis tests</span>
+      </button>
+      <button class="menu-card" data-action="upload" data-gestion="si">
+        <span class="menu-icon">&#x1F4E6;</span>
+        <span>Subir tests</span>
+      </button>
+      <button class="menu-card" data-action="fallos">
+        <span class="menu-icon">&#x26A0;&#xFE0F;</span>
+        <span>Test de fallos</span>
+      </button>
+      <button class="menu-card" data-action="favoritas">
+        <span class="menu-icon">&#x2B50;</span>
+        <span>Test de favoritas</span>
+      </button>
+      <button class="menu-card" data-action="ver-favoritas">
+        <span class="menu-icon">&#x1F4D6;</span>
+        <span>Ver favoritas</span>
+      </button>
+      <button class="menu-card" data-action="simulacros">
+        <span class="menu-icon">&#x1F9EA;</span>
+        <span>Simulacros</span>
+      </button>
+      <button class="menu-card" data-action="progreso">
+        <span class="menu-icon">&#x1F4C8;</span>
+        <span>Progreso</span>
+      </button>
+      <button class="menu-card" data-action="download-all" data-gestion="si">
+        <span class="menu-icon">&#x2B07;&#xFE0F;</span>
+        <span>Descargar todos</span>
+      </button>
+      <button class="menu-card" data-action="download-db" data-gestion="si">
+        <span class="menu-icon">&#x1F4BE;</span>
+        <span>Descargar BD</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- Test list -->
+  <div id="view-tests" class="view">
+    <header class="app-header">
+      <button class="btn-icon btn-back" data-back="menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <h1 id="tests-title">Mis tests</h1>
+      <div class="header-actions">
+        <button id="btn-mega-modo" class="btn-icon hidden" data-gestion="si" title="Modo mega test">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
+        </button>
+        <button id="btn-toggle-fav-filter" class="btn-icon" title="Filtrar favoritos">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </button>
+      </div>
+    </header>
+    <div id="panel-mega-test" class="panel-mega-test hidden" data-gestion="si">
+      <div id="mega-seleccion-resumen" class="mega-seleccion-resumen">0 tests seleccionados</div>
+      <button id="btn-seleccionar-pagina" class="btn btn-outline btn-sm">Seleccionar pagina</button>
+      <button id="btn-deseleccionar-pagina" class="btn btn-outline btn-sm">Deseleccionar pagina</button>
+      <button id="btn-iniciar-mega-test" class="btn btn-primary btn-sm">Iniciar mega test</button>
+    </div>
+    <div id="test-list" class="test-list"></div>
+    <div id="test-pagination" class="pagination"></div>
+  </div>
+
+  <!-- Upload -->
+  <div id="view-upload" class="view">
+    <header class="app-header">
+      <button class="btn-icon btn-back" data-back="menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <h1>Subir tests</h1>
+    </header>
+    <div class="upload-area" id="upload-area">
+      <form id="upload-form">
+        <div class="upload-dropzone" id="dropzone">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <p>Arrastra archivos o pulsa para seleccionar</p>
+          <p class="upload-hint">.json o .zip</p>
+          <input type="file" id="file-input" accept=".json,.zip" multiple hidden>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="btn-upload" disabled>Subir</button>
+      </form>
+      <div id="upload-status" class="upload-status"></div>
+    </div>
+  </div>
+
+  <!-- Quiz (test taking) -->
+  <div id="view-quiz" class="view">
+    <header class="app-header">
+      <button class="btn-icon btn-back" id="btn-quit-quiz">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <h1 id="quiz-title">Test</h1>
+      <span class="quiz-timer" id="quiz-timer">20s</span>
+      <span class="quiz-counter" id="quiz-counter"></span>
+    </header>
+    <div class="quiz-progress-bar"><div class="quiz-progress-fill" id="quiz-progress"></div></div>
+    <div class="quiz-body" id="quiz-body">
+      <div class="question-text" id="question-text"></div>
+      <div class="options-list" id="options-list"></div>
+      <div class="question-explanation hidden" id="question-explanation"></div>
+      <div class="question-actions" id="question-actions">
+        <button class="btn btn-outline" id="btn-fav-question" title="Favorita">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </button>
+        <button class="btn btn-outline hidden" id="btn-editar-pregunta" data-gestion="si">Editar</button>
+        <button class="btn btn-danger hidden" id="btn-eliminar-pregunta" data-gestion="si">Eliminar</button>
+        <button class="btn btn-primary" id="btn-next-question">Siguiente</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="view-results" class="view">
+    <header class="app-header">
+      <button class="btn-icon btn-back" data-back="menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <h1>Resultados</h1>
+    </header>
+    <div class="results-body" id="results-body"></div>
+  </div>
+
+  <!-- Progress -->
+  <div id="view-progreso" class="view">
+    <header class="app-header">
+      <button class="btn-icon btn-back" data-back="menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <h1>Progreso</h1>
+    </header>
+    <div class="progress-body" id="progress-body"></div>
+  </div>
+
+  <!-- Simulacros list -->
+  <div id="view-simulacros" class="view">
+    <header class="app-header">
+      <button class="btn-icon btn-back" data-back="menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <h1>Simulacros</h1>
+    </header>
+    <div id="simulacros-list" class="test-list"></div>
+  </div>
+
+  <!-- Simulacro results -->
+  <div id="view-simulacro-results" class="view">
+    <header class="app-header">
+      <button class="btn-icon btn-back" data-back="menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <h1>Resultado Simulacro</h1>
+    </header>
+    <div class="results-body" id="simulacro-results-body"></div>
+  </div>
+
+  <!-- Favorite questions viewer -->
+  <div id="view-ver-favoritas" class="view">
+    <header class="app-header">
+      <button class="btn-icon btn-back" data-back="menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <h1>Mis favoritas</h1>
+    </header>
+    <div class="fav-viewer-body" id="fav-viewer-body"></div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
