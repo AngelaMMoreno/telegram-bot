@@ -204,6 +204,36 @@
 
 </main>
 
+<!-- Modal de edición de pregunta -->
+<div id="modal-pregunta" class="modal hidden">
+  <div class="modal-card">
+    <header class="modal-header">
+      <h3>Editar pregunta</h3>
+      <button class="btn btn-ghost" id="modal-close">✕</button>
+    </header>
+    <form id="form-pregunta">
+      <label>Enunciado
+        <textarea id="pq-enunciado" rows="3" required></textarea>
+      </label>
+      <label>Opciones <small class="muted">(una por línea; pon <code>*</code> al principio de la correcta)</small>
+        <textarea id="pq-opciones" rows="5" required></textarea>
+      </label>
+      <label>Explicación
+        <textarea id="pq-explicacion" rows="2"></textarea>
+      </label>
+      <label>Etiquetas <small class="muted">(separadas por coma)</small>
+        <input id="pq-etiquetas" placeholder="biología, glicólisis">
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="pq-borrar">🗑️ Borrar</button>
+        <span style="flex:1"></span>
+        <button type="button" class="btn btn-ghost" id="pq-cancelar">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div id="toast" class="toast hidden"></div>
 
 <script src="/app.js"></script>
