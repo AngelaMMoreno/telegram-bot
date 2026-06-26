@@ -217,6 +217,11 @@ CREATE ROLE autenticador LOGIN;
 GRANT web_anon, web_user TO autenticador;
 
 GRANT USAGE ON SCHEMA public TO web_anon, web_user;
+-- Tablas RBAC (lectura pública, las usan políticas RLS via tiene_permiso())
+GRANT SELECT ON rol_permisos, roles, permisos TO web_anon, web_user;
+-- Tabla de usuarios: lectura controlada por RLS (cada uno ve su fila)
+GRANT SELECT ON usuarios TO web_user;
+-- Contenido
 GRANT SELECT ON preguntas, tests, test_preguntas, catalogo_etiquetas TO web_user;
 GRANT SELECT, INSERT, UPDATE, DELETE
     ON preguntas, tests, test_preguntas, catalogo_etiquetas,
