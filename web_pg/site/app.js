@@ -114,9 +114,96 @@
           p_size: parseInt(q.get("size") || "10", 10),
         },
       });
-      // Compat con frontend antiguo: añade alias 'quizzes' por si lo usa.
       r.quizzes = r.tests;
       return r;
+    }
+
+    /* ── Preguntas de un test ── */
+    let m;
+    if ((m = base.match(/^\/tests\/([^/]+)\/questions$/))) {
+      return await pgrest("/rpc/obtener_preguntas_test", {
+        method: "POST", body: { p_test_id: m[1] },
+      });
+    }
+
+    /* ── Test favorito (toggle) ── */
+    if ((m = base.match(/^\/tests\/([^/]+)\/favorito$/)) && method === "POST") {
+      return await pgrest("/rpc/toggle_favorita_test", {
+        method: "POST", body: { p_test_id: m[1] },
+      });
+    }
+
+    /* ── Intentos ── */
+    if (base === "/attempts/start" && method === "POST") {
+      return await pgrest("/rpc/iniciar_intento", {
+        method: "POST",
+        body: {
+          p_test_id:      body.quiz_id || null,
+          p_tipo:         body.attempt_type || "quiz",
+          p_nombre:       body.nombre || null,
+          p_question_ids: body.question_ids || [],
+        },
+      });
+    }
+
+    if ((m = base.match(/^\/attempts\/([^/]+)\/answer$/)) && method === "POST") {
+      await pgrest("/rpc/registrar_respuesta", {
+        method: "POST",
+        body: {
+          p_intento_id:  m[1],
+          p_pregunta_id: body.question_id,
+          p_texto:       body.selected_option ?? "",
+          p_correcta:    !!body.is_correct,
+        },
+      });
+      return {};
+    }
+
+    if ((m = base.match(/^\/attempts\/([^/]+)\/finish$/)) && method === "POST") {
+      await pgrest("/rpc/finalizar_intento", {
+        method: "POST", body: { p_intento_id: m[1] },
+      });
+      return {};
+    }
+
+    if ((m = base.match(/^\/attempts\/([^/]+)\/discard$/)) && method === "POST") {
+      await pgrest("/rpc/descartar_intento", {
+        method: "POST", body: { p_intento_id: m[1] },
+      });
+      return {};
+    }
+
+    if (base === "/attempts/pending") {
+      return await pgrest("/rpc/intento_pendiente", {
+        method: "POST",
+        body: {
+          p_tipo:    q.get("attempt_type") || "quiz",
+          p_test_id: q.get("quiz_id") || null,
+        },
+      });
+    }
+
+    if ((m = base.match(/^\/attempts\/([^/]+)\/resume$/)) && method === "POST") {
+      return await pgrest("/rpc/reanudar_intento", {
+        method: "POST", body: { p_intento_id: m[1] },
+      });
+    }
+
+    /* ── Listas de favoritas y fallos ── */
+    if (base === "/favorites/toggle" && method === "POST") {
+      return await pgrest("/rpc/toggle_favorita_pregunta", {
+        method: "POST", body: { p_pregunta_id: body.question_id },
+      });
+    }
+
+    if (base === "/favorites/questions") {
+      return await pgrest("/rpc/mis_favoritas", { method: "POST", body: {} });
+    }
+    if (base === "/favorites/all") {
+      return await pgrest("/rpc/mis_favoritas_agrupadas", { method: "POST", body: {} });
+    }
+    if (base === "/failures/questions") {
+      return await pgrest("/rpc/mis_fallos", { method: "POST", body: {} });
     }
 
     throw new Error("Endpoint no portado todavía: " + method + " " + path);

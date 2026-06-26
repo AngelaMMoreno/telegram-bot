@@ -213,6 +213,331 @@ BEGIN
 END $$;
 
 
+-- ─────────────── Ajustes de tablas para almacenar el orden y texto ─────────
+-- Estos ALTER son IF NOT EXISTS / convertibles para que sean idempotentes
+-- tanto en DB nueva como en una ya migrada.
+
+ALTER TABLE intentos   ADD COLUMN IF NOT EXISTS question_ids uuid[];
+ALTER TABLE respuestas ALTER COLUMN opcion_elegida TYPE text USING opcion_elegida::text;
+
+
+-- ─────────────── Preguntas de un test (orden + opciones) ───────────────────
+-- Devuelve la forma compatible con el frontend antiguo:
+--   {quiz: {id, title}, questions: [{id, text, options: [{text, isCorrect}],
+--                                    explicacion}]}
+-- La convención: opciones[0] siempre es la correcta (heredado de la migración
+-- del SQLite).  isCorrect lo deriva el RPC y lo expone por opción.
+
+CREATE OR REPLACE FUNCTION obtener_preguntas_test(p_test_id uuid)
+RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT jsonb_build_object(
+        'quiz', jsonb_build_object(
+            'id',    t.id,
+            'title', t.titulo
+        ),
+        'questions', COALESCE(jsonb_agg(
+            jsonb_build_object(
+                'id',          p.id,
+                'text',        p.enunciado,
+                'options',     (
+                    SELECT jsonb_agg(jsonb_build_object(
+                        'text', o.opt->>'texto',
+                        'isCorrect', COALESCE((o.opt->>'correcta')::boolean,
+                                              o.idx = 1)
+                    ) ORDER BY o.idx)
+                    FROM jsonb_array_elements(p.opciones) WITH ORDINALITY o(opt, idx)
+                ),
+                'explicacion', p.explicacion,
+                'etiquetas',   p.etiquetas
+            ) ORDER BY tp.posicion
+        ), '[]'::jsonb)
+    )
+    FROM tests t
+    LEFT JOIN test_preguntas tp ON tp.test_id = t.id
+    LEFT JOIN preguntas p ON p.id = tp.pregunta_id
+    WHERE t.id = p_test_id
+    GROUP BY t.id, t.titulo;
+$$;
+
+
+-- ─────────────── Intentos ──────────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION iniciar_intento(
+    p_test_id      uuid    DEFAULT NULL,
+    p_tipo         text    DEFAULT 'quiz',
+    p_nombre       text    DEFAULT NULL,
+    p_question_ids uuid[]  DEFAULT '{}'
+) RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE v_id uuid;
+BEGIN
+    INSERT INTO intentos(test_id, tipo, nombre, question_ids)
+    VALUES (p_test_id, p_tipo, p_nombre, p_question_ids)
+    RETURNING id INTO v_id;
+    RETURN jsonb_build_object('attempt_id', v_id);
+END $$;
+
+-- Registra la respuesta y, si es incorrecta, actualiza el marcador 'fallo'.
+CREATE OR REPLACE FUNCTION registrar_respuesta(
+    p_intento_id  uuid,
+    p_pregunta_id uuid,
+    p_texto       text,
+    p_correcta    boolean
+) RETURNS void
+LANGUAGE plpgsql AS $$
+BEGIN
+    INSERT INTO respuestas(intento_id, pregunta_id, opcion_elegida, correcta)
+    VALUES (p_intento_id, p_pregunta_id, p_texto, p_correcta);
+
+    IF NOT p_correcta THEN
+        INSERT INTO marcadores(usuario_id, tipo, pregunta_id, contador, actualizado_en)
+        VALUES (jwt_usuario_id(), 'fallo', p_pregunta_id, 1, now())
+        ON CONFLICT (usuario_id, tipo, COALESCE(pregunta_id, test_id))
+        DO UPDATE SET contador = marcadores.contador + 1,
+                       actualizado_en = now();
+    END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION finalizar_intento(p_intento_id uuid)
+RETURNS void
+LANGUAGE sql AS $$
+    UPDATE intentos SET finalizado_en = now() WHERE id = p_intento_id;
+$$;
+
+CREATE OR REPLACE FUNCTION descartar_intento(p_intento_id uuid)
+RETURNS void
+LANGUAGE sql AS $$
+    DELETE FROM intentos WHERE id = p_intento_id;
+$$;
+
+-- Devuelve el intento pendiente más reciente (o null) para combo (tipo, test).
+CREATE OR REPLACE FUNCTION intento_pendiente(
+    p_tipo    text,
+    p_test_id uuid DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT jsonb_build_object(
+        'attempt', (
+            SELECT to_jsonb(x)
+            FROM (
+                SELECT i.id, i.nombre, i.test_id AS quiz_id, i.tipo AS attempt_type,
+                       i.iniciado_en
+                FROM intentos i
+                WHERE i.usuario_id = jwt_usuario_id()
+                  AND i.finalizado_en IS NULL
+                  AND i.tipo = p_tipo
+                  AND (p_test_id IS NULL OR i.test_id = p_test_id)
+                ORDER BY i.iniciado_en DESC
+                LIMIT 1
+            ) x
+        )
+    );
+$$;
+
+-- Reanuda un intento: devuelve las preguntas pendientes (las que aún no se
+-- han respondido) y el progreso parcial.
+CREATE OR REPLACE FUNCTION reanudar_intento(p_intento_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_int  intentos;
+    v_resp jsonb;
+    v_pend jsonb;
+    v_corr int;
+    v_wrong int;
+BEGIN
+    SELECT * INTO v_int FROM intentos WHERE id = p_intento_id;
+    IF v_int.id IS NULL OR v_int.usuario_id <> jwt_usuario_id() THEN
+        RAISE EXCEPTION 'intento_invalido';
+    END IF;
+
+    SELECT count(*) FILTER (WHERE correcta),
+           count(*) FILTER (WHERE NOT correcta)
+      INTO v_corr, v_wrong
+      FROM respuestas WHERE intento_id = p_intento_id;
+
+    -- Preguntas pendientes: las del question_ids[] menos las ya respondidas,
+    -- preservando el orden original.
+    WITH respondidas AS (
+        SELECT pregunta_id FROM respuestas WHERE intento_id = p_intento_id
+    ),
+    pendientes_ord AS (
+        SELECT qid, ord
+        FROM unnest(v_int.question_ids) WITH ORDINALITY AS u(qid, ord)
+        WHERE qid NOT IN (SELECT pregunta_id FROM respondidas)
+        ORDER BY ord
+    )
+    SELECT COALESCE(jsonb_agg(
+        jsonb_build_object(
+            'id',          p.id,
+            'text',        p.enunciado,
+            'options',     (
+                SELECT jsonb_agg(jsonb_build_object(
+                    'text', o.opt->>'texto',
+                    'isCorrect', COALESCE((o.opt->>'correcta')::boolean, o.idx = 1)
+                ) ORDER BY o.idx)
+                FROM jsonb_array_elements(p.opciones) WITH ORDINALITY o(opt, idx)
+            ),
+            'explicacion', p.explicacion,
+            'etiquetas',   p.etiquetas
+        ) ORDER BY po.ord
+    ), '[]'::jsonb)
+    INTO v_pend
+    FROM pendientes_ord po
+    JOIN preguntas p ON p.id = po.qid;
+
+    RETURN jsonb_build_object(
+        'attempt_id',     v_int.id,
+        'attempt_type',   v_int.tipo,
+        'quiz_id',        v_int.test_id,
+        'nombre',         v_int.nombre,
+        'questions',      v_pend,
+        'correct',        v_corr,
+        'wrong',          v_wrong,
+        'respondidas',    v_corr + v_wrong,
+        'total_original', COALESCE(array_length(v_int.question_ids, 1), 0)
+    );
+END $$;
+
+
+-- ─────────────── Marcadores (favoritas + tests favoritos) ──────────────────
+
+CREATE OR REPLACE FUNCTION toggle_favorita_pregunta(p_pregunta_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE v_existe boolean;
+BEGIN
+    SELECT EXISTS (
+        SELECT 1 FROM marcadores
+        WHERE usuario_id = jwt_usuario_id()
+          AND tipo = 'favorita'
+          AND pregunta_id = p_pregunta_id
+    ) INTO v_existe;
+
+    IF v_existe THEN
+        DELETE FROM marcadores
+        WHERE usuario_id = jwt_usuario_id()
+          AND tipo = 'favorita'
+          AND pregunta_id = p_pregunta_id;
+        RETURN jsonb_build_object('favorito', false);
+    ELSE
+        INSERT INTO marcadores(usuario_id, tipo, pregunta_id)
+        VALUES (jwt_usuario_id(), 'favorita', p_pregunta_id);
+        RETURN jsonb_build_object('favorito', true);
+    END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION toggle_favorita_test(p_test_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE v_existe boolean;
+BEGIN
+    SELECT EXISTS (
+        SELECT 1 FROM marcadores
+        WHERE usuario_id = jwt_usuario_id()
+          AND tipo = 'test_favorito'
+          AND test_id = p_test_id
+    ) INTO v_existe;
+
+    IF v_existe THEN
+        DELETE FROM marcadores
+        WHERE usuario_id = jwt_usuario_id()
+          AND tipo = 'test_favorito'
+          AND test_id = p_test_id;
+        RETURN jsonb_build_object('favorito', false);
+    ELSE
+        INSERT INTO marcadores(usuario_id, tipo, test_id)
+        VALUES (jwt_usuario_id(), 'test_favorito', p_test_id);
+        RETURN jsonb_build_object('favorito', true);
+    END IF;
+END $$;
+
+
+-- ─────────────── Listas de preguntas falladas / favoritas ───────────────────
+
+CREATE OR REPLACE FUNCTION mis_fallos() RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT jsonb_build_object(
+        'questions', COALESCE(jsonb_agg(
+            jsonb_build_object(
+                'id', p.id,
+                'text', p.enunciado,
+                'options', (
+                    SELECT jsonb_agg(jsonb_build_object(
+                        'text', o.opt->>'texto',
+                        'isCorrect', COALESCE((o.opt->>'correcta')::boolean, o.idx = 1)
+                    ) ORDER BY o.idx)
+                    FROM jsonb_array_elements(p.opciones) WITH ORDINALITY o(opt, idx)
+                ),
+                'explicacion', p.explicacion,
+                'etiquetas',   p.etiquetas,
+                'veces_fallada', m.contador
+            ) ORDER BY m.actualizado_en DESC
+        ), '[]'::jsonb)
+    )
+    FROM marcadores m
+    JOIN preguntas p ON p.id = m.pregunta_id
+    WHERE m.usuario_id = jwt_usuario_id() AND m.tipo = 'fallo';
+$$;
+
+CREATE OR REPLACE FUNCTION mis_favoritas() RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT jsonb_build_object(
+        'questions', COALESCE(jsonb_agg(
+            jsonb_build_object(
+                'id', p.id,
+                'text', p.enunciado,
+                'options', (
+                    SELECT jsonb_agg(jsonb_build_object(
+                        'text', o.opt->>'texto',
+                        'isCorrect', COALESCE((o.opt->>'correcta')::boolean, o.idx = 1)
+                    ) ORDER BY o.idx)
+                    FROM jsonb_array_elements(p.opciones) WITH ORDINALITY o(opt, idx)
+                ),
+                'explicacion', p.explicacion,
+                'etiquetas',   p.etiquetas
+            ) ORDER BY m.actualizado_en DESC
+        ), '[]'::jsonb)
+    )
+    FROM marcadores m
+    JOIN preguntas p ON p.id = m.pregunta_id
+    WHERE m.usuario_id = jwt_usuario_id() AND m.tipo = 'favorita';
+$$;
+
+-- Visor agrupado por test (para la pantalla "Ver favoritas").  Devuelve
+-- {questions:[{...,quiz_title}]} con quiz_title = primer test en el que
+-- aparece la pregunta (si está en varios).
+CREATE OR REPLACE FUNCTION mis_favoritas_agrupadas() RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT jsonb_build_object(
+        'questions', COALESCE(jsonb_agg(
+            jsonb_build_object(
+                'id', p.id,
+                'text', p.enunciado,
+                'options', (
+                    SELECT jsonb_agg(jsonb_build_object(
+                        'text', o.opt->>'texto',
+                        'isCorrect', COALESCE((o.opt->>'correcta')::boolean, o.idx = 1)
+                    ) ORDER BY o.idx)
+                    FROM jsonb_array_elements(p.opciones) WITH ORDINALITY o(opt, idx)
+                ),
+                'explicacion', p.explicacion,
+                'quiz_title',  COALESCE((
+                    SELECT t.titulo FROM test_preguntas tp
+                    JOIN tests t ON t.id = tp.test_id
+                    WHERE tp.pregunta_id = p.id
+                    ORDER BY t.creado_en LIMIT 1
+                ), '(sin test)')
+            ) ORDER BY 1
+        ), '[]'::jsonb)
+    )
+    FROM marcadores m
+    JOIN preguntas p ON p.id = m.pregunta_id
+    WHERE m.usuario_id = jwt_usuario_id() AND m.tipo = 'favorita';
+$$;
+
+
 -- ─────────────── Concesiones de ejecución ───────────────────────────────────
 
 GRANT EXECUTE ON FUNCTION mi_sesion()                                 TO web_user;
@@ -221,3 +546,15 @@ GRANT EXECUTE ON FUNCTION registrar_web(text,text,text,text)          TO web_ano
 GRANT EXECUTE ON FUNCTION mi_progreso()                               TO web_user;
 GRANT EXECUTE ON FUNCTION mis_favoritas_ids()                         TO web_user;
 GRANT EXECUTE ON FUNCTION listar_tests(boolean,int,int)               TO web_user;
+GRANT EXECUTE ON FUNCTION obtener_preguntas_test(uuid)                TO web_user;
+GRANT EXECUTE ON FUNCTION iniciar_intento(uuid,text,text,uuid[])      TO web_user;
+GRANT EXECUTE ON FUNCTION registrar_respuesta(uuid,uuid,text,boolean) TO web_user;
+GRANT EXECUTE ON FUNCTION finalizar_intento(uuid)                     TO web_user;
+GRANT EXECUTE ON FUNCTION descartar_intento(uuid)                     TO web_user;
+GRANT EXECUTE ON FUNCTION intento_pendiente(text,uuid)                TO web_user;
+GRANT EXECUTE ON FUNCTION reanudar_intento(uuid)                      TO web_user;
+GRANT EXECUTE ON FUNCTION toggle_favorita_pregunta(uuid)              TO web_user;
+GRANT EXECUTE ON FUNCTION toggle_favorita_test(uuid)                  TO web_user;
+GRANT EXECUTE ON FUNCTION mis_fallos()                                TO web_user;
+GRANT EXECUTE ON FUNCTION mis_favoritas()                             TO web_user;
+GRANT EXECUTE ON FUNCTION mis_favoritas_agrupadas()                   TO web_user;
