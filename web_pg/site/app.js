@@ -128,11 +128,42 @@ function navigate(view) {
 
 document.addEventListener("click", e => {
   const navBtn = e.target.closest("[data-view]");
-  if (navBtn) { navigate(navBtn.dataset.view); }
+  if (navBtn) {
+    navigate(navBtn.dataset.view);
+    setSidebar(false);
+  }
 });
 
 $("#btn-logout").addEventListener("click", () => logout());
-$("#btn-menu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
+
+/* ── Sidebar drawer (móvil) ── */
+function setSidebar(open) {
+  $("#sidebar").classList.toggle("open", open);
+  $("#sidebar-backdrop").classList.toggle("hidden", !open);
+}
+$("#btn-menu").addEventListener("click", () => setSidebar(!$("#sidebar").classList.contains("open")));
+$("#sidebar-backdrop").addEventListener("click", () => setSidebar(false));
+
+/* ── Tiempo por pregunta (sincronizado entre vistas vía localStorage) ── */
+function getTiempo() {
+  return parseInt(localStorage.getItem("tiempoPregunta") || "20", 10);
+}
+function setTiempo(n) {
+  if (!Number.isFinite(n) || n < 3 || n > 3600) return;
+  localStorage.setItem("tiempoPregunta", String(n));
+  $$(".tiempo-input").forEach(i => { if (Number(i.value) !== n) i.value = n; });
+}
+function inicializarInputsTiempo() {
+  const t = getTiempo();
+  $$(".tiempo-input").forEach(i => {
+    i.value = t;
+    i.addEventListener("change", () => setTiempo(parseInt(i.value, 10)));
+    i.addEventListener("input",  () => {
+      const v = parseInt(i.value, 10);
+      if (Number.isFinite(v)) setTiempo(v);
+    });
+  });
+}
 
 /* ── Login / registro ────────────────────────────────────────────────────── */
 $$(".tab").forEach(tab => tab.addEventListener("click", () => {
@@ -495,6 +526,7 @@ function startQuiz(title, testId, questions, tipo = "quiz") {
     correct: 0, wrong: 0, blank: 0,
     answered: false,
     intentoId: null,
+    tiempoPorPregunta: getTiempo(),
   };
   state.qi = 0;
 
@@ -522,12 +554,13 @@ function renderPregunta() {
     <button class="option-btn" data-i="${i}">${esc(o.text)}</button>
   `).join("");
 
-  // Timer 20s
-  let t = 20;
-  $("#quiz-timer").textContent = t;
+  // Temporizador configurable (se fija al iniciar el test, no cambia entre preguntas).
+  let t = state.quiz.tiempoPorPregunta || 20;
+  $("#quiz-timer").textContent = t + "s";
   clearInterval(state.quiz._timer);
   state.quiz._timer = setInterval(() => {
-    t--; $("#quiz-timer").textContent = t;
+    t--;
+    $("#quiz-timer").textContent = t + "s";
     if (t <= 0) { clearInterval(state.quiz._timer); responder(null); }
   }, 1000);
 }
@@ -612,8 +645,15 @@ async function finalizarQuiz() {
 
 document.addEventListener("keydown", e => {
   if (!state.quiz || $("#view-quiz").classList.contains("active") === false) return;
+  // No interferir si el foco está en un input/textarea (modal de edición, etc.)
+  const tag = (e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea") return;
+
   if (state.quiz.answered) {
-    if (e.key === "Enter" || e.key === " ") $("#btn-next").click();
+    if (e.key === "Enter" || e.key === " " || e.key === "Escape") {
+      e.preventDefault();
+      $("#btn-next").click();
+    }
     return;
   }
   const k = parseInt(e.key, 10);
@@ -828,6 +868,7 @@ async function loadProgreso() {
 }
 
 /* ── Arranque ───────────────────────────────────────────────────────────── */
+inicializarInputsTiempo();
 applySession();
 navigate(state.jwt && state.user ? "home" : "login");
 
