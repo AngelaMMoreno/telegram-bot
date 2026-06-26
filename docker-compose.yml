@@ -21,9 +21,16 @@ services:
       POSTGRES_DB: aprentix
       POSTGRES_USER: aprentix
       POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS requerida}
-      PGOPTIONS: >-
-        -c app.jwt_secret=${JWT_SECRET:?JWT_SECRET requerida}
-        -c app.admin_pass=${ADMIN_PASS:?ADMIN_PASS requerida}
+    # PGOPTIONS es client-side: para fijar GUCs en el servidor hay que
+    # pasarle '-c' al proceso postgres directamente.
+    command:
+      - postgres
+      - -c
+      - app.jwt_secret=${JWT_SECRET:?JWT_SECRET requerida}
+      - -c
+      - app.admin_pass=${ADMIN_PASS:?ADMIN_PASS requerida}
+      - -c
+      - app.auth_pass=${AUTH_PASS:?AUTH_PASS requerida}
     volumes:
       - /mnt/data/pg:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro

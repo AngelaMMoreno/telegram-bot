@@ -5,13 +5,14 @@
 -- Auth y RBAC en tablas propias (no se usan roles Postgres como identidad).
 -- ============================================================================
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;       -- gen_random_uuid, crypt, bcrypt
+CREATE EXTENSION IF NOT EXISTS pgcrypto;       -- gen_random_uuid, crypt, bcrypt, hmac
 CREATE EXTENSION IF NOT EXISTS pg_trgm;        -- búsqueda textual difusa
 CREATE EXTENSION IF NOT EXISTS vector;         -- pgvector (embeddings)
-CREATE EXTENSION IF NOT EXISTS pgjwt;          -- firmar / verificar JWT en SQL
 
--- Secreto JWT inyectado por el contenedor vía PGOPTIONS o ALTER DATABASE.
--- Se consulta con current_setting('app.jwt_secret').
+-- La firma de JWT se implementa en SQL puro sobre pgcrypto (HS256)
+-- en 03_funciones.sql: no necesitamos la extensión externa pgjwt.
+-- Los secretos llegan al servidor como GUCs personalizados (-c app.xxx=...)
+-- y se leen con current_setting('app.jwt_secret') etc.
 
 -- ─────────────────────────── Identidad ──────────────────────────────────────
 
@@ -207,7 +208,9 @@ CREATE TRIGGER temas_emb_au
 
 CREATE ROLE web_anon   NOLOGIN;
 CREATE ROLE web_user   NOLOGIN;
-CREATE ROLE autenticador LOGIN PASSWORD 'CAMBIAR_EN_DOCKER_COMPOSE';
+-- La contraseña del rol autenticador se fija en 02_seed.sql desde
+-- la GUC app.auth_pass (inyectada por compose con -c).
+CREATE ROLE autenticador LOGIN;
 GRANT web_anon, web_user TO autenticador;
 
 GRANT USAGE ON SCHEMA public TO web_anon, web_user;
