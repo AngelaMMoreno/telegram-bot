@@ -112,8 +112,10 @@ def migrar(sqlite_path: str, pg_dsn: str, dry_run: bool = False) -> None:
                 map_preguntas[p["id"]] = hash_a_uuid[h]
                 continue
             nuevo = uuid.uuid4()
+            # En SQLite las opciones se insertaban con enumerate (position
+            # empieza en 0) y la convención del bot era "primera = correcta".
             opciones = [
-                {"texto": t, "correcta": pos == 1}  # convención: la 1ª era correcta
+                {"texto": t, "correcta": pos == 0}
                 for pos, t in opciones_por_preg.get(p["id"], [])
             ]
             cur.execute(
