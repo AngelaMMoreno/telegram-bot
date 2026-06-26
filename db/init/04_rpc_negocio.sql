@@ -794,3 +794,66 @@ GRANT EXECUTE ON FUNCTION preguntas_de_tests(uuid[])                  TO web_use
 GRANT EXECUTE ON FUNCTION crear_mega_test(text,uuid[])                TO web_user;
 GRANT EXECUTE ON FUNCTION mi_progreso_detallado()                     TO web_user;
 GRANT EXECUTE ON FUNCTION listar_simulacros()                         TO web_user;
+
+
+CREATE OR REPLACE FUNCTION crear_simulacro(
+    p_titulo            text,
+    p_test_id           uuid,
+    p_nota_corte        numeric,
+    p_escala_maxima     numeric
+) RETURNS uuid
+LANGUAGE plpgsql AS $$
+DECLARE v_id uuid;
+BEGIN
+    IF NOT (tiene_permiso('test.crear') OR es_admin()) THEN
+        RAISE EXCEPTION 'permiso_denegado';
+    END IF;
+    -- Marca el test indicado como simulacro y guarda nota_corte/escala_maxima.
+    UPDATE tests
+       SET tipo = 'simulacro',
+           titulo = COALESCE(NULLIF(p_titulo,''), titulo),
+           nota_corte = p_nota_corte,
+           escala_maxima = p_escala_maxima
+     WHERE id = p_test_id
+     RETURNING id INTO v_id;
+    IF v_id IS NULL THEN
+        RAISE EXCEPTION 'test_no_encontrado';
+    END IF;
+    RETURN v_id;
+END $$;
+
+GRANT EXECUTE ON FUNCTION crear_simulacro(text,uuid,numeric,numeric)   TO web_user;
+
+
+-- ─────────────── Configuración (histórico simulacro, plazas…) ──────────────
+-- Pares (puntuación directa, posición) ordenados desc por puntuación.
+-- Se rellenan a mano desde pgAdmin o mediante una migración inicial.
+
+CREATE TABLE IF NOT EXISTS config (
+    clave text PRIMARY KEY,
+    valor jsonb
+);
+ALTER TABLE config ENABLE ROW LEVEL SECURITY;
+CREATE POLICY config_lectura  ON config FOR SELECT USING (true);
+CREATE POLICY config_admin    ON config FOR ALL TO web_user
+    USING (es_admin()) WITH CHECK (es_admin());
+GRANT SELECT ON config TO web_user, web_anon;
+GRANT INSERT, UPDATE, DELETE ON config TO web_user;
+
+INSERT INTO config(clave, valor) VALUES
+    ('historico_2024',         '[]'::jsonb),
+    ('historico_2022',         '[]'::jsonb),
+    ('plazas_referencia',      '844'::jsonb),
+    ('penalizacion_fallo',     '0.333333'::jsonb),
+    ('puntos_acierto_parte_2', '0.5'::jsonb),
+    ('min_directa_simulacro',  '30'::jsonb),
+    ('n_max_simulacro',        '90'::jsonb),
+    ('e_max_simulacro',        '50'::jsonb)
+ON CONFLICT (clave) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION leer_config() RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(jsonb_object_agg(clave, valor), '{}'::jsonb) FROM config;
+$$;
+
+GRANT EXECUTE ON FUNCTION leer_config() TO web_user, web_anon;

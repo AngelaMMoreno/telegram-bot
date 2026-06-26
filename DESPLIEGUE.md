@@ -148,7 +148,46 @@ cat aprentix_2026-06-25.dump | \
     docker compose exec -T db pg_restore -U aprentix -d aprentix -c
 ```
 
-## 8. Cuándo cerrar el sistema viejo
+## 8. Web nueva (web_pg) en `test-pg.aprentix.es`
+
+El stack incluye un servicio `web_pg` con Caddy que sirve la SPA y
+hace reverse-proxy de `/api/*` a PostgREST.  Convive con la web vieja
+(`test.aprentix.es`, Flask + SQLite) para que puedas comparar.
+
+1. Añade en Dokploy la variable `DOMINIO_WEB_PG=test-pg.aprentix.es`
+   (o el subdominio que prefieras) y crea el registro DNS apuntando
+   al servidor.
+2. Redeploy.
+3. Abre `https://test-pg.aprentix.es`.
+
+### Crear un usuario (el migrador no trajo las contraseñas)
+
+Las contraseñas viejas no se pudieron migrar (SQLite no las guardaba
+en hash compatible).  Hay dos formas:
+
+a) Crear cuenta nueva desde la pantalla de registro de la SPA.  Si
+   eres el primero te pondrá rol `alumno`; el admin (creado en seed
+   con `ADMIN_PASS`) puede subirte a `editor`/`admin`.
+
+b) Loguearte directo con `admin` / `ADMIN_PASS`.
+
+### Histórico de plazas para el simulacro
+
+El cálculo del simulacro lee la tabla `config`.  Si quieres reactivar
+los porcentajes de plazas 2022/2024, en pgAdmin → Query Tool:
+
+```sql
+UPDATE config SET valor = '[[55,1],[50,200],[45,500]]'::jsonb
+ WHERE clave = 'historico_2024';
+UPDATE config SET valor = '[[60,1],[55,150],[50,400]]'::jsonb
+ WHERE clave = 'historico_2022';
+UPDATE config SET valor = '844'::jsonb WHERE clave = 'plazas_referencia';
+```
+
+(Pon los valores reales — los que tenías en las env vars `HISTORICO_2024`
+y `HISTORICO_2022` del `web/` antiguo.)
+
+## 9. Cuándo cerrar el sistema viejo
 
 Cuando hayas validado en Postgres que los datos están bien, hayas
 reescrito `bot/` y `web/` contra PostgREST (siguientes fases) y

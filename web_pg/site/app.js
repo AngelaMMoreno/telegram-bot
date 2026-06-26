@@ -322,8 +322,107 @@
       throw new Error("La descarga de backup de BD no está disponible en la versión Postgres");
     }
 
-    /* ── Simulacros/calculate y POST /simulacros: pendientes para A1.5 ── */
+    /* ── Crear simulacro ── */
+    if (base === "/simulacros" && method === "POST") {
+      const id = await pgrest("/rpc/crear_simulacro", {
+        method: "POST",
+        body: {
+          p_titulo:        body.nombre,
+          p_test_id:       body.quiz_id,
+          p_nota_corte:    body.nota_corte_directa,
+          p_escala_maxima: body.escala_maxima,
+        },
+      });
+      return { id };
+    }
+
+    /* ── Cálculo del simulacro ── */
+    if (base === "/simulacros/calculate" && method === "POST") {
+      const cfg = await pgrest("/rpc/leer_config", { method: "POST", body: {} });
+      return calcularResultadoSimulacro(body, cfg);
+    }
+
     throw new Error("Endpoint no portado todavía: " + method + " " + path);
+  }
+
+  /* ── Cálculo del simulacro (port de app.py) ──
+     Mismo algoritmo que tenía Flask, pero ejecutado en cliente con la
+     config leída de Postgres (tabla 'config').
+  */
+  function _estimarPosicionEnHistorico(puntuacion, historico) {
+    if (!historico || !historico.length) return null;
+    if (puntuacion >= historico[0][0]) return 1;
+    for (let i = 0; i < historico.length - 1; i++) {
+      const [p1, pos1] = historico[i];
+      const [p2, pos2] = historico[i + 1];
+      if (puntuacion >= p2) {
+        if (p1 === p2) return pos2;
+        const frac = (p1 - puntuacion) / (p1 - p2);
+        return Math.round(pos1 + frac * (pos2 - pos1));
+      }
+    }
+    return historico[historico.length - 1][1] + 1;
+  }
+  function _notaCorteParaPlazas(plazas, historico) {
+    if (!historico || !historico.length) return null;
+    for (const [p, pos] of historico) if (pos >= plazas) return p;
+    return historico[historico.length - 1][0];
+  }
+  function _notaTransformada(directa, corte, nMax, eMax) {
+    if (nMax <= 0 || corte <= 0 || eMax <= 0) return 0;
+    directa = Math.max(0, directa);
+    if (directa < corte) return (eMax / 2) * (directa / corte);
+    if (nMax <= corte) return eMax / 2;
+    return (eMax / 2) * (1 + (directa - corte) / (nMax - corte));
+  }
+  function calcularResultadoSimulacro(input, cfg) {
+    const HIST24 = cfg.historico_2024 || [];
+    const HIST22 = cfg.historico_2022 || [];
+    const PEN    = Number(cfg.penalizacion_fallo)     || 1/3;
+    const P2_PT  = Number(cfg.puntos_acierto_parte_2) || 0.5;
+    const PLAZAS = Number(cfg.plazas_referencia)      || 844;
+    const MIN30  = Number(cfg.min_directa_simulacro)  || 30;
+    const N_MAX  = Number(cfg.n_max_simulacro)        || 90;
+    const E_MAX  = Number(cfg.e_max_simulacro)        || 50;
+
+    const a1 = input.aciertos_p1 || 0, e1 = input.errores_p1 || 0;
+    const a2 = input.aciertos_p2 || 0, e2 = input.errores_p2 || 0;
+    const t1 = input.total_p1 ?? 80,   t2 = input.total_p2 ?? 20;
+
+    const directa_p1 = Math.max(0, a1 - PEN * e1);
+    const directa_p2 = Math.max(0, P2_PT * a2 - P2_PT * PEN * e2);
+    const directa_total = directa_p1 + directa_p2;
+
+    const c2024 = _notaCorteParaPlazas(PLAZAS, HIST24);
+    const c2022 = _notaCorteParaPlazas(PLAZAS, HIST22);
+    const cortes = [c2024, c2022].filter((c) => c !== null);
+    let optimista, pesimista;
+    if (cortes.length) {
+      optimista = Math.max(MIN30, Math.min(...cortes));
+      pesimista = Math.max(MIN30, Math.max(...cortes));
+    } else { optimista = MIN30; pesimista = MIN30; }
+    const media = (optimista + pesimista) / 2;
+
+    return {
+      directa_p1:         +directa_p1.toFixed(2),
+      directa_p2:         +directa_p2.toFixed(2),
+      directa_total:      +directa_total.toFixed(2),
+      blancos_p1:         t1 - a1 - e1,
+      blancos_p2:         t2 - a2 - e2,
+      corte_2024:         c2024,
+      corte_2022:         c2022,
+      corte_optimista:    +optimista.toFixed(2),
+      corte_pesimista:    +pesimista.toFixed(2),
+      corte_media:        +media.toFixed(2),
+      tps_optimista:      +_notaTransformada(directa_total, optimista, N_MAX, E_MAX).toFixed(2),
+      tps_medio:          +_notaTransformada(directa_total, media,     N_MAX, E_MAX).toFixed(2),
+      tps_pesimista:      +_notaTransformada(directa_total, pesimista, N_MAX, E_MAX).toFixed(2),
+      aprobado_optimista: directa_total >= optimista,
+      aprobado_pesimista: directa_total >= pesimista,
+      supera_minimo_30:   directa_total >= MIN30,
+      pos_2024:           _estimarPosicionEnHistorico(directa_total, HIST24),
+      pos_2022:           _estimarPosicionEnHistorico(directa_total, HIST22),
+    };
   }
 
   /* ── View management ── */
