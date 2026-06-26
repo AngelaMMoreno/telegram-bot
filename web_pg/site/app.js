@@ -325,16 +325,35 @@ $("#test-detail-questions").addEventListener("click", e => {
   if (q) abrirEditorPregunta(q);
 });
 
-/* ── Editor de pregunta (modal) ── */
-function abrirEditorPregunta(q) {
-  state.editingQ = q;
-  $("#pq-enunciado").value = q.text || "";
-  $("#pq-opciones").value = (q.options || [])
+/* ── Editor de pregunta (modal) ──
+   Acepta tanto la forma del frontend ({text, options:[{text,isCorrect}], ...})
+   como la forma cruda de Postgres ({enunciado, opciones:[{texto,correcta}]}).
+   Guarda en state.editingQ el id y un callback opcional para "refrescar
+   en sitio" después de guardar.
+*/
+function abrirEditorPregunta(q, opciones = {}) {
+  const text   = q.text   ?? q.enunciado ?? "";
+  const optsIn = q.options ?? (q.opciones || []).map(o => ({ text: o.texto, isCorrect: !!o.correcta }));
+  const expl   = q.explicacion ?? "";
+  const tags   = q.etiquetas ?? [];
+
+  state.editingQ = { id: q.id, refrescar: opciones.refrescar || null };
+  $("#pq-enunciado").value = text;
+  $("#pq-opciones").value  = optsIn
     .map(o => (o.isCorrect ? "*" : "") + o.text)
     .join("\n");
-  $("#pq-explicacion").value = q.explicacion || "";
-  $("#pq-etiquetas").value = (q.etiquetas || []).join(", ");
+  $("#pq-explicacion").value = expl || "";
+  $("#pq-etiquetas").value   = (tags || []).join(", ");
   $("#modal-pregunta").classList.remove("hidden");
+}
+
+/* Fetch + abrir editor por id (para el buscador y demás listas) */
+async function editarPorId(id, refrescar = null) {
+  try {
+    const r = await pg(`/preguntas?id=eq.${id}&select=id,enunciado,opciones,explicacion,etiquetas`);
+    if (r.length) abrirEditorPregunta(r[0], { refrescar });
+    else toast("Pregunta no encontrada");
+  } catch (e) { toast(e.message); }
 }
 
 function cerrarModal() {
@@ -372,8 +391,10 @@ $("#form-pregunta").addEventListener("submit", async e => {
       },
     });
     toast("Pregunta actualizada");
+    const cb = state.editingQ.refrescar;
     cerrarModal();
-    loadTestDetail(state.currentTestId);
+    if (cb) cb();
+    else if (state.currentTestId) loadTestDetail(state.currentTestId);
   } catch (err) { toast(err.message); }
 });
 
@@ -383,9 +404,34 @@ $("#pq-borrar").addEventListener("click", async () => {
   try {
     await pg("/preguntas?id=eq." + state.editingQ.id, { method: "DELETE" });
     toast("Pregunta borrada");
+    const cb = state.editingQ.refrescar;
     cerrarModal();
-    loadTestDetail(state.currentTestId);
+    if (cb) cb();
+    else if (state.currentTestId) loadTestDetail(state.currentTestId);
   } catch (err) { toast(err.message); }
+});
+
+/* ── Editar desde el quiz (botón visible tras responder) ── */
+$("#btn-edit-q").addEventListener("click", () => {
+  if (!state.quiz) return;
+  const q = state.quiz.questions[state.qi];
+  editarPorId(q.id, async () => {
+    // Refresca la pregunta en memoria (texto, opciones, explicación)
+    const r = await pg(`/preguntas?id=eq.${q.id}&select=id,enunciado,opciones,explicacion,etiquetas`);
+    if (r.length) {
+      const p = r[0];
+      q.text = p.enunciado;
+      q.explicacion = p.explicacion;
+      q.etiquetas = p.etiquetas || [];
+      q.options = (p.opciones || []).map(o => ({ text: o.texto, isCorrect: !!o.correcta }));
+      $("#quiz-question").textContent = q.text;
+      if (q.explicacion) {
+        const e = $("#quiz-explanation");
+        e.textContent = q.explicacion;
+        e.classList.remove("hidden");
+      }
+    }
+  });
 });
 
 $("#btn-start-test").addEventListener("click", () => {
@@ -438,6 +484,7 @@ function renderPregunta() {
   $("#quiz-question").textContent = q.text;
   $("#quiz-explanation").classList.add("hidden");
   $("#btn-next").classList.add("hidden");
+  $("#btn-edit-q").classList.add("hidden");
   $("#quiz-options").innerHTML = q.options.map((o, i) => `
     <button class="option-btn" data-i="${i}">${esc(o.text)}</button>
   `).join("");
@@ -499,6 +546,7 @@ async function responder(idx, saltada = false) {
     e.classList.remove("hidden");
   }
   $("#btn-next").classList.remove("hidden");
+  $("#btn-edit-q").classList.remove("hidden");
 
   if (state.quiz.intentoId) {
     try {
@@ -590,13 +638,23 @@ async function runBuscarView(q) {
   try {
     const r = await rpc("buscar_preguntas", { p_q: q, p_lim: 40 });
     $("#buscar-results").innerHTML = r.map(p => `
-      <li class="q-row">
+      <li class="q-row" data-pid="${p.id}">
         <div class="q-text">${esc(p.enunciado)}</div>
         <div class="q-meta">Relevancia: ${Number(p.score).toFixed(2)}</div>
+        <div class="q-actions gestion">
+          <button class="btn btn-ghost btn-sm" data-action="edit-q">✏️ Editar</button>
+        </div>
       </li>
     `).join("") || "<p class='muted'>Sin resultados.</p>";
   } catch (e) { toast(e.message); }
 }
+
+$("#buscar-results").addEventListener("click", e => {
+  const btn = e.target.closest("[data-action=edit-q]");
+  if (!btn) return;
+  const li = e.target.closest("[data-pid]");
+  if (li) editarPorId(li.dataset.pid, () => runBuscarView($("#buscar-input").value.trim()));
+});
 
 /* ── Subir test ── */
 $("#upload-file").addEventListener("change", async e => {

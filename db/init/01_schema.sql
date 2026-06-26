@@ -232,6 +232,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE
        intentos, respuestas, marcadores
     TO web_user;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO web_user;
+-- Permiso explícito sobre cola_embeddings (los triggers son SECURITY
+-- DEFINER pero damos también INSERT para defensa en profundidad).
+GRANT INSERT, SELECT ON cola_embeddings TO web_user;
 
 -- ─────────────────────────── RLS ────────────────────────────────────────────
 

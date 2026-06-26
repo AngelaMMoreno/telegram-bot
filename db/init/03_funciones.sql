@@ -28,8 +28,11 @@ $$;
 
 -- ─────────────────────────── Helpers JWT / RBAC ─────────────────────────────
 
+-- Estas helpers son llamadas desde políticas RLS (en contexto del caller).
+-- Las marcamos SECURITY DEFINER para que tengan acceso garantizado a las
+-- tablas RBAC sin requerir GRANTs adicionales al rol web_user.
 CREATE OR REPLACE FUNCTION jwt_usuario_id() RETURNS uuid
-LANGUAGE sql STABLE AS $$
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
     SELECT NULLIF(
         current_setting('request.jwt.claims', true)::jsonb->>'sub',
         ''
@@ -37,7 +40,7 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 CREATE OR REPLACE FUNCTION jwt_roles() RETURNS text[]
-LANGUAGE sql STABLE AS $$
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
     SELECT COALESCE(
         ARRAY(SELECT jsonb_array_elements_text(
             current_setting('request.jwt.claims', true)::jsonb->'roles'
@@ -47,7 +50,7 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 CREATE OR REPLACE FUNCTION tiene_permiso(p text) RETURNS boolean
-LANGUAGE sql STABLE AS $$
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
     SELECT EXISTS (
         SELECT 1 FROM rol_permisos
         WHERE permiso_id = p AND rol_id = ANY (jwt_roles())
@@ -55,7 +58,7 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 CREATE OR REPLACE FUNCTION es_admin() RETURNS boolean
-LANGUAGE sql STABLE AS $$
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
     SELECT 'admin' = ANY (jwt_roles());
 $$;
 
