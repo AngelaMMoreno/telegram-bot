@@ -32,16 +32,21 @@ tráfico real mientras tú validas el nuevo.
    | `JWT_SECRET`         | mínimo 32 caracteres aleatorios (`openssl rand -hex 32`)     |
    | `ADMIN_PASS`         | contraseña inicial del usuario `admin` (mínimo 8)            |
    | `DOMINIO_API`        | `api.aprentix.es` (subdominio para PostgREST detrás de Traefik) |
-   | `PG_PUERTO_EXTERNO`  | `5432` por defecto (puerto del host hacia DBeaver). Pon `55432` u otro si tu host ya tiene un Postgres en 5432 |
-   | `DOMINIO_DB`         | `db.aprentix.es` (solo se usa si activas la Opción B con Traefik TCP) |
+   | `DOMINIO_PGADMIN`    | `pgadmin.aprentix.es` (subdominio para pgAdmin)              |
+   | `PGADMIN_EMAIL`      | tu correo (login de pgAdmin)                                 |
+   | `PGADMIN_PASS`       | contraseña de pgAdmin                                        |
 
-5. Asegúrate de tener el registro DNS de `DOMINIO_API` apuntando al
-   servidor (lo necesita Let's Encrypt).
+5. Crea los registros DNS **A** de `DOMINIO_API` y `DOMINIO_PGADMIN`
+   apuntando a la IP del servidor (los necesita Let's Encrypt).
 6. **Deploy**.
 
-Dokploy ejecutará `docker compose up -d db postgrest embeddings`. El
-servicio `migracion` queda fuera porque está bajo el perfil
+Dokploy ejecutará `docker compose up -d db pgadmin postgrest embeddings`.
+El servicio `migracion` queda fuera porque está bajo el perfil
 `herramientas` y solo se lanza a demanda.
+
+**Postgres no publica ningún puerto al host**: solo escucha dentro de
+`dokploy-network`. El acceso desde fuera se hace exclusivamente vía
+pgAdmin por HTTPS (puerto 443, que ya tienes abierto).
 
 ## 2. Verificar que Postgres arrancó
 
@@ -55,58 +60,20 @@ docker compose -f .../docker-compose.yml logs db --tail=80
 Deberías ver `database system is ready to accept connections` y la
 ejecución de `01_schema.sql`, `02_seed.sql`, `03_funciones.sql`.
 
-## 3. Conectarte desde DBeaver / pgAdmin / psql
+## 3. Conectarte vía pgAdmin
 
-Hay dos modos de acceso. Elige uno.
+1. Entra en `https://pgadmin.aprentix.es`.
+2. Login con `PGADMIN_EMAIL` / `PGADMIN_PASS`.
+3. En el panel izquierdo ya verás un servidor llamado **aprentix**
+   precargado (desde `pgadmin/servers.json`) apuntando a `db:5432`.
+4. Click derecho → *Connect Server*. Te pide la contraseña: introduce
+   `DB_PASS`. Puedes marcar *Save password* para no volver a pedirla.
+5. Listo: navegas el esquema, ejecutas SQL desde *Query Tool*, etc.
 
-### Opción A — DNS + puerto publicado (recomendada)
-
-1. Crea un registro DNS **A** `db.aprentix.es` apuntando a la IP del servidor.
-2. Abre el puerto `PG_PUERTO_EXTERNO` en el firewall (o solo desde tu IP).
-3. En DBeaver:
-   - Host: `db.aprentix.es`
-   - Puerto: el valor de `PG_PUERTO_EXTERNO` (si lo dejaste en `5432`,
-     DBeaver lo asume y no tienes que escribirlo)
-   - Base: `aprentix`
-   - Usuario: `aprentix`
-   - Contraseña: la de `DB_PASS`
-
-> Más seguro aún: deja Postgres escuchando solo en `127.0.0.1` del
-> servidor y conecta por **túnel SSH**:
->
-> ```bash
-> ssh -L 5432:127.0.0.1:5432 usuario@servidor
-> ```
->
-> y en DBeaver `localhost` + usuario/contraseña.
-
-### Opción B — Traefik TCP + SNI (varios Postgres en el mismo host)
-
-Solo si quieres que **db.aprentix.es:5432** entre por Traefik y este
-decida por hostname (útil cuando ya tienes otro Postgres en el host o
-quieres encadenar cert Let's Encrypt automático).
-
-1. Edita la config estática de Traefik en Dokploy para añadir un
-   entrypoint TCP en 5432:
-
-   ```yaml
-   # traefik.yml
-   entryPoints:
-     web:        { address: ":80" }
-     websecure:  { address: ":443" }
-     postgres:   { address: ":5432" }
-   ```
-
-2. Asegúrate de que las labels `traefik.tcp.*` del servicio `db` están
-   activas en `docker-compose.yml` (ya vienen activadas).
-3. Quita la línea `ports:` del servicio `db` para liberar el 5432 del
-   host (Traefik lo ocupará en su lugar).
-4. Crea el DNS `db.aprentix.es` apuntando al servidor.
-5. En DBeaver activa SSL → `sslmode=require` (para que envíe SNI):
-   - Host: `db.aprentix.es`
-   - Puerto: 5432 (omitido)
-   - SSL: required
-   - Usuario / contraseña: `aprentix` / `DB_PASS`
+> pgAdmin habla con Postgres por la red interna `dokploy-network`
+> (`db:5432`). Postgres no está accesible desde fuera del VPS, así que
+> **no necesitas abrir el puerto 5432** en el firewall de Oracle. Toda
+> la administración entra por HTTPS (443).
 
 ## 4. Lanzar la migración (modo prueba)
 

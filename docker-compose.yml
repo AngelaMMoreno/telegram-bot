@@ -1,16 +1,16 @@
 version: "3.8"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Stack Aprentix sobre PostgreSQL + PostgREST + servicio de embeddings.
-# Pensado para Dokploy: las variables (DB_PASS, AUTH_PASS, JWT_SECRET,
-# ADMIN_PASS, PG_PUERTO_EXTERNO) se inyectan desde la UI de Dokploy.
+# Stack Aprentix sobre PostgreSQL + PostgREST + embeddings + pgAdmin.
+# Pensado para Dokploy: las variables se inyectan desde su UI.
 #
-# Convivencia:
-#   - El stack actual (bot/web/servidor sobre SQLite) sigue intacto en
-#     /mnt/data/bot.  Postgres usa un volumen aparte (/mnt/data/pg) y
-#     no toca nada del sistema antiguo.
-#   - Cuando termines de validar la migración, simplemente paras los
-#     servicios antiguos y reescribes bot/web contra PostgREST.
+# Acceso a Postgres: solo a través de pgAdmin (https://pgadmin.aprentix.es).
+# Postgres NO publica puerto al host: solo escucha en la red interna de
+# Docker (dokploy-network), por la que también pasa el resto del stack.
+# Por tanto no hay puertos extra abiertos en el VPS aparte de 80/443.
+#
+# Convivencia: el stack actual (bot/web/servidor + SQLite en /mnt/data/bot)
+# sigue intacto.  Este stack usa /mnt/data/pg y /mnt/data/pgadmin.
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -21,7 +21,6 @@ services:
       POSTGRES_DB: aprentix
       POSTGRES_USER: aprentix
       POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS requerida}
-      # Disponible para los scripts de init/*.sql vía current_setting().
       PGOPTIONS: >-
         -c app.jwt_secret=${JWT_SECRET:?JWT_SECRET requerida}
         -c app.admin_pass=${ADMIN_PASS:?ADMIN_PASS requerida}
@@ -29,14 +28,6 @@ services:
       - /mnt/data/pg:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
       - ./db/backups:/backups
-    # Acceso externo a Postgres (DBeaver / pgAdmin).
-    #
-    # Opción A (recomendada): publica el puerto en el host.  Si pones
-    #   PG_PUERTO_EXTERNO=5432 podrás conectar a db.aprentix.es sin
-    #   tener que escribir el puerto en DBeaver.  Requiere que el host
-    #   no tenga otro Postgres en 5432 y abrir el firewall.
-    ports:
-      - "${PG_PUERTO_EXTERNO:-5432}:5432"
     restart: unless-stopped
     networks: [dokploy-network]
     healthcheck:
@@ -44,17 +35,36 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-    # Opción B (Traefik TCP + SNI, varios Postgres en el mismo host):
-    # añade un entrypoint TCP 'postgres' en la config estática de Traefik
-    # de Dokploy (ver DESPLIEGUE.md) y descomenta estas labels.  DBeaver
-    # debe conectar con sslmode=require para que envíe el SNI.
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    ${PGADMIN_EMAIL:?PGADMIN_EMAIL requerido}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASS:?PGADMIN_PASS requerida}
+      # Detrás de Traefik en HTTPS; pgAdmin debe saber que va por proxy.
+      PGADMIN_CONFIG_PROXY_X_FOR_COUNT:    "1"
+      PGADMIN_CONFIG_PROXY_X_PROTO_COUNT:  "1"
+      PGADMIN_CONFIG_PROXY_X_HOST_COUNT:   "1"
+      PGADMIN_CONFIG_PROXY_X_PORT_COUNT:   "1"
+      PGADMIN_CONFIG_PROXY_X_PREFIX_COUNT: "1"
+      # Precarga el servidor 'aprentix-prod' apuntando a db:5432.
+      # La contraseña no se guarda en pgAdmin; te la pedirá al conectar.
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+    volumes:
+      - /mnt/data/pgadmin:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    restart: unless-stopped
+    networks: [dokploy-network]
     labels:
       - "traefik.enable=true"
-      - "traefik.tcp.routers.db.rule=HostSNI(`${DOMINIO_DB:-db.aprentix.es}`)"
-      - "traefik.tcp.routers.db.entrypoints=postgres"
-      - "traefik.tcp.routers.db.tls=true"
-      - "traefik.tcp.routers.db.tls.certresolver=letsencrypt"
-      - "traefik.tcp.services.db.loadbalancer.server.port=5432"
+      - "traefik.http.routers.pgadmin.rule=Host(`${DOMINIO_PGADMIN:-pgadmin.aprentix.es}`)"
+      - "traefik.http.routers.pgadmin.entrypoints=websecure"
+      - "traefik.http.routers.pgadmin.tls=true"
+      - "traefik.http.routers.pgadmin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
 
   postgrest:
     image: postgrest/postgrest:v12.2.3
@@ -91,13 +101,9 @@ services:
     networks: [dokploy-network]
 
   # ───────────────────────────────────────────────────────────────────────────
-  # Contenedor de utilidades para lanzar la migración SQLite → Postgres
-  # sin tener que instalar Python en el host.
-  #
+  # Migración SQLite → Postgres bajo demanda:
   #   docker compose run --rm migracion --dry-run
   #   docker compose run --rm migracion
-  #
-  # Lee el SQLite del volumen del bot actual y vuelca al Postgres nuevo.
   # ───────────────────────────────────────────────────────────────────────────
   migracion:
     image: python:3.11-slim

@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "aprentix",
+      "Group": "Servers",
+      "Host": "db",
+      "Port": 5432,
+      "MaintenanceDB": "aprentix",
+      "Username": "aprentix",
+      "SSLMode": "prefer",
+      "Comment": "Postgres del stack Aprentix (intra-red dokploy)"
+    }
+  }
+}
