@@ -14,6 +14,9 @@ const state = {
   testsPage: 1,
   testsCache: [],
   filtroTests: "",
+  filtroEtiquetaTests: null,
+  filtroEtiquetaBuscar: null,
+  etiquetasCache: [],
   searchAbort: null,
 };
 
@@ -245,8 +248,16 @@ async function loadHome() {
 /* ── Tests ── */
 async function loadTests() {
   $("#tests-list").innerHTML = "<p class='muted'>Cargando…</p>";
+  await ensureEtiquetasCache();
+  renderTagChips("#tests-tag-chips", state.filtroEtiquetaTests, et => {
+    state.filtroEtiquetaTests = et;
+    state.testsPage = 1;
+    loadTests();
+  });
   const r = await rpc("listar_tests", {
-    p_solo_favoritos: false, p_page: state.testsPage, p_size: 12,
+    p_solo_favoritos: false,
+    p_page: state.testsPage, p_size: 12,
+    p_etiqueta: state.filtroEtiquetaTests || null,
   });
   state.testsCache = r.tests;
   renderTests();
@@ -260,9 +271,31 @@ function renderTests() {
     <div class="test-row" data-id="${t.id}">
       <span class="star" data-fav="${t.id}">${t.favorito ? "⭐" : "☆"}</span>
       <span class="titulo">${esc(t.title)}</span>
+      <span class="tags">${(t.etiquetas||[]).map(e => `<span class="tag">${esc(e)}</span>`).join("")}</span>
       <span class="meta">${t.num_preguntas} preguntas</span>
     </div>
   `).join("") || "<p class='muted'>Sin tests.</p>";
+}
+
+/* ── Cache de etiquetas y render de chips ── */
+async function ensureEtiquetasCache(force = false) {
+  if (!force && state.etiquetasCache.length) return;
+  state.etiquetasCache = await rpc("listar_etiquetas");
+}
+
+function renderTagChips(selector, valorActual, onClick) {
+  const wrap = $(selector);
+  if (!wrap) return;
+  const opciones = [{ nombre: "Todas", _all: true }, ...state.etiquetasCache];
+  wrap.innerHTML = opciones.map(e => {
+    const isActive = e._all ? !valorActual : (valorActual === e.nombre);
+    return `<span class="chip ${isActive ? "active" : ""}" data-tag="${e._all ? "" : esc(e.nombre)}">${esc(e.nombre)}</span>`;
+  }).join("");
+  wrap.onclick = ev => {
+    const c = ev.target.closest(".chip");
+    if (!c) return;
+    onClick(c.dataset.tag || null);
+  };
 }
 
 function renderPagination(r) {
@@ -633,10 +666,18 @@ $("#buscar-input").addEventListener("input", e => {
 });
 
 async function runBuscarView(q) {
-  if (!q) { $("#buscar-results").innerHTML = ""; return; }
+  await ensureEtiquetasCache();
+  renderTagChips("#buscar-tag-chips", state.filtroEtiquetaBuscar, et => {
+    state.filtroEtiquetaBuscar = et;
+    runBuscarView($("#buscar-input").value.trim());
+  });
+  if (!q && !state.filtroEtiquetaBuscar) { $("#buscar-results").innerHTML = ""; return; }
   $("#buscar-results").innerHTML = "<p class='muted'>Buscando…</p>";
   try {
-    const r = await rpc("buscar_preguntas", { p_q: q, p_lim: 40 });
+    const r = await rpc("buscar_preguntas", {
+      p_q: q || "", p_lim: 40,
+      p_etiqueta: state.filtroEtiquetaBuscar || null,
+    });
     $("#buscar-results").innerHTML = r.map(p => `
       <li class="q-row" data-pid="${p.id}">
         <div class="q-text">${esc(p.enunciado)}</div>
@@ -693,6 +734,7 @@ async function loadEtiquetas() {
     rpc("listar_etiquetas"),
     rpc("estado_embeddings"),
   ]);
+  state.etiquetasCache = tags;
   $("#etiquetas-status").innerHTML = `
     Estado del worker:
     <strong>${est.preguntas_vectorizadas}</strong>/${est.preguntas_total} preguntas vectorizadas ·
@@ -701,12 +743,15 @@ async function loadEtiquetas() {
   `;
   $("#etiquetas-list").innerHTML = tags.map(t => `
     <li class="etiqueta-row" data-nombre="${esc(t.nombre)}">
-      <span class="dot ${t.vectorizada ? "ok" : ""}" title="${t.vectorizada ? "Vectorizada" : "Pendiente de vectorizar"}"></span>
+      <span class="dot ${t.vectorizada ? "ok" : ""}" title="${t.vectorizada ? "Vectorizada" : "Pendiente"}"></span>
       <div style="flex:1">
         <div class="nombre">${esc(t.nombre)}</div>
         <div class="descripcion">${esc(t.descripcion || "(sin descripción)")}</div>
+        ${(t.palabras_clave && t.palabras_clave.length)
+          ? `<div class="tags" style="margin-top:0.3rem">${t.palabras_clave.map(k => `<span class="tag">${esc(k)}</span>`).join("")}</div>`
+          : ""}
       </div>
-      <span class="count">${t.num_preguntas} preg.</span>
+      <span class="count">${t.num_preguntas} preg · ${t.num_tests || 0} tests</span>
       <button class="btn btn-ghost btn-sm" data-edit="${esc(t.nombre)}">✏️</button>
       <button class="btn btn-ghost btn-sm" data-del="${esc(t.nombre)}">🗑️</button>
     </li>
@@ -715,13 +760,18 @@ async function loadEtiquetas() {
 
 $("#form-etiqueta").addEventListener("submit", async e => {
   e.preventDefault();
+  const palabras = $("#et-palabras").value.split(",")
+    .map(s => s.trim().toLowerCase()).filter(Boolean);
   try {
     await rpc("crear_etiqueta", {
-      p_nombre:      $("#et-nombre").value.trim(),
-      p_descripcion: $("#et-descripcion").value.trim() || null,
+      p_nombre:          $("#et-nombre").value.trim(),
+      p_descripcion:     $("#et-descripcion").value.trim() || null,
+      p_palabras_clave:  palabras,
     });
-    $("#et-nombre").value = ""; $("#et-descripcion").value = "";
-    toast("Etiqueta guardada"); loadEtiquetas();
+    $("#et-nombre").value = ""; $("#et-descripcion").value = ""; $("#et-palabras").value = "";
+    toast("Etiqueta guardada");
+    state.etiquetasCache = [];  // invalida cache
+    loadEtiquetas();
   } catch (e) { toast(e.message); }
 });
 
@@ -729,24 +779,30 @@ $("#etiquetas-list").addEventListener("click", async e => {
   const del = e.target.closest("[data-del]");
   const edit = e.target.closest("[data-edit]");
   if (del) {
-    if (!confirm(`¿Borrar la etiqueta "${del.dataset.del}"? Se quitará de todas las preguntas.`)) return;
-    try { await rpc("borrar_etiqueta", { p_nombre: del.dataset.del }); toast("Borrada"); loadEtiquetas(); }
-    catch (e) { toast(e.message); }
+    if (!confirm(`¿Borrar la etiqueta "${del.dataset.del}"? Se quitará de todas las preguntas y tests.`)) return;
+    try {
+      await rpc("borrar_etiqueta", { p_nombre: del.dataset.del });
+      toast("Borrada");
+      state.etiquetasCache = [];
+      loadEtiquetas();
+    } catch (e) { toast(e.message); }
   }
   if (edit) {
-    $("#et-nombre").value = edit.dataset.edit;
-    const tag = (await rpc("listar_etiquetas")).find(t => t.nombre === edit.dataset.edit);
+    const tag = state.etiquetasCache.find(t => t.nombre === edit.dataset.edit);
+    $("#et-nombre").value = tag?.nombre || "";
     $("#et-descripcion").value = tag?.descripcion || "";
+    $("#et-palabras").value = (tag?.palabras_clave || []).join(", ");
     $("#et-nombre").focus();
   }
 });
 
 $("#btn-reclasificar").addEventListener("click", async () => {
-  if (!confirm("Esto recorrerá TODAS las preguntas vectorizadas y volverá a sugerir etiquetas. ¿Seguir?")) return;
+  if (!confirm("Esto recorrerá TODOS los tests y preguntas, etiquetándolos por nombre, palabras clave y similitud vectorial. ¿Seguir?")) return;
   try {
     $("#btn-reclasificar").disabled = true;
-    const n = await rpc("reclasificar_todas");
-    toast(`${n} preguntas reclasificadas`);
+    const r = await rpc("reclasificar_todo");
+    toast(`${r.tests_procesados} tests · ${r.preguntas_procesadas} preguntas procesadas`);
+    state.etiquetasCache = [];
     loadEtiquetas();
   } catch (e) { toast(e.message); }
   finally { $("#btn-reclasificar").disabled = false; }

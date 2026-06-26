@@ -289,6 +289,21 @@ textarea {
   .content { padding: 1rem; }
 }
 
+/* ── Tag chips para filtrar ── */
+.tag-chips {
+  display: flex; flex-wrap: wrap; gap: 0.35rem;
+  margin: 0 0 0.8rem;
+}
+.tag-chips .chip {
+  background: var(--bg-panel); border: 1px solid var(--border);
+  padding: 0.25rem 0.7rem; border-radius: 999px;
+  font-size: 0.85rem; cursor: pointer; color: var(--txt);
+}
+.tag-chips .chip:hover { background: var(--bg); }
+.tag-chips .chip.active {
+  background: var(--primary); color: #fff; border-color: var(--primary);
+}
+
 /* ── Modal ── */
 .modal {
   position: fixed; inset: 0;
