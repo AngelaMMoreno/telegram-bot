@@ -206,6 +206,123 @@
       return await pgrest("/rpc/mis_fallos", { method: "POST", body: {} });
     }
 
+    /* ── Subir tests (JSON o ZIP) ── */
+    if (base === "/tests/upload" && method === "POST" && body instanceof FormData) {
+      const file = body.get("file");
+      if (!file) throw new Error("No se ha enviado archivo");
+      const created = [];
+      const procesar = async (texto, nombre) => {
+        let parsed;
+        try { parsed = JSON.parse(texto); } catch (_) { return; }
+        let titulo, descripcion = null, preguntas;
+        if (Array.isArray(parsed)) {
+          titulo = (nombre || "Test").replace(/\.json$/i, "");
+          preguntas = parsed;
+        } else if (parsed && typeof parsed === "object") {
+          titulo = parsed.titulo || (nombre || "Test").replace(/\.json$/i, "");
+          descripcion = parsed.descripcion || null;
+          preguntas = parsed.preguntas || [];
+        } else { return; }
+        if (!preguntas.length) return;
+        const id = await pgrest("/rpc/importar_test_normalizado", {
+          method: "POST",
+          body: { p_titulo: titulo, p_descripcion: descripcion, p_preguntas: preguntas },
+        });
+        created.push(id);
+      };
+      const name = (file.name || "").toLowerCase();
+      if (name.endsWith(".zip")) {
+        throw new Error("Los ZIP no están soportados todavía; sube ficheros .json sueltos");
+      } else if (name.endsWith(".json") || !name) {
+        await procesar(await file.text(), file.name);
+      } else {
+        throw new Error("Formato no soportado. Usa .json");
+      }
+      return { created, count: created.length };
+    }
+
+    /* ── Borrar test ── */
+    if ((m = base.match(/^\/tests\/([^/]+)$/)) && method === "DELETE") {
+      await pgrest("/tests?id=eq." + encodeURIComponent(m[1]), { method: "DELETE" });
+      return {};
+    }
+
+    /* ── Descargar test individual / todos ── */
+    if ((m = base.match(/^\/tests\/([^/]+)\/download$/))) {
+      return await pgrest("/rpc/descargar_test", {
+        method: "POST", body: { p_test_id: m[1] },
+      });
+    }
+    if (base === "/tests/download-all") {
+      return await pgrest("/rpc/descargar_todos_los_tests", {
+        method: "POST", body: {},
+      });
+    }
+
+    /* ── Mega test ── */
+    if (base === "/tests/mega/questions" && method === "POST") {
+      return await pgrest("/rpc/preguntas_de_tests", {
+        method: "POST", body: { p_test_ids: body.quiz_ids || [] },
+      });
+    }
+    if (base === "/tests/mega/crear" && method === "POST") {
+      const r = await pgrest("/rpc/crear_mega_test", {
+        method: "POST",
+        body: { p_titulo: body.titulo, p_test_ids: body.quiz_ids || [] },
+      });
+      return { quiz_id: r };
+    }
+
+    /* ── Editar / borrar pregunta ── */
+    if ((m = base.match(/^\/questions\/([^/]+)$/))) {
+      if (method === "PUT") {
+        const patch = {};
+        if (body.text       !== undefined) patch.enunciado   = body.text;
+        if (body.options    !== undefined) {
+          patch.opciones = (body.options || []).map((o, i) =>
+            typeof o === "string"
+              ? { texto: o, correcta: i === 0 }
+              : { texto: o.text, correcta: !!o.isCorrect });
+        }
+        if (body.explicacion!== undefined) patch.explicacion = body.explicacion;
+        if (body.etiquetas  !== undefined) patch.etiquetas   = body.etiquetas;
+        await pgrest("/preguntas?id=eq." + encodeURIComponent(m[1]), {
+          method: "PATCH", body: patch,
+        });
+        return {};
+      }
+      if (method === "DELETE") {
+        await pgrest("/preguntas?id=eq." + encodeURIComponent(m[1]), { method: "DELETE" });
+        return {};
+      }
+    }
+
+    /* ── Progreso (vista detallada) ── */
+    if (base === "/progress/detail" || (base === "/progress" && q.has("detail"))) {
+      return await pgrest("/rpc/mi_progreso_detallado", { method: "POST", body: {} });
+    }
+
+    /* ── Simulacros ── */
+    if (base === "/simulacros" && method === "GET") {
+      return await pgrest("/rpc/listar_simulacros", { method: "POST", body: {} });
+    }
+    if ((m = base.match(/^\/simulacros\/([^/]+)$/)) && method === "DELETE") {
+      await pgrest("/tests?id=eq." + encodeURIComponent(m[1]), { method: "DELETE" });
+      return {};
+    }
+    if ((m = base.match(/^\/simulacros\/([^/]+)\/start$/)) && method === "POST") {
+      // Reusa obtener_preguntas_test del test/simulacro
+      return await pgrest("/rpc/obtener_preguntas_test", {
+        method: "POST", body: { p_test_id: m[1] },
+      });
+    }
+
+    /* ── /db/download: descarga de backup; no aplica en Postgres ── */
+    if (base === "/db/download") {
+      throw new Error("La descarga de backup de BD no está disponible en la versión Postgres");
+    }
+
+    /* ── Simulacros/calculate y POST /simulacros: pendientes para A1.5 ── */
     throw new Error("Endpoint no portado todavía: " + method + " " + path);
   }
 

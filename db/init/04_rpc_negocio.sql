@@ -558,3 +558,239 @@ GRANT EXECUTE ON FUNCTION toggle_favorita_test(uuid)                  TO web_use
 GRANT EXECUTE ON FUNCTION mis_fallos()                                TO web_user;
 GRANT EXECUTE ON FUNCTION mis_favoritas()                             TO web_user;
 GRANT EXECUTE ON FUNCTION mis_favoritas_agrupadas()                   TO web_user;
+
+
+-- ─────────────── Importar JSON ──────────────────────────────────────────────
+-- Normaliza el formato viejo de los JSON exportados desde el bot, donde
+-- opciones era un array de strings (la primera era la correcta) y los
+-- bloque/tema iban como números sueltos.
+
+CREATE OR REPLACE FUNCTION importar_test_normalizado(
+    p_titulo      text,
+    p_descripcion text,
+    p_preguntas   jsonb
+) RETURNS uuid
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_test uuid;
+    v_preg jsonb;
+    v_pid  uuid;
+    v_pos  int := 0;
+    v_opc  jsonb;
+    v_etiq text[];
+BEGIN
+    IF NOT (tiene_permiso('test.crear') OR es_admin()) THEN
+        RAISE EXCEPTION 'permiso_denegado';
+    END IF;
+
+    INSERT INTO tests(titulo, descripcion) VALUES (p_titulo, p_descripcion)
+    RETURNING id INTO v_test;
+
+    FOR v_preg IN SELECT * FROM jsonb_array_elements(p_preguntas) LOOP
+        -- Opciones: si es array de strings, las convierto a {texto,correcta}
+        -- con la convención antigua "primera = correcta".
+        IF jsonb_typeof(v_preg->'opciones'->0) = 'string' THEN
+            SELECT jsonb_agg(jsonb_build_object(
+                       'texto', t,
+                       'correcta', i = 1
+                   ) ORDER BY i)
+              INTO v_opc
+              FROM jsonb_array_elements_text(v_preg->'opciones')
+                   WITH ORDINALITY AS x(t, i);
+        ELSE
+            v_opc := v_preg->'opciones';
+        END IF;
+
+        v_etiq := COALESCE(
+            ARRAY(SELECT jsonb_array_elements_text(v_preg->'etiquetas')),
+            ARRAY[]::text[]
+        );
+
+        INSERT INTO preguntas(enunciado, opciones, explicacion, etiquetas)
+        VALUES (
+            v_preg->>'pregunta',
+            v_opc,
+            NULLIF(v_preg->>'explicacion',''),
+            v_etiq
+        )
+        ON CONFLICT (hash_contenido) DO UPDATE
+            SET enunciado = EXCLUDED.enunciado
+        RETURNING id INTO v_pid;
+
+        v_pos := v_pos + 1;
+        INSERT INTO test_preguntas(test_id, pregunta_id, posicion)
+        VALUES (v_test, v_pid, v_pos);
+    END LOOP;
+
+    RETURN v_test;
+END $$;
+
+
+-- ─────────────── Descargar tests como JSON ──────────────────────────────────
+
+CREATE OR REPLACE FUNCTION descargar_test(p_test_id uuid)
+RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT jsonb_build_object(
+        'titulo',      t.titulo,
+        'descripcion', t.descripcion,
+        'preguntas',   (
+            SELECT jsonb_agg(jsonb_build_object(
+                'pregunta',    p.enunciado,
+                'opciones',    p.opciones,
+                'explicacion', p.explicacion,
+                'etiquetas',   p.etiquetas
+            ) ORDER BY tp.posicion)
+            FROM test_preguntas tp
+            JOIN preguntas p ON p.id = tp.pregunta_id
+            WHERE tp.test_id = t.id
+        )
+    )
+    FROM tests t WHERE t.id = p_test_id;
+$$;
+
+CREATE OR REPLACE FUNCTION descargar_todos_los_tests()
+RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(jsonb_agg(descargar_test(id) ORDER BY creado_en), '[]'::jsonb)
+    FROM tests
+    WHERE autor_id = jwt_usuario_id() OR publico OR es_admin();
+$$;
+
+
+-- ─────────────── Mega test ─────────────────────────────────────────────────
+-- Devuelve hasta N preguntas extraídas al azar de los tests indicados.
+
+CREATE OR REPLACE FUNCTION preguntas_de_tests(p_test_ids uuid[])
+RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT jsonb_build_object(
+        'questions', COALESCE(jsonb_agg(jsonb_build_object(
+            'id',          p.id,
+            'text',        p.enunciado,
+            'options',     (
+                SELECT jsonb_agg(jsonb_build_object(
+                    'text', o.opt->>'texto',
+                    'isCorrect', COALESCE((o.opt->>'correcta')::boolean, o.idx = 1)
+                ) ORDER BY o.idx)
+                FROM jsonb_array_elements(p.opciones) WITH ORDINALITY o(opt, idx)
+            ),
+            'explicacion', p.explicacion,
+            'etiquetas',   p.etiquetas,
+            'quiz_title',  (
+                SELECT t.titulo FROM test_preguntas tp2
+                JOIN tests t ON t.id = tp2.test_id
+                WHERE tp2.pregunta_id = p.id
+                ORDER BY t.creado_en LIMIT 1
+            )
+        )), '[]'::jsonb)
+    )
+    FROM (
+        SELECT DISTINCT tp.pregunta_id FROM test_preguntas tp
+        WHERE tp.test_id = ANY(p_test_ids)
+    ) ids
+    JOIN preguntas p ON p.id = ids.pregunta_id;
+$$;
+
+CREATE OR REPLACE FUNCTION crear_mega_test(
+    p_titulo    text,
+    p_test_ids  uuid[]
+) RETURNS uuid
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_test uuid;
+    v_pos int := 0;
+    v_qid uuid;
+BEGIN
+    IF NOT (tiene_permiso('test.crear') OR es_admin()) THEN
+        RAISE EXCEPTION 'permiso_denegado';
+    END IF;
+
+    INSERT INTO tests(titulo, tipo) VALUES (p_titulo, 'mega')
+    RETURNING id INTO v_test;
+
+    FOR v_qid IN
+        SELECT DISTINCT tp.pregunta_id FROM test_preguntas tp
+        WHERE tp.test_id = ANY(p_test_ids)
+        ORDER BY tp.pregunta_id
+    LOOP
+        v_pos := v_pos + 1;
+        INSERT INTO test_preguntas(test_id, pregunta_id, posicion)
+        VALUES (v_test, v_qid, v_pos);
+    END LOOP;
+
+    RETURN v_test;
+END $$;
+
+
+-- ─────────────── Progreso detallado (con desglose por test) ────────────────
+
+CREATE OR REPLACE FUNCTION mi_progreso_detallado() RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    WITH base AS (
+        SELECT mi_progreso() AS p
+    ),
+    intentos_q AS (
+        SELECT i.test_id, i.id AS attempt_id, i.iniciado_en,
+               count(*) FILTER (WHERE r.correcta)     AS correct,
+               count(*) FILTER (WHERE NOT r.correcta) AS wrong
+        FROM intentos i
+        LEFT JOIN respuestas r ON r.intento_id = i.id
+        WHERE i.usuario_id = jwt_usuario_id()
+          AND i.tipo = 'quiz'
+          AND i.finalizado_en IS NOT NULL
+        GROUP BY i.id
+    ),
+    por_test AS (
+        SELECT iq.test_id AS quiz_id,
+               t.titulo AS titulo,
+               jsonb_agg(jsonb_build_object(
+                   'correct', iq.correct,
+                   'wrong',   iq.wrong,
+                   'nota',    CASE WHEN (iq.correct+iq.wrong) = 0 THEN 0
+                                    ELSE GREATEST(
+                                        ((iq.correct - (1.0/3)*iq.wrong) / (iq.correct+iq.wrong)) * 10,
+                                        0
+                                    )
+                              END
+               ) ORDER BY iq.iniciado_en) AS intentos
+        FROM intentos_q iq
+        JOIN tests t ON t.id = iq.test_id
+        GROUP BY iq.test_id, t.titulo
+    )
+    SELECT (
+        SELECT p FROM base
+    ) || jsonb_build_object(
+        'por_test', COALESCE((SELECT jsonb_agg(jsonb_build_object(
+            'quiz_id', quiz_id,
+            'titulo',  titulo,
+            'intentos', intentos
+        )) FROM por_test), '[]'::jsonb)
+    );
+$$;
+
+
+-- ─────────────── Simulacros ────────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION listar_simulacros() RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT jsonb_build_object(
+        'simulacros', COALESCE(jsonb_agg(jsonb_build_object(
+            'id',                 t.id,
+            'nombre',             t.titulo,
+            'quiz_id',            t.id,
+            'nota_corte_directa', t.nota_corte,
+            'escala_maxima',      t.escala_maxima,
+            'preguntas_total',    (SELECT count(*) FROM test_preguntas WHERE test_id = t.id)
+        ) ORDER BY t.creado_en DESC), '[]'::jsonb)
+    )
+    FROM tests t WHERE t.tipo = 'simulacro';
+$$;
+
+GRANT EXECUTE ON FUNCTION importar_test_normalizado(text,text,jsonb)  TO web_user;
+GRANT EXECUTE ON FUNCTION descargar_test(uuid)                        TO web_user;
+GRANT EXECUTE ON FUNCTION descargar_todos_los_tests()                 TO web_user;
+GRANT EXECUTE ON FUNCTION preguntas_de_tests(uuid[])                  TO web_user;
+GRANT EXECUTE ON FUNCTION crear_mega_test(text,uuid[])                TO web_user;
+GRANT EXECUTE ON FUNCTION mi_progreso_detallado()                     TO web_user;
+GRANT EXECUTE ON FUNCTION listar_simulacros()                         TO web_user;
