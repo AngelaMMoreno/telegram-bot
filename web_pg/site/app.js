@@ -28,21 +28,98 @@
     testsPaginaActual: 1,
   };
 
-  /* ── API helper ── */
-  async function api(path, opts = {}) {
+  /* ── PostgREST low-level fetch ── */
+  // Llama a PostgREST con autenticación JWT.
+  async function pgrest(path, opts = {}) {
+    const jwt = localStorage.getItem("aprentix_jwt");
+    const headers = opts.body instanceof FormData
+      ? {}
+      : { "Content-Type": "application/json", "Accept": "application/json" };
+    if (jwt) headers["Authorization"] = "Bearer " + jwt;
+    if (opts.headers) Object.assign(headers, opts.headers);
+
     const res = await fetch("/api" + path, {
-      headers: opts.body instanceof FormData ? {} : { "Content-Type": "application/json" },
-      ...opts,
-      body: opts.body instanceof FormData ? opts.body : (opts.body ? JSON.stringify(opts.body) : undefined),
+      method: opts.method || "GET",
+      headers,
+      body: opts.body instanceof FormData
+        ? opts.body
+        : (opts.body ? JSON.stringify(opts.body) : undefined),
     });
+
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || "Error del servidor");
+      let msg = "Error del servidor";
+      try { const e = await res.json(); msg = e.message || e.error || msg; } catch (_) {}
+      throw new Error(msg);
     }
-    // Handle file downloads
     const ct = res.headers.get("content-type") || "";
     if (ct.includes("application/json")) return res.json();
     return res;
+  }
+
+  /* ── API helper (adaptador) ──
+     Traduce las rutas /api/... viejas de Flask a sus equivalentes en
+     PostgREST (RPCs o filtros).  Devuelve la misma forma que esperaba
+     el frontend original para no tener que tocarlo más.
+  */
+  async function api(path, opts = {}) {
+    const method = (opts.method || "GET").toUpperCase();
+    const body   = opts.body || null;
+    const [base, qs] = path.split("?");
+    const q = new URLSearchParams(qs || "");
+
+    /* ── Auth ── */
+    if (base === "/auth/login" && method === "POST") {
+      const r = await pgrest("/rpc/login_web", {
+        method: "POST",
+        body: { p_username: body.username, p_password: body.password },
+      });
+      if (r.token) localStorage.setItem("aprentix_jwt", r.token);
+      return r;
+    }
+
+    if (base === "/auth/register" && method === "POST") {
+      const r = await pgrest("/rpc/registrar_web", {
+        method: "POST",
+        body: {
+          p_username: body.username,
+          p_password: body.password,
+          p_email:    body.email    || null,
+          p_chat_id:  body.chat_id  || null,
+        },
+      });
+      if (r.token) localStorage.setItem("aprentix_jwt", r.token);
+      return r;
+    }
+
+    if (base === "/auth/permisos") {
+      return await pgrest("/rpc/mi_sesion", { method: "POST", body: {} });
+    }
+
+    /* ── Progreso y favoritas ── */
+    if (base === "/progress") {
+      return await pgrest("/rpc/mi_progreso", { method: "POST", body: {} });
+    }
+
+    if (base === "/favorites/check") {
+      return await pgrest("/rpc/mis_favoritas_ids", { method: "POST", body: {} });
+    }
+
+    /* ── Listado de tests ── */
+    if (base === "/tests" || base === "/tests/favoritos") {
+      const r = await pgrest("/rpc/listar_tests", {
+        method: "POST",
+        body: {
+          p_solo_favoritos: base === "/tests/favoritos",
+          p_page: parseInt(q.get("page") || "1", 10),
+          p_size: parseInt(q.get("size") || "10", 10),
+        },
+      });
+      // Compat con frontend antiguo: añade alias 'quizzes' por si lo usa.
+      r.quizzes = r.tests;
+      return r;
+    }
+
+    throw new Error("Endpoint no portado todavía: " + method + " " + path);
   }
 
   /* ── View management ── */
@@ -109,6 +186,7 @@
     state.username = null;
     state.puedeGestionar = false;
     localStorage.removeItem("aprentix_session");
+    localStorage.removeItem("aprentix_jwt");
   }
 
   function actualizarVisibilidadGestion() {
