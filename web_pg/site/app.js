@@ -1,1695 +1,646 @@
-/* ── Aprentix Tests – SPA ── */
-(function () {
-  "use strict";
+/* ============================================================================
+ * Aprentix · SPA contra PostgREST.  Sin Flask, sin adaptadores: el JS llama
+ * directamente a /api/... (Caddy reenvía a PostgREST) y a /api/rpc/...
+ * ========================================================================== */
+(() => {
+"use strict";
 
-  const PENALIZACION = 1 / 3;
-  const PREGUNTAS_P1 = 80;
-  const TIEMPO_POR_PREGUNTA_POR_DEFECTO_SEGUNDOS = 20;
+/* ── Estado global ───────────────────────────────────────────────────────── */
+const state = {
+  jwt:       localStorage.getItem("jwt") || null,
+  user:      JSON.parse(localStorage.getItem("user") || "null"),
+  quiz:      null,
+  qi:        0,
+  testsPage: 1,
+  testsCache: [],
+  filtroTests: "",
+  searchAbort: null,
+};
 
-  /* ── State ── */
-  let state = {
-    userId: null,
-    username: null,
-    puedeGestionar: false,
-    favFilter: false,
-    // quiz state
-    quiz: null,        // { questions, title, attemptId, type, simulacro }
-    qi: 0,             // current question index
-    correct: 0,
-    wrong: 0,
-    blank: 0,
+/* ── Helpers DOM ─────────────────────────────────────────────────────────── */
+const $  = (s, p=document) => p.querySelector(s);
+const $$ = (s, p=document) => Array.from(p.querySelectorAll(s));
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => (
+  { "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;", "'":"&#39;" }[c]
+));
+
+function toast(msg) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.remove("hidden");
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.add("hidden"), 2800);
+}
+
+/* ── Llamada HTTP a PostgREST ────────────────────────────────────────────── */
+async function pg(path, opts = {}) {
+  const headers = { "Accept": "application/json" };
+  if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+  if (state.jwt) headers["Authorization"] = "Bearer " + state.jwt;
+  if (opts.headers) Object.assign(headers, opts.headers);
+
+  const res = await fetch("/api" + path, {
+    method: opts.method || "GET",
+    headers,
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    signal: opts.signal,
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { const e = await res.json(); detail = e.message || e.hint || e.details || ""; } catch (_) {}
+    if (res.status === 401) {
+      logout(false);
+      throw new Error(detail || "Sesión caducada");
+    }
+    throw new Error(detail || `HTTP ${res.status}`);
+  }
+  if (res.status === 204) return null;
+  const ct = res.headers.get("content-type") || "";
+  return ct.includes("application/json") ? res.json() : res.text();
+}
+
+/* RPC = POST /rpc/<nombre> */
+const rpc = (name, args = {}) =>
+  pg(`/rpc/${name}`, { method: "POST", body: args });
+
+/* ── Sesión ──────────────────────────────────────────────────────────────── */
+function persistSession() {
+  if (state.jwt) localStorage.setItem("jwt", state.jwt);
+  else localStorage.removeItem("jwt");
+  if (state.user) localStorage.setItem("user", JSON.stringify(state.user));
+  else localStorage.removeItem("user");
+}
+
+function applySession() {
+  const logged = !!state.jwt && !!state.user;
+  $("#topbar").classList.toggle("hidden", !logged);
+  $("#sidebar").classList.toggle("hidden", !logged);
+  document.body.classList.toggle("puede-gestionar", !!(state.user && state.user.puede_gestionar));
+  if (logged) {
+    $("#user-name").textContent = state.user.username;
+    $("#hello-name").textContent = state.user.username;
+  }
+}
+
+async function login(username, password) {
+  const r = await rpc("login_web", { p_username: username, p_password: password });
+  state.jwt  = r.token;
+  state.user = { user_id: r.user_id, username: r.username, puede_gestionar: r.puede_gestionar, roles: r.roles };
+  persistSession();
+  applySession();
+  navigate("home");
+}
+
+async function register(form) {
+  const r = await rpc("registrar_web", {
+    p_username: form.username,
+    p_password: form.password,
+    p_email:    form.email || null,
+    p_chat_id:  null,
+  });
+  state.jwt  = r.token;
+  state.user = { user_id: r.user_id, username: r.username, puede_gestionar: r.puede_gestionar, roles: r.roles };
+  persistSession();
+  applySession();
+  navigate("home");
+}
+
+function logout(navigateAway = true) {
+  state.jwt = null; state.user = null;
+  persistSession(); applySession();
+  if (navigateAway) navigate("login");
+}
+
+/* ── Navegación ──────────────────────────────────────────────────────────── */
+function navigate(view) {
+  $$(".view").forEach(v => v.classList.remove("active"));
+  const el = $("#view-" + view);
+  if (el) el.classList.add("active");
+  $$(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.view === view));
+  $("#sidebar").classList.remove("open");
+  if (view !== "login" && (!state.jwt || !state.user)) { navigate("login"); return; }
+  const loader = loaders[view];
+  if (loader) loader().catch(e => toast(e.message));
+}
+
+document.addEventListener("click", e => {
+  const navBtn = e.target.closest("[data-view]");
+  if (navBtn) { navigate(navBtn.dataset.view); }
+});
+
+$("#btn-logout").addEventListener("click", () => logout());
+$("#btn-menu").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
+
+/* ── Login / registro ────────────────────────────────────────────────────── */
+$$(".tab").forEach(tab => tab.addEventListener("click", () => {
+  $$(".tab").forEach(t => t.classList.toggle("active", t === tab));
+  $$(".tabpanel").forEach(p => p.classList.toggle("active",
+    p.id === ("form-" + tab.dataset.tab)));
+}));
+
+$("#form-login").addEventListener("submit", async e => {
+  e.preventDefault();
+  try { await login($("#login-user").value.trim(), $("#login-pass").value); }
+  catch (err) { toast(err.message); }
+});
+
+$("#form-register").addEventListener("submit", async e => {
+  e.preventDefault();
+  const p1 = $("#reg-pass").value, p2 = $("#reg-pass2").value;
+  if (p1 !== p2) return toast("Las contraseñas no coinciden");
+  try {
+    await register({
+      username: $("#reg-user").value.trim(),
+      password: p1,
+      email:    $("#reg-email").value.trim(),
+    });
+  } catch (err) { toast(err.message); }
+});
+
+/* ── Búsqueda global en topbar ───────────────────────────────────────────── */
+const searchInput = $("#global-search");
+const searchResults = $("#search-results");
+
+let searchDebounce;
+searchInput.addEventListener("input", e => {
+  clearTimeout(searchDebounce);
+  const q = e.target.value.trim();
+  if (!q) { searchResults.classList.add("hidden"); return; }
+  searchDebounce = setTimeout(() => doSearch(q), 220);
+});
+
+async function doSearch(q) {
+  if (state.searchAbort) state.searchAbort.abort();
+  state.searchAbort = new AbortController();
+  try {
+    const preguntas = await pg(`/rpc/buscar_preguntas`, {
+      method: "POST", body: { p_q: q, p_lim: 6 }, signal: state.searchAbort.signal
+    });
+    const tests = await pg(
+      `/tests?titulo=ilike.*${encodeURIComponent(q)}*&select=id,titulo&limit=4`,
+      { signal: state.searchAbort.signal }
+    );
+    let html = "";
+    if (tests.length) {
+      html += `<div class="item label">TESTS</div>`;
+      html += tests.map(t => `<div class="item" data-kind="test" data-id="${t.id}">${esc(t.titulo)}</div>`).join("");
+    }
+    if (preguntas.length) {
+      html += `<div class="item label">PREGUNTAS</div>`;
+      html += preguntas.map(p => `<div class="item" data-kind="preg" data-id="${p.id}">${esc(p.enunciado.slice(0,90))}…</div>`).join("");
+    }
+    if (!html) html = `<div class="item muted">Sin resultados</div>`;
+    searchResults.innerHTML = html;
+    searchResults.classList.remove("hidden");
+  } catch (e) {
+    if (e.name !== "AbortError") toast(e.message);
+  }
+}
+
+searchResults.addEventListener("click", e => {
+  const it = e.target.closest(".item[data-kind]");
+  if (!it) return;
+  searchResults.classList.add("hidden");
+  searchInput.value = "";
+  if (it.dataset.kind === "test") loadTestDetail(it.dataset.id);
+  if (it.dataset.kind === "preg") {
+    navigate("buscar");
+    $("#buscar-input").value = it.textContent.replace(/…$/, "");
+    runBuscarView(it.textContent.replace(/…$/, ""));
+  }
+});
+
+document.addEventListener("click", e => {
+  if (!searchResults.contains(e.target) && e.target !== searchInput)
+    searchResults.classList.add("hidden");
+});
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * VIEWS
+ * ──────────────────────────────────────────────────────────────────────── */
+
+const loaders = {
+  home:        loadHome,
+  tests:       loadTests,
+  fallos:      loadFallos,
+  favoritas:   loadFavoritas,
+  buscar:      () => runBuscarView($("#buscar-input").value.trim()),
+  upload:      async () => {},
+  etiquetas:   loadEtiquetas,
+  progreso:    loadProgreso,
+};
+
+/* ── Home ── */
+async function loadHome() {
+  const p = await rpc("mi_progreso");
+  $("#stats-grid").innerHTML = `
+    <div class="stat-card"><div class="v">${p.respondidas_hoy}</div><div class="l">Hoy</div></div>
+    <div class="stat-card"><div class="v">${Number(p.nota_general).toFixed(1)}</div><div class="l">Nota</div></div>
+    <div class="stat-card"><div class="v">${p.preguntas_falladas}</div><div class="l">Fallos</div></div>
+    <div class="stat-card"><div class="v">${p.preguntas_favoritas}</div><div class="l">Favoritas</div></div>
+  `;
+}
+
+/* ── Tests ── */
+async function loadTests() {
+  $("#tests-list").innerHTML = "<p class='muted'>Cargando…</p>";
+  const r = await rpc("listar_tests", {
+    p_solo_favoritos: false, p_page: state.testsPage, p_size: 12,
+  });
+  state.testsCache = r.tests;
+  renderTests();
+  renderPagination(r);
+}
+
+function renderTests() {
+  const f = state.filtroTests.toLowerCase();
+  const lista = state.testsCache.filter(t => !f || t.title.toLowerCase().includes(f));
+  $("#tests-list").innerHTML = lista.map(t => `
+    <div class="test-row" data-id="${t.id}">
+      <span class="star" data-fav="${t.id}">${t.favorito ? "⭐" : "☆"}</span>
+      <span class="titulo">${esc(t.title)}</span>
+      <span class="meta">${t.num_preguntas} preguntas</span>
+    </div>
+  `).join("") || "<p class='muted'>Sin tests.</p>";
+}
+
+function renderPagination(r) {
+  let html = "";
+  for (let i = 1; i <= r.total_pages; i++) {
+    html += `<button class="page ${i===r.page?'active':''}" data-page="${i}">${i}</button>`;
+  }
+  $("#tests-pagination").innerHTML = html;
+}
+
+$("#tests-filter").addEventListener("input", e => {
+  state.filtroTests = e.target.value;
+  renderTests();
+});
+
+$("#tests-pagination").addEventListener("click", e => {
+  const b = e.target.closest(".page");
+  if (!b) return;
+  state.testsPage = parseInt(b.dataset.page, 10);
+  loadTests();
+});
+
+$("#tests-list").addEventListener("click", e => {
+  const star = e.target.closest("[data-fav]");
+  if (star) {
+    rpc("toggle_favorita_test", { p_test_id: star.dataset.fav })
+      .then(() => loadTests())
+      .catch(err => toast(err.message));
+    return;
+  }
+  const row = e.target.closest(".test-row");
+  if (row) loadTestDetail(row.dataset.id);
+});
+
+/* ── Detalle de un test ── */
+async function loadTestDetail(testId) {
+  navigate("test-detail");
+  $("#test-detail-questions").innerHTML = "<p class='muted'>Cargando…</p>";
+  const d = await rpc("obtener_preguntas_test", { p_test_id: testId });
+  state.currentTestId = testId;
+  $("#test-detail-title").textContent = d.quiz.title;
+  $("#test-detail-meta").textContent = `${d.questions.length} preguntas`;
+  $("#test-detail-questions").innerHTML = d.questions.map(q => `
+    <li class="q-row">
+      <div class="q-text">${esc(q.text)}</div>
+      <div class="tags">${(q.etiquetas||[]).map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+    </li>
+  `).join("");
+  state.currentTest = d;
+}
+
+$("#btn-start-test").addEventListener("click", () => {
+  if (!state.currentTest) return;
+  startQuiz(state.currentTest.quiz.title, state.currentTestId, state.currentTest.questions, "quiz");
+});
+
+$("#btn-delete-test").addEventListener("click", async () => {
+  if (!state.currentTestId) return;
+  if (!confirm("¿Borrar este test? La acción no se puede deshacer.")) return;
+  try {
+    await pg("/tests?id=eq." + state.currentTestId, { method: "DELETE" });
+    toast("Test borrado"); navigate("tests");
+  } catch (e) { toast(e.message); }
+});
+
+/* ── Quiz engine ── */
+function startQuiz(title, testId, questions, tipo = "quiz") {
+  // Baraja las preguntas y las opciones de cada una
+  const shuffled = [...questions].sort(() => Math.random() - 0.5).map(q => {
+    const opts = q.options.map((o, i) => ({ ...o, origIdx: i }));
+    opts.sort(() => Math.random() - 0.5);
+    return { ...q, options: opts };
+  });
+  state.quiz = {
+    title, testId, tipo,
+    questions: shuffled,
+    correct: 0, wrong: 0, blank: 0,
     answered: false,
-    tiempoRestante: TIEMPO_POR_PREGUNTA_POR_DEFECTO_SEGUNDOS,
-    temporizadorPreguntaId: null,
-    favQuestionIds: new Set(),
-    megaModo: false,
-    megaSeleccionados: new Set(),
-    megaTestsPagina: [],
-    testsPaginaActual: 1,
+    intentoId: null,
   };
+  state.qi = 0;
 
-  /* ── PostgREST low-level fetch ── */
-  // Llama a PostgREST con autenticación JWT.
-  async function pgrest(path, opts = {}) {
-    const jwt = localStorage.getItem("aprentix_jwt");
-    const headers = opts.body instanceof FormData
-      ? {}
-      : { "Content-Type": "application/json", "Accept": "application/json" };
-    if (jwt) headers["Authorization"] = "Bearer " + jwt;
-    if (opts.headers) Object.assign(headers, opts.headers);
+  rpc("iniciar_intento", {
+    p_test_id:      testId || null,
+    p_tipo:         tipo,
+    p_nombre:       title,
+    p_question_ids: shuffled.map(q => q.id),
+  }).then(r => { state.quiz.intentoId = r.attempt_id; }).catch(e => toast(e.message));
 
-    const res = await fetch("/api" + path, {
-      method: opts.method || "GET",
-      headers,
-      body: opts.body instanceof FormData
-        ? opts.body
-        : (opts.body ? JSON.stringify(opts.body) : undefined),
-    });
+  navigate("quiz");
+  $("#quiz-title").textContent = title;
+  renderPregunta();
+}
 
-    if (!res.ok) {
-      let msg = "Error del servidor";
-      try { const e = await res.json(); msg = e.message || e.error || msg; } catch (_) {}
-      throw new Error(msg);
-    }
-    const ct = res.headers.get("content-type") || "";
-    if (ct.includes("application/json")) return res.json();
-    return res;
+function renderPregunta() {
+  const q = state.quiz.questions[state.qi];
+  state.quiz.answered = false;
+  $("#quiz-progress").textContent = `${state.qi + 1} / ${state.quiz.questions.length}`;
+  $("#quiz-question").textContent = q.text;
+  $("#quiz-explanation").classList.add("hidden");
+  $("#btn-next").classList.add("hidden");
+  $("#quiz-options").innerHTML = q.options.map((o, i) => `
+    <button class="option-btn" data-i="${i}">${esc(o.text)}</button>
+  `).join("");
+
+  // Timer 20s
+  let t = 20;
+  $("#quiz-timer").textContent = t;
+  clearInterval(state.quiz._timer);
+  state.quiz._timer = setInterval(() => {
+    t--; $("#quiz-timer").textContent = t;
+    if (t <= 0) { clearInterval(state.quiz._timer); responder(null); }
+  }, 1000);
+}
+
+$("#quiz-options").addEventListener("click", e => {
+  const btn = e.target.closest(".option-btn");
+  if (!btn || state.quiz.answered) return;
+  responder(parseInt(btn.dataset.i, 10));
+});
+
+$("#btn-skip").addEventListener("click", () => responder(null, true));
+$("#btn-next").addEventListener("click", () => {
+  state.qi++;
+  if (state.qi >= state.quiz.questions.length) finalizarQuiz();
+  else renderPregunta();
+});
+
+$("#btn-fav-q").addEventListener("click", async () => {
+  const q = state.quiz.questions[state.qi];
+  try {
+    await rpc("toggle_favorita_pregunta", { p_pregunta_id: q.id });
+    toast("Favorita actualizada");
+  } catch (e) { toast(e.message); }
+});
+
+async function responder(idx, saltada = false) {
+  if (state.quiz.answered) return;
+  state.quiz.answered = true;
+  clearInterval(state.quiz._timer);
+
+  const q = state.quiz.questions[state.qi];
+  const correctIdx = q.options.findIndex(o => o.isCorrect);
+  const correcta = idx === correctIdx;
+  const textoSel = idx == null ? (saltada ? "Saltada" : "Sin respuesta") : q.options[idx].text;
+
+  $$(".option-btn").forEach((b, i) => {
+    b.classList.add("disabled");
+    if (i === correctIdx) b.classList.add("correct");
+    if (i === idx && !correcta) b.classList.add("wrong");
+  });
+
+  if (correcta) state.quiz.correct++;
+  else if (idx == null) state.quiz.blank++;
+  else state.quiz.wrong++;
+
+  if (q.explicacion) {
+    const e = $("#quiz-explanation");
+    e.textContent = q.explicacion;
+    e.classList.remove("hidden");
   }
+  $("#btn-next").classList.remove("hidden");
 
-  /* ── API helper (adaptador) ──
-     Traduce las rutas /api/... viejas de Flask a sus equivalentes en
-     PostgREST (RPCs o filtros).  Devuelve la misma forma que esperaba
-     el frontend original para no tener que tocarlo más.
-  */
-  async function api(path, opts = {}) {
-    const method = (opts.method || "GET").toUpperCase();
-    const body   = opts.body || null;
-    const [base, qs] = path.split("?");
-    const q = new URLSearchParams(qs || "");
-
-    /* ── Auth ── */
-    if (base === "/auth/login" && method === "POST") {
-      const r = await pgrest("/rpc/login_web", {
-        method: "POST",
-        body: { p_username: body.username, p_password: body.password },
-      });
-      if (r.token) localStorage.setItem("aprentix_jwt", r.token);
-      return r;
-    }
-
-    if (base === "/auth/register" && method === "POST") {
-      const r = await pgrest("/rpc/registrar_web", {
-        method: "POST",
-        body: {
-          p_username: body.username,
-          p_password: body.password,
-          p_email:    body.email    || null,
-          p_chat_id:  body.chat_id  || null,
-        },
-      });
-      if (r.token) localStorage.setItem("aprentix_jwt", r.token);
-      return r;
-    }
-
-    if (base === "/auth/permisos") {
-      return await pgrest("/rpc/mi_sesion", { method: "POST", body: {} });
-    }
-
-    /* ── Progreso y favoritas ── */
-    if (base === "/progress") {
-      return await pgrest("/rpc/mi_progreso", { method: "POST", body: {} });
-    }
-
-    if (base === "/favorites/check") {
-      return await pgrest("/rpc/mis_favoritas_ids", { method: "POST", body: {} });
-    }
-
-    /* ── Listado de tests ── */
-    if (base === "/tests" || base === "/tests/favoritos") {
-      const r = await pgrest("/rpc/listar_tests", {
-        method: "POST",
-        body: {
-          p_solo_favoritos: base === "/tests/favoritos",
-          p_page: parseInt(q.get("page") || "1", 10),
-          p_size: parseInt(q.get("size") || "10", 10),
-        },
-      });
-      r.quizzes = r.tests;
-      return r;
-    }
-
-    /* ── Preguntas de un test ── */
-    let m;
-    if ((m = base.match(/^\/tests\/([^/]+)\/questions$/))) {
-      return await pgrest("/rpc/obtener_preguntas_test", {
-        method: "POST", body: { p_test_id: m[1] },
-      });
-    }
-
-    /* ── Test favorito (toggle) ── */
-    if ((m = base.match(/^\/tests\/([^/]+)\/favorito$/)) && method === "POST") {
-      return await pgrest("/rpc/toggle_favorita_test", {
-        method: "POST", body: { p_test_id: m[1] },
-      });
-    }
-
-    /* ── Intentos ── */
-    if (base === "/attempts/start" && method === "POST") {
-      return await pgrest("/rpc/iniciar_intento", {
-        method: "POST",
-        body: {
-          p_test_id:      body.quiz_id || null,
-          p_tipo:         body.attempt_type || "quiz",
-          p_nombre:       body.nombre || null,
-          p_question_ids: body.question_ids || [],
-        },
-      });
-    }
-
-    if ((m = base.match(/^\/attempts\/([^/]+)\/answer$/)) && method === "POST") {
-      await pgrest("/rpc/registrar_respuesta", {
-        method: "POST",
-        body: {
-          p_intento_id:  m[1],
-          p_pregunta_id: body.question_id,
-          p_texto:       body.selected_option ?? "",
-          p_correcta:    !!body.is_correct,
-        },
-      });
-      return {};
-    }
-
-    if ((m = base.match(/^\/attempts\/([^/]+)\/finish$/)) && method === "POST") {
-      await pgrest("/rpc/finalizar_intento", {
-        method: "POST", body: { p_intento_id: m[1] },
-      });
-      return {};
-    }
-
-    if ((m = base.match(/^\/attempts\/([^/]+)\/discard$/)) && method === "POST") {
-      await pgrest("/rpc/descartar_intento", {
-        method: "POST", body: { p_intento_id: m[1] },
-      });
-      return {};
-    }
-
-    if (base === "/attempts/pending") {
-      return await pgrest("/rpc/intento_pendiente", {
-        method: "POST",
-        body: {
-          p_tipo:    q.get("attempt_type") || "quiz",
-          p_test_id: q.get("quiz_id") || null,
-        },
-      });
-    }
-
-    if ((m = base.match(/^\/attempts\/([^/]+)\/resume$/)) && method === "POST") {
-      return await pgrest("/rpc/reanudar_intento", {
-        method: "POST", body: { p_intento_id: m[1] },
-      });
-    }
-
-    /* ── Listas de favoritas y fallos ── */
-    if (base === "/favorites/toggle" && method === "POST") {
-      return await pgrest("/rpc/toggle_favorita_pregunta", {
-        method: "POST", body: { p_pregunta_id: body.question_id },
-      });
-    }
-
-    if (base === "/favorites/questions") {
-      return await pgrest("/rpc/mis_favoritas", { method: "POST", body: {} });
-    }
-    if (base === "/favorites/all") {
-      return await pgrest("/rpc/mis_favoritas_agrupadas", { method: "POST", body: {} });
-    }
-    if (base === "/failures/questions") {
-      return await pgrest("/rpc/mis_fallos", { method: "POST", body: {} });
-    }
-
-    /* ── Subir tests (JSON o ZIP) ── */
-    if (base === "/tests/upload" && method === "POST" && body instanceof FormData) {
-      const file = body.get("file");
-      if (!file) throw new Error("No se ha enviado archivo");
-      const created = [];
-      const procesar = async (texto, nombre) => {
-        let parsed;
-        try { parsed = JSON.parse(texto); } catch (_) { return; }
-        let titulo, descripcion = null, preguntas;
-        if (Array.isArray(parsed)) {
-          titulo = (nombre || "Test").replace(/\.json$/i, "");
-          preguntas = parsed;
-        } else if (parsed && typeof parsed === "object") {
-          titulo = parsed.titulo || (nombre || "Test").replace(/\.json$/i, "");
-          descripcion = parsed.descripcion || null;
-          preguntas = parsed.preguntas || [];
-        } else { return; }
-        if (!preguntas.length) return;
-        const id = await pgrest("/rpc/importar_test_normalizado", {
-          method: "POST",
-          body: { p_titulo: titulo, p_descripcion: descripcion, p_preguntas: preguntas },
-        });
-        created.push(id);
-      };
-      const name = (file.name || "").toLowerCase();
-      if (name.endsWith(".zip")) {
-        throw new Error("Los ZIP no están soportados todavía; sube ficheros .json sueltos");
-      } else if (name.endsWith(".json") || !name) {
-        await procesar(await file.text(), file.name);
-      } else {
-        throw new Error("Formato no soportado. Usa .json");
-      }
-      return { created, count: created.length };
-    }
-
-    /* ── Borrar test ── */
-    if ((m = base.match(/^\/tests\/([^/]+)$/)) && method === "DELETE") {
-      await pgrest("/tests?id=eq." + encodeURIComponent(m[1]), { method: "DELETE" });
-      return {};
-    }
-
-    /* ── Descargar test individual / todos ── */
-    if ((m = base.match(/^\/tests\/([^/]+)\/download$/))) {
-      return await pgrest("/rpc/descargar_test", {
-        method: "POST", body: { p_test_id: m[1] },
-      });
-    }
-    if (base === "/tests/download-all") {
-      return await pgrest("/rpc/descargar_todos_los_tests", {
-        method: "POST", body: {},
-      });
-    }
-
-    /* ── Mega test ── */
-    if (base === "/tests/mega/questions" && method === "POST") {
-      return await pgrest("/rpc/preguntas_de_tests", {
-        method: "POST", body: { p_test_ids: body.quiz_ids || [] },
-      });
-    }
-    if (base === "/tests/mega/crear" && method === "POST") {
-      const r = await pgrest("/rpc/crear_mega_test", {
-        method: "POST",
-        body: { p_titulo: body.titulo, p_test_ids: body.quiz_ids || [] },
-      });
-      return { quiz_id: r };
-    }
-
-    /* ── Editar / borrar pregunta ── */
-    if ((m = base.match(/^\/questions\/([^/]+)$/))) {
-      if (method === "PUT") {
-        const patch = {};
-        if (body.text       !== undefined) patch.enunciado   = body.text;
-        if (body.options    !== undefined) {
-          patch.opciones = (body.options || []).map((o, i) =>
-            typeof o === "string"
-              ? { texto: o, correcta: i === 0 }
-              : { texto: o.text, correcta: !!o.isCorrect });
-        }
-        if (body.explicacion!== undefined) patch.explicacion = body.explicacion;
-        if (body.etiquetas  !== undefined) patch.etiquetas   = body.etiquetas;
-        await pgrest("/preguntas?id=eq." + encodeURIComponent(m[1]), {
-          method: "PATCH", body: patch,
-        });
-        return {};
-      }
-      if (method === "DELETE") {
-        await pgrest("/preguntas?id=eq." + encodeURIComponent(m[1]), { method: "DELETE" });
-        return {};
-      }
-    }
-
-    /* ── Progreso (vista detallada) ── */
-    if (base === "/progress/detail" || (base === "/progress" && q.has("detail"))) {
-      return await pgrest("/rpc/mi_progreso_detallado", { method: "POST", body: {} });
-    }
-
-    /* ── Simulacros ── */
-    if (base === "/simulacros" && method === "GET") {
-      return await pgrest("/rpc/listar_simulacros", { method: "POST", body: {} });
-    }
-    if ((m = base.match(/^\/simulacros\/([^/]+)$/)) && method === "DELETE") {
-      await pgrest("/tests?id=eq." + encodeURIComponent(m[1]), { method: "DELETE" });
-      return {};
-    }
-    if ((m = base.match(/^\/simulacros\/([^/]+)\/start$/)) && method === "POST") {
-      // Reusa obtener_preguntas_test del test/simulacro
-      return await pgrest("/rpc/obtener_preguntas_test", {
-        method: "POST", body: { p_test_id: m[1] },
-      });
-    }
-
-    /* ── /db/download: descarga de backup; no aplica en Postgres ── */
-    if (base === "/db/download") {
-      throw new Error("La descarga de backup de BD no está disponible en la versión Postgres");
-    }
-
-    /* ── Crear simulacro ── */
-    if (base === "/simulacros" && method === "POST") {
-      const id = await pgrest("/rpc/crear_simulacro", {
-        method: "POST",
-        body: {
-          p_titulo:        body.nombre,
-          p_test_id:       body.quiz_id,
-          p_nota_corte:    body.nota_corte_directa,
-          p_escala_maxima: body.escala_maxima,
-        },
-      });
-      return { id };
-    }
-
-    /* ── Cálculo del simulacro ── */
-    if (base === "/simulacros/calculate" && method === "POST") {
-      const cfg = await pgrest("/rpc/leer_config", { method: "POST", body: {} });
-      return calcularResultadoSimulacro(body, cfg);
-    }
-
-    throw new Error("Endpoint no portado todavía: " + method + " " + path);
-  }
-
-  /* ── Cálculo del simulacro (port de app.py) ──
-     Mismo algoritmo que tenía Flask, pero ejecutado en cliente con la
-     config leída de Postgres (tabla 'config').
-  */
-  function _estimarPosicionEnHistorico(puntuacion, historico) {
-    if (!historico || !historico.length) return null;
-    if (puntuacion >= historico[0][0]) return 1;
-    for (let i = 0; i < historico.length - 1; i++) {
-      const [p1, pos1] = historico[i];
-      const [p2, pos2] = historico[i + 1];
-      if (puntuacion >= p2) {
-        if (p1 === p2) return pos2;
-        const frac = (p1 - puntuacion) / (p1 - p2);
-        return Math.round(pos1 + frac * (pos2 - pos1));
-      }
-    }
-    return historico[historico.length - 1][1] + 1;
-  }
-  function _notaCorteParaPlazas(plazas, historico) {
-    if (!historico || !historico.length) return null;
-    for (const [p, pos] of historico) if (pos >= plazas) return p;
-    return historico[historico.length - 1][0];
-  }
-  function _notaTransformada(directa, corte, nMax, eMax) {
-    if (nMax <= 0 || corte <= 0 || eMax <= 0) return 0;
-    directa = Math.max(0, directa);
-    if (directa < corte) return (eMax / 2) * (directa / corte);
-    if (nMax <= corte) return eMax / 2;
-    return (eMax / 2) * (1 + (directa - corte) / (nMax - corte));
-  }
-  function calcularResultadoSimulacro(input, cfg) {
-    const HIST24 = cfg.historico_2024 || [];
-    const HIST22 = cfg.historico_2022 || [];
-    const PEN    = Number(cfg.penalizacion_fallo)     || 1/3;
-    const P2_PT  = Number(cfg.puntos_acierto_parte_2) || 0.5;
-    const PLAZAS = Number(cfg.plazas_referencia)      || 844;
-    const MIN30  = Number(cfg.min_directa_simulacro)  || 30;
-    const N_MAX  = Number(cfg.n_max_simulacro)        || 90;
-    const E_MAX  = Number(cfg.e_max_simulacro)        || 50;
-
-    const a1 = input.aciertos_p1 || 0, e1 = input.errores_p1 || 0;
-    const a2 = input.aciertos_p2 || 0, e2 = input.errores_p2 || 0;
-    const t1 = input.total_p1 ?? 80,   t2 = input.total_p2 ?? 20;
-
-    const directa_p1 = Math.max(0, a1 - PEN * e1);
-    const directa_p2 = Math.max(0, P2_PT * a2 - P2_PT * PEN * e2);
-    const directa_total = directa_p1 + directa_p2;
-
-    const c2024 = _notaCorteParaPlazas(PLAZAS, HIST24);
-    const c2022 = _notaCorteParaPlazas(PLAZAS, HIST22);
-    const cortes = [c2024, c2022].filter((c) => c !== null);
-    let optimista, pesimista;
-    if (cortes.length) {
-      optimista = Math.max(MIN30, Math.min(...cortes));
-      pesimista = Math.max(MIN30, Math.max(...cortes));
-    } else { optimista = MIN30; pesimista = MIN30; }
-    const media = (optimista + pesimista) / 2;
-
-    return {
-      directa_p1:         +directa_p1.toFixed(2),
-      directa_p2:         +directa_p2.toFixed(2),
-      directa_total:      +directa_total.toFixed(2),
-      blancos_p1:         t1 - a1 - e1,
-      blancos_p2:         t2 - a2 - e2,
-      corte_2024:         c2024,
-      corte_2022:         c2022,
-      corte_optimista:    +optimista.toFixed(2),
-      corte_pesimista:    +pesimista.toFixed(2),
-      corte_media:        +media.toFixed(2),
-      tps_optimista:      +_notaTransformada(directa_total, optimista, N_MAX, E_MAX).toFixed(2),
-      tps_medio:          +_notaTransformada(directa_total, media,     N_MAX, E_MAX).toFixed(2),
-      tps_pesimista:      +_notaTransformada(directa_total, pesimista, N_MAX, E_MAX).toFixed(2),
-      aprobado_optimista: directa_total >= optimista,
-      aprobado_pesimista: directa_total >= pesimista,
-      supera_minimo_30:   directa_total >= MIN30,
-      pos_2024:           _estimarPosicionEnHistorico(directa_total, HIST24),
-      pos_2022:           _estimarPosicionEnHistorico(directa_total, HIST22),
-    };
-  }
-
-  /* ── View management ── */
-  function showView(id) {
-    document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
-    document.getElementById("view-" + id).classList.add("active");
-  }
-
-  /* ── Toast ── */
-  function toast(msg) {
-    const el = document.getElementById("toast");
-    el.textContent = msg;
-    el.classList.remove("hidden");
-    clearTimeout(el._t);
-    el._t = setTimeout(() => el.classList.add("hidden"), 2500);
-  }
-
-  /* ── Confirm dialog ── */
-  function confirm(title, message) {
-    return new Promise((resolve) => {
-      const overlay = document.createElement("div");
-      overlay.className = "dialog-overlay";
-      overlay.innerHTML = `<div class="dialog">
-        <h3>${title}</h3>
-        <p>${message}</p>
-        <div class="dialog-actions">
-          <button class="btn btn-outline btn-sm" data-r="0">Cancelar</button>
-          <button class="btn btn-primary btn-sm" data-r="1">Confirmar</button>
-        </div>
-      </div>`;
-      overlay.addEventListener("click", (e) => {
-        const r = e.target.dataset.r;
-        if (r !== undefined) {
-          overlay.remove();
-          resolve(r === "1");
-        }
-      });
-      document.body.appendChild(overlay);
-    });
-  }
-
-  /* ── Session ── */
-  function saveSession() {
-    localStorage.setItem("aprentix_session", JSON.stringify({
-      userId: state.userId,
-      username: state.username,
-      puedeGestionar: state.puedeGestionar,
-    }));
-  }
-  function loadSession() {
+  if (state.quiz.intentoId) {
     try {
-      const s = JSON.parse(localStorage.getItem("aprentix_session"));
-      if (s && s.userId) {
-        state.userId = s.userId;
-        state.username = s.username;
-        state.puedeGestionar = !!s.puedeGestionar;
-        return true;
-      }
-    } catch (_) {}
-    return false;
-  }
-  function clearSession() {
-    state.userId = null;
-    state.username = null;
-    state.puedeGestionar = false;
-    localStorage.removeItem("aprentix_session");
-    localStorage.removeItem("aprentix_jwt");
-  }
-
-  function actualizarVisibilidadGestion() {
-    document.querySelectorAll("[data-gestion='si']").forEach((el) => {
-      el.classList.toggle("hidden", !state.puedeGestionar);
-    });
-  }
-
-  /* ── Auth: toggle forms ── */
-  document.getElementById("show-register").addEventListener("click", (e) => {
-    e.preventDefault();
-    document.getElementById("login-form").classList.add("hidden");
-    document.getElementById("register-form").classList.remove("hidden");
-  });
-  document.getElementById("show-login").addEventListener("click", (e) => {
-    e.preventDefault();
-    document.getElementById("register-form").classList.add("hidden");
-    document.getElementById("login-form").classList.remove("hidden");
-  });
-
-  /* ── Auth: link telegram checkbox ── */
-  document.getElementById("reg-link-telegram").addEventListener("change", (e) => {
-    document.getElementById("reg-chatid-wrapper").classList.toggle("hidden", !e.target.checked);
-  });
-
-  /* ── Login ── */
-  document.getElementById("login-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const username = document.getElementById("login-username").value.trim();
-    const password = document.getElementById("login-password").value;
-    if (!username || !password) return;
-    try {
-      const data = await api("/auth/login", { method: "POST", body: { username, password } });
-      state.userId = data.user_id;
-      state.username = data.username;
-      state.puedeGestionar = !!data.puede_gestionar;
-      saveSession();
-      enterApp();
-    } catch (err) {
-      toast(err.message);
-    }
-  });
-
-  /* ── Register ── */
-  document.getElementById("register-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const username = document.getElementById("reg-username").value.trim();
-    const password = document.getElementById("reg-password").value;
-    const password2 = document.getElementById("reg-password2").value;
-    const linkTelegram = document.getElementById("reg-link-telegram").checked;
-    const chatId = document.getElementById("reg-chatid").value.trim();
-
-    if (!username || !password) return;
-    if (password !== password2) { toast("Las contraseñas no coinciden"); return; }
-
-    const body = { username, password };
-    if (linkTelegram && chatId) body.chat_id = chatId;
-
-    try {
-      const data = await api("/auth/register", { method: "POST", body });
-      state.userId = data.user_id;
-      state.username = data.username;
-      state.puedeGestionar = !!data.puede_gestionar;
-      saveSession();
-      toast("Cuenta creada correctamente");
-      enterApp();
-    } catch (err) {
-      toast(err.message);
-    }
-  });
-
-  document.getElementById("btn-logout").addEventListener("click", () => {
-    clearSession();
-    actualizarVisibilidadGestion();
-    document.getElementById("register-form").classList.add("hidden");
-    document.getElementById("login-form").classList.remove("hidden");
-    showView("login");
-  });
-
-  /* ── Enter app ── */
-  async function enterApp() {
-    try {
-      const permisos = await api(`/auth/permisos?user_id=${state.userId}`);
-      state.puedeGestionar = !!permisos.puede_gestionar;
-    } catch (_) {
-      state.puedeGestionar = false;
-    }
-    actualizarVisibilidadGestion();
-    showView("menu");
-    loadMenuStats();
-    loadFavoriteQuestionIds();
-  }
-
-  async function loadMenuStats() {
-    try {
-      const d = await api("/progress?user_id=" + state.userId);
-      const el = document.getElementById("menu-stats");
-      el.innerHTML = `
-        <div class="stat-card"><div class="stat-value">${d.respondidas_hoy}</div><div class="stat-label">Hoy</div></div>
-        <div class="stat-card"><div class="stat-value">${d.nota_general.toFixed(1)}</div><div class="stat-label">Nota media</div></div>
-        <div class="stat-card"><div class="stat-value">${d.preguntas_falladas}</div><div class="stat-label">Fallos</div></div>
-        <div class="stat-card"><div class="stat-value">${d.preguntas_favoritas}</div><div class="stat-label">Favoritas</div></div>
-      `;
+      await rpc("registrar_respuesta", {
+        p_intento_id:  state.quiz.intentoId,
+        p_pregunta_id: q.id,
+        p_texto:       textoSel,
+        p_correcta:    correcta,
+      });
     } catch (_) {}
   }
+}
 
-  async function loadFavoriteQuestionIds() {
-    try {
-      const d = await api("/favorites/check?user_id=" + state.userId);
-      state.favQuestionIds = new Set(d.question_ids);
-    } catch (_) {}
+async function finalizarQuiz() {
+  if (state.quiz.intentoId) {
+    try { await rpc("finalizar_intento", { p_intento_id: state.quiz.intentoId }); }
+    catch (_) {}
   }
+  const total = state.quiz.questions.length;
+  const nota = total ? Math.max(((state.quiz.correct - state.quiz.wrong/3) / total) * 10, 0) : 0;
+  $("#quiz-summary-stats").innerHTML = `
+    <div class="stat-card"><div class="v">${state.quiz.correct}</div><div class="l">Aciertos</div></div>
+    <div class="stat-card"><div class="v">${state.quiz.wrong}</div><div class="l">Fallos</div></div>
+    <div class="stat-card"><div class="v">${state.quiz.blank}</div><div class="l">En blanco</div></div>
+    <div class="stat-card"><div class="v">${nota.toFixed(2)}</div><div class="l">Nota</div></div>
+  `;
+  state.quiz = null;
+  navigate("quiz-summary");
+}
 
-  function inicializar_estado_quiz(quiz) {
-    quiz.tiempoPorPreguntaSegundos = quiz.tiempoPorPreguntaSegundos || TIEMPO_POR_PREGUNTA_POR_DEFECTO_SEGUNDOS;
-    if (!quiz.totalOriginal) {
-      quiz.totalOriginal = (quiz.questions ? quiz.questions.length : 0) + (quiz.respondidas || 0);
-    }
-    state.quiz = quiz;
-    state.qi = 0;
-    state.correct = quiz.correct || 0;
-    state.wrong = quiz.wrong || 0;
-    state.blank = 0;
-    state.answered = false;
-    document.getElementById("quiz-title").textContent = quiz.title;
-    showView("quiz");
-    renderQuestion();
+document.addEventListener("keydown", e => {
+  if (!state.quiz || $("#view-quiz").classList.contains("active") === false) return;
+  if (state.quiz.answered) {
+    if (e.key === "Enter" || e.key === " ") $("#btn-next").click();
+    return;
   }
-
-  async function solicitar_tiempo_por_pregunta(valorInicial = TIEMPO_POR_PREGUNTA_POR_DEFECTO_SEGUNDOS) {
-    const entrada = prompt(
-      "¿Cuántos segundos por pregunta quieres usar?",
-      String(valorInicial)
-    );
-    if (entrada === null) return null;
-    const segundos = parseInt(entrada.trim(), 10);
-    if (!Number.isInteger(segundos) || segundos < 5 || segundos > 600) {
-      toast("Introduce un tiempo válido entre 5 y 600 segundos");
-      return null;
-    }
-    return segundos;
+  const k = parseInt(e.key, 10);
+  if (k >= 1 && k <= state.quiz.questions[state.qi].options.length) {
+    $$(".option-btn")[k - 1]?.click();
   }
+});
 
-  function obtener_total_preguntas_quiz() {
-    return state.quiz?.totalOriginal || state.quiz?.questions?.length || 0;
+/* ── Fallos y favoritas ── */
+async function loadFallos() {
+  $("#list-fallos").innerHTML = "<p class='muted'>Cargando…</p>";
+  const d = await rpc("mis_fallos");
+  $("#list-fallos").innerHTML = (d.questions || []).map(q => `
+    <li class="q-row">
+      <div class="q-text">${esc(q.text)}</div>
+      <div class="q-meta">Fallada ${q.veces_fallada} veces</div>
+      <div class="tags">${(q.etiquetas||[]).map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+    </li>
+  `).join("") || "<p class='muted'>Sin fallos aún.</p>";
+  state.lastFallos = d.questions || [];
+}
+
+$("#btn-start-fallos").addEventListener("click", () => {
+  if (!state.lastFallos || !state.lastFallos.length)
+    return toast("No tienes fallos");
+  startQuiz("Test de fallos", null, state.lastFallos, "test_fallos");
+});
+
+async function loadFavoritas() {
+  $("#list-fav").innerHTML = "<p class='muted'>Cargando…</p>";
+  const d = await rpc("mis_favoritas");
+  $("#list-fav").innerHTML = (d.questions || []).map(q => `
+    <li class="q-row">
+      <div class="q-text">${esc(q.text)}</div>
+      <div class="tags">${(q.etiquetas||[]).map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+    </li>
+  `).join("") || "<p class='muted'>Aún no marcaste favoritas.</p>";
+  state.lastFav = d.questions || [];
+}
+
+$("#btn-start-fav").addEventListener("click", () => {
+  if (!state.lastFav || !state.lastFav.length) return toast("Sin favoritas");
+  startQuiz("Test de favoritas", null, state.lastFav, "test_favoritas");
+});
+
+/* ── Buscador (vista) ── */
+$("#buscar-input").addEventListener("input", e => {
+  clearTimeout(state._buscarDebounce);
+  state._buscarDebounce = setTimeout(() => runBuscarView(e.target.value.trim()), 250);
+});
+
+async function runBuscarView(q) {
+  if (!q) { $("#buscar-results").innerHTML = ""; return; }
+  $("#buscar-results").innerHTML = "<p class='muted'>Buscando…</p>";
+  try {
+    const r = await rpc("buscar_preguntas", { p_q: q, p_lim: 40 });
+    $("#buscar-results").innerHTML = r.map(p => `
+      <li class="q-row">
+        <div class="q-text">${esc(p.enunciado)}</div>
+        <div class="q-meta">Relevancia: ${Number(p.score).toFixed(2)}</div>
+      </li>
+    `).join("") || "<p class='muted'>Sin resultados.</p>";
+  } catch (e) { toast(e.message); }
+}
+
+/* ── Subir test ── */
+$("#upload-file").addEventListener("change", async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  $("#upload-textarea").value = await f.text();
+});
+
+$("#btn-upload").addEventListener("click", async () => {
+  let parsed;
+  try { parsed = JSON.parse($("#upload-textarea").value); }
+  catch (e) { return toast("JSON inválido"); }
+  let titulo, descripcion = null, preguntas;
+  if (Array.isArray(parsed)) {
+    titulo = prompt("Nombre del test:") || "Test sin nombre";
+    preguntas = parsed;
+  } else {
+    titulo = parsed.titulo || "Test sin nombre";
+    descripcion = parsed.descripcion || null;
+    preguntas = parsed.preguntas || [];
   }
-
-  function obtener_posicion_absoluta_actual() {
-    const respondidasPrevias = state.quiz?.respondidas || 0;
-    return respondidasPrevias + state.qi + 1;
-  }
-
-  async function obtener_intento_pendiente(tipo, quizId = null) {
-    const qs = new URLSearchParams({
-      user_id: String(state.userId),
-      attempt_type: tipo,
+  if (!preguntas.length) return toast("El JSON no tiene preguntas");
+  try {
+    await rpc("importar_test_normalizado", {
+      p_titulo: titulo, p_descripcion: descripcion, p_preguntas: preguntas,
     });
-    if (quizId !== null && quizId !== undefined) qs.set("quiz_id", String(quizId));
-    const d = await api(`/attempts/pending?${qs.toString()}`);
-    return d.attempt || null;
-  }
+    toast(`Importado: ${titulo}`);
+    $("#upload-textarea").value = "";
+    navigate("tests");
+  } catch (e) { toast(e.message); }
+});
 
-  async function reanudar_intento(attemptId, tituloFallback, tiempoPorPreguntaSegundos) {
-    const d = await api(`/attempts/${attemptId}/resume`, {
-      method: "POST",
-      body: { user_id: state.userId },
-    });
-    if (!d.questions.length) {
-      toast("Ese intento ya no tiene preguntas pendientes");
-      return false;
-    }
-    inicializar_estado_quiz({
-      questions: d.questions,
-      title: d.nombre || tituloFallback || "Test",
-      attemptId: d.attempt_id,
-      type: d.attempt_type,
-      quizId: d.quiz_id || null,
-      correct: d.correct,
-      wrong: d.wrong,
-      totalOriginal: d.total_original,
-      respondidas: d.respondidas,
-      tiempoPorPreguntaSegundos,
-    });
-    return true;
-  }
-
-  async function comprobar_reanudacion(tipo, quizId, titulo) {
-    const pendiente = await obtener_intento_pendiente(tipo, quizId);
-    if (!pendiente) return null;
-    const continuar = await confirm(
-      "Test pendiente",
-      "Tienes un test a medias. ¿Quieres continuarlo donde lo dejaste?"
-    );
-    if (continuar) {
-      const tiempoPorPreguntaSegundos = await solicitar_tiempo_por_pregunta();
-      if (tiempoPorPreguntaSegundos === null) return null;
-      const ok = await reanudar_intento(pendiente.id, pendiente.nombre || titulo, tiempoPorPreguntaSegundos);
-      if (ok) return "reanudo";
-    } else {
-      await api(`/attempts/${pendiente.id}/discard`, {
-        method: "POST",
-        body: { user_id: state.userId },
-      });
-    }
-    return "reiniciar";
-  }
-
-  /* ── Menu actions ── */
-  document.querySelector(".menu-grid").addEventListener("click", (e) => {
-    const card = e.target.closest(".menu-card");
-    if (!card) return;
-    const action = card.dataset.action;
-    if (action === "tests") { state.favFilter = false; loadTests(1); }
-    else if (action === "upload") showView("upload");
-    else if (action === "fallos") startFailuresTest();
-    else if (action === "favoritas") startFavoritesTest();
-    else if (action === "ver-favoritas") loadFavoritesViewer();
-    else if (action === "simulacros") loadSimulacros();
-    else if (action === "progreso") loadProgress();
-    else if (action === "download-all") downloadAll();
-    else if (action === "download-db") downloadDb();
-  });
-
-  /* ── Back buttons ── */
-  document.querySelectorAll(".btn-back[data-back]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const target = btn.dataset.back;
-      showView(target);
-      if (target === "menu") loadMenuStats();
-    });
-  });
-
-  /* ── Tests list ── */
-  async function loadTests(page) {
-    state.testsPaginaActual = page;
-    showView("tests");
-    const listEl = document.getElementById("test-list");
-    const pagEl = document.getElementById("test-pagination");
-    const titleEl = document.getElementById("tests-title");
-    const panelMega = document.getElementById("panel-mega-test");
-    const botonMegaModo = document.getElementById("btn-mega-modo");
-    const resumenMega = document.getElementById("mega-seleccion-resumen");
-    listEl.innerHTML = '<div class="spinner"></div>';
-    pagEl.innerHTML = "";
-
-    const filterBtn = document.getElementById("btn-toggle-fav-filter");
-    filterBtn.classList.toggle("active", state.favFilter);
-    titleEl.textContent = state.favFilter ? "Tests favoritos" : "Mis tests";
-    panelMega.classList.toggle("hidden", !state.megaModo || !state.puedeGestionar);
-    botonMegaModo.classList.toggle("active", state.megaModo);
-    resumenMega.textContent = `${state.megaSeleccionados.size} tests seleccionados`;
-    state.megaTestsPagina = [];
-
-    try {
-      const endpoint = state.favFilter
-        ? `/tests/favoritos?user_id=${state.userId}&page=${page}`
-        : `/tests?user_id=${state.userId}&page=${page}`;
-      const d = await api(endpoint);
-      if (!d.tests.length) {
-        listEl.innerHTML = '<div class="empty-state"><p>No hay tests</p></div>';
-        return;
-      }
-      state.megaTestsPagina = d.tests.map((t) => t.id);
-      listEl.innerHTML = d.tests.map((t) => {
-        const badges = [];
-        if (t.realizado) badges.push('<span class="test-badge done">Hecho</span>');
-        if (t.intentos) badges.push(`<span class="test-badge attempts">${t.intentos}x</span>`);
-        return `<div class="test-item" data-id="${t.id}">
-          <div class="test-item-info">
-            <div class="test-item-title">${esc(t.title)}</div>
-            <div class="test-item-meta">${badges.join("")}${t.total_preguntas} preguntas</div>
-          </div>
-          <div class="test-item-actions">
-            ${state.megaModo && state.puedeGestionar ? `<input type="checkbox" class="mega-checkbox" data-mega-id="${t.id}" ${state.megaSeleccionados.has(t.id) ? "checked" : ""}>` : ""}
-            <button class="btn-icon test-fav-btn ${t.es_favorito ? "active" : ""}" data-fav="${t.id}" title="Favorito">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="${t.es_favorito ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-            </button>
-            ${state.puedeGestionar ? `<button class="btn-icon test-dl-btn" data-dl="${t.id}" title="Descargar">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            </button>` : ""}
-            ${state.puedeGestionar ? `<button class="btn-icon test-del-btn" data-del="${t.id}" title="Borrar">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-            </button>` : ""}
-          </div>
-        </div>`;
-      }).join("");
-
-      // Pagination
-      if (d.pages > 1) {
-        let html = "";
-        if (page > 1) html += `<button data-p="${page - 1}">&laquo;</button>`;
-        for (let i = 1; i <= d.pages; i++) {
-          html += `<button data-p="${i}" class="${i === page ? "active" : ""}">${i}</button>`;
-        }
-        if (page < d.pages) html += `<button data-p="${page + 1}">&raquo;</button>`;
-        pagEl.innerHTML = html;
-      }
-    } catch (err) {
-      listEl.innerHTML = `<div class="empty-state"><p>${esc(err.message)}</p></div>`;
-    }
-  }
-
-  // Test list events
-  document.getElementById("test-list").addEventListener("click", async (e) => {
-    if (e.target.matches(".mega-checkbox")) {
-      const quizId = parseInt(e.target.dataset.megaId);
-      if (e.target.checked) state.megaSeleccionados.add(quizId);
-      else state.megaSeleccionados.delete(quizId);
-      return;
-    }
-    const favBtn = e.target.closest("[data-fav]");
-    if (favBtn) {
-      e.stopPropagation();
-      const qid = parseInt(favBtn.dataset.fav);
-      try {
-        const d = await api(`/tests/${qid}/favorito`, { method: "POST", body: { user_id: state.userId } });
-        favBtn.classList.toggle("active", d.es_favorito);
-        favBtn.querySelector("svg").setAttribute("fill", d.es_favorito ? "currentColor" : "none");
-        toast(d.es_favorito ? "Marcado como favorito" : "Quitado de favoritos");
-      } catch (err) { toast(err.message); }
-      return;
-    }
-    const dlBtn = e.target.closest("[data-dl]");
-    if (dlBtn) {
-      e.stopPropagation();
-      downloadTest(parseInt(dlBtn.dataset.dl));
-      return;
-    }
-    const delBtn = e.target.closest("[data-del]");
-    if (delBtn) {
-      e.stopPropagation();
-      const qid = parseInt(delBtn.dataset.del);
-      if (await confirm("Borrar test", "Se eliminara el test y todos sus datos asociados.")) {
-        try {
-          await api(`/tests/${qid}?user_id=${state.userId}`, { method: "DELETE" });
-          toast("Test borrado");
-          loadTests(1);
-        } catch (err) { toast(err.message); }
-      }
-      return;
-    }
-    const item = e.target.closest(".test-item");
-    if (item) {
-      const quizId = parseInt(item.dataset.id);
-      if (state.megaModo && state.puedeGestionar) {
-        const checkbox = item.querySelector(".mega-checkbox");
-        if (!checkbox) return;
-        checkbox.checked = !checkbox.checked;
-        if (checkbox.checked) state.megaSeleccionados.add(quizId);
-        else state.megaSeleccionados.delete(quizId);
-        return;
-      }
-      startQuiz(quizId);
-    }
-  });
-
-  document.getElementById("test-pagination").addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-p]");
-    if (btn) loadTests(parseInt(btn.dataset.p));
-  });
-
-  document.getElementById("btn-toggle-fav-filter").addEventListener("click", () => {
-    state.favFilter = !state.favFilter;
-    loadTests(1);
-  });
-  document.getElementById("btn-mega-modo").addEventListener("click", () => {
-    if (!state.puedeGestionar) return;
-    state.megaModo = !state.megaModo;
-    if (!state.megaModo) state.megaSeleccionados.clear();
-    loadTests(1);
-  });
-  document.getElementById("btn-seleccionar-pagina").addEventListener("click", () => {
-    for (const id of state.megaTestsPagina) state.megaSeleccionados.add(id);
-    loadTests(state.testsPaginaActual);
-  });
-  document.getElementById("btn-deseleccionar-pagina").addEventListener("click", () => {
-    for (const id of state.megaTestsPagina) state.megaSeleccionados.delete(id);
-    loadTests(state.testsPaginaActual);
-  });
-  document.getElementById("btn-iniciar-mega-test").addEventListener("click", async () => {
-    if (!state.puedeGestionar) return;
-    if (!state.megaSeleccionados.size) {
-      toast("Selecciona al menos un test");
-      return;
-    }
-    try {
-      const nombreMegaTest = (prompt("Nombre del mega test", `Mega test ${new Date().toLocaleDateString("es-ES")}`) || "").trim();
-      if (!nombreMegaTest) {
-        toast("Debes indicar un nombre para el mega test");
-        return;
-      }
-      const d = await api("/tests/mega/crear", {
-        method: "POST",
-        body: {
-          user_id: state.userId,
-          nombre: nombreMegaTest,
-          quiz_ids: Array.from(state.megaSeleccionados),
-          solo_favoritos: state.favFilter,
-        },
-      });
-      state.megaSeleccionados.clear();
-      state.megaModo = false;
-      toast(`Mega test creado como test normal (${d.total_preguntas} preguntas)`);
-      loadTests(1);
-    } catch (err) {
-      toast(err.message);
-    }
-  });
-
-  /* ── Download helpers ── */
-  async function downloadTest(quizId) {
-    try {
-      const res = await api(`/tests/${quizId}/download?user_id=${state.userId}`);
-      const blob = await res.blob();
-      triggerDownload(blob, res.headers.get("content-disposition"));
-    } catch (err) { toast(err.message); }
-  }
-
-  async function downloadAll() {
-    try {
-      toast("Preparando descarga...");
-      const res = await api(`/tests/download-all?user_id=${state.userId}`);
-      const blob = await res.blob();
-      triggerDownload(blob, "tests.zip");
-    } catch (err) { toast(err.message); }
-  }
-
-  async function downloadDb() {
-    try {
-      const res = await api(`/db/download?user_id=${state.userId}`);
-      const blob = await res.blob();
-      triggerDownload(blob, "bot.db");
-    } catch (err) { toast(err.message); }
-  }
-
-  function triggerDownload(blob, name) {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = (typeof name === "string" && name.includes("filename="))
-      ? name.split("filename=")[1].replace(/"/g, "")
-      : (name || "download");
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }
-
-  /* ── Upload ── */
-  const dropzone = document.getElementById("dropzone");
-  const fileInput = document.getElementById("file-input");
-  const uploadForm = document.getElementById("upload-form");
-  const btnUpload = document.getElementById("btn-upload");
-  let selectedFiles = [];
-
-  dropzone.addEventListener("click", () => fileInput.click());
-  dropzone.addEventListener("dragover", (e) => { e.preventDefault(); dropzone.classList.add("dragover"); });
-  dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
-  dropzone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    dropzone.classList.remove("dragover");
-    setFiles(e.dataTransfer.files);
-  });
-  fileInput.addEventListener("change", () => setFiles(fileInput.files));
-
-  function setFiles(files) {
-    selectedFiles = Array.from(files);
-    btnUpload.disabled = !selectedFiles.length;
-    dropzone.querySelector("p").textContent =
-      selectedFiles.length ? selectedFiles.map((f) => f.name).join(", ") : "Arrastra archivos o pulsa para seleccionar";
-  }
-
-  uploadForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (!selectedFiles.length) return;
-    const statusEl = document.getElementById("upload-status");
-    statusEl.innerHTML = '<div class="spinner"></div>';
-    btnUpload.disabled = true;
-
-    let totalCreated = 0;
-    for (const file of selectedFiles) {
-      const fd = new FormData();
-      fd.append("user_id", state.userId);
-      fd.append("file", file);
-      try {
-        const d = await api("/tests/upload", { method: "POST", body: fd });
-        totalCreated += d.count;
-      } catch (err) {
-        statusEl.innerHTML = `<div class="error">${esc(err.message)}</div>`;
-        btnUpload.disabled = false;
-        return;
-      }
-    }
-    statusEl.innerHTML = `<div class="success">${totalCreated} test(s) creados correctamente</div>`;
-    selectedFiles = [];
-    fileInput.value = "";
-    dropzone.querySelector("p").textContent = "Arrastra archivos o pulsa para seleccionar";
-    btnUpload.disabled = true;
-  });
-
-  /* ── Start quiz ── */
-  async function startQuiz(quizId) {
-    try {
-      const estadoReanudacion = await comprobar_reanudacion("quiz", quizId, "Test");
-      if (estadoReanudacion === "reanudo") return;
-      const tiempoPorPreguntaSegundos = await solicitar_tiempo_por_pregunta();
-      if (tiempoPorPreguntaSegundos === null) return;
-      const d = await api(`/tests/${quizId}/questions`);
-      if (!d.questions.length) { toast("El test no tiene preguntas"); return; }
-      const preguntasMezcladas = shuffle(d.questions);
-      const att = await api("/attempts/start", {
-        method: "POST",
-        body: {
-          user_id: state.userId,
-          quiz_id: quizId,
-          attempt_type: "quiz",
-          nombre: d.quiz.title,
-          question_ids: preguntasMezcladas.map((p) => p.id),
-        },
-      });
-      inicializar_estado_quiz({
-        questions: preguntasMezcladas,
-        title: d.quiz.title,
-        attemptId: att.attempt_id,
-        type: "quiz",
-        quizId: quizId,
-        tiempoPorPreguntaSegundos,
-      });
-    } catch (err) { toast(err.message); }
-  }
-
-  /* ── Failures test ── */
-  async function startFailuresTest() {
-    try {
-      const estadoReanudacion = await comprobar_reanudacion("test_fallos", null, "Test de fallos");
-      if (estadoReanudacion === "reanudo") return;
-      const tiempoPorPreguntaSegundos = await solicitar_tiempo_por_pregunta();
-      if (tiempoPorPreguntaSegundos === null) return;
-      const d = await api("/failures/questions?user_id=" + state.userId);
-      if (!d.questions.length) { toast("No tienes preguntas falladas"); return; }
-      const preguntasMezcladas = shuffle(d.questions);
-      const att = await api("/attempts/start", {
-        method: "POST",
-        body: {
-          user_id: state.userId,
-          quiz_id: null,
-          attempt_type: "test_fallos",
-          nombre: "Test de fallos",
-          question_ids: preguntasMezcladas.map((p) => p.id),
-        },
-      });
-      inicializar_estado_quiz({
-        questions: preguntasMezcladas,
-        title: "Test de fallos",
-        attemptId: att.attempt_id,
-        type: "test_fallos",
-        tiempoPorPreguntaSegundos,
-      });
-    } catch (err) { toast(err.message); }
-  }
-
-  /* ── Favorites test ── */
-  async function startFavoritesTest() {
-    try {
-      const estadoReanudacion = await comprobar_reanudacion("test_favoritas", null, "Test de favoritas");
-      if (estadoReanudacion === "reanudo") return;
-      const tiempoPorPreguntaSegundos = await solicitar_tiempo_por_pregunta();
-      if (tiempoPorPreguntaSegundos === null) return;
-      const d = await api("/favorites/questions?user_id=" + state.userId);
-      if (!d.questions.length) { toast("No tienes preguntas favoritas"); return; }
-      const preguntasMezcladas = shuffle(d.questions);
-      const att = await api("/attempts/start", {
-        method: "POST",
-        body: {
-          user_id: state.userId,
-          quiz_id: null,
-          attempt_type: "test_favoritas",
-          nombre: "Test de favoritas",
-          question_ids: preguntasMezcladas.map((p) => p.id),
-        },
-      });
-      inicializar_estado_quiz({
-        questions: preguntasMezcladas,
-        title: "Test de favoritas",
-        attemptId: att.attempt_id,
-        type: "test_favoritas",
-        tiempoPorPreguntaSegundos,
-      });
-    } catch (err) { toast(err.message); }
-  }
-
-  /* ── Favorites viewer ── */
-  async function loadFavoritesViewer() {
-    showView("ver-favoritas");
-    const body = document.getElementById("fav-viewer-body");
-    body.innerHTML = '<div class="spinner"></div>';
-
-    try {
-      const d = await api("/favorites/all?user_id=" + state.userId);
-      if (!d.questions.length) {
-        body.innerHTML = '<div class="empty-state"><p>No tienes preguntas favoritas</p></div>';
-        return;
-      }
-
-      let currentQuiz = null;
-      let html = "";
-      for (const q of d.questions) {
-        if (q.quiz_title !== currentQuiz) {
-          currentQuiz = q.quiz_title;
-          html += `<div class="fav-viewer-section-title">${esc(currentQuiz)}</div>`;
-        }
-        const correctAnswer = q.options[q.correct_index] || q.options[0];
-        html += `<div class="fav-viewer-card">
-          <div class="fav-viewer-question">${esc(q.text)}</div>
-          <div class="fav-viewer-answer">${esc(correctAnswer)}</div>
-          ${q.explicacion ? `<div class="fav-viewer-explanation">${esc(q.explicacion)}</div>` : ""}
-          <button class="btn-icon fav-viewer-remove" data-unfav="${q.id}" title="Quitar de favoritas">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-          </button>
-        </div>`;
-      }
-
-      body.innerHTML = html;
-    } catch (err) {
-      body.innerHTML = `<div class="empty-state"><p>${esc(err.message)}</p></div>`;
-    }
-  }
-
-  document.getElementById("fav-viewer-body").addEventListener("click", async (e) => {
-    const btn = e.target.closest("[data-unfav]");
-    if (!btn) return;
-    const qid = parseInt(btn.dataset.unfav);
-    try {
-      await api("/favorites/toggle", {
-        method: "POST",
-        body: { user_id: state.userId, question_id: qid },
-      });
-      state.favQuestionIds.delete(qid);
-      btn.closest(".fav-viewer-card").remove();
-      toast("Quitada de favoritas");
-    } catch (err) { toast(err.message); }
-  });
-
-  /* ── Render question ── */
-  function renderQuestion() {
-    const q = state.quiz.questions[state.qi];
-    const totalActual = state.quiz.questions.length;
-    const totalOriginal = obtener_total_preguntas_quiz();
-    const posicionActual = obtener_posicion_absoluta_actual();
-
-    const totalSeguro = totalOriginal || totalActual || 1;
-    document.getElementById("quiz-counter").textContent = `${posicionActual} / ${totalSeguro}`;
-    document.getElementById("quiz-progress").style.width = `${(posicionActual / totalSeguro) * 100}%`;
-    document.getElementById("question-text").textContent = q.text;
-    document.getElementById("question-explanation").classList.add("hidden");
-    state.answered = false;
-    iniciar_temporizador_pregunta();
-
-    // Shuffle options but track correct
-    const optionsWithIndex = q.options.map((text, i) => ({ text, isCorrect: i === q.correct_index }));
-    const shuffled = shuffle([...optionsWithIndex]);
-    q._shuffled = shuffled;
-
-    const listEl = document.getElementById("options-list");
-    listEl.innerHTML = shuffled.map((opt, i) =>
-      `<button class="option-btn" data-oi="${i}">${esc(opt.text)}</button>`
-    ).join("");
-
-    // Fav button
-    const favBtn = document.getElementById("btn-fav-question");
-    favBtn.classList.toggle("is-fav", state.favQuestionIds.has(q.id));
-    document.getElementById("btn-editar-pregunta").classList.toggle("hidden", !state.puedeGestionar);
-    document.getElementById("btn-eliminar-pregunta").classList.toggle("hidden", !state.puedeGestionar);
-
-    document.getElementById("btn-next-question").textContent =
-      state.qi < totalActual - 1 ? "Siguiente" : "Finalizar";
-    document.getElementById("btn-next-question").classList.add("hidden");
-  }
-
-  function detener_temporizador_pregunta() {
-    if (state.temporizadorPreguntaId) {
-      clearInterval(state.temporizadorPreguntaId);
-      state.temporizadorPreguntaId = null;
-    }
-  }
-
-  function actualizar_etiqueta_temporizador() {
-    const etiqueta = document.getElementById("quiz-timer");
-    etiqueta.textContent = `${state.tiempoRestante}s`;
-    etiqueta.classList.toggle("agotado", state.tiempoRestante <= 5);
-  }
-
-  function iniciar_temporizador_pregunta() {
-    detener_temporizador_pregunta();
-    const tiempoConfigurado = state.quiz?.tiempoPorPreguntaSegundos || TIEMPO_POR_PREGUNTA_POR_DEFECTO_SEGUNDOS;
-    state.tiempoRestante = tiempoConfigurado;
-    actualizar_etiqueta_temporizador();
-    state.temporizadorPreguntaId = setInterval(() => {
-      if (state.answered) {
-        detener_temporizador_pregunta();
-        return;
-      }
-      state.tiempoRestante -= 1;
-      actualizar_etiqueta_temporizador();
-      if (state.tiempoRestante <= 0) {
-        gestionar_tiempo_agotado();
-      }
-    }, 1000);
-  }
-
-  async function gestionar_tiempo_agotado() {
-    if (state.answered || !state.quiz) return;
-    state.answered = true;
-    detener_temporizador_pregunta();
-    const q = state.quiz.questions[state.qi];
-    document.querySelectorAll(".option-btn").forEach((b, i) => {
-      b.classList.add("disabled");
-      if (q._shuffled[i].isCorrect) b.classList.add("correct");
-    });
-    state.wrong++;
-    toast("⏰ Tiempo agotado. Pregunta marcada como incorrecta.");
-
-    try {
-      await api(`/attempts/${state.quiz.attemptId}/answer`, {
-        method: "POST",
-        body: {
-          question_id: q.id,
-          selected_option: "Sin respuesta",
-          is_correct: false,
-          user_id: state.userId,
-        },
-      });
-    } catch (_) {}
-
-    if (q.explicacion) {
-      const expEl = document.getElementById("question-explanation");
-      expEl.textContent = q.explicacion;
-      expEl.classList.remove("hidden");
-    }
-
-    document.getElementById("btn-next-question").classList.remove("hidden");
-  }
-
-  /* ── Option click ── */
-  document.getElementById("options-list").addEventListener("click", async (e) => {
-    const btn = e.target.closest(".option-btn");
-    if (!btn || state.answered) return;
-    state.answered = true;
-    detener_temporizador_pregunta();
-
-    const oi = parseInt(btn.dataset.oi);
-    const q = state.quiz.questions[state.qi];
-    const shuffled = q._shuffled;
-    const selected = shuffled[oi];
-    const isCorrect = selected.isCorrect;
-
-    // Mark buttons
-    document.querySelectorAll(".option-btn").forEach((b, i) => {
-      b.classList.add("disabled");
-      if (shuffled[i].isCorrect) b.classList.add("correct");
-    });
-    if (!isCorrect) btn.classList.add("wrong");
-
-    if (isCorrect) state.correct++;
-    else state.wrong++;
-
-    // Record answer
-    try {
-      await api(`/attempts/${state.quiz.attemptId}/answer`, {
-        method: "POST",
-        body: {
-          question_id: q.id,
-          selected_option: selected.text,
-          is_correct: isCorrect,
-          user_id: state.userId,
-        },
-      });
-    } catch (_) {}
-
-    // Show explanation
-    if (q.explicacion) {
-      const expEl = document.getElementById("question-explanation");
-      expEl.textContent = q.explicacion;
-      expEl.classList.remove("hidden");
-    }
-
-    document.getElementById("btn-next-question").classList.remove("hidden");
-  });
-
-  /* ── Next question ── */
-  document.getElementById("btn-next-question").addEventListener("click", async () => {
-    if (!state.answered) return;
-    state.qi++;
-    if (state.qi >= state.quiz.questions.length) {
-      await finishQuiz();
-    } else {
-      renderQuestion();
-    }
-  });
-
-  /* ── Keyboard shortcuts for quiz ── */
-  document.addEventListener("keydown", async (e) => {
-    if (!state.quiz) return;
-    const view = document.getElementById("view-quiz");
-    if (!view.classList.contains("active")) return;
-
-    if (!state.answered) {
-      const num = parseInt(e.key);
-      if (num >= 1 && num <= 4) {
-        const btns = document.querySelectorAll(".option-btn");
-        if (btns[num - 1]) btns[num - 1].click();
-      }
-    } else {
-      if (e.key === "1") {
-        document.getElementById("btn-fav-question").click();
-        return;
-      }
-      if (e.key !== "Escape") {return}
-      const nextBtn = document.getElementById("btn-next-question");
-      if (!nextBtn.classList.contains("hidden")) nextBtn.click();
-    }
-  });
-
-  /* ── Quit quiz ── */
-  document.getElementById("btn-quit-quiz").addEventListener("click", async () => {
-    if (await confirm("Pausar test", "Se guardará tu progreso para retomarlo después.")) {
-      detener_temporizador_pregunta();
-      state.quiz = null;
-      showView("menu");
-      loadMenuStats();
-    }
-  });
-
-  /* ── Favorite question toggle ── */
-  document.getElementById("btn-fav-question").addEventListener("click", async () => {
-    const q = state.quiz.questions[state.qi];
-    try {
-      const d = await api("/favorites/toggle", {
-        method: "POST",
-        body: { user_id: state.userId, question_id: q.id },
-      });
-      if (d.es_favorita) state.favQuestionIds.add(q.id);
-      else state.favQuestionIds.delete(q.id);
-      document.getElementById("btn-fav-question").classList.toggle("is-fav", d.es_favorita);
-      toast(d.es_favorita ? "Guardada en favoritas" : "Quitada de favoritas");
-    } catch (err) { toast(err.message); }
-  });
-
-  document.getElementById("btn-editar-pregunta").addEventListener("click", async () => {
-    if (!state.puedeGestionar || !state.quiz) return;
-    const q = state.quiz.questions[state.qi];
-    const resultado = await abrirEditorPregunta(q);
-    if (!resultado) return;
-    try {
-      const actualizado = await api(`/questions/${q.id}`, {
-        method: "PUT",
-        body: { user_id: state.userId, ...resultado },
-      });
-      state.quiz.questions[state.qi] = {
-        ...q,
-        text: actualizado.question.text,
-        explicacion: actualizado.question.explicacion,
-        options: actualizado.question.options,
-        correct_index: 0,
-      };
-      toast("Pregunta actualizada");
-      renderQuestion();
-    } catch (err) {
-      toast(err.message);
-    }
-  });
-
-  document.getElementById("btn-eliminar-pregunta").addEventListener("click", async () => {
-    if (!state.puedeGestionar || !state.quiz) return;
-    const q = state.quiz.questions[state.qi];
-    if (!await confirm("Eliminar pregunta", "Esta accion eliminara la pregunta de forma permanente.")) return;
-    try {
-      await api(`/questions/${q.id}?user_id=${state.userId}`, { method: "DELETE" });
-      state.quiz.questions.splice(state.qi, 1);
-      if (!state.quiz.questions.length) {
-        toast("No quedan preguntas en este test");
-        await finishQuiz();
-        return;
-      }
-      if (state.qi >= state.quiz.questions.length) state.qi = state.quiz.questions.length - 1;
-      toast("Pregunta eliminada");
-      renderQuestion();
-    } catch (err) {
-      toast(err.message);
-    }
-  });
-
-  function abrirEditorPregunta(pregunta) {
-    return new Promise((resolve) => {
-      const opciones = pregunta.options || [];
-      const opcionCorrecta = opciones[pregunta.correct_index || 0] || "";
-      const opcionesIncorrectas = opciones.filter((_, i) => i !== (pregunta.correct_index || 0));
-      const overlay = document.createElement("div");
-      overlay.className = "dialog-overlay";
-      overlay.innerHTML = `<div class="dialog dialog-editor-pregunta">
-        <h3>Editar pregunta</h3>
-        <label>Enunciado</label>
-        <textarea id="editar-enunciado">${esc(pregunta.text)}</textarea>
-        <label>Respuesta correcta</label>
-        <textarea id="editar-respuesta-correcta">${esc(opcionCorrecta)}</textarea>
-        <label>Respuesta 2</label>
-        <textarea id="editar-respuesta-2">${esc(opcionesIncorrectas[0] || "")}</textarea>
-        <label>Respuesta 3</label>
-        <textarea id="editar-respuesta-3">${esc(opcionesIncorrectas[1] || "")}</textarea>
-        <label>Respuesta 4</label>
-        <textarea id="editar-respuesta-4">${esc(opcionesIncorrectas[2] || "")}</textarea>
-        <label>Explicacion</label>
-        <textarea id="editar-explicacion">${esc(pregunta.explicacion || "")}</textarea>
-        <div class="dialog-actions">
-          <button class="btn btn-outline btn-sm" data-cancelar="1">Cancelar</button>
-          <button class="btn btn-primary btn-sm" data-guardar="1">Guardar</button>
-        </div>
-      </div>`;
-      overlay.addEventListener("click", (e) => {
-        if (e.target.dataset.cancelar) {
-          overlay.remove();
-          resolve(null);
-          return;
-        }
-        if (e.target.dataset.guardar) {
-          const text = overlay.querySelector("#editar-enunciado").value.trim();
-          const correcta = overlay.querySelector("#editar-respuesta-correcta").value.trim();
-          const r2 = overlay.querySelector("#editar-respuesta-2").value.trim();
-          const r3 = overlay.querySelector("#editar-respuesta-3").value.trim();
-          const r4 = overlay.querySelector("#editar-respuesta-4").value.trim();
-          const explicacion = overlay.querySelector("#editar-explicacion").value.trim();
-          const opcionesActualizadas = [correcta, r2, r3, r4].filter((v) => v);
-          if (!text || !correcta || !r2) {
-            toast("Enunciado, respuesta correcta y respuesta 2 son obligatorios");
-            return;
-          }
-          overlay.remove();
-          resolve({
-            text,
-            explicacion,
-            opciones: opcionesActualizadas,
-          });
-        }
-      });
-      document.body.appendChild(overlay);
-    });
-  }
-
-  /* ── Finish quiz ── */
-  async function finishQuiz() {
-    detener_temporizador_pregunta();
-    const total = obtener_total_preguntas_quiz() || state.quiz.questions.length;
-    state.blank = Math.max(0, total - state.correct - state.wrong);
-
-    try {
-      await api(`/attempts/${state.quiz.attemptId}/finish`, {
-        method: "POST",
-        body: { correct: state.correct, wrong: state.wrong },
-      });
-    } catch (_) {}
-
-    if (state.quiz.type === "simulacro") {
-      showSimulacroResults();
-      return;
-    }
-
-    const nota = total > 0
-      ? Math.max((state.correct - PENALIZACION * state.wrong) / total * 10, 0)
-      : 0;
-
-    const body = document.getElementById("results-body");
-    body.innerHTML = `
-      <div class="results-card">
-        <h2>${esc(state.quiz.title)}</h2>
-        <div class="results-score ${nota >= 5 ? "pass" : "fail"}">${nota.toFixed(2)}</div>
-        <div style="color: var(--text-secondary); font-size: 0.9rem;">sobre 10</div>
-        <div class="results-detail">
-          <div class="results-detail-item">
-            <div class="results-detail-value results-correct">${state.correct}</div>
-            <div class="results-detail-label">Correctas</div>
-          </div>
-          <div class="results-detail-item">
-            <div class="results-detail-value results-wrong">${state.wrong}</div>
-            <div class="results-detail-label">Incorrectas</div>
-          </div>
-          <div class="results-detail-item">
-            <div class="results-detail-value results-blank">${state.blank}</div>
-            <div class="results-detail-label">En blanco</div>
-          </div>
-        </div>
+/* ── Etiquetas ── */
+async function loadEtiquetas() {
+  const [tags, est] = await Promise.all([
+    rpc("listar_etiquetas"),
+    rpc("estado_embeddings"),
+  ]);
+  $("#etiquetas-status").innerHTML = `
+    Estado del worker:
+    <strong>${est.preguntas_vectorizadas}</strong>/${est.preguntas_total} preguntas vectorizadas ·
+    <strong>${est.etiquetas_vectorizadas}</strong>/${est.etiquetas_total} etiquetas ·
+    cola: <strong>${est.cola_pendiente}</strong>
+  `;
+  $("#etiquetas-list").innerHTML = tags.map(t => `
+    <li class="etiqueta-row" data-nombre="${esc(t.nombre)}">
+      <span class="dot ${t.vectorizada ? "ok" : ""}" title="${t.vectorizada ? "Vectorizada" : "Pendiente de vectorizar"}"></span>
+      <div style="flex:1">
+        <div class="nombre">${esc(t.nombre)}</div>
+        <div class="descripcion">${esc(t.descripcion || "(sin descripción)")}</div>
       </div>
-      <button class="btn btn-primary btn-block" id="btn-results-back">Volver al menu</button>
-    `;
-    showView("results");
-    document.getElementById("btn-results-back").addEventListener("click", () => {
-      showView("menu");
-      loadMenuStats();
+      <span class="count">${t.num_preguntas} preg.</span>
+      <button class="btn btn-ghost btn-sm" data-edit="${esc(t.nombre)}">✏️</button>
+      <button class="btn btn-ghost btn-sm" data-del="${esc(t.nombre)}">🗑️</button>
+    </li>
+  `).join("") || "<p class='muted'>Crea tu primera etiqueta para que el auto-tagger empiece a clasificar.</p>";
+}
+
+$("#form-etiqueta").addEventListener("submit", async e => {
+  e.preventDefault();
+  try {
+    await rpc("crear_etiqueta", {
+      p_nombre:      $("#et-nombre").value.trim(),
+      p_descripcion: $("#et-descripcion").value.trim() || null,
     });
+    $("#et-nombre").value = ""; $("#et-descripcion").value = "";
+    toast("Etiqueta guardada"); loadEtiquetas();
+  } catch (e) { toast(e.message); }
+});
+
+$("#etiquetas-list").addEventListener("click", async e => {
+  const del = e.target.closest("[data-del]");
+  const edit = e.target.closest("[data-edit]");
+  if (del) {
+    if (!confirm(`¿Borrar la etiqueta "${del.dataset.del}"? Se quitará de todas las preguntas.`)) return;
+    try { await rpc("borrar_etiqueta", { p_nombre: del.dataset.del }); toast("Borrada"); loadEtiquetas(); }
+    catch (e) { toast(e.message); }
   }
-
-  /* ── Simulacros ── */
-  async function loadSimulacros() {
-    showView("simulacros");
-    const listEl = document.getElementById("simulacros-list");
-    listEl.innerHTML = '<div class="spinner"></div>';
-
-    try {
-      const d = await api("/simulacros");
-      if (!d.simulacros.length) {
-        listEl.innerHTML = '<div class="empty-state"><p>No hay simulacros configurados</p></div>';
-        return;
-      }
-      listEl.innerHTML = d.simulacros.map((s) =>
-        `<div class="test-item" data-sim="${s.id}">
-          <div class="test-item-info">
-            <div class="test-item-title">${esc(s.nombre)}</div>
-            <div class="test-item-meta">Test: ${esc(s.test_titulo)} &middot; Corte: ${s.nota_corte_directa}</div>
-          </div>
-          <div class="test-item-actions">
-            ${state.puedeGestionar ? `<button class="btn-icon sim-del-btn" data-sim-del="${s.id}" title="Borrar">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
-            </button>` : ""}
-          </div>
-        </div>`
-      ).join("");
-    } catch (err) {
-      listEl.innerHTML = `<div class="empty-state"><p>${esc(err.message)}</p></div>`;
-    }
+  if (edit) {
+    $("#et-nombre").value = edit.dataset.edit;
+    const tag = (await rpc("listar_etiquetas")).find(t => t.nombre === edit.dataset.edit);
+    $("#et-descripcion").value = tag?.descripcion || "";
+    $("#et-nombre").focus();
   }
+});
 
-  document.getElementById("simulacros-list").addEventListener("click", async (e) => {
-    const delBtn = e.target.closest("[data-sim-del]");
-    if (delBtn) {
-      e.stopPropagation();
-      const simId = parseInt(delBtn.dataset.simDel);
-      if (await confirm("Borrar simulacro", "Se eliminara este simulacro.")) {
-        try {
-          await api(`/simulacros/${simId}?user_id=${state.userId}`, { method: "DELETE" });
-          toast("Simulacro borrado");
-          loadSimulacros();
-        } catch (err) { toast(err.message); }
-      }
-      return;
-    }
-    const item = e.target.closest("[data-sim]");
-    if (item) startSimulacro(parseInt(item.dataset.sim));
-  });
+$("#btn-reclasificar").addEventListener("click", async () => {
+  if (!confirm("Esto recorrerá TODAS las preguntas vectorizadas y volverá a sugerir etiquetas. ¿Seguir?")) return;
+  try {
+    $("#btn-reclasificar").disabled = true;
+    const n = await rpc("reclasificar_todas");
+    toast(`${n} preguntas reclasificadas`);
+    loadEtiquetas();
+  } catch (e) { toast(e.message); }
+  finally { $("#btn-reclasificar").disabled = false; }
+});
 
-  async function startSimulacro(simId) {
-    try {
-      const tiempoPorPreguntaSegundos = await solicitar_tiempo_por_pregunta();
-      if (tiempoPorPreguntaSegundos === null) return;
-      const d = await api(`/simulacros/${simId}/start`, { method: "POST", body: { user_id: state.userId } });
-      if (!d.questions.length) { toast("El simulacro no tiene preguntas"); return; }
-      const att = await api("/attempts/start", {
-        method: "POST",
-        body: { user_id: state.userId, quiz_id: d.simulacro.quiz_id, attempt_type: "simulacro" },
-      });
-      state.quiz = {
-        questions: shuffle(d.questions),
-        title: d.simulacro.nombre,
-        attemptId: att.attempt_id,
-        type: "simulacro",
-        simulacro: d.simulacro,
-        tiempoPorPreguntaSegundos,
-      };
-      state.qi = 0; state.correct = 0; state.wrong = 0; state.blank = 0; state.answered = false;
-      document.getElementById("quiz-title").textContent = d.simulacro.nombre;
-      showView("quiz");
-      renderQuestion();
-    } catch (err) { toast(err.message); }
-  }
+/* ── Progreso ── */
+async function loadProgreso() {
+  const p = await rpc("mi_progreso_detallado");
+  $("#progreso-stats").innerHTML = `
+    <div class="stat-card"><div class="v">${p.respondidas_hoy}</div><div class="l">Hoy</div></div>
+    <div class="stat-card"><div class="v">${Number(p.nota_general).toFixed(2)}</div><div class="l">Nota</div></div>
+    <div class="stat-card"><div class="v">${p.total_respondidas}</div><div class="l">Total respondidas</div></div>
+    <div class="stat-card"><div class="v">${p.preguntas_falladas}</div><div class="l">Fallos pendientes</div></div>
+  `;
+  $("#progreso-por-test").innerHTML = (p.por_test || []).map(t => {
+    const ult = t.intentos[t.intentos.length - 1];
+    return `<li>
+      <strong>${esc(t.titulo)}</strong>
+      &nbsp;·&nbsp; ${t.intentos.length} intento(s)
+      &nbsp;·&nbsp; última nota: <strong>${Number(ult?.nota || 0).toFixed(2)}</strong>
+    </li>`;
+  }).join("") || "<p class='muted'>Sin tests terminados aún.</p>";
+}
 
-  async function showSimulacroResults() {
-    const total = state.quiz.questions.length;
-    const totalP1 = Math.min(PREGUNTAS_P1, total);
-    const totalP2 = Math.max(0, total - totalP1);
+/* ── Arranque ───────────────────────────────────────────────────────────── */
+applySession();
+navigate(state.jwt && state.user ? "home" : "login");
 
-    // We need to recalculate per-part stats from the answers
-    // Since we answered sequentially, first totalP1 = part1, rest = part2
-    // But actually the questions were shuffled and we don't track per-question...
-    // We'll approximate: use the overall stats split proportionally
-    // For a proper split we'd need to track per-question results
-    // Better: send all stats to the calculate endpoint
-    const aciertosP1 = Math.min(state.correct, totalP1);
-    const erroresP1 = Math.min(state.wrong, totalP1 - aciertosP1);
-    const aciertosP2 = state.correct - aciertosP1;
-    const erroresP2 = state.wrong - erroresP1;
-
-    try {
-      const result = await api("/simulacros/calculate", {
-        method: "POST",
-        body: {
-          aciertos_p1: aciertosP1, errores_p1: erroresP1,
-          aciertos_p2: aciertosP2, errores_p2: erroresP2,
-          total_p1: totalP1, total_p2: totalP2,
-        },
-      });
-
-      const body = document.getElementById("simulacro-results-body");
-      body.innerHTML = `
-        <div class="sim-section">
-          <h3>Puntuacion directa</h3>
-          <div class="sim-row"><span class="label">Parte 1</span><span class="value">${result.directa_p1}</span></div>
-          <div class="sim-row"><span class="label">Parte 2</span><span class="value">${result.directa_p2}</span></div>
-          <div class="sim-row"><span class="label">Total</span><span class="value" style="font-size:1.1rem">${result.directa_total}</span></div>
-          <div class="sim-row"><span class="label">En blanco P1</span><span class="value">${result.blancos_p1}</span></div>
-          <div class="sim-row"><span class="label">En blanco P2</span><span class="value">${result.blancos_p2}</span></div>
-        </div>
-        <div class="sim-section">
-          <h3>Escenarios de corte</h3>
-          <div class="sim-row"><span class="label">Optimista</span><span class="value">${result.corte_optimista}</span></div>
-          <div class="sim-row"><span class="label">Media</span><span class="value">${result.corte_media}</span></div>
-          <div class="sim-row"><span class="label">Pesimista</span><span class="value">${result.corte_pesimista}</span></div>
-        </div>
-        <div class="sim-section">
-          <h3>Nota transformada (TPS)</h3>
-          <div class="sim-row"><span class="label">Optimista</span><span class="value ${result.aprobado_optimista ? "pass" : "fail"}">${result.tps_optimista}</span></div>
-          <div class="sim-row"><span class="label">Media</span><span class="value">${result.tps_medio}</span></div>
-          <div class="sim-row"><span class="label">Pesimista</span><span class="value ${result.aprobado_pesimista ? "pass" : "fail"}">${result.tps_pesimista}</span></div>
-        </div>
-        <div class="sim-section">
-          <h3>Posicion estimada</h3>
-          ${result.pos_2024 !== null ? `<div class="sim-row"><span class="label">Historico 2024</span><span class="value">#${result.pos_2024}</span></div>` : ""}
-          ${result.pos_2022 !== null ? `<div class="sim-row"><span class="label">Historico 2022</span><span class="value">#${result.pos_2022}</span></div>` : ""}
-          ${result.pos_2024 === null && result.pos_2022 === null ? '<div class="sim-row"><span class="label">Sin datos historicos</span></div>' : ""}
-          <div class="sim-row"><span class="label">Supera minimo 30%</span><span class="value ${result.supera_minimo_30 ? "pass" : "fail"}">${result.supera_minimo_30 ? "Si" : "No"}</span></div>
-        </div>
-        <button class="btn btn-primary btn-block" id="btn-sim-results-back" style="margin-top:8px">Volver al menu</button>
-      `;
-      showView("simulacro-results");
-      document.getElementById("btn-sim-results-back").addEventListener("click", () => {
-        showView("menu");
-        loadMenuStats();
-      });
-    } catch (err) {
-      toast(err.message);
-      showView("menu");
-    }
-  }
-
-  /* ── Progress ── */
-  async function loadProgress() {
-    showView("progreso");
-    const body = document.getElementById("progress-body");
-    body.innerHTML = '<div class="spinner"></div>';
-
-    try {
-      const d = await api("/progress?user_id=" + state.userId);
-
-      let html = `
-        <div class="progress-card">
-          <h3>Resumen general</h3>
-          <div class="results-detail" style="justify-content: flex-start; gap: 16px; flex-wrap: wrap;">
-            <div class="results-detail-item"><div class="results-detail-value" style="color: var(--primary)">${d.nota_general.toFixed(2)}</div><div class="results-detail-label">Nota media</div></div>
-            <div class="results-detail-item"><div class="results-detail-value results-correct">${d.total_correct}</div><div class="results-detail-label">Correctas</div></div>
-            <div class="results-detail-item"><div class="results-detail-value results-wrong">${d.total_wrong}</div><div class="results-detail-label">Incorrectas</div></div>
-            <div class="results-detail-item"><div class="results-detail-value">${d.total_attempts}</div><div class="results-detail-label">Intentos</div></div>
-            <div class="results-detail-item"><div class="results-detail-value">${d.respondidas_hoy}</div><div class="results-detail-label">Hoy</div></div>
-          </div>
-        </div>
-      `;
-
-      if (d.por_test && d.por_test.length) {
-        for (const test of d.por_test) {
-          const lastNota = test.intentos.length ? test.intentos[test.intentos.length - 1].nota : 0;
-          const barClass = lastNota >= 7 ? "good" : lastNota >= 5 ? "medium" : "bad";
-          html += `<div class="progress-card">
-            <h3>${esc(test.titulo)}</h3>
-            <div class="progress-bar-container"><div class="progress-bar-fill ${barClass}" style="width:${lastNota * 10}%"></div></div>
-            <div class="progress-attempts">Ultima nota: ${lastNota.toFixed(2)} &middot; ${test.intentos.length} intento(s)</div>
-            ${test.intentos.map((a, i) => `<div class="progress-attempt-row">
-              <span>#${i + 1}</span>
-              <span class="${a.nota >= 5 ? "results-correct" : "results-wrong"}">${a.nota.toFixed(2)}</span>
-              <span>${a.correct}/${a.correct + a.wrong}</span>
-            </div>`).join("")}
-          </div>`;
-        }
-      }
-
-      body.innerHTML = html;
-    } catch (err) {
-      body.innerHTML = `<div class="empty-state"><p>${esc(err.message)}</p></div>`;
-    }
-  }
-
-  /* ── Utils ── */
-  function shuffle(arr) {
-    const a = [...arr];
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-  }
-
-  function esc(s) {
-    const d = document.createElement("div");
-    d.textContent = s || "";
-    return d.innerHTML;
-  }
-
-  /* ── Init ── */
-  if (loadSession()) enterApp();
-  else showView("login");
 })();

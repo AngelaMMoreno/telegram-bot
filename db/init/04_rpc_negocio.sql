@@ -857,3 +857,103 @@ LANGUAGE sql STABLE AS $$
 $$;
 
 GRANT EXECUTE ON FUNCTION leer_config() TO web_user, web_anon;
+
+
+-- ─────────────── Gestión de etiquetas (catálogo) ───────────────────────────
+
+CREATE OR REPLACE FUNCTION listar_etiquetas() RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'nombre',        c.nombre,
+        'descripcion',   c.descripcion,
+        'creada_en',     c.creado_en,
+        'vectorizada',   c.embedding IS NOT NULL,
+        'num_preguntas', (SELECT count(*) FROM preguntas
+                          WHERE c.nombre = ANY(etiquetas))
+    ) ORDER BY c.nombre), '[]'::jsonb)
+    FROM catalogo_etiquetas c;
+$$;
+
+CREATE OR REPLACE FUNCTION crear_etiqueta(p_nombre text, p_descripcion text)
+RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE v jsonb;
+BEGIN
+    IF NOT (tiene_permiso('etiqueta.gestionar') OR es_admin()) THEN
+        RAISE EXCEPTION 'permiso_denegado';
+    END IF;
+    p_nombre := lower(btrim(p_nombre));
+    IF length(p_nombre) = 0 THEN RAISE EXCEPTION 'nombre_vacio'; END IF;
+    INSERT INTO catalogo_etiquetas(nombre, descripcion)
+    VALUES (p_nombre, NULLIF(btrim(p_descripcion), ''))
+    ON CONFLICT (nombre) DO UPDATE
+        SET descripcion = EXCLUDED.descripcion;
+    SELECT to_jsonb(c) INTO v FROM catalogo_etiquetas c WHERE nombre = p_nombre;
+    RETURN v;
+END $$;
+
+CREATE OR REPLACE FUNCTION borrar_etiqueta(p_nombre text) RETURNS void
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NOT (tiene_permiso('etiqueta.gestionar') OR es_admin()) THEN
+        RAISE EXCEPTION 'permiso_denegado';
+    END IF;
+    DELETE FROM catalogo_etiquetas WHERE nombre = p_nombre;
+    UPDATE preguntas
+       SET etiquetas = array_remove(etiquetas, p_nombre),
+           actualizado_en = now()
+     WHERE p_nombre = ANY(etiquetas);
+END $$;
+
+-- Lanza reclasificar_pregunta() sobre TODAS las preguntas con embedding.
+-- Devuelve el número de preguntas procesadas.
+CREATE OR REPLACE FUNCTION reclasificar_todas() RETURNS int
+LANGUAGE plpgsql AS $$
+DECLARE v_n int := 0; v_id uuid;
+BEGIN
+    IF NOT (tiene_permiso('etiqueta.gestionar') OR es_admin()) THEN
+        RAISE EXCEPTION 'permiso_denegado';
+    END IF;
+    FOR v_id IN SELECT id FROM preguntas WHERE embedding IS NOT NULL LOOP
+        PERFORM reclasificar_pregunta(v_id);
+        v_n := v_n + 1;
+    END LOOP;
+    RETURN v_n;
+END $$;
+
+-- Estado de la cola de embeddings (para el botón "estado del worker").
+CREATE OR REPLACE FUNCTION estado_embeddings() RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT jsonb_build_object(
+        'preguntas_total',         (SELECT count(*) FROM preguntas),
+        'preguntas_vectorizadas',  (SELECT count(*) FROM preguntas
+                                    WHERE embedding IS NOT NULL),
+        'etiquetas_total',         (SELECT count(*) FROM catalogo_etiquetas),
+        'etiquetas_vectorizadas',  (SELECT count(*) FROM catalogo_etiquetas
+                                    WHERE embedding IS NOT NULL),
+        'cola_pendiente',          (SELECT count(*) FROM cola_embeddings
+                                    WHERE procesado_en IS NULL)
+    );
+$$;
+
+-- Encola TODAS las preguntas para que el worker las (re)vectorice.
+CREATE OR REPLACE FUNCTION encolar_revectorizado_total() RETURNS int
+LANGUAGE plpgsql AS $$
+DECLARE v_n int;
+BEGIN
+    IF NOT (tiene_permiso('etiqueta.gestionar') OR es_admin()) THEN
+        RAISE EXCEPTION 'permiso_denegado';
+    END IF;
+    INSERT INTO cola_embeddings(entidad, entidad_id)
+    SELECT 'pregunta', id::text FROM preguntas;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    PERFORM pg_notify('embeddings', 'bulk');
+    RETURN v_n;
+END $$;
+
+GRANT EXECUTE ON FUNCTION listar_etiquetas()                          TO web_user;
+GRANT EXECUTE ON FUNCTION crear_etiqueta(text,text)                   TO web_user;
+GRANT EXECUTE ON FUNCTION borrar_etiqueta(text)                       TO web_user;
+GRANT EXECUTE ON FUNCTION reclasificar_todas()                        TO web_user;
+GRANT EXECUTE ON FUNCTION estado_embeddings()                         TO web_user;
+GRANT EXECUTE ON FUNCTION encolar_revectorizado_total()               TO web_user;
