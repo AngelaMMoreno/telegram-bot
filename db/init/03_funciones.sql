@@ -4,6 +4,28 @@
 -- y políticas RLS que dependen de ellas.
 -- ============================================================================
 
+-- ─────────────────────────── Firma JWT (HS256) ──────────────────────────────
+-- Implementación pura en SQL sobre pgcrypto, compatible con la verificación
+-- por defecto de PostgREST.  No requiere la extensión pgjwt.
+
+CREATE OR REPLACE FUNCTION url_b64(data bytea) RETURNS text
+LANGUAGE sql IMMUTABLE AS $$
+    -- base64 URL-safe sin padding: '+' → '-', '/' → '_', '=' y '\n' fuera.
+    SELECT translate(encode(data, 'base64'), E'+/=\n', '-_');
+$$;
+
+CREATE OR REPLACE FUNCTION firmar_jwt(payload jsonb, secret text) RETURNS text
+LANGUAGE sql AS $$
+    WITH partes AS (
+        SELECT url_b64(convert_to('{"alg":"HS256","typ":"JWT"}', 'utf8'))
+               || '.' ||
+               url_b64(convert_to(payload::text, 'utf8')) AS si
+    )
+    SELECT partes.si || '.' ||
+           url_b64(hmac(partes.si::bytea, secret::bytea, 'sha256'))
+    FROM partes;
+$$;
+
 -- ─────────────────────────── Helpers JWT / RBAC ─────────────────────────────
 
 CREATE OR REPLACE FUNCTION jwt_usuario_id() RETURNS uuid
@@ -79,7 +101,7 @@ BEGIN
         'roles', v_roles,
         'exp',   extract(epoch FROM now() + interval '12 hours')::int
     );
-    RETURN sign(v_payload, v_secret);
+    RETURN firmar_jwt(v_payload, v_secret);
 END $$;
 
 -- Genera un código de 6 dígitos para vincular Telegram con una cuenta web.

@@ -1,9 +1,21 @@
 -- ============================================================================
 -- 02_seed.sql
--- Datos iniciales: roles, permisos y usuario administrador.
--- La contraseña del admin viene de la variable de entorno ADMIN_PASS
--- (inyectada por docker-entrypoint como PSQL :ADMIN_PASS).
+-- Datos iniciales: contraseñas de roles Postgres, RBAC y usuario admin.
+-- Los secretos vienen como GUCs inyectados por docker-compose:
+--   app.auth_pass   -> rol autenticador (usado por PostgREST)
+--   app.admin_pass  -> usuario 'admin' de la aplicación
+--   app.jwt_secret  -> firma JWT (lo usa 03_funciones.sql)
 -- ============================================================================
+
+-- ── Contraseña del rol autenticador ─────────────────────────────────────────
+DO $$
+DECLARE v text := current_setting('app.auth_pass', true);
+BEGIN
+    IF v IS NULL OR length(v) < 4 THEN
+        RAISE EXCEPTION 'app.auth_pass no definida o demasiado corta';
+    END IF;
+    EXECUTE format('ALTER ROLE autenticador WITH PASSWORD %L', v);
+END $$;
 
 -- ── Roles base ──────────────────────────────────────────────────────────────
 INSERT INTO roles (id, descripcion) VALUES
