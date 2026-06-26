@@ -44,7 +44,7 @@ services:
       retries: 10
 
   pgadmin:
-    image: dpage/pgadmin4:8
+    image: dpage/pgadmin4:9
     depends_on:
       db:
         condition: service_healthy
