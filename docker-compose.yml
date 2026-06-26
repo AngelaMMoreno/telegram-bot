@@ -82,7 +82,11 @@ services:
       db:
         condition: service_healthy
     environment:
-      PGRST_DB_URI: postgres://autenticador:${AUTH_PASS:?AUTH_PASS requerida}@db:5432/aprentix
+      # OJO: contraseña fuera de la URI para que caracteres especiales
+      # (@, /, :, #) no rompan el parseo de libpq.  PGPASSWORD lo lee
+      # libpq automáticamente cuando no hay password en la URI.
+      PGRST_DB_URI: postgres://autenticador@db:5432/aprentix
+      PGPASSWORD: ${AUTH_PASS:?AUTH_PASS requerida}
       PGRST_DB_ANON_ROLE: web_anon
       PGRST_DB_SCHEMAS: public
       PGRST_JWT_SECRET: ${JWT_SECRET}
@@ -117,7 +121,10 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://aprentix:${DB_PASS}@db:5432/aprentix
+      # Sin password en la URI; lo lee libpq de PGPASSWORD para evitar
+      # que @, /, : en la contraseña destrocen el parseo.
+      DATABASE_URL: postgres://aprentix@db:5432/aprentix
+      PGPASSWORD: ${DB_PASS}
       EMB_LOTE: "32"
     volumes:
       - /mnt/data/embeddings_cache:/cache
@@ -137,7 +144,8 @@ services:
     profiles: ["herramientas"]
     working_dir: /app
     environment:
-      DATABASE_URL: postgres://aprentix:${DB_PASS}@db:5432/aprentix
+      DATABASE_URL: postgres://aprentix@db:5432/aprentix
+      PGPASSWORD: ${DB_PASS}
       SQLITE_PATH: /sqlite/bot.db
     volumes:
       - ./migracion:/app:ro
