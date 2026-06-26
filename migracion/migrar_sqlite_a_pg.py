@@ -118,14 +118,12 @@ def migrar(sqlite_path: str, pg_dsn: str, dry_run: bool = False) -> None:
             ]
             cur.execute(
                 """
-                INSERT INTO preguntas (id, enunciado, opciones, explicacion, bloque, tema_legacy)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO preguntas (id, enunciado, opciones, explicacion)
+                VALUES (%s, %s, %s, %s)
                 ON CONFLICT (hash_contenido) DO NOTHING
                 """,
                 (nuevo, p["text"], json.dumps(opciones, ensure_ascii=False),
-                 p["explicacion"],
-                 None if p["bloque"] is None else str(p["bloque"]),
-                 None if p["tema"]   is None else str(p["tema"])),
+                 p["explicacion"]),
             )
             hash_a_uuid[h] = nuevo
             map_preguntas[p["id"]] = nuevo
