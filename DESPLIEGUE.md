@@ -32,7 +32,8 @@ tráfico real mientras tú validas el nuevo.
    | `JWT_SECRET`         | mínimo 32 caracteres aleatorios (`openssl rand -hex 32`)     |
    | `ADMIN_PASS`         | contraseña inicial del usuario `admin` (mínimo 8)            |
    | `DOMINIO_API`        | `api.aprentix.es` (subdominio para PostgREST detrás de Traefik) |
-   | `PG_PUERTO_EXTERNO`  | `55432` por defecto (puerto que el host expone hacia DBeaver) |
+   | `PG_PUERTO_EXTERNO`  | `5432` por defecto (puerto del host hacia DBeaver). Pon `55432` u otro si tu host ya tiene un Postgres en 5432 |
+   | `DOMINIO_DB`         | `db.aprentix.es` (solo se usa si activas la Opción B con Traefik TCP) |
 
 5. Asegúrate de tener el registro DNS de `DOMINIO_API` apuntando al
    servidor (lo necesita Let's Encrypt).
@@ -56,23 +57,56 @@ ejecución de `01_schema.sql`, `02_seed.sql`, `03_funciones.sql`.
 
 ## 3. Conectarte desde DBeaver / pgAdmin / psql
 
-Postgres queda publicado en el puerto del host indicado por
-`PG_PUERTO_EXTERNO` (por defecto **55432**).
+Hay dos modos de acceso. Elige uno.
 
-- Host: la IP pública de tu servidor (o `localhost` si haces un túnel SSH)
-- Puerto: `55432`
-- Base de datos: `aprentix`
-- Usuario: `aprentix`
-- Contraseña: la que pusiste en `DB_PASS`
+### Opción A — DNS + puerto publicado (recomendada)
 
-> Recomendación: en lugar de abrir 55432 al mundo en el firewall, usa
-> un **túnel SSH**:
+1. Crea un registro DNS **A** `db.aprentix.es` apuntando a la IP del servidor.
+2. Abre el puerto `PG_PUERTO_EXTERNO` en el firewall (o solo desde tu IP).
+3. En DBeaver:
+   - Host: `db.aprentix.es`
+   - Puerto: el valor de `PG_PUERTO_EXTERNO` (si lo dejaste en `5432`,
+     DBeaver lo asume y no tienes que escribirlo)
+   - Base: `aprentix`
+   - Usuario: `aprentix`
+   - Contraseña: la de `DB_PASS`
+
+> Más seguro aún: deja Postgres escuchando solo en `127.0.0.1` del
+> servidor y conecta por **túnel SSH**:
 >
 > ```bash
-> ssh -L 55432:127.0.0.1:55432 usuario@servidor
+> ssh -L 5432:127.0.0.1:5432 usuario@servidor
 > ```
 >
-> y conecta DBeaver a `localhost:55432`.
+> y en DBeaver `localhost` + usuario/contraseña.
+
+### Opción B — Traefik TCP + SNI (varios Postgres en el mismo host)
+
+Solo si quieres que **db.aprentix.es:5432** entre por Traefik y este
+decida por hostname (útil cuando ya tienes otro Postgres en el host o
+quieres encadenar cert Let's Encrypt automático).
+
+1. Edita la config estática de Traefik en Dokploy para añadir un
+   entrypoint TCP en 5432:
+
+   ```yaml
+   # traefik.yml
+   entryPoints:
+     web:        { address: ":80" }
+     websecure:  { address: ":443" }
+     postgres:   { address: ":5432" }
+   ```
+
+2. Asegúrate de que las labels `traefik.tcp.*` del servicio `db` están
+   activas en `docker-compose.yml` (ya vienen activadas).
+3. Quita la línea `ports:` del servicio `db` para liberar el 5432 del
+   host (Traefik lo ocupará en su lugar).
+4. Crea el DNS `db.aprentix.es` apuntando al servidor.
+5. En DBeaver activa SSL → `sslmode=require` (para que envíe SNI):
+   - Host: `db.aprentix.es`
+   - Puerto: 5432 (omitido)
+   - SSL: required
+   - Usuario / contraseña: `aprentix` / `DB_PASS`
 
 ## 4. Lanzar la migración (modo prueba)
 

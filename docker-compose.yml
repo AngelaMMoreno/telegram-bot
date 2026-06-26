@@ -29,12 +29,14 @@ services:
       - /mnt/data/pg:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
       - ./db/backups:/backups
-    # Expone Postgres al host para que puedas conectarte con DBeaver/
-    # pgAdmin durante la fase de validación.  Por defecto 55432 para no
-    # colisionar con un Postgres del sistema; cambia PG_PUERTO_EXTERNO
-    # en Dokploy si quieres otro.
+    # Acceso externo a Postgres (DBeaver / pgAdmin).
+    #
+    # Opción A (recomendada): publica el puerto en el host.  Si pones
+    #   PG_PUERTO_EXTERNO=5432 podrás conectar a db.aprentix.es sin
+    #   tener que escribir el puerto en DBeaver.  Requiere que el host
+    #   no tenga otro Postgres en 5432 y abrir el firewall.
     ports:
-      - "${PG_PUERTO_EXTERNO:-55432}:5432"
+      - "${PG_PUERTO_EXTERNO:-5432}:5432"
     restart: unless-stopped
     networks: [dokploy-network]
     healthcheck:
@@ -42,6 +44,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    # Opción B (Traefik TCP + SNI, varios Postgres en el mismo host):
+    # añade un entrypoint TCP 'postgres' en la config estática de Traefik
+    # de Dokploy (ver DESPLIEGUE.md) y descomenta estas labels.  DBeaver
+    # debe conectar con sslmode=require para que envíe el SNI.
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tcp.routers.db.rule=HostSNI(`${DOMINIO_DB:-db.aprentix.es}`)"
+      - "traefik.tcp.routers.db.entrypoints=postgres"
+      - "traefik.tcp.routers.db.tls=true"
+      - "traefik.tcp.routers.db.tls.certresolver=letsencrypt"
+      - "traefik.tcp.services.db.loadbalancer.server.port=5432"
 
   postgrest:
     image: postgrest/postgrest:v12.2.3
