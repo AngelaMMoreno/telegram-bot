@@ -134,7 +134,7 @@ BEGIN
 END $$;
 
 -- ─────────────────────────── Importación de tests ───────────────────────────
--- Espera JSON: [{pregunta, opciones:[...], bloque, tema, correcta?}, ...]
+-- Espera JSON: [{pregunta, opciones:[...], etiquetas?:[...]} , ...]
 -- Las opciones se guardan tal cual en jsonb. Si la pregunta ya existe
 -- (mismo hash de enunciado) se reutiliza, no se duplica.
 
@@ -146,6 +146,7 @@ DECLARE
     v_preg jsonb;
     v_pid  uuid;
     v_pos  int := 0;
+    v_etiq text[];
 BEGIN
     IF NOT tiene_permiso('test.crear') THEN
         RAISE EXCEPTION 'permiso_denegado';
@@ -155,12 +156,16 @@ BEGIN
     RETURNING id INTO v_test;
 
     FOR v_preg IN SELECT * FROM jsonb_array_elements(p_json) LOOP
-        INSERT INTO preguntas(enunciado, opciones, bloque, tema_legacy, autor_id)
+        v_etiq := COALESCE(
+            ARRAY(SELECT jsonb_array_elements_text(v_preg->'etiquetas')),
+            ARRAY[]::text[]
+        );
+
+        INSERT INTO preguntas(enunciado, opciones, etiquetas, autor_id)
         VALUES (
             v_preg->>'pregunta',
             v_preg->'opciones',
-            NULLIF(v_preg->>'bloque','')::int,
-            NULLIF(v_preg->>'tema','')::int,
+            v_etiq,
             jwt_usuario_id()
         )
         ON CONFLICT (hash_contenido) DO UPDATE
@@ -175,11 +180,14 @@ BEGIN
     RETURN v_test;
 END $$;
 
--- ─────────────────────────── Clasificación temática ─────────────────────────
+-- ─────────────────────────── Auto-etiquetado ────────────────────────────────
+-- Conservador: añade al array preguntas.etiquetas[] los nombres del
+-- catálogo cuya similitud coseno supere el umbral.  Nunca elimina
+-- etiquetas existentes (las tuyas manuales sobreviven).
 
 CREATE OR REPLACE FUNCTION reclasificar_pregunta(
     p_id     uuid,
-    k        int   DEFAULT 3,
+    k        int   DEFAULT 5,
     umbral   real  DEFAULT 0.55
 ) RETURNS int
 LANGUAGE plpgsql AS $$
@@ -188,23 +196,27 @@ BEGIN
     SELECT embedding INTO v_emb FROM preguntas WHERE id = p_id;
     IF v_emb IS NULL THEN RETURN 0; END IF;
 
-    DELETE FROM pregunta_temas WHERE pregunta_id = p_id AND automatico;
-
     WITH candidatos AS (
-        SELECT t.id, 1 - (t.embedding <=> v_emb) AS score
-        FROM temas t
-        WHERE t.embedding IS NOT NULL
-        ORDER BY t.embedding <=> v_emb
+        SELECT nombre
+        FROM catalogo_etiquetas
+        WHERE embedding IS NOT NULL
+          AND (1 - (embedding <=> v_emb)) > umbral
+        ORDER BY embedding <=> v_emb
         LIMIT k
     )
-    INSERT INTO pregunta_temas(pregunta_id, tema_id, score, automatico)
-    SELECT p_id, id, score, true FROM candidatos WHERE score > umbral;
+    UPDATE preguntas
+    SET etiquetas = ARRAY(
+            SELECT DISTINCT e
+            FROM unnest(etiquetas || ARRAY(SELECT nombre FROM candidatos)) AS e
+        ),
+        actualizado_en = now()
+    WHERE id = p_id;
 
     GET DIAGNOSTICS v_n = ROW_COUNT;
     RETURN v_n;
 END $$;
 
-CREATE OR REPLACE FUNCTION generar_test_tematico(p_tema uuid, p_n int DEFAULT 20)
+CREATE OR REPLACE FUNCTION generar_test_tematico(p_etiqueta text, p_n int DEFAULT 20)
 RETURNS uuid
 LANGUAGE plpgsql AS $$
 DECLARE v_test uuid;
@@ -212,19 +224,13 @@ BEGIN
     IF jwt_usuario_id() IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
 
     INSERT INTO tests(titulo, tipo, autor_id)
-    VALUES (
-        'Tema: ' || (SELECT nombre FROM temas WHERE id = p_tema),
-        'tematico',
-        jwt_usuario_id()
-    )
+    VALUES ('Etiqueta: ' || p_etiqueta, 'tematico', jwt_usuario_id())
     RETURNING id INTO v_test;
 
     INSERT INTO test_preguntas(test_id, pregunta_id, posicion)
-    SELECT v_test, pregunta_id,
-           row_number() OVER (ORDER BY random())
-    FROM pregunta_temas
-    WHERE tema_id = p_tema
-    ORDER BY score DESC
+    SELECT v_test, id, row_number() OVER (ORDER BY random())
+    FROM preguntas
+    WHERE p_etiqueta = ANY(etiquetas)
     LIMIT p_n;
 
     RETURN v_test;
@@ -266,13 +272,10 @@ CREATE POLICY tp_lectura ON test_preguntas FOR SELECT USING (jwt_usuario_id() IS
 CREATE POLICY tp_escritura ON test_preguntas FOR ALL
     USING (tiene_permiso('test.editar')) WITH CHECK (tiene_permiso('test.editar'));
 
-CREATE POLICY temas_lectura ON temas FOR SELECT USING (true);
-CREATE POLICY temas_escritura ON temas FOR ALL
-    USING (tiene_permiso('tema.gestionar')) WITH CHECK (tiene_permiso('tema.gestionar'));
-
-CREATE POLICY pt_lectura ON pregunta_temas FOR SELECT USING (true);
-CREATE POLICY pt_escritura ON pregunta_temas FOR ALL
-    USING (tiene_permiso('tema.gestionar')) WITH CHECK (tiene_permiso('tema.gestionar'));
+CREATE POLICY etiq_lectura ON catalogo_etiquetas FOR SELECT USING (true);
+CREATE POLICY etiq_escritura ON catalogo_etiquetas FOR ALL
+    USING (tiene_permiso('etiqueta.gestionar'))
+    WITH CHECK (tiene_permiso('etiqueta.gestionar'));
 
 -- Intentos, respuestas, marcadores: cada usuario solo lo suyo (admin todo).
 CREATE POLICY mis_intentos ON intentos
@@ -298,5 +301,5 @@ GRANT EXECUTE ON FUNCTION canjear_codigo_telegram(text,text) TO web_anon, web_us
 GRANT EXECUTE ON FUNCTION generar_codigo_telegram()       TO web_user;
 GRANT EXECUTE ON FUNCTION importar_test(text,jsonb)       TO web_user;
 GRANT EXECUTE ON FUNCTION reclasificar_pregunta(uuid,int,real) TO web_user;
-GRANT EXECUTE ON FUNCTION generar_test_tematico(uuid,int) TO web_user;
+GRANT EXECUTE ON FUNCTION generar_test_tematico(text,int) TO web_user;
 GRANT EXECUTE ON FUNCTION buscar_preguntas(text,int)      TO web_user;

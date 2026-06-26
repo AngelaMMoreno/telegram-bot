@@ -38,11 +38,11 @@ def _procesar_lote(conn: psycopg.Connection) -> int:
             return 0
 
         preguntas_ids = [r[2] for r in filas if r[1] == "pregunta"]
-        temas_ids = [r[2] for r in filas if r[1] == "tema"]
+        etiquetas_nombres = [r[2] for r in filas if r[1] == "etiqueta"]
 
         if preguntas_ids:
             cur.execute(
-                "SELECT id, enunciado FROM preguntas WHERE id = ANY(%s)",
+                "SELECT id, enunciado FROM preguntas WHERE id::text = ANY(%s)",
                 (preguntas_ids,),
             )
             datos = cur.fetchall()
@@ -57,16 +57,16 @@ def _procesar_lote(conn: psycopg.Connection) -> int:
                     [(d[0],) for d in datos],
                 )
 
-        if temas_ids:
+        if etiquetas_nombres:
             cur.execute(
-                "SELECT id, COALESCE(descripcion, nombre) FROM temas WHERE id = ANY(%s)",
-                (temas_ids,),
+                "SELECT nombre, COALESCE(descripcion, nombre) FROM catalogo_etiquetas WHERE nombre = ANY(%s)",
+                (etiquetas_nombres,),
             )
             datos = cur.fetchall()
             if datos:
                 vecs = vectorizar([d[1] for d in datos])
                 cur.executemany(
-                    "UPDATE temas SET embedding = %s WHERE id = %s",
+                    "UPDATE catalogo_etiquetas SET embedding = %s WHERE nombre = %s",
                     [(v, d[0]) for d, v in zip(datos, vecs)],
                 )
 

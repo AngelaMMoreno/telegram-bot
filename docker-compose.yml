@@ -61,7 +61,10 @@ services:
       # La contraseña no se guarda en pgAdmin; te la pedirá al conectar.
       PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
     volumes:
-      - /mnt/data/pgadmin:/var/lib/pgadmin
+      # Named volume gestionado por Docker: evita el problema de
+      # permisos del bind mount (pgAdmin corre como uid 5050 y no
+      # puede escribir si el directorio del host es de root).
+      - pgadmin_data:/var/lib/pgadmin
       - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
     restart: unless-stopped
     networks: [dokploy-network]
@@ -121,12 +124,15 @@ services:
     working_dir: /app
     environment:
       DATABASE_URL: postgres://aprentix:${DB_PASS}@db:5432/aprentix
-      SQLITE_PATH: /mnt/data/bot/bot.db
+      SQLITE_PATH: /sqlite/bot.db
     volumes:
       - ./migracion:/app:ro
       - /mnt/data/bot:/sqlite:ro
     entrypoint: ["sh", "-c", "pip install -q -r requirements.txt && python migrar_sqlite_a_pg.py \"$$@\"", "--"]
     networks: [dokploy-network]
+
+volumes:
+  pgadmin_data:
 
 networks:
   dokploy-network:

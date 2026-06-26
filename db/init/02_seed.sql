@@ -33,7 +33,7 @@ INSERT INTO permisos (id, descripcion) VALUES
     ('test.editar',       'Editar tests'),
     ('test.borrar',       'Eliminar tests'),
     ('test.publicar',     'Marcar un test como público'),
-    ('tema.gestionar',    'Crear, editar y borrar temas'),
+    ('etiqueta.gestionar','Crear, editar y borrar etiquetas del catálogo'),
     ('usuario.gestionar', 'Dar de alta usuarios y asignarles roles'),
     ('backup.descargar',  'Descargar copias de seguridad de la base de datos'),
     ('test.realizar',     'Realizar tests y registrar respuestas')
@@ -52,7 +52,7 @@ INSERT INTO rol_permisos (rol_id, permiso_id) VALUES
     ('editor', 'test.editar'),
     ('editor', 'test.borrar'),
     ('editor', 'test.publicar'),
-    ('editor', 'tema.gestionar'),
+    ('editor', 'etiqueta.gestionar'),
     ('editor', 'test.realizar'),
     ('alumno', 'test.realizar')
 ON CONFLICT DO NOTHING;

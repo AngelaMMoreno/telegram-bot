@@ -61,8 +61,9 @@ CREATE TABLE preguntas (
     enunciado       text NOT NULL,
     opciones        jsonb NOT NULL,
     explicacion     text,
-    bloque          int,
-    tema_legacy     int,
+    -- Etiquetas (= tags = temas).  El auto-tagger las rellena tomando los
+    -- nombres del catalogo_etiquetas por similitud; tú puedes editar a
+    -- mano libremente, no se sobreescriben.
     etiquetas       text[] NOT NULL DEFAULT '{}',
     embedding       vector(384),
     autor_id        uuid REFERENCES usuarios(id) ON DELETE SET NULL,
@@ -76,24 +77,18 @@ CREATE INDEX preguntas_emb_idx     ON preguntas USING hnsw (embedding vector_cos
 CREATE INDEX preguntas_enunciado_t ON preguntas USING gin  (enunciado gin_trgm_ops);
 CREATE INDEX preguntas_etiquetas_i ON preguntas USING gin  (etiquetas);
 
-CREATE TABLE temas (
-    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    nombre      text UNIQUE NOT NULL,
+-- Catálogo de etiquetas conocidas con embedding de su descripción.
+-- El auto-tagger compara cada pregunta contra estas y añade las que
+-- superen un umbral de similitud a preguntas.etiquetas[].
+CREATE TABLE catalogo_etiquetas (
+    nombre      text PRIMARY KEY,
     descripcion text,
     embedding   vector(384),
     creado_en   timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX temas_emb_idx ON temas USING hnsw (embedding vector_cosine_ops);
-
-CREATE TABLE pregunta_temas (
-    pregunta_id  uuid REFERENCES preguntas(id) ON DELETE CASCADE,
-    tema_id      uuid REFERENCES temas(id)     ON DELETE CASCADE,
-    score        real,
-    automatico   boolean NOT NULL DEFAULT true,
-    PRIMARY KEY (pregunta_id, tema_id)
-);
-CREATE INDEX pregunta_temas_tema_idx ON pregunta_temas (tema_id);
+CREATE INDEX catalogo_etiquetas_emb_idx
+    ON catalogo_etiquetas USING hnsw (embedding vector_cosine_ops);
 
 -- ─────────────────────────── Tests ──────────────────────────────────────────
 
@@ -164,8 +159,8 @@ CREATE UNIQUE INDEX marcadores_unico ON marcadores
 
 CREATE TABLE cola_embeddings (
     id          bigserial PRIMARY KEY,
-    entidad     text NOT NULL CHECK (entidad IN ('pregunta','tema')),
-    entidad_id  uuid NOT NULL,
+    entidad     text NOT NULL CHECK (entidad IN ('pregunta','etiqueta')),
+    entidad_id  text NOT NULL,    -- uuid en pregunta, nombre en etiqueta
     encolado_en timestamptz NOT NULL DEFAULT now(),
     procesado_en timestamptz
 );
@@ -174,34 +169,42 @@ CREATE INDEX cola_emb_pendiente ON cola_embeddings (encolado_en)
 
 -- ─────────────────────────── Triggers de embedding ──────────────────────────
 
-CREATE OR REPLACE FUNCTION encolar_embedding() RETURNS trigger AS $$
+CREATE OR REPLACE FUNCTION encolar_embedding_pregunta() RETURNS trigger AS $$
 BEGIN
     INSERT INTO cola_embeddings(entidad, entidad_id)
-    VALUES (TG_ARGV[0], NEW.id);
-    PERFORM pg_notify('embeddings', TG_ARGV[0] || ':' || NEW.id::text);
+    VALUES ('pregunta', NEW.id::text);
+    PERFORM pg_notify('embeddings', 'pregunta:' || NEW.id::text);
+    RETURN NEW;
+END $$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION encolar_embedding_etiqueta() RETURNS trigger AS $$
+BEGIN
+    INSERT INTO cola_embeddings(entidad, entidad_id)
+    VALUES ('etiqueta', NEW.nombre);
+    PERFORM pg_notify('embeddings', 'etiqueta:' || NEW.nombre);
     RETURN NEW;
 END $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER preguntas_emb_ai
     AFTER INSERT ON preguntas
-    FOR EACH ROW EXECUTE FUNCTION encolar_embedding('pregunta');
+    FOR EACH ROW EXECUTE FUNCTION encolar_embedding_pregunta();
 
 CREATE TRIGGER preguntas_emb_au
     AFTER UPDATE OF enunciado ON preguntas
     FOR EACH ROW WHEN (NEW.enunciado IS DISTINCT FROM OLD.enunciado)
-    EXECUTE FUNCTION encolar_embedding('pregunta');
+    EXECUTE FUNCTION encolar_embedding_pregunta();
 
-CREATE TRIGGER temas_emb_ai
-    AFTER INSERT ON temas
-    FOR EACH ROW EXECUTE FUNCTION encolar_embedding('tema');
+CREATE TRIGGER catalogo_etiquetas_emb_ai
+    AFTER INSERT ON catalogo_etiquetas
+    FOR EACH ROW EXECUTE FUNCTION encolar_embedding_etiqueta();
 
-CREATE TRIGGER temas_emb_au
-    AFTER UPDATE OF descripcion, nombre ON temas
+CREATE TRIGGER catalogo_etiquetas_emb_au
+    AFTER UPDATE OF descripcion, nombre ON catalogo_etiquetas
     FOR EACH ROW WHEN (
         NEW.descripcion IS DISTINCT FROM OLD.descripcion
         OR NEW.nombre   IS DISTINCT FROM OLD.nombre
     )
-    EXECUTE FUNCTION encolar_embedding('tema');
+    EXECUTE FUNCTION encolar_embedding_etiqueta();
 
 -- ─────────────────────────── Roles Postgres para PostgREST ──────────────────
 -- Un único rol de conexión; la identidad llega por JWT (claim sub).
@@ -214,24 +217,23 @@ CREATE ROLE autenticador LOGIN;
 GRANT web_anon, web_user TO autenticador;
 
 GRANT USAGE ON SCHEMA public TO web_anon, web_user;
-GRANT SELECT ON preguntas, tests, test_preguntas, temas, pregunta_temas TO web_user;
+GRANT SELECT ON preguntas, tests, test_preguntas, catalogo_etiquetas TO web_user;
 GRANT SELECT, INSERT, UPDATE, DELETE
-    ON preguntas, tests, test_preguntas, temas, pregunta_temas,
+    ON preguntas, tests, test_preguntas, catalogo_etiquetas,
        intentos, respuestas, marcadores
     TO web_user;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO web_user;
 
 -- ─────────────────────────── RLS ────────────────────────────────────────────
 
-ALTER TABLE usuarios       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE intentos       ENABLE ROW LEVEL SECURITY;
-ALTER TABLE respuestas     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE marcadores     ENABLE ROW LEVEL SECURITY;
-ALTER TABLE preguntas      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE tests          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE test_preguntas ENABLE ROW LEVEL SECURITY;
-ALTER TABLE temas          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE pregunta_temas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE usuarios            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE intentos            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE respuestas          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE marcadores          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE preguntas           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tests               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE test_preguntas      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE catalogo_etiquetas  ENABLE ROW LEVEL SECURITY;
 
 -- Las políticas concretas se definen en 03_funciones.sql tras crear
 -- las funciones auxiliares jwt_usuario_id() y tiene_permiso().
