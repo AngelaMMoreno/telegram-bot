@@ -92,6 +92,7 @@
       <h2>Tests</h2>
       <input id="tests-filter" type="search" placeholder="Filtrar por título…">
     </header>
+    <div id="tests-tag-chips" class="tag-chips"></div>
     <div id="tests-list"></div>
     <div id="tests-pagination" class="pagination"></div>
   </section>
@@ -165,6 +166,7 @@
       <h2>Buscar preguntas</h2>
       <input id="buscar-input" type="search" placeholder="Ej: hidrógeno, ciclo de Krebs…" autofocus>
     </header>
+    <div id="buscar-tag-chips" class="tag-chips"></div>
     <ul id="buscar-results" class="question-list"></ul>
   </section>
 
@@ -187,8 +189,9 @@
     </header>
 
     <form id="form-etiqueta" class="inline-form">
-      <input id="et-nombre" placeholder="nombre (ej: biología)" required>
+      <input id="et-nombre" placeholder="nombre (ej: java)" required>
       <input id="et-descripcion" placeholder="descripción rica para el auto-tagger (cuanto más, mejor)">
+      <input id="et-palabras" placeholder="palabras clave separadas por coma (ej: java, jdk, junit, springboot)">
       <button class="btn btn-primary" type="submit">Crear / actualizar</button>
     </form>
 
