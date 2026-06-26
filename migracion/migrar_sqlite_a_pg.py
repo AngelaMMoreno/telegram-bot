@@ -123,7 +123,9 @@ def migrar(sqlite_path: str, pg_dsn: str, dry_run: bool = False) -> None:
                 ON CONFLICT (hash_contenido) DO NOTHING
                 """,
                 (nuevo, p["text"], json.dumps(opciones, ensure_ascii=False),
-                 p["explicacion"], p["bloque"], p["tema"]),
+                 p["explicacion"],
+                 None if p["bloque"] is None else str(p["bloque"]),
+                 None if p["tema"]   is None else str(p["tema"])),
             )
             hash_a_uuid[h] = nuevo
             map_preguntas[p["id"]] = nuevo

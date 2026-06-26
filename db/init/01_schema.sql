@@ -61,8 +61,10 @@ CREATE TABLE preguntas (
     enunciado       text NOT NULL,
     opciones        jsonb NOT NULL,
     explicacion     text,
-    bloque          int,
-    tema_legacy     int,
+    -- bloque y tema_legacy son etiquetas heredadas del SQLite antiguo;
+    -- los temas "reales" viven en la tabla 'temas' con embeddings.
+    bloque          text,
+    tema_legacy     text,
     etiquetas       text[] NOT NULL DEFAULT '{}',
     embedding       vector(384),
     autor_id        uuid REFERENCES usuarios(id) ON DELETE SET NULL,

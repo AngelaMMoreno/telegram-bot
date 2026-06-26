@@ -159,8 +159,8 @@ BEGIN
         VALUES (
             v_preg->>'pregunta',
             v_preg->'opciones',
-            NULLIF(v_preg->>'bloque','')::int,
-            NULLIF(v_preg->>'tema','')::int,
+            NULLIF(v_preg->>'bloque',''),
+            NULLIF(v_preg->>'tema',''),
             jwt_usuario_id()
         )
         ON CONFLICT (hash_contenido) DO UPDATE
