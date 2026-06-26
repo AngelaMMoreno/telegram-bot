@@ -1,9 +1,16 @@
 version: "3.8"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Stack Aprentix sobre PostgreSQL + PostgREST + servicio de embeddings.
-# Los servicios bot/, web/ y servidor/ siguen funcionando contra SQLite hasta
-# completar la migración; se incorporarán a este compose cuando se reescriban.
+# Stack Aprentix sobre PostgreSQL + PostgREST + embeddings + pgAdmin.
+# Pensado para Dokploy: las variables se inyectan desde su UI.
+#
+# Acceso a Postgres: solo a través de pgAdmin (https://pgadmin.aprentix.es).
+# Postgres NO publica puerto al host: solo escucha en la red interna de
+# Docker (dokploy-network), por la que también pasa el resto del stack.
+# Por tanto no hay puertos extra abiertos en el VPS aparte de 80/443.
+#
+# Convivencia: el stack actual (bot/web/servidor + SQLite en /mnt/data/bot)
+# sigue intacto.  Este stack usa /mnt/data/pg y /mnt/data/pgadmin.
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -14,7 +21,6 @@ services:
       POSTGRES_DB: aprentix
       POSTGRES_USER: aprentix
       POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS requerida}
-      # Disponible para los scripts de init/*.sql vía current_setting().
       PGOPTIONS: >-
         -c app.jwt_secret=${JWT_SECRET:?JWT_SECRET requerida}
         -c app.admin_pass=${ADMIN_PASS:?ADMIN_PASS requerida}
@@ -30,6 +36,36 @@ services:
       timeout: 5s
       retries: 10
 
+  pgadmin:
+    image: dpage/pgadmin4:8
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    ${PGADMIN_EMAIL:?PGADMIN_EMAIL requerido}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASS:?PGADMIN_PASS requerida}
+      # Detrás de Traefik en HTTPS; pgAdmin debe saber que va por proxy.
+      PGADMIN_CONFIG_PROXY_X_FOR_COUNT:    "1"
+      PGADMIN_CONFIG_PROXY_X_PROTO_COUNT:  "1"
+      PGADMIN_CONFIG_PROXY_X_HOST_COUNT:   "1"
+      PGADMIN_CONFIG_PROXY_X_PORT_COUNT:   "1"
+      PGADMIN_CONFIG_PROXY_X_PREFIX_COUNT: "1"
+      # Precarga el servidor 'aprentix-prod' apuntando a db:5432.
+      # La contraseña no se guarda en pgAdmin; te la pedirá al conectar.
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+    volumes:
+      - /mnt/data/pgadmin:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    restart: unless-stopped
+    networks: [dokploy-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pgadmin.rule=Host(`${DOMINIO_PGADMIN:-pgadmin.aprentix.es}`)"
+      - "traefik.http.routers.pgadmin.entrypoints=websecure"
+      - "traefik.http.routers.pgadmin.tls=true"
+      - "traefik.http.routers.pgadmin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
+
   postgrest:
     image: postgrest/postgrest:v12.2.3
     depends_on:
@@ -40,12 +76,12 @@ services:
       PGRST_DB_ANON_ROLE: web_anon
       PGRST_DB_SCHEMAS: public
       PGRST_JWT_SECRET: ${JWT_SECRET}
-      PGRST_OPENAPI_SERVER_PROXY_URI: https://api.aprentix.es
+      PGRST_OPENAPI_SERVER_PROXY_URI: https://${DOMINIO_API:-api.aprentix.es}
     restart: unless-stopped
     networks: [dokploy-network]
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.api.rule=Host(`api.aprentix.es`)"
+      - "traefik.http.routers.api.rule=Host(`${DOMINIO_API:-api.aprentix.es}`)"
       - "traefik.http.routers.api.entrypoints=websecure"
       - "traefik.http.routers.api.tls=true"
       - "traefik.http.routers.api.tls.certresolver=letsencrypt"
@@ -62,6 +98,27 @@ services:
     volumes:
       - /mnt/data/embeddings_cache:/cache
     restart: unless-stopped
+    networks: [dokploy-network]
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Migración SQLite → Postgres bajo demanda:
+  #   docker compose run --rm migracion --dry-run
+  #   docker compose run --rm migracion
+  # ───────────────────────────────────────────────────────────────────────────
+  migracion:
+    image: python:3.11-slim
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["herramientas"]
+    working_dir: /app
+    environment:
+      DATABASE_URL: postgres://aprentix:${DB_PASS}@db:5432/aprentix
+      SQLITE_PATH: /sqlite/bd.sqlite
+    volumes:
+      - ./migracion:/app:ro
+      - /mnt/data/bot:/sqlite:ro
+    entrypoint: ["sh", "-c", "pip install -q -r requirements.txt && python migrar_sqlite_a_pg.py \"$$@\"", "--"]
     networks: [dokploy-network]
 
 networks:
