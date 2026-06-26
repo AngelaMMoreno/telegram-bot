@@ -2,8 +2,15 @@ version: "3.8"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Stack Aprentix sobre PostgreSQL + PostgREST + servicio de embeddings.
-# Los servicios bot/, web/ y servidor/ siguen funcionando contra SQLite hasta
-# completar la migración; se incorporarán a este compose cuando se reescriban.
+# Pensado para Dokploy: las variables (DB_PASS, AUTH_PASS, JWT_SECRET,
+# ADMIN_PASS, PG_PUERTO_EXTERNO) se inyectan desde la UI de Dokploy.
+#
+# Convivencia:
+#   - El stack actual (bot/web/servidor sobre SQLite) sigue intacto en
+#     /mnt/data/bot.  Postgres usa un volumen aparte (/mnt/data/pg) y
+#     no toca nada del sistema antiguo.
+#   - Cuando termines de validar la migración, simplemente paras los
+#     servicios antiguos y reescribes bot/web contra PostgREST.
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -22,6 +29,12 @@ services:
       - /mnt/data/pg:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
       - ./db/backups:/backups
+    # Expone Postgres al host para que puedas conectarte con DBeaver/
+    # pgAdmin durante la fase de validación.  Por defecto 55432 para no
+    # colisionar con un Postgres del sistema; cambia PG_PUERTO_EXTERNO
+    # en Dokploy si quieres otro.
+    ports:
+      - "${PG_PUERTO_EXTERNO:-55432}:5432"
     restart: unless-stopped
     networks: [dokploy-network]
     healthcheck:
@@ -40,12 +53,12 @@ services:
       PGRST_DB_ANON_ROLE: web_anon
       PGRST_DB_SCHEMAS: public
       PGRST_JWT_SECRET: ${JWT_SECRET}
-      PGRST_OPENAPI_SERVER_PROXY_URI: https://api.aprentix.es
+      PGRST_OPENAPI_SERVER_PROXY_URI: https://${DOMINIO_API:-api.aprentix.es}
     restart: unless-stopped
     networks: [dokploy-network]
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.api.rule=Host(`api.aprentix.es`)"
+      - "traefik.http.routers.api.rule=Host(`${DOMINIO_API:-api.aprentix.es}`)"
       - "traefik.http.routers.api.entrypoints=websecure"
       - "traefik.http.routers.api.tls=true"
       - "traefik.http.routers.api.tls.certresolver=letsencrypt"
@@ -62,6 +75,31 @@ services:
     volumes:
       - /mnt/data/embeddings_cache:/cache
     restart: unless-stopped
+    networks: [dokploy-network]
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Contenedor de utilidades para lanzar la migración SQLite → Postgres
+  # sin tener que instalar Python en el host.
+  #
+  #   docker compose run --rm migracion --dry-run
+  #   docker compose run --rm migracion
+  #
+  # Lee el SQLite del volumen del bot actual y vuelca al Postgres nuevo.
+  # ───────────────────────────────────────────────────────────────────────────
+  migracion:
+    image: python:3.11-slim
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["herramientas"]
+    working_dir: /app
+    environment:
+      DATABASE_URL: postgres://aprentix:${DB_PASS}@db:5432/aprentix
+      SQLITE_PATH: /sqlite/bd.sqlite
+    volumes:
+      - ./migracion:/app:ro
+      - /mnt/data/bot:/sqlite:ro
+    entrypoint: ["sh", "-c", "pip install -q -r requirements.txt && python migrar_sqlite_a_pg.py \"$$@\"", "--"]
     networks: [dokploy-network]
 
 networks:
