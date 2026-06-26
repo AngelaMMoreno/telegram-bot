@@ -44,7 +44,7 @@ services:
       retries: 10
 
   pgadmin:
-    image: dpage/pgadmin4:8
+    image: dpage/pgadmin4:9
     depends_on:
       db:
         condition: service_healthy
@@ -96,6 +96,20 @@ services:
       - "traefik.http.routers.api.tls=true"
       - "traefik.http.routers.api.tls.certresolver=letsencrypt"
       - "traefik.http.services.api.loadbalancer.server.port=3000"
+
+  web_pg:
+    build: ./web_pg
+    depends_on:
+      - postgrest
+    restart: unless-stopped
+    networks: [dokploy-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web_pg.rule=Host(`${DOMINIO_WEB_PG:-test-pg.aprentix.es}`)"
+      - "traefik.http.routers.web_pg.entrypoints=websecure"
+      - "traefik.http.routers.web_pg.tls=true"
+      - "traefik.http.routers.web_pg.tls.certresolver=letsencrypt"
+      - "traefik.http.services.web_pg.loadbalancer.server.port=80"
 
   embeddings:
     build: ./embeddings
