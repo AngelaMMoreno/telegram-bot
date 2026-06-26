@@ -239,17 +239,9 @@ BEGIN
     RETURN v_test;
 END $$;
 
-CREATE OR REPLACE FUNCTION buscar_preguntas(
-    p_q   text,
-    p_lim int DEFAULT 20
-) RETURNS TABLE (id uuid, enunciado text, score real)
-LANGUAGE sql STABLE AS $$
-    SELECT id, enunciado, similarity(enunciado, p_q) AS score
-    FROM preguntas
-    WHERE enunciado %> p_q
-    ORDER BY similarity(enunciado, p_q) DESC
-    LIMIT p_lim;
-$$;
+-- buscar_preguntas se redefine en 05_etiquetado_avanzado.sql con un
+-- argumento extra p_etiqueta DEFAULT NULL; no la definimos aquí para
+-- evitar ambigüedad de overload.
 
 -- ─────────────────────────── Políticas RLS ──────────────────────────────────
 
@@ -305,4 +297,4 @@ GRANT EXECUTE ON FUNCTION generar_codigo_telegram()       TO web_user;
 GRANT EXECUTE ON FUNCTION importar_test(text,jsonb)       TO web_user;
 GRANT EXECUTE ON FUNCTION reclasificar_pregunta(uuid,int,real) TO web_user;
 GRANT EXECUTE ON FUNCTION generar_test_tematico(text,int) TO web_user;
-GRANT EXECUTE ON FUNCTION buscar_preguntas(text,int)      TO web_user;
+-- buscar_preguntas: GRANT en 05_etiquetado_avanzado.sql.
