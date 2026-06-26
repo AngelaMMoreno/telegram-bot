@@ -22,6 +22,9 @@
   </div>
 </header>
 
+<!-- Backdrop del sidebar (visible solo en móvil cuando está abierto) -->
+<div class="sidebar-backdrop hidden" id="sidebar-backdrop"></div>
+
 <!-- Navegación lateral -->
 <nav class="sidebar hidden" id="sidebar">
   <button class="nav-item" data-view="home">🏠 Inicio</button>
@@ -103,6 +106,10 @@
       <button class="btn btn-ghost" data-view="tests">← Volver</button>
       <h2 id="test-detail-title"></h2>
       <div class="actions">
+        <label class="tiempo-input-wrap" title="Segundos por pregunta">
+          ⏱ <input type="number" class="tiempo-input" min="3" max="3600">
+          <span class="muted">s</span>
+        </label>
         <button class="btn btn-primary" id="btn-start-test">Empezar test</button>
         <button class="btn btn-ghost gestion" id="btn-delete-test">🗑️</button>
       </div>
@@ -147,7 +154,13 @@
   <section id="view-fallos" class="view">
     <header class="view-header">
       <h2>Mis fallos</h2>
-      <button class="btn btn-primary" id="btn-start-fallos">Hacer test de fallos</button>
+      <div class="actions">
+        <label class="tiempo-input-wrap" title="Segundos por pregunta">
+          ⏱ <input type="number" class="tiempo-input" min="3" max="3600">
+          <span class="muted">s</span>
+        </label>
+        <button class="btn btn-primary" id="btn-start-fallos">Hacer test de fallos</button>
+      </div>
     </header>
     <ul id="list-fallos" class="question-list"></ul>
   </section>
@@ -155,7 +168,13 @@
   <section id="view-favoritas" class="view">
     <header class="view-header">
       <h2>Mis favoritas</h2>
-      <button class="btn btn-primary" id="btn-start-fav">Hacer test de favoritas</button>
+      <div class="actions">
+        <label class="tiempo-input-wrap" title="Segundos por pregunta">
+          ⏱ <input type="number" class="tiempo-input" min="3" max="3600">
+          <span class="muted">s</span>
+        </label>
+        <button class="btn btn-primary" id="btn-start-fav">Hacer test de favoritas</button>
+      </div>
     </header>
     <ul id="list-fav" class="question-list"></ul>
   </section>
