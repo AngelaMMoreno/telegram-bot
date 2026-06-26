@@ -124,7 +124,7 @@ services:
     working_dir: /app
     environment:
       DATABASE_URL: postgres://aprentix:${DB_PASS}@db:5432/aprentix
-      SQLITE_PATH: /sqlite/bd.sqlite
+      SQLITE_PATH: /sqlite/bot.db
     volumes:
       - ./migracion:/app:ro
       - /mnt/data/bot:/sqlite:ro
