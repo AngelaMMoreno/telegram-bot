@@ -289,5 +289,36 @@ textarea {
   .content { padding: 1rem; }
 }
 
+/* ── Modal ── */
+.modal {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200; padding: 1rem;
+}
+.modal-card {
+  background: var(--bg-panel); border-radius: var(--radius);
+  max-width: 560px; width: 100%;
+  max-height: 90vh; overflow-y: auto;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem 1.2rem; border-bottom: 1px solid var(--border);
+}
+.modal-header h3 { margin: 0; }
+.modal form { padding: 1rem 1.2rem; display: flex; flex-direction: column; gap: 0.8rem; }
+.modal label { display: block; font-weight: 600; }
+.modal input, .modal textarea {
+  display: block; width: 100%; margin-top: 0.3rem;
+  padding: 0.55rem 0.7rem; border: 1px solid var(--border);
+  border-radius: var(--radius); font-family: inherit;
+  font-size: 0.95rem;
+}
+.modal textarea { font-family: monospace; font-size: 0.85rem; }
+.modal-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+
+.q-row .q-actions { display: flex; gap: 0.3rem; margin-top: 0.5rem; justify-content: flex-end; }
+
 /* Solo muestra opciones de gestión a quien tenga permisos */
 body:not(.puede-gestionar) .gestion { display: none !important; }

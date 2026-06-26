@@ -306,13 +306,87 @@ async function loadTestDetail(testId) {
   $("#test-detail-title").textContent = d.quiz.title;
   $("#test-detail-meta").textContent = `${d.questions.length} preguntas`;
   $("#test-detail-questions").innerHTML = d.questions.map(q => `
-    <li class="q-row">
+    <li class="q-row" data-pid="${q.id}">
       <div class="q-text">${esc(q.text)}</div>
       <div class="tags">${(q.etiquetas||[]).map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+      <div class="q-actions gestion">
+        <button class="btn btn-ghost btn-sm" data-action="edit-q">✏️ Editar</button>
+      </div>
     </li>
   `).join("");
   state.currentTest = d;
 }
+
+$("#test-detail-questions").addEventListener("click", e => {
+  const btn = e.target.closest("[data-action=edit-q]");
+  if (!btn) return;
+  const li = e.target.closest("[data-pid]");
+  const q = state.currentTest.questions.find(x => x.id === li.dataset.pid);
+  if (q) abrirEditorPregunta(q);
+});
+
+/* ── Editor de pregunta (modal) ── */
+function abrirEditorPregunta(q) {
+  state.editingQ = q;
+  $("#pq-enunciado").value = q.text || "";
+  $("#pq-opciones").value = (q.options || [])
+    .map(o => (o.isCorrect ? "*" : "") + o.text)
+    .join("\n");
+  $("#pq-explicacion").value = q.explicacion || "";
+  $("#pq-etiquetas").value = (q.etiquetas || []).join(", ");
+  $("#modal-pregunta").classList.remove("hidden");
+}
+
+function cerrarModal() {
+  $("#modal-pregunta").classList.add("hidden");
+  state.editingQ = null;
+}
+
+$("#modal-close").addEventListener("click", cerrarModal);
+$("#pq-cancelar").addEventListener("click", cerrarModal);
+
+$("#form-pregunta").addEventListener("submit", async e => {
+  e.preventDefault();
+  if (!state.editingQ) return;
+  // Parsea las opciones: cada línea es una opción; "*" al principio = correcta.
+  const opciones = $("#pq-opciones").value.split("\n")
+    .map(l => l.trim()).filter(l => l.length)
+    .map(l => l.startsWith("*")
+      ? { texto: l.slice(1).trim(), correcta: true }
+      : { texto: l, correcta: false });
+  if (opciones.length < 2) return toast("Necesitas al menos 2 opciones");
+  if (!opciones.some(o => o.correcta)) return toast("Marca al menos una opción como correcta con *");
+
+  const etiquetas = $("#pq-etiquetas").value.split(",")
+    .map(t => t.trim().toLowerCase()).filter(t => t.length);
+
+  try {
+    await pg("/preguntas?id=eq." + state.editingQ.id, {
+      method: "PATCH",
+      headers: { "Prefer": "return=minimal" },
+      body: {
+        enunciado:   $("#pq-enunciado").value.trim(),
+        opciones,
+        explicacion: $("#pq-explicacion").value.trim() || null,
+        etiquetas,
+      },
+    });
+    toast("Pregunta actualizada");
+    cerrarModal();
+    loadTestDetail(state.currentTestId);
+  } catch (err) { toast(err.message); }
+});
+
+$("#pq-borrar").addEventListener("click", async () => {
+  if (!state.editingQ) return;
+  if (!confirm("¿Borrar esta pregunta? Desaparecerá de TODOS los tests donde aparezca.")) return;
+  try {
+    await pg("/preguntas?id=eq." + state.editingQ.id, { method: "DELETE" });
+    toast("Pregunta borrada");
+    cerrarModal();
+    loadTestDetail(state.currentTestId);
+  } catch (err) { toast(err.message); }
+});
 
 $("#btn-start-test").addEventListener("click", () => {
   if (!state.currentTest) return;

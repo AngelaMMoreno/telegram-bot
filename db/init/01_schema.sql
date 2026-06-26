@@ -169,21 +169,25 @@ CREATE INDEX cola_emb_pendiente ON cola_embeddings (encolado_en)
 
 -- ─────────────────────────── Triggers de embedding ──────────────────────────
 
-CREATE OR REPLACE FUNCTION encolar_embedding_pregunta() RETURNS trigger AS $$
+-- SECURITY DEFINER para que los triggers puedan insertar en cola_embeddings
+-- aunque el cliente (web_user) solo tenga UPDATE en preguntas.
+CREATE OR REPLACE FUNCTION encolar_embedding_pregunta() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
     INSERT INTO cola_embeddings(entidad, entidad_id)
     VALUES ('pregunta', NEW.id::text);
     PERFORM pg_notify('embeddings', 'pregunta:' || NEW.id::text);
     RETURN NEW;
-END $$ LANGUAGE plpgsql;
+END $$;
 
-CREATE OR REPLACE FUNCTION encolar_embedding_etiqueta() RETURNS trigger AS $$
+CREATE OR REPLACE FUNCTION encolar_embedding_etiqueta() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
     INSERT INTO cola_embeddings(entidad, entidad_id)
     VALUES ('etiqueta', NEW.nombre);
     PERFORM pg_notify('embeddings', 'etiqueta:' || NEW.nombre);
     RETURN NEW;
-END $$ LANGUAGE plpgsql;
+END $$;
 
 CREATE TRIGGER preguntas_emb_ai
     AFTER INSERT ON preguntas
@@ -217,6 +221,11 @@ CREATE ROLE autenticador LOGIN;
 GRANT web_anon, web_user TO autenticador;
 
 GRANT USAGE ON SCHEMA public TO web_anon, web_user;
+-- Tablas RBAC (lectura pública, las usan políticas RLS via tiene_permiso())
+GRANT SELECT ON rol_permisos, roles, permisos TO web_anon, web_user;
+-- Tabla de usuarios: lectura controlada por RLS (cada uno ve su fila)
+GRANT SELECT ON usuarios TO web_user;
+-- Contenido
 GRANT SELECT ON preguntas, tests, test_preguntas, catalogo_etiquetas TO web_user;
 GRANT SELECT, INSERT, UPDATE, DELETE
     ON preguntas, tests, test_preguntas, catalogo_etiquetas,
