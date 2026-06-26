@@ -80,8 +80,10 @@ function applySession() {
   $("#sidebar").classList.toggle("hidden", !logged);
   document.body.classList.toggle("puede-gestionar", !!(state.user && state.user.puede_gestionar));
   if (logged) {
-    $("#user-name").textContent = state.user.username;
-    $("#hello-name").textContent = state.user.username;
+    const u = state.user.username || "";
+    $("#user-name").textContent = u;
+    $("#user-avatar").textContent = (u.trim()[0] || "?").toUpperCase();
+    $("#hello-name").textContent = u;
   }
 }
 
