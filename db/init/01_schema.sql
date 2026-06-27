@@ -194,8 +194,11 @@ CREATE TRIGGER preguntas_emb_ai
     FOR EACH ROW EXECUTE FUNCTION encolar_embedding_pregunta();
 
 CREATE TRIGGER preguntas_emb_au
-    AFTER UPDATE OF enunciado ON preguntas
-    FOR EACH ROW WHEN (NEW.enunciado IS DISTINCT FROM OLD.enunciado)
+    AFTER UPDATE OF enunciado, opciones ON preguntas
+    FOR EACH ROW WHEN (
+        NEW.enunciado IS DISTINCT FROM OLD.enunciado
+        OR NEW.opciones IS DISTINCT FROM OLD.opciones
+    )
     EXECUTE FUNCTION encolar_embedding_pregunta();
 
 CREATE TRIGGER catalogo_etiquetas_emb_ai
