@@ -194,7 +194,7 @@ CREATE OR REPLACE FUNCTION reclasificar_pregunta(
     umbral   real  DEFAULT 0.55
 ) RETURNS int
 LANGUAGE plpgsql AS $$
-DECLARE v_emb vector(384); v_n int;
+DECLARE v_emb vector(768); v_n int;
 BEGIN
     SELECT embedding INTO v_emb FROM preguntas WHERE id = p_id;
     IF v_emb IS NULL THEN RETURN 0; END IF;

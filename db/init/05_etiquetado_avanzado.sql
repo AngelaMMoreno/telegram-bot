@@ -31,7 +31,7 @@ CREATE OR REPLACE FUNCTION reclasificar_pregunta(
 LANGUAGE plpgsql AS $$
 DECLARE
     v_emun     text;
-    v_emb      vector(384);
+    v_emb      vector(768);
     v_test_tit text;
     v_n        int;
 BEGIN
