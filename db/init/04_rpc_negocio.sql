@@ -311,68 +311,144 @@ LANGUAGE sql AS $$
     DELETE FROM intentos WHERE id = p_intento_id;
 $$;
 
--- Devuelve el intento pendiente más reciente (o null) para combo (tipo, test).
+-- Devuelve el intento pendiente más reciente para (tipo, test).  Incluye
+-- contadores útiles para mostrar el diálogo de reanudación (cuántas
+-- preguntas quedan, cuántas respondidas, cuántas se invalidan por edición).
 CREATE OR REPLACE FUNCTION intento_pendiente(
     p_tipo    text,
     p_test_id uuid DEFAULT NULL
 ) RETURNS jsonb
-LANGUAGE sql STABLE AS $$
-    SELECT jsonb_build_object(
-        'attempt', (
-            SELECT to_jsonb(x)
-            FROM (
-                SELECT i.id, i.nombre, i.test_id AS quiz_id, i.tipo AS attempt_type,
-                       i.iniciado_en
-                FROM intentos i
-                WHERE i.usuario_id = jwt_usuario_id()
-                  AND i.finalizado_en IS NULL
-                  AND i.tipo = p_tipo
-                  AND (p_test_id IS NULL OR i.test_id = p_test_id)
-                ORDER BY i.iniciado_en DESC
-                LIMIT 1
-            ) x
-        )
-    );
-$$;
-
--- Reanuda un intento: devuelve las preguntas pendientes (las que aún no se
--- han respondido) y el progreso parcial.
-CREATE OR REPLACE FUNCTION reanudar_intento(p_intento_id uuid)
-RETURNS jsonb
 LANGUAGE plpgsql STABLE AS $$
 DECLARE
+    v_int   intentos;
+    v_resp  int;
+    v_pend  int;
+    v_inval int;
+    v_tot_efectivo int;
+BEGIN
+    SELECT * INTO v_int FROM intentos i
+     WHERE i.usuario_id = jwt_usuario_id()
+       AND i.finalizado_en IS NULL
+       AND i.tipo = p_tipo
+       AND (p_test_id IS NULL OR i.test_id = p_test_id)
+     ORDER BY i.iniciado_en DESC
+     LIMIT 1;
+
+    IF v_int.id IS NULL THEN
+        RETURN jsonb_build_object('attempt', NULL);
+    END IF;
+
+    -- Respuestas válidas a preguntas que aún existen y no han sido editadas
+    -- después de la respuesta.
+    SELECT count(*) INTO v_resp
+      FROM respuestas r
+      JOIN preguntas p ON p.id = r.pregunta_id
+     WHERE r.intento_id = v_int.id
+       AND p.actualizado_en <= r.respondida_en;
+
+    -- Respuestas que se invalidarán al reanudar (pregunta editada después).
+    SELECT count(*) INTO v_inval
+      FROM respuestas r
+      JOIN preguntas p ON p.id = r.pregunta_id
+     WHERE r.intento_id = v_int.id
+       AND p.actualizado_en > r.respondida_en;
+
+    -- Pendientes = preguntas del array que aún existen y no han sido
+    -- contestadas (o cuya respuesta queda invalidada).
+    SELECT count(*) INTO v_pend
+      FROM unnest(v_int.question_ids) AS u(qid)
+      JOIN preguntas p ON p.id = u.qid
+     WHERE u.qid NOT IN (
+        SELECT r.pregunta_id FROM respuestas r
+        JOIN preguntas p2 ON p2.id = r.pregunta_id
+        WHERE r.intento_id = v_int.id
+          AND p2.actualizado_en <= r.respondida_en
+     );
+
+    v_tot_efectivo := v_resp + v_pend;
+
+    RETURN jsonb_build_object(
+        'attempt', jsonb_build_object(
+            'id',              v_int.id,
+            'nombre',          v_int.nombre,
+            'quiz_id',         v_int.test_id,
+            'attempt_type',    v_int.tipo,
+            'iniciado_en',     v_int.iniciado_en,
+            'respondidas',     v_resp,
+            'pendientes',      v_pend,
+            'invalidas',       v_inval,
+            'total_efectivo',  v_tot_efectivo
+        )
+    );
+END $$;
+
+
+-- Reanuda un intento:
+-- 1. Invalida respuestas a preguntas editadas (preguntas.actualizado_en
+--    posterior a la respuesta).  Si la respuesta era incorrecta, elimina
+--    también el marcador 'fallo' asociado (la pregunta cambió, ya no
+--    cuenta como fallo histórico).
+-- 2. Ignora preguntas del array que ya no existan (borradas).
+-- 3. Devuelve preguntas pendientes en el orden original + contadores
+--    heredados de las respuestas válidas (correct/wrong).
+CREATE OR REPLACE FUNCTION reanudar_intento(p_intento_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
     v_int  intentos;
-    v_resp jsonb;
     v_pend jsonb;
     v_corr int;
     v_wrong int;
+    v_tot_efectivo int;
 BEGIN
     SELECT * INTO v_int FROM intentos WHERE id = p_intento_id;
     IF v_int.id IS NULL OR v_int.usuario_id <> jwt_usuario_id() THEN
         RAISE EXCEPTION 'intento_invalido';
     END IF;
 
-    SELECT count(*) FILTER (WHERE correcta),
-           count(*) FILTER (WHERE NOT correcta)
-      INTO v_corr, v_wrong
-      FROM respuestas WHERE intento_id = p_intento_id;
+    -- Limpia marcadores 'fallo' asociados a respuestas que vamos a invalidar.
+    DELETE FROM marcadores m
+    USING respuestas r, preguntas p
+    WHERE r.intento_id = p_intento_id
+      AND p.id = r.pregunta_id
+      AND p.actualizado_en > r.respondida_en
+      AND NOT r.correcta
+      AND m.usuario_id = v_int.usuario_id
+      AND m.tipo = 'fallo'
+      AND m.pregunta_id = r.pregunta_id;
 
-    -- Preguntas pendientes: las del question_ids[] menos las ya respondidas,
-    -- preservando el orden original.
-    WITH respondidas AS (
-        SELECT pregunta_id FROM respuestas WHERE intento_id = p_intento_id
-    ),
-    pendientes_ord AS (
-        SELECT qid, ord
+    -- Invalida respuestas a preguntas editadas (borrándolas para que se
+    -- vuelvan a preguntar).  Las respuestas a preguntas borradas ya se
+    -- eliminaron por ON DELETE CASCADE.
+    DELETE FROM respuestas r
+    USING preguntas p
+    WHERE r.intento_id = p_intento_id
+      AND p.id = r.pregunta_id
+      AND p.actualizado_en > r.respondida_en;
+
+    -- Recalcula acumulados sobre lo que queda.
+    SELECT
+        count(*) FILTER (WHERE r.correcta),
+        count(*) FILTER (WHERE NOT r.correcta)
+      INTO v_corr, v_wrong
+      FROM respuestas r
+     WHERE r.intento_id = p_intento_id;
+
+    -- Pendientes en orden, ignorando preguntas borradas.
+    WITH pendientes AS (
+        SELECT u.qid, u.ord
         FROM unnest(v_int.question_ids) WITH ORDINALITY AS u(qid, ord)
-        WHERE qid NOT IN (SELECT pregunta_id FROM respondidas)
-        ORDER BY ord
+        JOIN preguntas p ON p.id = u.qid
+        WHERE u.qid NOT IN (
+            SELECT pregunta_id FROM respuestas WHERE intento_id = p_intento_id
+        )
+        ORDER BY u.ord
     )
     SELECT COALESCE(jsonb_agg(
         jsonb_build_object(
-            'id',          p.id,
-            'text',        p.enunciado,
-            'options',     (
+            'id', p.id,
+            'text', p.enunciado,
+            'options', (
                 SELECT jsonb_agg(jsonb_build_object(
                     'text', o.opt->>'texto',
                     'isCorrect', COALESCE((o.opt->>'correcta')::boolean, o.idx = 1)
@@ -380,12 +456,14 @@ BEGIN
                 FROM jsonb_array_elements(p.opciones) WITH ORDINALITY o(opt, idx)
             ),
             'explicacion', p.explicacion,
-            'etiquetas',   p.etiquetas
-        ) ORDER BY po.ord
+            'etiquetas', p.etiquetas
+        ) ORDER BY pe.ord
     ), '[]'::jsonb)
     INTO v_pend
-    FROM pendientes_ord po
-    JOIN preguntas p ON p.id = po.qid;
+    FROM pendientes pe
+    JOIN preguntas p ON p.id = pe.qid;
+
+    v_tot_efectivo := COALESCE(jsonb_array_length(v_pend), 0) + v_corr + v_wrong;
 
     RETURN jsonb_build_object(
         'attempt_id',     v_int.id,
@@ -396,7 +474,7 @@ BEGIN
         'correct',        v_corr,
         'wrong',          v_wrong,
         'respondidas',    v_corr + v_wrong,
-        'total_original', COALESCE(array_length(v_int.question_ids, 1), 0)
+        'total_efectivo', v_tot_efectivo
     );
 END $$;
 

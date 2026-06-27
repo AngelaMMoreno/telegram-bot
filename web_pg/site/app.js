@@ -502,10 +502,94 @@ $("#btn-edit-q").addEventListener("click", () => {
   });
 });
 
-$("#btn-start-test").addEventListener("click", () => {
+$("#btn-start-test").addEventListener("click", async () => {
   if (!state.currentTest) return;
-  startQuiz(state.currentTest.quiz.title, state.currentTestId, state.currentTest.questions, "quiz");
+  await iniciarConPosibleReanudacion({
+    tipo: "quiz",
+    testId: state.currentTestId,
+    title: state.currentTest.quiz.title,
+    questions: state.currentTest.questions,
+  });
 });
+
+/* ── Diálogo de reanudación ──
+   Si hay un intento abierto del mismo (tipo, test), pregunta al usuario.
+   - Reanudar: carga las preguntas pendientes con sus acumulados.
+   - Empezar de nuevo: descarta el intento anterior y arranca limpio.
+   - Cancelar: no hace nada.
+*/
+async function iniciarConPosibleReanudacion({ tipo, testId, title, questions }) {
+  try {
+    const r = await rpc("intento_pendiente", { p_tipo: tipo, p_test_id: testId || null });
+    const a = r && r.attempt;
+    if (a && a.pendientes > 0) {
+      const eleccion = await mostrarDialogoReanudar(a);
+      if (eleccion === "cancelar") return;
+      if (eleccion === "reanudar") {
+        const d = await rpc("reanudar_intento", { p_intento_id: a.id });
+        if (!d.questions || d.questions.length === 0) {
+          toast("Ese intento ya no tiene preguntas pendientes");
+          return;
+        }
+        iniciarQuizDesdeReanudacion(d);
+        return;
+      }
+      if (eleccion === "reiniciar") {
+        await rpc("descartar_intento", { p_intento_id: a.id });
+        // continúa abajo a un quiz limpio
+      }
+    }
+    startQuiz(title, testId, questions, tipo);
+  } catch (e) { toast(e.message); }
+}
+
+function mostrarDialogoReanudar(att) {
+  const partes = [];
+  partes.push(`Tienes ${att.respondidas} respondida(s) y ${att.pendientes} pendiente(s).`);
+  if (att.invalidas > 0) {
+    partes.push(`${att.invalidas} pregunta(s) editada(s) se repetirán.`);
+  }
+  $("#reanudar-resumen").textContent = partes.join(" ");
+  $("#modal-reanudar").classList.remove("hidden");
+  return new Promise(resolve => {
+    const cleanup = () => {
+      $("#modal-reanudar").classList.add("hidden");
+      $("#btn-reanudar").onclick = null;
+      $("#btn-reiniciar").onclick = null;
+      $("#btn-cancelar-reanudar").onclick = null;
+    };
+    $("#btn-reanudar").onclick      = () => { cleanup(); resolve("reanudar"); };
+    $("#btn-reiniciar").onclick     = () => { cleanup(); resolve("reiniciar"); };
+    $("#btn-cancelar-reanudar").onclick = () => { cleanup(); resolve("cancelar"); };
+  });
+}
+
+function iniciarQuizDesdeReanudacion(d) {
+  // Baraja las opciones (no las preguntas: vienen ya en orden original)
+  const shuffled = d.questions.map(q => {
+    const opts = q.options.map((o, i) => ({ ...o, origIdx: i }));
+    opts.sort(() => Math.random() - 0.5);
+    return { ...q, options: opts };
+  });
+  state.quiz = {
+    title:    d.nombre || "Test",
+    testId:   d.quiz_id || null,
+    tipo:     d.attempt_type || "quiz",
+    questions: shuffled,
+    correct:  d.correct || 0,
+    wrong:    d.wrong   || 0,
+    blank:    0,
+    answered: false,
+    intentoId: d.attempt_id,
+    tiempoPorPregunta: getTiempo(),
+    totalEfectivo: d.total_efectivo,
+  };
+  state.qi = 0;
+  navigate("quiz");
+  $("#quiz-title").textContent = state.quiz.title;
+  renderPregunta();
+  toast(`Reanudado: ${d.correct} aciertos, ${d.wrong} fallos previos`);
+}
 
 $("#btn-delete-test").addEventListener("click", async () => {
   if (!state.currentTestId) return;
@@ -635,7 +719,11 @@ async function finalizarQuiz() {
     try { await rpc("finalizar_intento", { p_intento_id: state.quiz.intentoId }); }
     catch (_) {}
   }
-  const total = state.quiz.questions.length;
+  // Nota sobre 10 con penalización 1/3.  Si veníamos de una reanudación,
+  // 'totalEfectivo' = respondidas previas + pendientes (sin contar las
+  // preguntas borradas, que no afectan).  En quiz nuevo coincide con la
+  // longitud de questions.
+  const total = state.quiz.totalEfectivo ?? state.quiz.questions.length;
   const nota = total ? Math.max(((state.quiz.correct - state.quiz.wrong/3) / total) * 10, 0) : 0;
   $("#quiz-summary-stats").innerHTML = `
     <div class="stat-card"><div class="v">${state.quiz.correct}</div><div class="l">Aciertos</div></div>
@@ -680,10 +768,15 @@ async function loadFallos() {
   state.lastFallos = d.questions || [];
 }
 
-$("#btn-start-fallos").addEventListener("click", () => {
+$("#btn-start-fallos").addEventListener("click", async () => {
   if (!state.lastFallos || !state.lastFallos.length)
     return toast("No tienes fallos");
-  startQuiz("Test de fallos", null, state.lastFallos, "test_fallos");
+  await iniciarConPosibleReanudacion({
+    tipo: "test_fallos",
+    testId: null,
+    title: "Test de fallos",
+    questions: state.lastFallos,
+  });
 });
 
 async function loadFavoritas() {
@@ -698,9 +791,14 @@ async function loadFavoritas() {
   state.lastFav = d.questions || [];
 }
 
-$("#btn-start-fav").addEventListener("click", () => {
+$("#btn-start-fav").addEventListener("click", async () => {
   if (!state.lastFav || !state.lastFav.length) return toast("Sin favoritas");
-  startQuiz("Test de favoritas", null, state.lastFav, "test_favoritas");
+  await iniciarConPosibleReanudacion({
+    tipo: "test_favoritas",
+    testId: null,
+    title: "Test de favoritas",
+    questions: state.lastFav,
+  });
 });
 
 /* ── Buscador (vista) ── */
