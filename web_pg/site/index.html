@@ -257,6 +257,23 @@
 
 </main>
 
+<!-- Modal de reanudación de intento -->
+<div id="modal-reanudar" class="modal hidden">
+  <div class="modal-card">
+    <header class="modal-header">
+      <h3>Tienes un test a medias</h3>
+    </header>
+    <div class="modal-body">
+      <p id="reanudar-resumen" class="muted"></p>
+      <div class="modal-actions" style="flex-direction:column; align-items:stretch">
+        <button class="btn btn-primary" id="btn-reanudar">▶️ Reanudar donde lo dejé</button>
+        <button class="btn btn-ghost" id="btn-reiniciar">🔁 Empezar de nuevo</button>
+        <button class="btn btn-ghost" id="btn-cancelar-reanudar">Cancelar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Modal de edición de pregunta -->
 <div id="modal-pregunta" class="modal hidden">
   <div class="modal-card">
