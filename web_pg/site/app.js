@@ -933,11 +933,23 @@ async function loadEtiquetas() {
     <strong>${est.etiquetas_vectorizadas}</strong>/${est.etiquetas_total} etiquetas ·
     cola: <strong>${est.cola_pendiente}</strong>
   `;
+
+  // Rellena el <select> de padre con todas las etiquetas existentes.
+  const sel = $("#et-padre");
+  const padreActual = sel.value;
+  sel.innerHTML = `<option value="">— sin padre —</option>` +
+    tags.map(t => `<option value="${esc(t.nombre)}">${esc(t.nombre)}</option>`).join("");
+  sel.value = padreActual;
+
   $("#etiquetas-list").innerHTML = tags.map(t => `
     <li class="etiqueta-row" data-nombre="${esc(t.nombre)}">
       <span class="dot ${t.vectorizada ? "ok" : ""}" title="${t.vectorizada ? "Vectorizada" : "Pendiente"}"></span>
       <div style="flex:1">
-        <div class="nombre">${esc(t.nombre)}</div>
+        <div class="nombre">
+          ${esc(t.nombre)}
+          ${t.padre ? `<span class="muted" style="font-weight:normal">⊂ ${esc(t.padre)}</span>` : ""}
+          ${t.num_hijas ? `<span class="muted" style="font-weight:normal">· ${t.num_hijas} hija${t.num_hijas === 1 ? "" : "s"}</span>` : ""}
+        </div>
         <div class="descripcion">${esc(t.descripcion || "(sin descripción)")}</div>
         ${(t.palabras_clave && t.palabras_clave.length)
           ? `<div class="tags" style="margin-top:0.3rem">${t.palabras_clave.map(k => `<span class="tag">${esc(k)}</span>`).join("")}</div>`
@@ -959,8 +971,10 @@ $("#form-etiqueta").addEventListener("submit", async e => {
       p_nombre:          $("#et-nombre").value.trim(),
       p_descripcion:     $("#et-descripcion").value.trim() || null,
       p_palabras_clave:  palabras,
+      p_padre:           $("#et-padre").value || null,
     });
-    $("#et-nombre").value = ""; $("#et-descripcion").value = ""; $("#et-palabras").value = "";
+    $("#et-nombre").value = ""; $("#et-descripcion").value = "";
+    $("#et-palabras").value = ""; $("#et-padre").value = "";
     toast("Etiqueta guardada");
     state.etiquetasCache = [];  // invalida cache
     loadEtiquetas();
@@ -984,6 +998,7 @@ $("#etiquetas-list").addEventListener("click", async e => {
     $("#et-nombre").value = tag?.nombre || "";
     $("#et-descripcion").value = tag?.descripcion || "";
     $("#et-palabras").value = (tag?.palabras_clave || []).join(", ");
+    $("#et-padre").value = tag?.padre || "";
     $("#et-nombre").focus();
   }
 });

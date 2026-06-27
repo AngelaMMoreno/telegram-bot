@@ -13,7 +13,7 @@ import time
 
 import psycopg
 
-from modelo import vectorizar
+from modelo import vectorizar_pasajes as vectorizar
 
 log = logging.getLogger("embeddings.worker")
 DSN = os.environ["DATABASE_URL"]

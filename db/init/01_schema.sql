@@ -65,7 +65,7 @@ CREATE TABLE preguntas (
     -- nombres del catalogo_etiquetas por similitud; tú puedes editar a
     -- mano libremente, no se sobreescriben.
     etiquetas       text[] NOT NULL DEFAULT '{}',
-    embedding       vector(384),
+    embedding       vector(1024),
     autor_id        uuid REFERENCES usuarios(id) ON DELETE SET NULL,
     creado_en       timestamptz NOT NULL DEFAULT now(),
     actualizado_en  timestamptz NOT NULL DEFAULT now(),
@@ -83,7 +83,7 @@ CREATE INDEX preguntas_etiquetas_i ON preguntas USING gin  (etiquetas);
 CREATE TABLE catalogo_etiquetas (
     nombre      text PRIMARY KEY,
     descripcion text,
-    embedding   vector(384),
+    embedding   vector(1024),
     creado_en   timestamptz NOT NULL DEFAULT now()
 );
 
