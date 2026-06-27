@@ -347,6 +347,25 @@ body {
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); margin-top: 6px; }
 .dot.ok { background: var(--success); }
 
+/* ─── Controles de listado de tests ─── */
+.tests-controls {
+  display: flex; flex-wrap: wrap; gap: 0.5rem 0.8rem;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+.tests-controls .tag-chips { margin: 0; }
+.orden-wrap {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-size: 0.85rem; color: var(--txt-soft);
+}
+.orden-wrap select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-panel); color: var(--txt);
+  font-family: inherit; font-size: 0.9rem;
+  min-height: 38px;
+}
+
 /* ─── Tag chips ─── */
 .tag-chips {
   display: flex; flex-wrap: wrap; gap: 0.35rem;
