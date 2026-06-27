@@ -15,6 +15,8 @@ const state = {
   testsCache: [],
   filtroTests: "",
   filtroEtiquetaTests: null,
+  filtroVisTests: "todos",          // todos | favoritos | pendientes
+  ordenTests: "reciente",            // reciente | antiguo | intentos_desc | intentos_asc
   filtroEtiquetaBuscar: null,
   etiquetasCache: [],
   searchAbort: null,
@@ -290,9 +292,12 @@ async function loadTests() {
     loadTests();
   });
   const r = await rpc("listar_tests", {
-    p_solo_favoritos: false,
-    p_page: state.testsPage, p_size: 12,
-    p_etiqueta: state.filtroEtiquetaTests || null,
+    p_solo_favoritos:  state.filtroVisTests === "favoritos",
+    p_solo_pendientes: state.filtroVisTests === "pendientes",
+    p_page:            state.testsPage,
+    p_size:            12,
+    p_etiqueta:        state.filtroEtiquetaTests || null,
+    p_orden:           state.ordenTests,
   });
   state.testsCache = r.tests;
   renderTests();
@@ -305,12 +310,31 @@ function renderTests() {
   $("#tests-list").innerHTML = lista.map(t => `
     <div class="test-row" data-id="${t.id}">
       <span class="star" data-fav="${t.id}">${t.favorito ? "⭐" : "☆"}</span>
-      <span class="titulo">${esc(t.title)}</span>
+      <span class="titulo">
+        ${t.tiene_pendiente ? '<span title="Tienes este test a medias">⏳</span> ' : ""}
+        ${esc(t.title)}
+      </span>
       <span class="tags">${(t.etiquetas||[]).map(e => `<span class="tag">${esc(e)}</span>`).join("")}</span>
-      <span class="meta">${t.num_preguntas} preguntas</span>
+      <span class="meta">${t.num_preguntas} preg. · ${t.num_intentos || 0} intentos</span>
     </div>
-  `).join("") || "<p class='muted'>Sin tests.</p>";
+  `).join("") || "<p class='muted'>Sin tests con estos filtros.</p>";
 }
+
+/* Listeners de los nuevos controles */
+$("#tests-vis-chips").addEventListener("click", e => {
+  const chip = e.target.closest(".chip");
+  if (!chip) return;
+  state.filtroVisTests = chip.dataset.vis;
+  $$("#tests-vis-chips .chip").forEach(c => c.classList.toggle("active", c === chip));
+  state.testsPage = 1;
+  loadTests();
+});
+
+$("#tests-orden").addEventListener("change", e => {
+  state.ordenTests = e.target.value;
+  state.testsPage = 1;
+  loadTests();
+});
 
 /* ── Cache de etiquetas y render de chips ── */
 async function ensureEtiquetasCache(force = false) {

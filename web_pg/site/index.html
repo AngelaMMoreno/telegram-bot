@@ -104,6 +104,22 @@
       <h2>Tests</h2>
       <input id="tests-filter" type="search" placeholder="Filtrar por título…">
     </header>
+    <div class="tests-controls">
+      <div id="tests-vis-chips" class="tag-chips">
+        <span class="chip active" data-vis="todos">Todos</span>
+        <span class="chip" data-vis="favoritos">⭐ Favoritos</span>
+        <span class="chip" data-vis="pendientes">⏳ Pendientes</span>
+      </div>
+      <label class="orden-wrap">
+        Ordenar por
+        <select id="tests-orden">
+          <option value="reciente">Más reciente</option>
+          <option value="antiguo">Más antiguo</option>
+          <option value="intentos_desc">Más veces intentado</option>
+          <option value="intentos_asc">Menos veces intentado</option>
+        </select>
+      </label>
+    </div>
     <div id="tests-tag-chips" class="tag-chips"></div>
     <div id="tests-list"></div>
     <div id="tests-pagination" class="pagination"></div>
