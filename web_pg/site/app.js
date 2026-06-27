@@ -580,6 +580,7 @@ function iniciarQuizDesdeReanudacion(d) {
     correct:  d.correct || 0,
     wrong:    d.wrong   || 0,
     blank:    0,
+    respondidasPrevias: (d.correct || 0) + (d.wrong || 0),
     answered: false,
     intentoId: d.attempt_id,
     tiempoPorPregunta: getTiempo(),
@@ -631,6 +632,8 @@ async function startQuiz(title, testId, questions, tipo = "quiz") {
     title, testId, tipo,
     questions: shuffled,
     correct: 0, wrong: 0, blank: 0,
+    respondidasPrevias: 0,
+    totalEfectivo: shuffled.length,
     answered: false,
     intentoId,
     tiempoPorPregunta: getTiempo(),
@@ -644,7 +647,11 @@ async function startQuiz(title, testId, questions, tipo = "quiz") {
 function renderPregunta() {
   const q = state.quiz.questions[state.qi];
   state.quiz.answered = false;
-  $("#quiz-progress").textContent = `${state.qi + 1} / ${state.quiz.questions.length}`;
+  // Posición absoluta sobre el total real (incluye las ya respondidas en
+  // sesiones previas si esto es una reanudación).
+  const posicion = (state.quiz.respondidasPrevias || 0) + state.qi + 1;
+  const total = state.quiz.totalEfectivo || state.quiz.questions.length;
+  $("#quiz-progress").textContent = `${posicion} / ${total}`;
   $("#quiz-question").textContent = q.text;
   $("#quiz-explanation").classList.add("hidden");
   $("#btn-next").classList.add("hidden");
