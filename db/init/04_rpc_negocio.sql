@@ -912,6 +912,8 @@ CREATE TABLE IF NOT EXISTS config (
     valor jsonb
 );
 ALTER TABLE config ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS config_lectura ON config;
+DROP POLICY IF EXISTS config_admin   ON config;
 CREATE POLICY config_lectura  ON config FOR SELECT USING (true);
 CREATE POLICY config_admin    ON config FOR ALL TO web_user
     USING (es_admin()) WITH CHECK (es_admin());

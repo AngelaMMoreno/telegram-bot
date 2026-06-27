@@ -565,6 +565,7 @@ function mostrarDialogoReanudar(att) {
 }
 
 function iniciarQuizDesdeReanudacion(d) {
+  cancelarTimerQuiz();
   // Baraja las opciones (no las preguntas: vienen ya en orden original)
   const shuffled = d.questions.map(q => {
     const opts = q.options.map((o, i) => ({ ...o, origIdx: i }));
@@ -579,6 +580,7 @@ function iniciarQuizDesdeReanudacion(d) {
     correct:  d.correct || 0,
     wrong:    d.wrong   || 0,
     blank:    0,
+    respondidasPrevias: (d.correct || 0) + (d.wrong || 0),
     answered: false,
     intentoId: d.attempt_id,
     tiempoPorPregunta: getTiempo(),
@@ -601,30 +603,42 @@ $("#btn-delete-test").addEventListener("click", async () => {
 });
 
 /* ── Quiz engine ── */
-function startQuiz(title, testId, questions, tipo = "quiz") {
-  // Baraja las preguntas y las opciones de cada una
+async function startQuiz(title, testId, questions, tipo = "quiz") {
+  cancelarTimerQuiz();
+  // Baraja preguntas y opciones de cada una
   const shuffled = [...questions].sort(() => Math.random() - 0.5).map(q => {
     const opts = q.options.map((o, i) => ({ ...o, origIdx: i }));
     opts.sort(() => Math.random() - 0.5);
     return { ...q, options: opts };
   });
+
+  // Crea el intento ANTES de mostrar la primera pregunta para no perder
+  // respuestas si el usuario va rápido.
+  let intentoId = null;
+  try {
+    const r = await rpc("iniciar_intento", {
+      p_test_id:      testId || null,
+      p_tipo:         tipo,
+      p_nombre:       title,
+      p_question_ids: shuffled.map(q => q.id),
+    });
+    intentoId = r.attempt_id;
+  } catch (e) {
+    toast("No se pudo iniciar el intento: " + e.message);
+    return;
+  }
+
   state.quiz = {
     title, testId, tipo,
     questions: shuffled,
     correct: 0, wrong: 0, blank: 0,
+    respondidasPrevias: 0,
+    totalEfectivo: shuffled.length,
     answered: false,
-    intentoId: null,
+    intentoId,
     tiempoPorPregunta: getTiempo(),
   };
   state.qi = 0;
-
-  rpc("iniciar_intento", {
-    p_test_id:      testId || null,
-    p_tipo:         tipo,
-    p_nombre:       title,
-    p_question_ids: shuffled.map(q => q.id),
-  }).then(r => { state.quiz.intentoId = r.attempt_id; }).catch(e => toast(e.message));
-
   navigate("quiz");
   $("#quiz-title").textContent = title;
   renderPregunta();
@@ -633,7 +647,11 @@ function startQuiz(title, testId, questions, tipo = "quiz") {
 function renderPregunta() {
   const q = state.quiz.questions[state.qi];
   state.quiz.answered = false;
-  $("#quiz-progress").textContent = `${state.qi + 1} / ${state.quiz.questions.length}`;
+  // Posición absoluta sobre el total real (incluye las ya respondidas en
+  // sesiones previas si esto es una reanudación).
+  const posicion = (state.quiz.respondidasPrevias || 0) + state.qi + 1;
+  const total = state.quiz.totalEfectivo || state.quiz.questions.length;
+  $("#quiz-progress").textContent = `${posicion} / ${total}`;
   $("#quiz-question").textContent = q.text;
   $("#quiz-explanation").classList.add("hidden");
   $("#btn-next").classList.add("hidden");
@@ -642,15 +660,22 @@ function renderPregunta() {
     <button class="option-btn" data-i="${i}">${esc(o.text)}</button>
   `).join("");
 
-  // Temporizador configurable (se fija al iniciar el test, no cambia entre preguntas).
+  // Temporizador configurable.  El id vive en una variable de módulo
+  // (no en state.quiz) para evitar timers huérfanos cuando se reasigna
+  // state.quiz entre quizzes.
   let t = state.quiz.tiempoPorPregunta || 20;
   $("#quiz-timer").textContent = t + "s";
-  clearInterval(state.quiz._timer);
-  state.quiz._timer = setInterval(() => {
+  cancelarTimerQuiz();
+  quizTimer = setInterval(() => {
+    if (t <= 0) { cancelarTimerQuiz(); responder(null); return; }
     t--;
     $("#quiz-timer").textContent = t + "s";
-    if (t <= 0) { clearInterval(state.quiz._timer); responder(null); }
   }, 1000);
+}
+
+let quizTimer = null;
+function cancelarTimerQuiz() {
+  if (quizTimer) { clearInterval(quizTimer); quizTimer = null; }
 }
 
 $("#quiz-options").addEventListener("click", e => {
@@ -677,7 +702,7 @@ $("#btn-fav-q").addEventListener("click", async () => {
 async function responder(idx, saltada = false) {
   if (state.quiz.answered) return;
   state.quiz.answered = true;
-  clearInterval(state.quiz._timer);
+  cancelarTimerQuiz();
 
   const q = state.quiz.questions[state.qi];
   const correctIdx = q.options.findIndex(o => o.isCorrect);
@@ -715,6 +740,7 @@ async function responder(idx, saltada = false) {
 }
 
 async function finalizarQuiz() {
+  cancelarTimerQuiz();
   if (state.quiz.intentoId) {
     try { await rpc("finalizar_intento", { p_intento_id: state.quiz.intentoId }); }
     catch (_) {}
