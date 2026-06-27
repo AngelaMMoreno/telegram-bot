@@ -440,6 +440,65 @@ textarea {
 
 /* Gestión solo a quien tenga permisos */
 body:not(.puede-gestionar) .gestion { display: none !important; }
+body:not(.es-admin)         .solo-admin { display: none !important; }
+
+/* ─── Usuarios ─── */
+.usuarios-list {
+  list-style: none; padding: 0;
+  display: flex; flex-direction: column; gap: 0.55rem;
+}
+.usuarios-list .usuario-row {
+  background: var(--bg-panel); padding: 0.85rem 1rem;
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  display: grid;
+  grid-template-columns: 38px 1fr auto;
+  align-items: center;
+  gap: 0.7rem; cursor: pointer;
+}
+.usuarios-list .avatar-row {
+  width: 38px; height: 38px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--primary), #6366f1);
+  color: #fff; font-weight: 700;
+  border-radius: 50%; font-size: 1rem;
+  user-select: none;
+}
+.usuarios-list .nombre { font-weight: 600; word-break: break-word; }
+.usuarios-list .meta { color: var(--txt-soft); font-size: 0.8rem; }
+.usuarios-list .roles-chips {
+  display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.25rem;
+}
+.usuarios-list .role-chip {
+  background: rgba(37,99,235,0.1); color: var(--primary);
+  padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.75rem;
+  font-weight: 600;
+}
+.usuarios-list .role-chip.admin { background: #fde68a; color: #92400e; }
+.usuarios-list .inactivo { opacity: 0.55; }
+
+.modal-body { padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: 0.9rem; }
+.modal-body h4 { margin: 0; font-size: 0.85rem; color: var(--txt-soft); text-transform: uppercase; letter-spacing: 0.05em; }
+.modal-body .roles-grid {
+  display: flex; flex-wrap: wrap; gap: 0.4rem;
+}
+.modal-body .role-toggle {
+  background: var(--bg); border: 1px solid var(--border);
+  padding: 0.45rem 0.85rem; border-radius: 999px;
+  cursor: pointer; font-size: 0.9rem;
+  min-height: 36px;
+}
+.modal-body .role-toggle.active {
+  background: var(--primary); color: #fff; border-color: var(--primary);
+}
+.modal-body .input-row {
+  display: flex; gap: 0.5rem; align-items: stretch; flex-wrap: wrap;
+}
+.modal-body .input-row input {
+  flex: 1; min-width: 160px;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  font-family: inherit; font-size: 0.95rem;
+}
 
 
 /* ════════════════ TABLET (>= 600 px) ════════════════ */

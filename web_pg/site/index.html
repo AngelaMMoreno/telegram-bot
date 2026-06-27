@@ -42,6 +42,7 @@
   <button class="nav-item" data-view="buscar">🔍 Buscar</button>
   <button class="nav-item gestion" data-view="upload">⬆️ Subir test</button>
   <button class="nav-item gestion" data-view="etiquetas">🏷️ Etiquetas</button>
+  <button class="nav-item solo-admin" data-view="usuarios">👥 Usuarios</button>
   <button class="nav-item" data-view="progreso">📈 Progreso</button>
 </nav>
 
@@ -225,6 +226,26 @@
     <div id="etiquetas-status" class="muted"></div>
     <ul id="etiquetas-list" class="etiquetas-list"></ul>
   </section>
+
+  <!-- Usuarios (solo admin) -->
+  <section id="view-usuarios" class="view">
+    <header class="view-header">
+      <h2>Usuarios</h2>
+      <input id="usuarios-filtro" type="search" placeholder="Filtrar por nombre…">
+    </header>
+    <ul id="usuarios-list" class="usuarios-list"></ul>
+  </section>
+
+  <!-- Modal de gestión de un usuario -->
+  <div id="modal-usuario" class="modal hidden">
+    <div class="modal-card">
+      <header class="modal-header">
+        <h3 id="modal-usuario-titulo">Gestionar usuario</h3>
+        <button class="btn btn-ghost" id="modal-usuario-close">✕</button>
+      </header>
+      <div class="modal-body" id="modal-usuario-body"></div>
+    </div>
+  </div>
 
   <!-- Progreso -->
   <section id="view-progreso" class="view">

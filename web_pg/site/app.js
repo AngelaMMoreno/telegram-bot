@@ -79,6 +79,7 @@ function applySession() {
   $("#topbar").classList.toggle("hidden", !logged);
   $("#sidebar").classList.toggle("hidden", !logged);
   document.body.classList.toggle("puede-gestionar", !!(state.user && state.user.puede_gestionar));
+  document.body.classList.toggle("es-admin", !!(state.user && (state.user.roles || []).includes("admin")));
   if (logged) {
     const u = state.user.username || "";
     $("#user-name").textContent = u;
@@ -264,6 +265,7 @@ const loaders = {
   buscar:      () => runBuscarView($("#buscar-input").value.trim()),
   upload:      async () => {},
   etiquetas:   loadEtiquetas,
+  usuarios:    loadUsuarios,
   progreso:    loadProgreso,
 };
 
@@ -868,6 +870,144 @@ async function loadProgreso() {
     </li>`;
   }).join("") || "<p class='muted'>Sin tests terminados aún.</p>";
 }
+
+/* ── Usuarios (solo admin) ──────────────────────────────────────────────── */
+async function loadUsuarios() {
+  $("#usuarios-list").innerHTML = "<p class='muted'>Cargando…</p>";
+  try {
+    const [users, roles] = await Promise.all([
+      rpc("listar_usuarios"),
+      rpc("listar_roles"),
+    ]);
+    state.usuariosCache = users;
+    state.rolesCache = roles;
+    renderUsuarios();
+  } catch (e) {
+    $("#usuarios-list").innerHTML = `<p class='muted'>${esc(e.message)}</p>`;
+  }
+}
+
+function renderUsuarios() {
+  const f = ($("#usuarios-filtro").value || "").toLowerCase();
+  const lista = (state.usuariosCache || []).filter(u =>
+    !f || u.username.toLowerCase().includes(f) || (u.email||"").toLowerCase().includes(f)
+  );
+  $("#usuarios-list").innerHTML = lista.map(u => {
+    const ini = (u.username[0] || "?").toUpperCase();
+    const roles = (u.roles || []).map(r =>
+      `<span class="role-chip ${r === 'admin' ? 'admin' : ''}">${esc(r)}</span>`
+    ).join("");
+    return `
+      <li class="usuario-row ${u.activo ? "" : "inactivo"}" data-id="${u.id}">
+        <span class="avatar-row">${esc(ini)}</span>
+        <div>
+          <div class="nombre">${esc(u.username)}</div>
+          <div class="meta">${esc(u.email || "(sin email)")} ${u.chat_id ? `· chat ${esc(u.chat_id)}` : ""}</div>
+          <div class="roles-chips">${roles || `<span class="meta">(sin roles)</span>`}</div>
+        </div>
+        <span class="meta">${u.tiene_pass ? "🔑" : "—"}</span>
+      </li>
+    `;
+  }).join("") || "<p class='muted'>Sin usuarios.</p>";
+}
+
+$("#usuarios-filtro").addEventListener("input", renderUsuarios);
+
+$("#usuarios-list").addEventListener("click", e => {
+  const row = e.target.closest(".usuario-row");
+  if (!row) return;
+  const u = state.usuariosCache.find(x => x.id === row.dataset.id);
+  if (u) abrirModalUsuario(u);
+});
+
+function abrirModalUsuario(u) {
+  $("#modal-usuario-titulo").textContent = u.username;
+  const rolesActivos = new Set(u.roles || []);
+  const todosRoles = state.rolesCache || [];
+
+  $("#modal-usuario-body").innerHTML = `
+    <div>
+      <h4>Roles</h4>
+      <div class="roles-grid">
+        ${todosRoles.map(r => `
+          <button class="role-toggle ${rolesActivos.has(r.id) ? "active" : ""}" data-rol="${esc(r.id)}">
+            ${esc(r.id)}
+          </button>
+        `).join("")}
+      </div>
+    </div>
+
+    <div>
+      <h4>Resetear contraseña</h4>
+      <div class="input-row">
+        <input id="modal-pass" type="password" placeholder="Nueva contraseña (≥ 6 carac.)">
+        <button class="btn btn-primary btn-sm" id="modal-reset-pass">Resetear</button>
+      </div>
+    </div>
+
+    <div>
+      <h4>Estado</h4>
+      <div class="input-row">
+        <button class="btn btn-${u.activo ? "danger" : "primary"} btn-sm" id="modal-toggle-activo">
+          ${u.activo ? "Desactivar" : "Activar"}
+        </button>
+        <span class="muted" style="align-self:center">
+          ${u.activo ? "Usuario activo, puede iniciar sesión" : "Usuario desactivado"}
+        </span>
+      </div>
+    </div>
+  `;
+
+  $$(".role-toggle", $("#modal-usuario-body")).forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const rol = btn.dataset.rol;
+      const tieneEseRol = btn.classList.contains("active");
+      try {
+        if (tieneEseRol) {
+          await rpc("quitar_rol", { p_usuario_id: u.id, p_rol_id: rol });
+        } else {
+          await rpc("asignar_rol", { p_usuario_id: u.id, p_rol_id: rol });
+        }
+        btn.classList.toggle("active");
+        toast(tieneEseRol ? `Rol '${rol}' quitado` : `Rol '${rol}' añadido`);
+        // refresca cache local
+        if (tieneEseRol) u.roles = u.roles.filter(r => r !== rol);
+        else u.roles = [...u.roles, rol];
+      } catch (e) { toast(e.message); }
+    });
+  });
+
+  $("#modal-reset-pass").addEventListener("click", async () => {
+    const v = $("#modal-pass").value;
+    if (!v || v.length < 6) return toast("Mínimo 6 caracteres");
+    try {
+      await rpc("resetear_contrasena", { p_usuario_id: u.id, p_nueva_pass: v });
+      $("#modal-pass").value = "";
+      u.tiene_pass = true;
+      toast("Contraseña reseteada");
+    } catch (e) { toast(e.message); }
+  });
+
+  $("#modal-toggle-activo").addEventListener("click", async () => {
+    try {
+      await rpc("set_usuario_activo", { p_usuario_id: u.id, p_activo: !u.activo });
+      u.activo = !u.activo;
+      cerrarModalUsuario();
+      renderUsuarios();
+      toast(u.activo ? "Activado" : "Desactivado");
+    } catch (e) { toast(e.message); }
+  });
+
+  $("#modal-usuario").classList.remove("hidden");
+}
+
+function cerrarModalUsuario() {
+  $("#modal-usuario").classList.add("hidden");
+  renderUsuarios();
+}
+
+$("#modal-usuario-close").addEventListener("click", cerrarModalUsuario);
+
 
 /* ── Arranque ───────────────────────────────────────────────────────────── */
 inicializarInputsTiempo();
