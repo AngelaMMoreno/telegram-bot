@@ -154,6 +154,14 @@
       <p id="quiz-question"></p>
       <div id="quiz-options" class="options"></div>
       <p id="quiz-explanation" class="explanation hidden"></p>
+      <div id="quiz-tags-inline" class="quiz-tags-inline hidden">
+        <span class="muted small">Etiquetas:</span>
+        <div id="quiz-tags-chips" class="tags"></div>
+        <input id="quiz-tag-add" list="quiz-tag-datalist"
+               placeholder="+ añadir etiqueta"
+               autocomplete="off" spellcheck="false">
+        <datalist id="quiz-tag-datalist"></datalist>
+      </div>
       <div class="quiz-actions">
         <button class="btn btn-ghost" id="btn-skip">Saltar</button>
         <button class="btn btn-ghost" id="btn-fav-q">⭐ Favorita</button>
