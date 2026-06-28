@@ -275,6 +275,16 @@ body {
   display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem;
   margin-top: 0.9rem; padding-top: 0.7rem; border-top: 1px dashed var(--border);
 }
+
+.buscar-tematico {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.7rem;
+  margin-top: 0.5rem; padding: 0.6rem 0.9rem;
+  background: var(--bg-panel); border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.buscar-tematico .small { font-size: 0.8rem; }
+.buscar-tematico label { display: inline-flex; align-items: center; gap: 0.4rem; }
+.buscar-tematico input[type=number] { padding: 0.25rem 0.4rem; border: 1px solid var(--border); border-radius: 0.4rem; }
 .quiz-tags-inline .muted.small { font-size: 0.75rem; }
 .quiz-tags-inline .tags { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; }
 .quiz-tags-inline #quiz-tag-add {
