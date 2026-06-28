@@ -17,7 +17,8 @@ const state = {
   filtroEtiquetaTests: null,
   filtroVisTests: "todos",          // todos | favoritos | pendientes
   ordenTests: "reciente",            // reciente | antiguo | intentos_desc | intentos_asc
-  filtroEtiquetaBuscar: null,
+  filtroEtiquetaBuscar: null,          // legado (single-tag), no se usa ya
+  filtroEtiquetasBuscar: [],            // multi-tag actual
   etiquetasCache: [],
   searchAbort: null,
 };
@@ -357,6 +358,27 @@ function renderTagChips(selector, valorActual, onClick) {
   };
 }
 
+/* Chips multi-selección: el chip "Todas" limpia la selección; el resto
+ * alternan en/fuera del array. onChange recibe el nuevo array. */
+function renderTagChipsMulti(selector, valoresActuales, onChange) {
+  const wrap = $(selector);
+  if (!wrap) return;
+  const sel = new Set(valoresActuales || []);
+  const opciones = [{ nombre: "Todas", _all: true }, ...state.etiquetasCache];
+  wrap.innerHTML = opciones.map(e => {
+    const isActive = e._all ? sel.size === 0 : sel.has(e.nombre);
+    return `<span class="chip ${isActive ? "active" : ""}" data-tag="${e._all ? "" : esc(e.nombre)}">${esc(e.nombre)}</span>`;
+  }).join("");
+  wrap.onclick = ev => {
+    const c = ev.target.closest(".chip");
+    if (!c) return;
+    const t = c.dataset.tag;
+    if (!t) { onChange([]); return; }
+    if (sel.has(t)) sel.delete(t); else sel.add(t);
+    onChange(Array.from(sel));
+  };
+}
+
 function renderPagination(r) {
   let html = "";
   for (let i = 1; i <= r.total_pages; i++) {
@@ -670,12 +692,39 @@ function iniciarQuizDesdeReanudacion(d) {
   toast(`Reanudado: ${d.correct} aciertos, ${d.wrong} fallos previos`);
 }
 
-$("#btn-delete-test").addEventListener("click", async () => {
+$("#btn-delete-test").addEventListener("click", () => {
   if (!state.currentTestId) return;
-  if (!confirm("¿Borrar este test? La acción no se puede deshacer.")) return;
+  $("#modal-borrar-test").classList.remove("hidden");
+});
+
+function cerrarModalBorrarTest() {
+  $("#modal-borrar-test").classList.add("hidden");
+}
+
+$("#modal-borrar-test-close").addEventListener("click", cerrarModalBorrarTest);
+$("#btn-borrar-test-cancelar").addEventListener("click", cerrarModalBorrarTest);
+
+$("#btn-borrar-solo-test").addEventListener("click", async () => {
+  if (!state.currentTestId) return;
   try {
     await pg("/tests?id=eq." + state.currentTestId, { method: "DELETE" });
-    toast("Test borrado"); navigate("tests");
+    toast("Test borrado (preguntas conservadas)");
+    cerrarModalBorrarTest();
+    navigate("tests");
+  } catch (e) { toast(e.message); }
+});
+
+$("#btn-borrar-test-y-preguntas").addEventListener("click", async () => {
+  if (!state.currentTestId) return;
+  if (!confirm("Vas a borrar el test y todas las preguntas EXCLUSIVAS de este test. Las preguntas compartidas con otros tests se mantienen. ¿Continuar?")) return;
+  try {
+    const r = await rpc("borrar_test_y_preguntas", {
+      p_test_id:           state.currentTestId,
+      p_borrar_preguntas:  true,
+    });
+    toast(`Test borrado · ${r.preguntas_borradas} pregunta(s) eliminada(s), ${r.preguntas_compartidas} conservada(s) por compartir`);
+    cerrarModalBorrarTest();
+    navigate("tests");
   } catch (e) { toast(e.message); }
 });
 
@@ -934,16 +983,20 @@ $("#buscar-input").addEventListener("input", e => {
 
 async function runBuscarView(q) {
   await ensureEtiquetasCache();
-  renderTagChips("#buscar-tag-chips", state.filtroEtiquetaBuscar, et => {
-    state.filtroEtiquetaBuscar = et;
+  renderTagChipsMulti("#buscar-tag-chips", state.filtroEtiquetasBuscar, ets => {
+    state.filtroEtiquetasBuscar = ets;
     runBuscarView($("#buscar-input").value.trim());
   });
-  if (!q && !state.filtroEtiquetaBuscar) { $("#buscar-results").innerHTML = ""; return; }
+
+  // Bloque "generar test temático" visible cuando hay etiquetas seleccionadas.
+  $("#buscar-tematico").classList.toggle("hidden", state.filtroEtiquetasBuscar.length === 0);
+
+  if (!q && state.filtroEtiquetasBuscar.length === 0) { $("#buscar-results").innerHTML = ""; return; }
   $("#buscar-results").innerHTML = "<p class='muted'>Buscando…</p>";
   try {
-    const r = await rpc("buscar_preguntas", {
+    const r = await rpc("buscar_preguntas_multi", {
       p_q: q || "", p_lim: 40,
-      p_etiqueta: state.filtroEtiquetaBuscar || null,
+      p_etiquetas: state.filtroEtiquetasBuscar.length ? state.filtroEtiquetasBuscar : null,
     });
     $("#buscar-results").innerHTML = r.map(p => `
       <li class="q-row" data-pid="${p.id}">
@@ -956,6 +1009,27 @@ async function runBuscarView(q) {
     `).join("") || "<p class='muted'>Sin resultados.</p>";
   } catch (e) { toast(e.message); }
 }
+
+$("#btn-tematico").addEventListener("click", async () => {
+  if (state.filtroEtiquetasBuscar.length === 0) return toast("Selecciona al menos una etiqueta");
+  const n = parseInt($("#buscar-tem-n").value, 10);
+  if (!n || n < 1) return toast("Indica un nº de preguntas válido");
+  const btn = $("#btn-tematico");
+  btn.disabled = true;
+  try {
+    const testId = await rpc("crear_test_tematico_multi", {
+      p_etiquetas: state.filtroEtiquetasBuscar,
+      p_n:         n,
+    });
+    toast("Test temático creado, cargando…");
+    loadTestDetail(testId);
+    navigate("test-detail");
+  } catch (e) {
+    toast(e.message.includes("sin_preguntas") ? "No hay preguntas para esas etiquetas" : e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 $("#buscar-results").addEventListener("click", e => {
   const btn = e.target.closest("[data-action=edit-q]");

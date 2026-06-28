@@ -219,6 +219,14 @@
       <input id="buscar-input" type="search" placeholder="Ej: hidrógeno, ciclo de Krebs…" autofocus>
     </header>
     <div id="buscar-tag-chips" class="tag-chips"></div>
+    <div id="buscar-tematico" class="buscar-tematico hidden">
+      <span class="muted small">Generar test temático con las etiquetas seleccionadas:</span>
+      <label class="muted small">
+        Nº preguntas
+        <input id="buscar-tem-n" type="number" min="1" max="500" value="20" style="width:5rem">
+      </label>
+      <button class="btn btn-primary btn-sm" id="btn-tematico">▶️ Crear test temático</button>
+    </div>
     <ul id="buscar-results" class="question-list"></ul>
   </section>
 
@@ -283,6 +291,28 @@
   </section>
 
 </main>
+
+<!-- Modal de borrado de test -->
+<div id="modal-borrar-test" class="modal hidden">
+  <div class="modal-card">
+    <header class="modal-header">
+      <h3>¿Cómo quieres borrar este test?</h3>
+      <button class="btn btn-ghost" id="modal-borrar-test-close">✕</button>
+    </header>
+    <div class="modal-body">
+      <p class="muted" id="modal-borrar-test-info">
+        Puedes borrar solo el test (conservando sus preguntas, útiles si
+        están en otros tests) o borrar también las preguntas que sean
+        exclusivas de este test.
+      </p>
+      <div class="modal-actions" style="flex-direction:column; align-items:stretch; gap:0.5rem">
+        <button class="btn btn-primary" id="btn-borrar-solo-test">🗑️ Borrar solo el test (conservar preguntas)</button>
+        <button class="btn btn-danger" id="btn-borrar-test-y-preguntas">💥 Borrar test y preguntas exclusivas</button>
+        <button class="btn btn-ghost" id="btn-borrar-test-cancelar">Cancelar</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Modal de reanudación de intento -->
 <div id="modal-reanudar" class="modal hidden">
