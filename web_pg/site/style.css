@@ -264,6 +264,26 @@ body {
   background: rgba(37, 99, 235, 0.1); color: var(--primary);
   padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.75rem;
 }
+.tag.removable { cursor: default; display: inline-flex; align-items: center; gap: 0.25rem; }
+.tag.removable .x {
+  cursor: pointer; opacity: 0.55; font-weight: 700; line-height: 1;
+  padding: 0 0.15rem;
+}
+.tag.removable .x:hover { opacity: 1; color: var(--danger); }
+
+.quiz-tags-inline {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem;
+  margin-top: 0.9rem; padding-top: 0.7rem; border-top: 1px dashed var(--border);
+}
+.quiz-tags-inline .muted.small { font-size: 0.75rem; }
+.quiz-tags-inline .tags { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; }
+.quiz-tags-inline #quiz-tag-add {
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 0.2rem 0.6rem; font-size: 0.75rem;
+  background: transparent; outline: none;
+  min-width: 9rem; max-width: 14rem;
+}
+.quiz-tags-inline #quiz-tag-add:focus { border-color: var(--primary); }
 
 /* ─── Quiz ─── */
 .quiz-header {

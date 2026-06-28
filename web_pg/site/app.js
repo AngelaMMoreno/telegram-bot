@@ -680,6 +680,7 @@ function renderPregunta() {
   $("#quiz-explanation").classList.add("hidden");
   $("#btn-next").classList.add("hidden");
   $("#btn-edit-q").classList.add("hidden");
+  $("#quiz-tags-inline").classList.add("hidden");
   $("#quiz-options").innerHTML = q.options.map((o, i) => `
     <button class="option-btn" data-i="${i}">${esc(o.text)}</button>
   `).join("");
@@ -750,6 +751,7 @@ async function responder(idx, saltada = false) {
   }
   $("#btn-next").classList.remove("hidden");
   $("#btn-edit-q").classList.remove("hidden");
+  renderQuizTagsInline(q);
 
   if (state.quiz.intentoId) {
     try {
@@ -1014,6 +1016,95 @@ $("#btn-reclasificar").addEventListener("click", async () => {
   } catch (e) { toast(e.message); }
   finally { $("#btn-reclasificar").disabled = false; }
 });
+
+/* ── Editor inline de etiquetas en el quiz ──────────────────────────────────
+ * Se muestra tras revelar la respuesta. Cada chip lleva una ✕ para quitarla;
+ * el input usa un <datalist> con el catálogo completo. Toda edición persiste
+ * con un PATCH a /preguntas y la pregunta editada queda como "ejemplo" para
+ * el k-NN: la próxima pregunta parecida que llegue al worker heredará estas
+ * etiquetas vía reclasificar_pregunta. */
+async function renderQuizTagsInline(q) {
+  const cont = $("#quiz-tags-inline");
+  cont.classList.remove("hidden");
+  await ensureEtiquetasCache();
+
+  // Refresca las etiquetas reales por si el auto-tagger las cambió desde
+  // que se cargó el test en memoria.
+  try {
+    const r = await pg(`/preguntas?id=eq.${q.id}&select=etiquetas`);
+    if (r.length) q.etiquetas = r[0].etiquetas || [];
+  } catch (_) { /* no bloqueante */ }
+
+  pintarQuizTagChips(q);
+
+  // Datalist con todas las etiquetas conocidas para autocomplete.
+  $("#quiz-tag-datalist").innerHTML = state.etiquetasCache
+    .map(t => `<option value="${esc(t.nombre)}">`).join("");
+  $("#quiz-tag-add").value = "";
+}
+
+function pintarQuizTagChips(q) {
+  const chipsDiv = $("#quiz-tags-chips");
+  const tags = q.etiquetas || [];
+  if (!tags.length) {
+    chipsDiv.innerHTML = `<span class="muted small">— sin etiquetas —</span>`;
+  } else {
+    chipsDiv.innerHTML = tags.map(t => `
+      <span class="tag removable" data-tag="${esc(t)}">
+        ${esc(t)}<span class="x" data-rm="${esc(t)}" title="Quitar">×</span>
+      </span>
+    `).join("");
+  }
+}
+
+async function actualizarEtiquetasPregunta(qId, nuevas) {
+  await pg(`/preguntas?id=eq.${qId}`, {
+    method: "PATCH",
+    headers: { "Prefer": "return=minimal" },
+    body: { etiquetas: nuevas },
+  });
+}
+
+$("#quiz-tags-chips").addEventListener("click", async e => {
+  const rm = e.target.closest("[data-rm]");
+  if (!rm || !state.quiz) return;
+  const q = state.quiz.questions[state.qi];
+  const tag = rm.dataset.rm;
+  const nuevas = (q.etiquetas || []).filter(t => t !== tag);
+  try {
+    await actualizarEtiquetasPregunta(q.id, nuevas);
+    q.etiquetas = nuevas;
+    pintarQuizTagChips(q);
+  } catch (err) { toast(err.message); }
+});
+
+$("#quiz-tag-add").addEventListener("keydown", async e => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  if (!state.quiz) return;
+  const inp = e.target;
+  const tag = inp.value.trim().toLowerCase();
+  if (!tag) return;
+  const q = state.quiz.questions[state.qi];
+  if ((q.etiquetas || []).includes(tag)) {
+    toast("Ya tiene esa etiqueta");
+    inp.value = "";
+    return;
+  }
+  // Avisa si la etiqueta no existe en el catálogo: se guarda igual, pero
+  // queda fuera de la jerarquía y del auto-tagger hasta que la crees.
+  if (!state.etiquetasCache.some(t => t.nombre === tag)) {
+    if (!confirm(`"${tag}" no existe en el catálogo. ¿Añadirla igualmente a esta pregunta?`)) return;
+  }
+  const nuevas = [...(q.etiquetas || []), tag];
+  try {
+    await actualizarEtiquetasPregunta(q.id, nuevas);
+    q.etiquetas = nuevas;
+    inp.value = "";
+    pintarQuizTagChips(q);
+  } catch (err) { toast(err.message); }
+});
+
 
 /* ── Progreso ── */
 async function loadProgreso() {
