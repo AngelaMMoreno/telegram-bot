@@ -318,8 +318,14 @@
       <label>Explicación
         <textarea id="pq-explicacion" rows="2"></textarea>
       </label>
-      <label>Etiquetas <small class="muted">(separadas por coma)</small>
-        <input id="pq-etiquetas" placeholder="biología, glicólisis">
+      <label>Etiquetas
+        <div id="pq-tags-inline" class="quiz-tags-inline" style="margin-top:0.4rem; padding-top:0">
+          <div id="pq-tags-chips" class="tags"></div>
+          <input id="pq-tag-add" list="pq-tag-datalist"
+                 placeholder="+ añadir etiqueta"
+                 autocomplete="off" spellcheck="false">
+          <datalist id="pq-tag-datalist"></datalist>
+        </div>
       </label>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" id="pq-borrar">🗑️ Borrar</button>
