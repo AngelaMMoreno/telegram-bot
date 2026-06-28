@@ -423,21 +423,75 @@ $("#test-detail-questions").addEventListener("click", e => {
    Guarda en state.editingQ el id y un callback opcional para "refrescar
    en sitio" después de guardar.
 */
-function abrirEditorPregunta(q, opciones = {}) {
+async function abrirEditorPregunta(q, opciones = {}) {
   const text   = q.text   ?? q.enunciado ?? "";
   const optsIn = q.options ?? (q.opciones || []).map(o => ({ text: o.texto, isCorrect: !!o.correcta }));
   const expl   = q.explicacion ?? "";
   const tags   = q.etiquetas ?? [];
 
-  state.editingQ = { id: q.id, refrescar: opciones.refrescar || null };
+  state.editingQ = {
+    id: q.id,
+    refrescar: opciones.refrescar || null,
+    etiquetas: [...tags],
+  };
   $("#pq-enunciado").value = text;
   $("#pq-opciones").value  = optsIn
     .map(o => (o.isCorrect ? "*" : "") + o.text)
     .join("\n");
   $("#pq-explicacion").value = expl || "";
-  $("#pq-etiquetas").value   = (tags || []).join(", ");
+  $("#pq-tag-add").value = "";
+
+  // Pinta los chips de etiquetas y rellena el datalist con el catálogo.
+  await ensureEtiquetasCache();
+  $("#pq-tag-datalist").innerHTML = state.etiquetasCache
+    .map(t => `<option value="${esc(t.nombre)}">`).join("");
+  pintarModalTagChips();
+
   $("#modal-pregunta").classList.remove("hidden");
 }
+
+function pintarModalTagChips() {
+  if (!state.editingQ) return;
+  const tags = state.editingQ.etiquetas || [];
+  const chipsDiv = $("#pq-tags-chips");
+  if (!tags.length) {
+    chipsDiv.innerHTML = `<span class="muted small">— sin etiquetas —</span>`;
+  } else {
+    chipsDiv.innerHTML = tags.map(t => `
+      <span class="tag removable" data-tag="${esc(t)}">
+        ${esc(t)}<span class="x" data-rm="${esc(t)}" title="Quitar">×</span>
+      </span>
+    `).join("");
+  }
+}
+
+$("#pq-tags-chips").addEventListener("click", e => {
+  const rm = e.target.closest("[data-rm]");
+  if (!rm || !state.editingQ) return;
+  state.editingQ.etiquetas = (state.editingQ.etiquetas || [])
+    .filter(t => t !== rm.dataset.rm);
+  pintarModalTagChips();
+});
+
+$("#pq-tag-add").addEventListener("keydown", e => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  if (!state.editingQ) return;
+  const inp = e.target;
+  const tag = inp.value.trim().toLowerCase();
+  if (!tag) return;
+  if ((state.editingQ.etiquetas || []).includes(tag)) {
+    toast("Ya tiene esa etiqueta");
+    inp.value = "";
+    return;
+  }
+  if (!state.etiquetasCache.some(t => t.nombre === tag)) {
+    if (!confirm(`"${tag}" no existe en el catálogo. ¿Añadirla igualmente?`)) return;
+  }
+  state.editingQ.etiquetas = [...(state.editingQ.etiquetas || []), tag];
+  inp.value = "";
+  pintarModalTagChips();
+});
 
 /* Fetch + abrir editor por id (para el buscador y demás listas) */
 async function editarPorId(id, refrescar = null) {
@@ -468,8 +522,7 @@ $("#form-pregunta").addEventListener("submit", async e => {
   if (opciones.length < 2) return toast("Necesitas al menos 2 opciones");
   if (!opciones.some(o => o.correcta)) return toast("Marca al menos una opción como correcta con *");
 
-  const etiquetas = $("#pq-etiquetas").value.split(",")
-    .map(t => t.trim().toLowerCase()).filter(t => t.length);
+  const etiquetas = state.editingQ.etiquetas || [];
 
   try {
     await pg("/preguntas?id=eq." + state.editingQ.id, {
@@ -811,14 +864,24 @@ async function loadFallos() {
   $("#list-fallos").innerHTML = "<p class='muted'>Cargando…</p>";
   const d = await rpc("mis_fallos");
   $("#list-fallos").innerHTML = (d.questions || []).map(q => `
-    <li class="q-row">
+    <li class="q-row" data-pid="${q.id}">
       <div class="q-text">${esc(q.text)}</div>
       <div class="q-meta">Fallada ${q.veces_fallada} veces</div>
       <div class="tags">${(q.etiquetas||[]).map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+      <div class="q-actions gestion">
+        <button class="btn btn-ghost btn-sm" data-action="edit-q">✏️ Editar</button>
+      </div>
     </li>
   `).join("") || "<p class='muted'>Sin fallos aún.</p>";
   state.lastFallos = d.questions || [];
 }
+
+$("#list-fallos").addEventListener("click", e => {
+  const btn = e.target.closest("[data-action=edit-q]");
+  if (!btn) return;
+  const li = e.target.closest("[data-pid]");
+  if (li) editarPorId(li.dataset.pid, loadFallos);
+});
 
 $("#btn-start-fallos").addEventListener("click", async () => {
   if (!state.lastFallos || !state.lastFallos.length)
@@ -835,13 +898,23 @@ async function loadFavoritas() {
   $("#list-fav").innerHTML = "<p class='muted'>Cargando…</p>";
   const d = await rpc("mis_favoritas");
   $("#list-fav").innerHTML = (d.questions || []).map(q => `
-    <li class="q-row">
+    <li class="q-row" data-pid="${q.id}">
       <div class="q-text">${esc(q.text)}</div>
       <div class="tags">${(q.etiquetas||[]).map(t => `<span class="tag">${esc(t)}</span>`).join("")}</div>
+      <div class="q-actions gestion">
+        <button class="btn btn-ghost btn-sm" data-action="edit-q">✏️ Editar</button>
+      </div>
     </li>
   `).join("") || "<p class='muted'>Aún no marcaste favoritas.</p>";
   state.lastFav = d.questions || [];
 }
+
+$("#list-fav").addEventListener("click", e => {
+  const btn = e.target.closest("[data-action=edit-q]");
+  if (!btn) return;
+  const li = e.target.closest("[data-pid]");
+  if (li) editarPorId(li.dataset.pid, loadFavoritas);
+});
 
 $("#btn-start-fav").addEventListener("click", async () => {
   if (!state.lastFav || !state.lastFav.length) return toast("Sin favoritas");
