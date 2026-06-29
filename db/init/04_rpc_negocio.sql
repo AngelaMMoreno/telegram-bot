@@ -296,11 +296,6 @@ BEGIN
         ON CONFLICT (usuario_id, tipo, COALESCE(pregunta_id, test_id))
         DO UPDATE SET contador = marcadores.contador + 1,
                        actualizado_en = now();
-    ELSE
-        DELETE FROM marcadores
-         WHERE usuario_id = jwt_usuario_id()
-           AND tipo = 'fallo'
-           AND pregunta_id = p_pregunta_id;
     END IF;
 END $$;
 
