@@ -617,7 +617,7 @@ $("#btn-start-test").addEventListener("click", async () => {
    - Empezar de nuevo: descarta el intento anterior y arranca limpio.
    - Cancelar: no hace nada.
 */
-async function iniciarConPosibleReanudacion({ tipo, testId, title, questions }) {
+async function iniciarConPosibleReanudacion({ tipo, testId, title, questions, opts }) {
   try {
     const r = await rpc("intento_pendiente", { p_tipo: tipo, p_test_id: testId || null });
     const a = r && r.attempt;
@@ -638,7 +638,7 @@ async function iniciarConPosibleReanudacion({ tipo, testId, title, questions }) 
         // continúa abajo a un quiz limpio
       }
     }
-    startQuiz(title, testId, questions, tipo);
+    startQuiz(title, testId, questions, tipo, opts || {});
   } catch (e) { toast(e.message); }
 }
 
@@ -671,6 +671,7 @@ function iniciarQuizDesdeReanudacion(d) {
     opts.sort(() => Math.random() - 0.5);
     return { ...q, options: opts };
   });
+  const adelantada = d.attempt_type === "repaso_adelantado";
   state.quiz = {
     title:    d.nombre || "Test",
     testId:   d.quiz_id || null,
@@ -684,10 +685,12 @@ function iniciarQuizDesdeReanudacion(d) {
     intentoId: d.attempt_id,
     tiempoPorPregunta: getTiempo(),
     totalEfectivo: d.total_efectivo,
+    adelantada,
   };
   state.qi = 0;
   navigate("quiz");
-  $("#quiz-title").textContent = state.quiz.title;
+  $("#quiz-title").textContent = state.quiz.title +
+    (adelantada ? "  ·  ⏩ adelantado" : "");
   renderPregunta();
   toast(`Reanudado: ${d.correct} aciertos, ${d.wrong} fallos previos`);
 }
@@ -1546,7 +1549,11 @@ async function arrancarRepasoTest(testId, n, adelantar) {
     }
     const tipo  = adelantar ? "repaso_adelantado" : "repaso_test";
     const title = "Repaso · " + (d.quiz?.title || "test");
-    await startQuiz(title, testId, d.questions, tipo, { adelantada: !!adelantar });
+    await iniciarConPosibleReanudacion({
+      tipo, testId, title,
+      questions: d.questions,
+      opts: { adelantada: !!adelantar },
+    });
   } catch (e) { toast(e.message); }
 }
 
@@ -1561,7 +1568,11 @@ async function arrancarRepasoGlobal(n, adelantar) {
     }
     const tipo  = adelantar ? "repaso_adelantado" : "repaso_global";
     const title = "Repaso global";
-    await startQuiz(title, null, d.questions, tipo, { adelantada: !!adelantar });
+    await iniciarConPosibleReanudacion({
+      tipo, testId: null, title,
+      questions: d.questions,
+      opts: { adelantada: !!adelantar },
+    });
   } catch (e) { toast(e.message); }
 }
 
