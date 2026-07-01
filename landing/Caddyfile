@@ -1,0 +1,18 @@
+# Landing de aprentix.es/www.aprentix.es.
+# Traefik termina TLS y nos pasa HTTP por :80.
+
+:80 {
+    encode zstd gzip
+
+    # /api/* → PostgREST (login, mi_sesion, puede_ver_teoria).
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy postgrest:3000
+    }
+
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+}

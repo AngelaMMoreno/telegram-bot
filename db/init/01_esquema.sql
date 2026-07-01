@@ -229,6 +229,21 @@ CREATE TABLE repasos (
 CREATE INDEX repasos_usuario_idx ON repasos (usuario_id, ultima_en);
 
 
+-- ─────────────────────────── Ficheros vistos (teoría) ───────────────────────
+-- Marca por (usuario, ruta_relativa) del material de teoría. La ruta es la
+-- que la SPA de teoría muestra en la barra de navegación (p.ej.
+-- '/tema-1/apuntes.pdf'), no la ruta en disco. El servicio de teoría
+-- normaliza siempre a un path absoluto empezando por '/'.
+
+CREATE TABLE ficheros_vistas (
+    usuario_id  uuid NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    ruta        text NOT NULL,
+    vista_en    timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (usuario_id, ruta)
+);
+CREATE INDEX ficheros_vistas_usuario_idx ON ficheros_vistas (usuario_id);
+
+
 -- =============================================================================
 --                              ROLES Y GRANTS
 -- =============================================================================
@@ -256,7 +271,7 @@ GRANT SELECT ON preguntas, tests, test_preguntas, catalogo_etiquetas TO web_user
 GRANT SELECT, INSERT, UPDATE, DELETE
     ON preguntas, tests, test_preguntas, catalogo_etiquetas,
        intentos, respuestas, marcadores,
-       preferencias_usuario, repasos
+       preferencias_usuario, repasos, ficheros_vistas
     TO web_user;
 
 -- Cola de embeddings: los triggers de encolado son SECURITY DEFINER pero
@@ -286,6 +301,7 @@ ALTER TABLE catalogo_etiquetas    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE config                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE preferencias_usuario  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE repasos               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ficheros_vistas       ENABLE ROW LEVEL SECURITY;
 
 -- Las políticas usan jwt_usuario_id(), tiene_permiso() y es_admin(), que se
 -- definen a continuación.
@@ -409,6 +425,11 @@ CREATE POLICY repasos_propios ON repasos
     USING (usuario_id = jwt_usuario_id())
     WITH CHECK (usuario_id = jwt_usuario_id());
 
+CREATE POLICY vistas_propias ON ficheros_vistas
+    FOR ALL TO web_user
+    USING (usuario_id = jwt_usuario_id() OR es_admin())
+    WITH CHECK (usuario_id = jwt_usuario_id());
+
 
 -- =============================================================================
 --                        DEFAULTS DEPENDIENTES DE JWT
@@ -421,6 +442,7 @@ ALTER TABLE marcadores           ALTER COLUMN usuario_id SET DEFAULT jwt_usuario
 ALTER TABLE preguntas            ALTER COLUMN autor_id   SET DEFAULT jwt_usuario_id();
 ALTER TABLE tests                ALTER COLUMN autor_id   SET DEFAULT jwt_usuario_id();
 ALTER TABLE repasos              ALTER COLUMN usuario_id SET DEFAULT jwt_usuario_id();
+ALTER TABLE ficheros_vistas      ALTER COLUMN usuario_id SET DEFAULT jwt_usuario_id();
 
 
 -- =============================================================================
@@ -2165,6 +2187,93 @@ END $$;
 
 
 -- =============================================================================
+--                    TEORÍA — VISTAS DE FICHEROS
+-- =============================================================================
+-- El servicio de teoría (backend Python) hace el trabajo pesado: listar
+-- ficheros del disco, subir, mover, borrar, servir el binario. Estas RPCs
+-- son solo el estado de "leído/no leído" por usuario, y el helper que la
+-- landing usa para decidir si mostrar la tarjeta de teoría.
+
+-- El JWT lleva los roles funcionales; teoria.acceder abre la vista.
+-- Los admin también entran (aunque no tengan el rol 'teoria' asignado).
+CREATE OR REPLACE FUNCTION puede_ver_teoria() RETURNS boolean
+LANGUAGE sql STABLE AS $$
+    SELECT tiene_permiso('teoria.acceder') OR es_admin();
+$$;
+
+-- Marca (o remarca) un fichero como visto por el usuario actual.
+CREATE OR REPLACE FUNCTION marcar_fichero_visto(p_ruta text) RETURNS void
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF jwt_usuario_id() IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
+    INSERT INTO ficheros_vistas(usuario_id, ruta, vista_en)
+    VALUES (jwt_usuario_id(), p_ruta, now())
+    ON CONFLICT (usuario_id, ruta) DO UPDATE
+        SET vista_en = EXCLUDED.vista_en;
+END $$;
+
+CREATE OR REPLACE FUNCTION marcar_fichero_no_visto(p_ruta text) RETURNS void
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF jwt_usuario_id() IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
+    DELETE FROM ficheros_vistas
+     WHERE usuario_id = jwt_usuario_id() AND ruta = p_ruta;
+END $$;
+
+-- Devuelve las rutas vistas cuyo prefijo coincide con p_prefijo (útil para
+-- pintar el estado 'visto' en la vista de una carpeta sin traer todo el
+-- historial). Si p_prefijo es NULL/'' devuelve todas.
+CREATE OR REPLACE FUNCTION mis_ficheros_vistos(p_prefijo text DEFAULT NULL) RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'ruta',     ruta,
+        'vista_en', vista_en
+    ) ORDER BY vista_en DESC), '[]'::jsonb)
+    FROM ficheros_vistas
+    WHERE usuario_id = jwt_usuario_id()
+      AND (p_prefijo IS NULL OR p_prefijo = '' OR ruta LIKE p_prefijo || '%');
+$$;
+
+-- Al mover o renombrar un fichero desde el panel de admin, ajustamos las
+-- marcas 'visto' para que sigan apuntando al nuevo path. Se llama desde el
+-- backend de teoría después de mover en disco.
+CREATE OR REPLACE FUNCTION renombrar_ruta_vistas(p_origen text, p_destino text) RETURNS int
+LANGUAGE plpgsql AS $$
+DECLARE v_n int;
+BEGIN
+    IF NOT (tiene_permiso('teoria.gestionar') OR es_admin()) THEN
+        RAISE EXCEPTION 'permiso_denegado';
+    END IF;
+    -- Fichero suelto: match exacto.
+    UPDATE ficheros_vistas
+       SET ruta = p_destino
+     WHERE ruta = p_origen;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    IF v_n = 0 THEN
+        -- Carpeta: reescribe el prefijo.
+        UPDATE ficheros_vistas
+           SET ruta = p_destino || substring(ruta from length(p_origen) + 1)
+         WHERE ruta LIKE p_origen || '/%';
+        GET DIAGNOSTICS v_n = ROW_COUNT;
+    END IF;
+    RETURN v_n;
+END $$;
+
+CREATE OR REPLACE FUNCTION borrar_ruta_vistas(p_ruta text) RETURNS int
+LANGUAGE plpgsql AS $$
+DECLARE v_n int;
+BEGIN
+    IF NOT (tiene_permiso('teoria.gestionar') OR es_admin()) THEN
+        RAISE EXCEPTION 'permiso_denegado';
+    END IF;
+    DELETE FROM ficheros_vistas
+     WHERE ruta = p_ruta OR ruta LIKE p_ruta || '/%';
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    RETURN v_n;
+END $$;
+
+
+-- =============================================================================
 --                                 ADMIN
 -- =============================================================================
 
@@ -2317,6 +2426,13 @@ GRANT EXECUTE ON FUNCTION resumen_repaso_global()                     TO web_use
 GRANT EXECUTE ON FUNCTION preguntas_repaso_test(uuid, int, boolean)   TO web_user;
 GRANT EXECUTE ON FUNCTION preguntas_repaso_global(int, boolean)       TO web_user;
 
+GRANT EXECUTE ON FUNCTION puede_ver_teoria()                          TO web_user;
+GRANT EXECUTE ON FUNCTION marcar_fichero_visto(text)                  TO web_user;
+GRANT EXECUTE ON FUNCTION marcar_fichero_no_visto(text)               TO web_user;
+GRANT EXECUTE ON FUNCTION mis_ficheros_vistos(text)                   TO web_user;
+GRANT EXECUTE ON FUNCTION renombrar_ruta_vistas(text, text)           TO web_user;
+GRANT EXECUTE ON FUNCTION borrar_ruta_vistas(text)                    TO web_user;
+
 GRANT EXECUTE ON FUNCTION listar_usuarios()                           TO web_user;
 GRANT EXECUTE ON FUNCTION listar_roles()                              TO web_user;
 GRANT EXECUTE ON FUNCTION asignar_rol(uuid,text)                      TO web_user;
@@ -2345,7 +2461,8 @@ END $$;
 INSERT INTO roles (id, descripcion) VALUES
     ('admin',  'Acceso total al sistema'),
     ('editor', 'Puede crear y editar preguntas, tests y temas'),
-    ('alumno', 'Puede realizar tests y consultar su propio progreso')
+    ('alumno', 'Puede realizar tests y consultar su propio progreso'),
+    ('teoria', 'Puede acceder al material de teoría')
 ON CONFLICT (id) DO NOTHING;
 
 -- ── Permisos y su mapeo a roles ─────────────────────────────────────────────
@@ -2360,9 +2477,12 @@ INSERT INTO permisos (id, descripcion) VALUES
     ('etiqueta.gestionar','Crear, editar y borrar etiquetas del catálogo'),
     ('usuario.gestionar', 'Dar de alta usuarios y asignarles roles'),
     ('backup.descargar',  'Descargar copias de seguridad de la base de datos'),
-    ('test.realizar',     'Realizar tests y registrar respuestas')
+    ('test.realizar',     'Realizar tests y registrar respuestas'),
+    ('teoria.acceder',    'Ver y descargar ficheros de teoría'),
+    ('teoria.gestionar',  'Subir, mover, editar y borrar ficheros de teoría')
 ON CONFLICT (id) DO NOTHING;
 
+-- 'admin' hereda todos los permisos automáticamente vía este bulk insert.
 INSERT INTO rol_permisos (rol_id, permiso_id)
 SELECT 'admin', id FROM permisos
 ON CONFLICT DO NOTHING;
@@ -2377,7 +2497,11 @@ INSERT INTO rol_permisos (rol_id, permiso_id) VALUES
     ('editor', 'test.publicar'),
     ('editor', 'etiqueta.gestionar'),
     ('editor', 'test.realizar'),
-    ('alumno', 'test.realizar')
+    ('alumno', 'test.realizar'),
+    -- El rol 'teoria' solo abre la puerta a leer la teoría, no a
+    -- realizar tests ni a gestionarla. Se combina con 'alumno' cuando
+    -- corresponda.
+    ('teoria', 'teoria.acceder')
 ON CONFLICT DO NOTHING;
 
 -- ── Usuario administrador inicial (lee GUC app.admin_pass) ──────────────────

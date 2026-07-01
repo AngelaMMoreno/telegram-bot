@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aprentix</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <div class="brand">
+        <span class="logo-dot"></span>
+        <span class="brand-name">Aprentix</span>
+      </div>
+      <p class="lead">Tu plataforma de estudio: tests y teoría, en un mismo sitio.</p>
+    </header>
+
+    <!-- Login (mientras no hay sesión) -->
+    <section id="login" class="card-panel">
+      <h2>Inicia sesión</h2>
+      <form id="form-login" autocomplete="on">
+        <label>Usuario
+          <input name="username" required autofocus autocomplete="username">
+        </label>
+        <label>Contraseña
+          <input name="password" type="password" required autocomplete="current-password">
+        </label>
+        <button class="btn btn-pri" type="submit">Entrar</button>
+        <div id="login-error" class="err" hidden></div>
+      </form>
+      <details class="reg-toggle">
+        <summary>¿No tienes cuenta? Regístrate</summary>
+        <form id="form-registro" autocomplete="off">
+          <label>Usuario nuevo
+            <input name="username" required minlength="3">
+          </label>
+          <label>Contraseña
+            <input name="password" type="password" required minlength="6">
+          </label>
+          <label>Email (opcional)
+            <input name="email" type="email">
+          </label>
+          <button class="btn btn-sec" type="submit">Crear cuenta</button>
+          <div id="reg-error" class="err" hidden></div>
+        </form>
+      </details>
+    </section>
+
+    <!-- Selector (una vez logueado) -->
+    <section id="chooser" class="chooser" hidden>
+      <div class="welcome">
+        <span>Hola, <strong id="who"></strong></span>
+        <button id="btn-logout" class="btn btn-ghost-dark">Salir</button>
+      </div>
+      <div class="apps">
+        <a class="app-card tests" href="https://test.aprentix.es">
+          <div class="app-emoji">📝</div>
+          <div class="app-title">Tests</div>
+          <div class="app-desc">Cuestionarios, simulacros, repasos espaciados y estadísticas.</div>
+          <div class="app-cta">Entrar →</div>
+        </a>
+        <a class="app-card teoria" id="tarjeta-teoria" href="https://teoria.aprentix.es" hidden>
+          <div class="app-emoji">📚</div>
+          <div class="app-title">Teoría</div>
+          <div class="app-desc">Apuntes, PDFs y material de estudio organizado por temas.</div>
+          <div class="app-cta">Entrar →</div>
+        </a>
+        <div class="app-card locked" id="tarjeta-teoria-bloqueada" hidden>
+          <div class="app-emoji">🔒</div>
+          <div class="app-title">Teoría</div>
+          <div class="app-desc">Habla con el administrador para activar el acceso al material.</div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <span>© Aprentix</span>
+    </footer>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -34,9 +34,13 @@ edita `01_esquema.sql` y (si la base ya está en producción) escribe el
 | `web_anon` | ❌ | Endpoints públicos (login, registro, `leer_config`). |
 | `web_user` | ❌ | Sesión autenticada; la identidad y roles funcionales llegan por JWT. |
 
-Los roles funcionales de la aplicación (`admin`, `editor`, `alumno`) NO
-son roles Postgres: viven en la tabla `roles` y se comprueban con
-`tiene_permiso()` / `es_admin()` desde las políticas RLS.
+Los roles funcionales de la aplicación (`admin`, `editor`, `alumno`,
+`teoria`) NO son roles Postgres: viven en la tabla `roles` y se
+comprueban con `tiene_permiso()` / `es_admin()` desde las políticas RLS.
+El rol `teoria` abre la puerta al material de teoría (`teoria.acceder`)
+y es completamente ortogonal a los demás: un mismo usuario puede tener
+`alumno + teoria`, o solo `teoria` si únicamente ha contratado la
+teoría.
 
 **Secretos como GUCs personalizados** (inyectados por `docker-compose`
 con `-c app.xxx=...`):
@@ -75,6 +79,8 @@ erDiagram
     usuarios ||--o{ preferencias_usuario   : "prefiere"
     usuarios ||--o{ repasos                : "estudia"
     preguntas||--o{ repasos                : "en caja"
+
+    usuarios ||--o{ ficheros_vistas        : "leyó"
 
     catalogo_etiquetas ||--o{ catalogo_etiquetas : "padre"
     cola_embeddings }o..|| preguntas             : "encola"
@@ -327,6 +333,26 @@ desincronización.
 Índice: `(usuario_id, ultima_en)`.
 RLS: cada usuario solo las suyas.
 
+### 3.7 Teoría — ficheros vistos
+
+#### `ficheros_vistas`
+
+Marca por (usuario, ruta) del material de teoría que ya ha visitado. La
+ruta es la que la SPA muestra en la barra de navegación (siempre
+absoluta, empezando por `/`), no la ruta en disco. El servicio de
+teoría normaliza antes de insertar. Ver el fichero implicitamente
+marca (via RPC `marcar_fichero_visto`); la SPA también expone un
+toggle para marcarlo como no visto de nuevo.
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `usuario_id` | `uuid` FK → usuarios | Parte de la PK. DEFAULT `jwt_usuario_id()`. |
+| `ruta` | `text` | Parte de la PK. |
+| `vista_en` | `timestamptz` DEFAULT now() | Cuándo se marcó por última vez. |
+
+Índice: `(usuario_id)` además de la PK.
+RLS: cada usuario ve/edita las suyas; admin ve todas.
+
 ---
 
 ## 4. Funciones (RPCs expuestas por PostgREST)
@@ -506,7 +532,27 @@ Auxiliares invisibles al cliente pero clave para el resto del sistema.
 - **`preguntas_repaso_global(n=20, adelantar=false) → jsonb`** — idem
   cross-test.
 
-### 4.11 Admin
+### 4.11 Teoría (vistas)
+
+El backend Python del servicio de teoría se encarga del disco (listar,
+subir, mover, borrar). Estas RPCs solo tocan `ficheros_vistas` y la
+lógica de permisos que consume la landing.
+
+- **`puede_ver_teoria() → boolean`** — atajo `tiene_permiso('teoria.acceder') OR es_admin()`.
+  La landing lo llama tras el login para decidir si mostrar la tarjeta
+  de teoría.
+- **`marcar_fichero_visto(ruta) → void`** — upsert en `ficheros_vistas`.
+- **`marcar_fichero_no_visto(ruta) → void`** — quita la marca.
+- **`mis_ficheros_vistos(prefijo?) → jsonb`** — array `[{ruta, vista_en}]`
+  filtrado por prefijo de ruta (para pintar el estado en la vista de
+  una carpeta sin traer todo el historial).
+- **`renombrar_ruta_vistas(origen, destino) → int`** — reajusta las
+  marcas cuando el admin mueve/renombra un fichero o una carpeta.
+  Requiere `teoria.gestionar`.
+- **`borrar_ruta_vistas(ruta) → int`** — limpia las marcas al borrar
+  un fichero/carpeta. Requiere `teoria.gestionar`.
+
+### 4.12 Admin
 
 Todas requieren `es_admin()` en el JWT. Son `SECURITY DEFINER` para
 poder escribir en tablas donde el rol `web_user` no tendría permiso
@@ -521,7 +567,7 @@ directo salvo por RLS.
   longitud mínima 6.
 - **`set_usuario_activo(usuario_id, activo) → void`** — soft-disable.
 
-### 4.12 Config
+### 4.13 Config
 
 - **`leer_config() → jsonb`** — objeto plano con todo `config`.
   Accesible a `web_anon` y `web_user`.

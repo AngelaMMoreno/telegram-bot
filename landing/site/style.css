@@ -1,0 +1,162 @@
+:root {
+  --pri: #6366F1;
+  --pri-d: #4F46E5;
+  --pri-light: #EEF2FF;
+  --bg: #F1F5F9;
+  --card: #fff;
+  --text: #0F172A;
+  --sub: #64748B;
+  --border: #E2E8F0;
+  --danger: #EF4444;
+  --danger-light: #FEE2E2;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { min-height: 100%; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--text);
+  background: linear-gradient(180deg, #EEF2FF 0%, #F1F5F9 300px, #F1F5F9 100%);
+}
+button, a { font: inherit; }
+
+.wrap {
+  max-width: 960px; margin: 0 auto;
+  padding: 40px 24px 60px;
+  display: flex; flex-direction: column; gap: 32px;
+}
+
+/* ── Hero ────────────────────────────────────────────────────────────── */
+.hero { text-align: center; margin-top: 20px; }
+.brand {
+  display: inline-flex; align-items: center; gap: 12px;
+  padding: 8px 16px; border-radius: 999px;
+  background: rgba(99,102,241,.1); color: var(--pri-d);
+  font-weight: 700;
+}
+.logo-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--pri); box-shadow: 0 0 0 4px rgba(99,102,241,.2);
+}
+.brand-name { font-size: 18px; letter-spacing: .5px; }
+.lead {
+  margin-top: 18px;
+  font-size: 20px; color: var(--sub);
+}
+
+/* ── Login card ─────────────────────────────────────────────────────── */
+.card-panel {
+  background: var(--card);
+  border-radius: 20px;
+  padding: 28px 32px;
+  max-width: 460px; width: 100%;
+  margin: 0 auto;
+  box-shadow: 0 8px 30px rgba(15,23,42,.08);
+  border: 1px solid var(--border);
+}
+.card-panel h2 {
+  font-size: 20px; margin-bottom: 20px;
+  color: var(--text);
+}
+form { display: flex; flex-direction: column; gap: 14px; }
+label {
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 12.5px; font-weight: 600; color: var(--sub);
+}
+input {
+  padding: 11px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  font-size: 14px; color: var(--text);
+  background: #fff;
+  outline: none;
+  transition: border-color .12s, box-shadow .12s;
+}
+input:focus { border-color: var(--pri); box-shadow: 0 0 0 4px rgba(99,102,241,.15); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 11px 16px; border-radius: 10px; border: none;
+  font-size: 14px; font-weight: 700;
+  cursor: pointer;
+  transition: opacity .15s, transform .1s;
+}
+.btn:hover { opacity: .92; transform: translateY(-1px); }
+.btn-pri { background: linear-gradient(135deg, var(--pri), #8B5CF6); color: #fff; }
+.btn-sec { background: var(--pri-light); color: var(--pri-d); }
+.btn-ghost-dark {
+  background: transparent; color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.err {
+  background: var(--danger-light);
+  color: var(--danger);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.reg-toggle {
+  margin-top: 20px;
+  border-top: 1px solid var(--border);
+  padding-top: 18px;
+}
+.reg-toggle summary {
+  cursor: pointer;
+  font-size: 13.5px; color: var(--pri-d); font-weight: 600;
+  padding: 6px 0;
+}
+.reg-toggle summary:hover { color: var(--pri); }
+.reg-toggle form { margin-top: 14px; }
+
+/* ── Chooser ───────────────────────────────────────────────────────── */
+.chooser {
+  display: flex; flex-direction: column; gap: 20px;
+}
+.welcome {
+  display: flex; justify-content: space-between; align-items: center;
+  background: #fff; border: 1px solid var(--border);
+  border-radius: 14px; padding: 14px 20px;
+  font-size: 14px; color: var(--sub);
+  flex-wrap: wrap; gap: 10px;
+}
+.welcome strong { color: var(--text); }
+
+.apps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+}
+.app-card {
+  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: 18px;
+  padding: 26px 22px;
+  display: flex; flex-direction: column; gap: 10px;
+  color: var(--text);
+  text-decoration: none;
+  transition: transform .12s, box-shadow .12s, border-color .12s;
+  cursor: pointer;
+}
+.app-card:hover:not(.locked) {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 30px rgba(99,102,241,.18);
+  border-color: var(--pri);
+}
+.app-emoji { font-size: 48px; }
+.app-title { font-size: 20px; font-weight: 700; }
+.app-desc { color: var(--sub); font-size: 14px; line-height: 1.4; }
+.app-cta { margin-top: 6px; color: var(--pri-d); font-weight: 700; font-size: 14px; }
+.app-card.locked {
+  opacity: .55; cursor: not-allowed;
+  background: var(--bg);
+}
+
+/* ── Footer ────────────────────────────────────────────────────────── */
+.foot {
+  text-align: center;
+  color: var(--sub);
+  font-size: 12px;
+  margin-top: 20px;
+}
