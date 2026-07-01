@@ -729,7 +729,7 @@ $("#btn-borrar-test-y-preguntas").addEventListener("click", async () => {
 });
 
 /* ── Quiz engine ── */
-async function startQuiz(title, testId, questions, tipo = "quiz") {
+async function startQuiz(title, testId, questions, tipo = "quiz", opts = {}) {
   cancelarTimerQuiz();
   // Baraja preguntas y opciones de cada una
   const shuffled = [...questions].sort(() => Math.random() - 0.5).map(q => {
@@ -763,10 +763,12 @@ async function startQuiz(title, testId, questions, tipo = "quiz") {
     answered: false,
     intentoId,
     tiempoPorPregunta: getTiempo(),
+    adelantada: !!opts.adelantada,
   };
   state.qi = 0;
   navigate("quiz");
-  $("#quiz-title").textContent = title;
+  $("#quiz-title").textContent = title +
+    (opts.adelantada ? "  ·  ⏩ adelantado" : "");
   renderPregunta();
 }
 
@@ -862,6 +864,7 @@ async function responder(idx, saltada = false) {
         p_pregunta_id: q.id,
         p_texto:       textoSel,
         p_correcta:    correcta,
+        p_adelantada:  !!state.quiz.adelantada,
       });
     } catch (_) {}
   }
@@ -1408,6 +1411,257 @@ function cerrarModalUsuario() {
 }
 
 $("#modal-usuario-close").addEventListener("click", cerrarModalUsuario);
+
+
+/* ── Repaso espaciado ────────────────────────────────────────────────────
+ *
+ * Dos entradas: "Repasar test" (individual, botón en el detalle del test)
+ * y "Repasar todo" (global, botón en la pestaña de tests). Ambos usan el
+ * mismo motor.
+ *
+ * Cuando NO hay vencidas, se muestra un modal con la fecha del siguiente
+ * repaso y opción de "Adelantar" (que arranca el quiz con adelantada=true,
+ * de forma que los aciertos NO reprograman la caja).
+ */
+
+const RITMO_LABELS = {
+  intensivo: { emoji: "🔥", nombre: "Intensivo",
+               desc: "Para semanas previas a examen. Verás preguntas nuevas varias veces el mismo día." },
+  normal:    { emoji: "🎯", nombre: "Normal",
+               desc: "Leitner clásico. Para aprendizaje continuo." },
+  relajado:  { emoji: "🌱", nombre: "Relajado",
+               desc: "Mantenimiento. Para no oxidarte cuando ya te sabes el temario." },
+};
+
+function fmtHoras(h) {
+  if (h < 24) return h + " h";
+  const d = Math.round(h / 24);
+  if (d < 30) return d + " d";
+  const m = Math.round(d / 30);
+  return m + " mes" + (m > 1 ? "es" : "");
+}
+
+function fmtFechaRelativa(iso) {
+  if (!iso) return "—";
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return "vencido";
+  const min = Math.round(ms / 60000);
+  if (min < 60) return `en ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 48) return `en ${h} h`;
+  const d = Math.round(h / 24);
+  return `en ${d} d`;
+}
+
+/* Botón "Repasar todo" en la pestaña de tests */
+$("#btn-repasar-todo")?.addEventListener("click", async () => {
+  try {
+    const r = await rpc("resumen_repaso_global");
+    abrirModalRepasoN({
+      titulo: "Repasar todo (vencidas globales)",
+      info: `${r.vencidas} vencidas · ${r.total_repasos} preguntas en repaso.`,
+      onEmpezar: async (n) => arrancarRepasoGlobal(n, false),
+      sinVencidas: r.vencidas === 0,
+      siguiente:   r.siguiente,
+      onAdelantar: (n) => arrancarRepasoGlobal(n, true),
+    });
+  } catch (e) { toast(e.message); }
+});
+
+/* Botón "Repasar" en el detalle del test */
+$("#btn-repasar-test")?.addEventListener("click", async () => {
+  if (!state.currentTestId) return;
+  try {
+    const r = await rpc("resumen_repaso_test", { p_test_id: state.currentTestId });
+    if (!r.test_realizado) {
+      toast("Aún no has hecho este test. Empieza por 'Empezar test'.");
+      return;
+    }
+    abrirModalRepasoN({
+      titulo: `Repasar: ${state.currentTest?.quiz?.title || "test"}`,
+      info: `${r.vencidas} vencidas de ${r.total_repasos} en repaso · ${r.dominadas} dominadas.`,
+      onEmpezar: async (n) => arrancarRepasoTest(state.currentTestId, n, false),
+      sinVencidas: r.vencidas === 0,
+      siguiente:   r.siguiente,
+      onAdelantar: (n) => arrancarRepasoTest(state.currentTestId, n, true),
+    });
+  } catch (e) { toast(e.message); }
+});
+
+/* Modal de "elige N y empieza". Si no hay vencidas, salta al modal de adelantar. */
+function abrirModalRepasoN({ titulo, info, onEmpezar, sinVencidas, siguiente, onAdelantar }) {
+  if (sinVencidas) {
+    abrirModalSinVencidas({ titulo, siguiente, onAdelantar });
+    return;
+  }
+  $("#repaso-n-titulo").textContent = titulo;
+  $("#repaso-n-info").textContent   = info;
+  const modal = $("#modal-repaso-n");
+  modal.classList.remove("hidden");
+  const cerrar = () => {
+    modal.classList.add("hidden");
+    $("#btn-repaso-n-empezar").onclick   = null;
+    $("#btn-repaso-n-cancelar").onclick  = null;
+    $("#repaso-n-close").onclick         = null;
+  };
+  $("#btn-repaso-n-empezar").onclick = async () => {
+    const n = Math.max(1, parseInt($("#repaso-n-n").value, 10) || 20);
+    cerrar();
+    await onEmpezar(n);
+  };
+  $("#btn-repaso-n-cancelar").onclick = cerrar;
+  $("#repaso-n-close").onclick        = cerrar;
+}
+
+function abrirModalSinVencidas({ titulo, siguiente, onAdelantar }) {
+  $("#repaso-sv-titulo").textContent = titulo;
+  const fecha = siguiente ? fmtFechaRelativa(siguiente) : "sin más preguntas programadas";
+  $("#repaso-sv-msg").textContent =
+    `Sin vencidas ahora mismo. Siguiente vence ${fecha}.`;
+  const modal = $("#modal-repaso-sin-vencidas");
+  modal.classList.remove("hidden");
+  const cerrar = () => {
+    modal.classList.add("hidden");
+    $("#btn-repaso-sv-adelantar").onclick = null;
+    $("#btn-repaso-sv-cancelar").onclick  = null;
+    $("#repaso-sv-close").onclick         = null;
+  };
+  $("#btn-repaso-sv-adelantar").onclick = async () => {
+    const n = Math.max(1, parseInt($("#repaso-sv-n").value, 10) || 20);
+    cerrar();
+    await onAdelantar(n);
+  };
+  $("#btn-repaso-sv-cancelar").onclick = cerrar;
+  $("#repaso-sv-close").onclick        = cerrar;
+}
+
+async function arrancarRepasoTest(testId, n, adelantar) {
+  try {
+    const d = await rpc("preguntas_repaso_test", {
+      p_test_id: testId, p_n: n, p_adelantar: !!adelantar,
+    });
+    if (!d.questions || d.questions.length === 0) {
+      toast("No hay preguntas para repasar");
+      return;
+    }
+    const tipo  = adelantar ? "repaso_adelantado" : "repaso_test";
+    const title = "Repaso · " + (d.quiz?.title || "test");
+    await startQuiz(title, testId, d.questions, tipo, { adelantada: !!adelantar });
+  } catch (e) { toast(e.message); }
+}
+
+async function arrancarRepasoGlobal(n, adelantar) {
+  try {
+    const d = await rpc("preguntas_repaso_global", {
+      p_n: n, p_adelantar: !!adelantar,
+    });
+    if (!d.questions || d.questions.length === 0) {
+      toast("No hay preguntas para repasar");
+      return;
+    }
+    const tipo  = adelantar ? "repaso_adelantado" : "repaso_global";
+    const title = "Repaso global";
+    await startQuiz(title, null, d.questions, tipo, { adelantada: !!adelantar });
+  } catch (e) { toast(e.message); }
+}
+
+/* Actualizar contadores (badges) al cargar tests o abrir detalle */
+async function refrescarBadgeGlobal() {
+  const badge = $("#repaso-global-badge");
+  if (!badge) return;
+  try {
+    const r = await rpc("resumen_repaso_global");
+    if (r.vencidas > 0) {
+      badge.textContent = r.vencidas;
+      badge.classList.remove("hidden", "calma");
+    } else {
+      badge.classList.add("hidden");
+    }
+  } catch (_) { badge.classList.add("hidden"); }
+}
+
+async function refrescarBadgeTest(testId) {
+  const badge = $("#repaso-test-badge");
+  const boton = $("#btn-repasar-test");
+  if (!badge || !boton) return;
+  try {
+    const r = await rpc("resumen_repaso_test", { p_test_id: testId });
+    if (!r.test_realizado) {
+      boton.classList.add("hidden");
+      return;
+    }
+    boton.classList.remove("hidden");
+    if (r.vencidas > 0) {
+      badge.textContent = r.vencidas;
+      badge.classList.remove("hidden", "calma");
+    } else {
+      badge.textContent = "0";
+      badge.classList.remove("hidden");
+      badge.classList.add("calma");
+    }
+  } catch (_) { badge.classList.add("hidden"); }
+}
+
+/* Hook: cuando se carga la lista de tests, refrescamos badge global */
+(function hookLoadTests() {
+  if (typeof loadTests !== "function") return;
+  const orig = loadTests;
+  loadTests = async function(...args) {
+    const r = await orig.apply(this, args);
+    refrescarBadgeGlobal();
+    return r;
+  };
+})();
+
+/* Hook: cuando se carga el detalle de un test, refrescamos su badge */
+(function hookLoadTestDetail() {
+  if (typeof loadTestDetail !== "function") return;
+  const orig = loadTestDetail;
+  loadTestDetail = async function(testId, ...rest) {
+    const r = await orig.call(this, testId, ...rest);
+    refrescarBadgeTest(testId);
+    return r;
+  };
+})();
+
+/* ── Ritmo de repaso (preferencia por usuario) ────────────────────────── */
+$("#btn-abrir-ritmo")?.addEventListener("click", async () => {
+  try {
+    const d = await rpc("mi_ritmo_repaso");
+    const actual = d.ritmo || "normal";
+    const curvas = d.curvas || {};
+    const html = ["intensivo", "normal", "relajado"].map(k => {
+      const meta = RITMO_LABELS[k];
+      const horas = curvas[k] || [];
+      const preview = horas.map(fmtHoras).join(" → ");
+      return `
+        <div class="ritmo-card ${k===actual?"active":""}" data-ritmo="${k}">
+          <div class="titulo">${meta.emoji} ${meta.nombre} ${k===actual?"<span class='muted small'>(actual)</span>":""}</div>
+          <div class="muted small">${meta.desc}</div>
+          <div class="curva">${esc(preview)}</div>
+        </div>`;
+    }).join("");
+    $("#ritmo-opciones").innerHTML = html;
+    $("#modal-ritmo").classList.remove("hidden");
+  } catch (e) { toast(e.message); }
+});
+
+$("#ritmo-opciones")?.addEventListener("click", async e => {
+  const card = e.target.closest("[data-ritmo]");
+  if (!card) return;
+  try {
+    await rpc("set_ritmo_repaso", { p_ritmo: card.dataset.ritmo });
+    toast(`Ritmo cambiado a ${RITMO_LABELS[card.dataset.ritmo].nombre}`);
+    $("#modal-ritmo").classList.add("hidden");
+  } catch (err) { toast(err.message); }
+});
+
+$("#modal-ritmo-close")?.addEventListener("click", () => {
+  $("#modal-ritmo").classList.add("hidden");
+});
+$("#btn-ritmo-cancelar")?.addEventListener("click", () => {
+  $("#modal-ritmo").classList.add("hidden");
+});
 
 
 /* ── Arranque ───────────────────────────────────────────────────────────── */

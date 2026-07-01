@@ -44,6 +44,7 @@
   <button class="nav-item gestion" data-view="etiquetas">🏷️ Etiquetas</button>
   <button class="nav-item solo-admin" data-view="usuarios">👥 Usuarios</button>
   <button class="nav-item" data-view="progreso">📈 Progreso</button>
+  <button class="nav-item" id="btn-abrir-ritmo" title="Ritmo de repaso">⚙️ Ritmo de repaso</button>
 </nav>
 
 <main class="content">
@@ -103,6 +104,9 @@
     <header class="view-header">
       <h2>Tests</h2>
       <input id="tests-filter" type="search" placeholder="Filtrar por título…">
+      <button class="btn btn-primary" id="btn-repasar-todo" title="Repasar preguntas vencidas de tests ya realizados">
+        🔁 Repasar todo <span id="repaso-global-badge" class="badge hidden"></span>
+      </button>
     </header>
     <div class="tests-controls">
       <div id="tests-vis-chips" class="tag-chips">
@@ -136,6 +140,9 @@
           <span class="muted">s</span>
         </label>
         <button class="btn btn-primary" id="btn-start-test">Empezar test</button>
+        <button class="btn btn-primary" id="btn-repasar-test" title="Repaso espaciado de este test">
+          🔁 Repasar <span id="repaso-test-badge" class="badge hidden"></span>
+        </button>
         <button class="btn btn-ghost gestion" id="btn-delete-test">🗑️</button>
       </div>
     </header>
@@ -309,6 +316,72 @@
         <button class="btn btn-primary" id="btn-borrar-solo-test">🗑️ Borrar solo el test (conservar preguntas)</button>
         <button class="btn btn-danger" id="btn-borrar-test-y-preguntas">💥 Borrar test y preguntas exclusivas</button>
         <button class="btn btn-ghost" id="btn-borrar-test-cancelar">Cancelar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal "Sin vencidas ahora mismo" (repaso) -->
+<div id="modal-repaso-sin-vencidas" class="modal hidden">
+  <div class="modal-card">
+    <header class="modal-header">
+      <h3 id="repaso-sv-titulo">Sin vencidas ahora mismo</h3>
+      <button class="btn btn-ghost" id="repaso-sv-close">✕</button>
+    </header>
+    <div class="modal-body">
+      <p id="repaso-sv-msg" class="muted"></p>
+      <label class="muted small" style="display:block; margin-top:0.5rem">
+        Número de preguntas a adelantar
+        <input id="repaso-sv-n" type="number" min="1" max="500" value="20" style="width:6rem">
+      </label>
+      <div class="modal-actions" style="flex-direction:column; align-items:stretch; gap:0.5rem; margin-top:1rem">
+        <button class="btn btn-primary" id="btn-repaso-sv-adelantar">⏩ Adelantar repaso</button>
+        <button class="btn btn-ghost" id="btn-repaso-sv-cancelar">Cancelar</button>
+      </div>
+      <p class="muted small" style="margin-top:0.5rem">
+        En sesiones adelantadas, los aciertos no cambian la caja de las preguntas
+        (para no romper la curva de olvido); los fallos sí penalizan.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- Modal para elegir el número de preguntas en "Repasar" y "Repasar todo" -->
+<div id="modal-repaso-n" class="modal hidden">
+  <div class="modal-card">
+    <header class="modal-header">
+      <h3 id="repaso-n-titulo">Empezar repaso</h3>
+      <button class="btn btn-ghost" id="repaso-n-close">✕</button>
+    </header>
+    <div class="modal-body">
+      <p id="repaso-n-info" class="muted"></p>
+      <label class="muted small" style="display:block; margin-top:0.5rem">
+        Nº de preguntas
+        <input id="repaso-n-n" type="number" min="1" max="500" value="20" style="width:6rem">
+      </label>
+      <div class="modal-actions" style="flex-direction:column; align-items:stretch; gap:0.5rem; margin-top:1rem">
+        <button class="btn btn-primary" id="btn-repaso-n-empezar">▶️ Empezar</button>
+        <button class="btn btn-ghost" id="btn-repaso-n-cancelar">Cancelar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de ritmo de repaso -->
+<div id="modal-ritmo" class="modal hidden">
+  <div class="modal-card">
+    <header class="modal-header">
+      <h3>Ritmo de repaso</h3>
+      <button class="btn btn-ghost" id="modal-ritmo-close">✕</button>
+    </header>
+    <div class="modal-body">
+      <p class="muted small">
+        Elige la cadencia con la que quieres que se te repitan las preguntas.
+        Solo afecta a los intervalos futuros; las fechas ya programadas no cambian.
+      </p>
+      <div id="ritmo-opciones" class="ritmo-opciones"></div>
+      <div class="modal-actions" style="flex-direction:column; align-items:stretch; gap:0.5rem; margin-top:1rem">
+        <button class="btn btn-ghost" id="btn-ritmo-cancelar">Cerrar</button>
       </div>
     </div>
   </div>
