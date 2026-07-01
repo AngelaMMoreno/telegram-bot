@@ -1,180 +1,126 @@
 # Despliegue en Dokploy
 
-Esta guía explica cómo levantar el nuevo stack PostgreSQL/PostgREST/embeddings
-en paralelo al sistema actual (SQLite + bot/web/servidor), validar la
-migración y, cuando estés conforme, hacer el corte definitivo.
+Guía para levantar el stack (PostgreSQL + PostgREST + embeddings + web +
+pgAdmin) en Dokploy y servirlo en los dominios de producción.
 
-## 0. Coexistencia con el sistema actual
+Solo hay un stack: el basado en PostgreSQL. La aplicación anterior
+(SQLite + Flask + bot Python + servidor de archivos) ya no existe.
 
-El stack nuevo **no toca** nada del antiguo:
+## 1. Servicios que componen el stack
 
-| Sistema actual                 | Stack nuevo                |
-|--------------------------------|----------------------------|
-| Volumen `/mnt/data/bot/*.sqlite` | Volumen `/mnt/data/pg/`    |
-| Servicios `bot`, `web`, `servidor` | Servicios `db`, `postgrest`, `embeddings` |
-| Red `dokploy-network`          | Red `dokploy-network`      |
+| Servicio    | Imagen / build      | Dominio                                                    |
+|-------------|---------------------|------------------------------------------------------------|
+| `db`        | `pgvector/pgvector:pg16` | — (solo red interna `dokploy-network`)                 |
+| `postgrest` | `postgrest/postgrest:v12.2.3` | `api.aprentix.es` (`DOMINIO_API`)                 |
+| `web`       | build `./web` (Caddy) | `test.aprentix.es` **y** `www.aprentix.es`               |
+| `embeddings`| build `./embeddings` | — (worker interno)                                        |
+| `pgadmin`   | `dpage/pgadmin4:9`   | `pgadmin.aprentix.es` (`DOMINIO_PGADMIN`)                 |
 
-Pueden correr a la vez sin conflicto. El stack antiguo sigue sirviendo
-tráfico real mientras tú validas el nuevo.
+Postgres NO publica puerto al host: solo escucha en `dokploy-network`.
+El acceso administrativo entra por HTTPS vía pgAdmin.
 
-## 1. Crear la aplicación en Dokploy
+## 2. Crear la aplicación en Dokploy
 
-1. En Dokploy → **Create Compose Application**.
-2. Source: este repositorio, rama `claude/happy-volta-fd3oz5` (o `main`
-   tras el merge de la PR #90).
-3. Compose path: `docker-compose.yml` (raíz).
-4. En **Environment Variables** añade:
+1. Dokploy → **Create Compose Application**.
+2. Source: este repositorio, rama por defecto.
+3. Compose path: `docker-compose.yml`.
+4. **Environment Variables** (copiar de `.env.example` y rellenar):
 
-   | Clave                | Ejemplo / notas                                              |
-   |----------------------|--------------------------------------------------------------|
-   | `DB_PASS`            | contraseña fuerte para el rol `aprentix`                     |
-   | `AUTH_PASS`          | contraseña fuerte para el rol `autenticador` (PostgREST)     |
-   | `JWT_SECRET`         | mínimo 32 caracteres aleatorios (`openssl rand -hex 32`)     |
-   | `ADMIN_PASS`         | contraseña inicial del usuario `admin` (mínimo 8)            |
-   | `DOMINIO_API`        | `api.aprentix.es` (subdominio para PostgREST detrás de Traefik) |
-   | `DOMINIO_PGADMIN`    | `pgadmin.aprentix.es` (subdominio para pgAdmin)              |
-   | `PGADMIN_EMAIL`      | tu correo (login de pgAdmin)                                 |
-   | `PGADMIN_PASS`       | contraseña de pgAdmin                                        |
+   | Clave              | Ejemplo / notas                                              |
+   |--------------------|--------------------------------------------------------------|
+   | `DB_PASS`          | Contraseña fuerte del rol `aprentix`.                        |
+   | `AUTH_PASS`        | Contraseña del rol `autenticador` (PostgREST).               |
+   | `JWT_SECRET`       | ≥ 32 caracteres (`openssl rand -hex 32`).                    |
+   | `ADMIN_PASS`       | Contraseña inicial del usuario `admin` (mínimo 8).           |
+   | `DOMINIO_WEB`      | `test.aprentix.es` (SPA).                                    |
+   | `DOMINIO_WEB_ALT`  | `www.aprentix.es` (segundo Host).                            |
+   | `DOMINIO_API`      | `api.aprentix.es` (PostgREST).                               |
+   | `DOMINIO_PGADMIN`  | `pgadmin.aprentix.es`.                                       |
+   | `PGADMIN_EMAIL`    | Correo del login de pgAdmin.                                 |
+   | `PGADMIN_PASS`     | Contraseña de pgAdmin.                                       |
 
-5. Crea los registros DNS **A** de `DOMINIO_API` y `DOMINIO_PGADMIN`
-   apuntando a la IP del servidor (los necesita Let's Encrypt).
+5. Crea los registros DNS **A** apuntando a la IP del servidor para
+   cada uno de los cuatro dominios (Let's Encrypt los necesita
+   accesibles antes de emitir el certificado).
 6. **Deploy**.
 
-Dokploy ejecutará `docker compose up -d db pgadmin postgrest embeddings`.
-El servicio `migracion` queda fuera porque está bajo el perfil
-`herramientas` y solo se lanza a demanda.
+Dokploy ejecuta `docker compose up -d`. Al arrancar, `db` corre
+`db/init/01_esquema.sql` (crea tablas, funciones, RLS, seed y usuario
+`admin`).
 
-**Postgres no publica ningún puerto al host**: solo escucha dentro de
-`dokploy-network`. El acceso desde fuera se hace exclusivamente vía
-pgAdmin por HTTPS (puerto 443, que ya tienes abierto).
-
-## 2. Verificar que Postgres arrancó
+## 3. Verificación rápida
 
 Desde el host del servidor:
 
 ```bash
 docker compose -f /etc/dokploy/applications/<id>/code/docker-compose.yml ps
-docker compose -f .../docker-compose.yml logs db --tail=80
+docker compose ... logs db --tail=80
+docker compose ... logs web postgrest embeddings --tail=40
 ```
 
-Deberías ver `database system is ready to accept connections` y la
-ejecución de `01_schema.sql`, `02_seed.sql`, `03_funciones.sql`.
+En los logs de `db` debes ver `database system is ready to accept
+connections` y la ejecución de `01_esquema.sql`.
 
-## 3. Conectarte vía pgAdmin
+En el navegador:
 
-1. Entra en `https://pgadmin.aprentix.es`.
-2. Login con `PGADMIN_EMAIL` / `PGADMIN_PASS`.
-3. En el panel izquierdo ya verás un servidor llamado **aprentix**
-   precargado (desde `pgadmin/servers.json`) apuntando a `db:5432`.
-4. Click derecho → *Connect Server*. Te pide la contraseña: introduce
-   `DB_PASS`. Puedes marcar *Save password* para no volver a pedirla.
-5. Listo: navegas el esquema, ejecutas SQL desde *Query Tool*, etc.
+- `https://test.aprentix.es` → SPA de Aprentix.
+- `https://www.aprentix.es` → misma SPA (segundo Host en la misma ruta Traefik).
+- `https://api.aprentix.es` → OpenAPI de PostgREST.
+- `https://pgadmin.aprentix.es` → panel de administración.
 
-> pgAdmin habla con Postgres por la red interna `dokploy-network`
-> (`db:5432`). Postgres no está accesible desde fuera del VPS, así que
-> **no necesitas abrir el puerto 5432** en el firewall de Oracle. Toda
-> la administración entra por HTTPS (443).
+## 4. Login inicial
 
-## 4. Lanzar la migración (modo prueba)
+- Usuario `admin` con la contraseña `ADMIN_PASS` que configuraste en
+  el `.env` (creada por el bloque final del `01_esquema.sql`).
+- Cualquier registro nuevo desde la pantalla de la SPA entra como
+  rol `alumno`; el admin puede promoverlo a `editor`/`admin` desde
+  el panel de usuarios.
 
-Desde el host del servidor, en el directorio del compose:
+## 5. Conexión con pgAdmin
 
-```bash
-docker compose run --rm migracion --dry-run
-```
+1. `https://pgadmin.aprentix.es` → login con `PGADMIN_EMAIL` /
+   `PGADMIN_PASS`.
+2. En el panel izquierdo aparece precargado el servidor
+   **aprentix** (`pgadmin/servers.json`) apuntando a `db:5432`.
+3. Click derecho → *Connect Server* → introducir `DB_PASS`. Marcar
+   *Save password* si se quiere persistir.
 
-Esto:
-
-1. Construye un contenedor Python efímero con `psycopg`.
-2. Monta el SQLite actual de `/mnt/data/bot` como **solo lectura**.
-3. Recorre todas las tablas y las vuelca al Postgres nuevo.
-4. Con `--dry-run` hace `ROLLBACK` al final: nada se persiste.
-
-Mira la salida y verifica que el número de usuarios, preguntas únicas,
-tests y respuestas tiene sentido.
-
-## 5. Migración real
-
-```bash
-docker compose run --rm migracion
-```
-
-Idempotente para usuarios/preguntas (usa `ON CONFLICT`). Si algo sale
-mal, puedes vaciar tablas en Postgres y repetir:
-
-```sql
--- conectado como usuario aprentix
-TRUNCATE marcadores, respuestas, intentos, test_preguntas, tests,
-         pregunta_temas, preguntas, usuario_roles, usuarios
-         RESTART IDENTITY CASCADE;
-```
-
-(no toques `roles`, `permisos`, `rol_permisos`: vienen del seed).
-
-## 6. Comprobaciones SQL útiles tras la migración
-
-```sql
--- Conteos básicos
-SELECT 'usuarios', count(*) FROM usuarios
-UNION ALL SELECT 'preguntas', count(*) FROM preguntas
-UNION ALL SELECT 'tests',     count(*) FROM tests
-UNION ALL SELECT 'intentos',  count(*) FROM intentos
-UNION ALL SELECT 'respuestas',count(*) FROM respuestas;
-
--- Preguntas reutilizadas en >1 test (lo que querías conseguir)
-SELECT p.id, p.enunciado, count(*) AS apariciones
-FROM test_preguntas tp JOIN preguntas p ON p.id = tp.pregunta_id
-GROUP BY p.id, p.enunciado HAVING count(*) > 1
-ORDER BY apariciones DESC LIMIT 20;
-
--- Estado del embeddings worker
-SELECT count(*) FILTER (WHERE procesado_en IS NULL) AS pendientes,
-       count(*) FILTER (WHERE procesado_en IS NOT NULL) AS hechos
-FROM cola_embeddings;
-```
-
-## 7. Backup / restauración
+## 6. Backup / restauración
 
 ```bash
 # Backup en el servidor
 docker compose exec db pg_dump -Fc -U aprentix -d aprentix \
     > db/backups/aprentix_$(date +%F).dump
 
-# Descarga al portátil
+# Descarga
 scp servidor:/.../db/backups/aprentix_*.dump ~/Backups/
 
-# Restauración en otro servidor (con el stack levantado vacío)
-cat aprentix_2026-06-25.dump | \
+# Restauración en otro servidor (con el stack levantado sobre BBDD vacía)
+cat aprentix_YYYY-MM-DD.dump | \
     docker compose exec -T db pg_restore -U aprentix -d aprentix -c
 ```
 
-## 8. Web nueva (web_pg) en `test-pg.aprentix.es`
+## 7. Cambios de esquema
 
-El stack incluye un servicio `web_pg` con Caddy que sirve la SPA y
-hace reverse-proxy de `/api/*` a PostgREST.  Convive con la web vieja
-(`test.aprentix.es`, Flask + SQLite) para que puedas comparar.
+El proyecto **no usa carpetas de migraciones**: el estado actual vive
+en un único fichero:
 
-1. Añade en Dokploy la variable `DOMINIO_WEB_PG=test-pg.aprentix.es`
-   (o el subdominio que prefieras) y crea el registro DNS apuntando
-   al servidor.
-2. Redeploy.
-3. Abre `https://test-pg.aprentix.es`.
+- `db/init/01_esquema.sql` — SQL autoritativo.
+- `db/ESTADO_BBDD.md` — documentación de referencia (tablas,
+  columnas, RPCs).
 
-### Crear un usuario (el migrador no trajo las contraseñas)
+Al cambiar el esquema:
 
-Las contraseñas viejas no se pudieron migrar (SQLite no las guardaba
-en hash compatible).  Hay dos formas:
+1. Edita `01_esquema.sql` y `ESTADO_BBDD.md`.
+2. Aplica el `ALTER`/`CREATE OR REPLACE` correspondiente contra la
+   BBDD viva (pgAdmin → *Query Tool*) — el fichero solo se ejecuta al
+   inicializar una BBDD vacía.
+3. Verifica en `pgadmin`.
 
-a) Crear cuenta nueva desde la pantalla de registro de la SPA.  Si
-   eres el primero te pondrá rol `alumno`; el admin (creado en seed
-   con `ADMIN_PASS`) puede subirte a `editor`/`admin`.
+## 8. Histórico de plazas para el simulacro
 
-b) Loguearte directo con `admin` / `ADMIN_PASS`.
-
-### Histórico de plazas para el simulacro
-
-El cálculo del simulacro lee la tabla `config`.  Si quieres reactivar
-los porcentajes de plazas 2022/2024, en pgAdmin → Query Tool:
+El cálculo del simulacro lee de la tabla `config`. Para rellenar los
+baremos históricos (pgAdmin → Query Tool):
 
 ```sql
 UPDATE config SET valor = '[[55,1],[50,200],[45,500]]'::jsonb
@@ -183,20 +129,3 @@ UPDATE config SET valor = '[[60,1],[55,150],[50,400]]'::jsonb
  WHERE clave = 'historico_2022';
 UPDATE config SET valor = '844'::jsonb WHERE clave = 'plazas_referencia';
 ```
-
-(Pon los valores reales — los que tenías en las env vars `HISTORICO_2024`
-y `HISTORICO_2022` del `web/` antiguo.)
-
-## 9. Cuándo cerrar el sistema viejo
-
-Cuando hayas validado en Postgres que los datos están bien, hayas
-reescrito `bot/` y `web/` contra PostgREST (siguientes fases) y
-quieras hacer el corte:
-
-1. Para `bot` y `web` viejos en Dokploy.
-2. (Opcional) `chmod a-w` sobre `/mnt/data/bot/*.sqlite` para
-   garantizar que nada escribe en SQLite.
-3. Despliega las nuevas versiones de `bot` y `web` apuntando a
-   `https://api.aprentix.es`.
-4. Cuando lleves una semana sin incidentes, borra el volumen
-   `/mnt/data/bot` (después de un último backup, claro).

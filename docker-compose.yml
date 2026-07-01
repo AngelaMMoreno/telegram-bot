@@ -8,9 +8,6 @@ version: "3.8"
 # Postgres NO publica puerto al host: solo escucha en la red interna de
 # Docker (dokploy-network), por la que también pasa el resto del stack.
 # Por tanto no hay puertos extra abiertos en el VPS aparte de 80/443.
-#
-# Convivencia: el stack actual (bot/web/servidor + SQLite en /mnt/data/bot)
-# sigue intacto.  Este stack usa /mnt/data/pg y /mnt/data/pgadmin.
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -101,19 +98,21 @@ services:
       - "traefik.http.routers.api.tls.certresolver=letsencrypt"
       - "traefik.http.services.api.loadbalancer.server.port=3000"
 
-  web_pg:
-    build: ./web_pg
+  web:
+    build: ./web
     depends_on:
       - postgrest
     restart: unless-stopped
     networks: [dokploy-network]
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.web_pg.rule=Host(`${DOMINIO_WEB_PG:-test-pg.aprentix.es}`)"
-      - "traefik.http.routers.web_pg.entrypoints=websecure"
-      - "traefik.http.routers.web_pg.tls=true"
-      - "traefik.http.routers.web_pg.tls.certresolver=letsencrypt"
-      - "traefik.http.services.web_pg.loadbalancer.server.port=80"
+      # Sirve la SPA en test.aprentix.es y www.aprentix.es (mismo backend).
+      # Se pueden sobreescribir con DOMINIO_WEB y DOMINIO_WEB_ALT.
+      - "traefik.http.routers.web.rule=Host(`${DOMINIO_WEB:-test.aprentix.es}`) || Host(`${DOMINIO_WEB_ALT:-www.aprentix.es}`)"
+      - "traefik.http.routers.web.entrypoints=websecure"
+      - "traefik.http.routers.web.tls=true"
+      - "traefik.http.routers.web.tls.certresolver=letsencrypt"
+      - "traefik.http.services.web.loadbalancer.server.port=80"
 
   embeddings:
     build: ./embeddings
@@ -129,28 +128,6 @@ services:
     volumes:
       - /mnt/data/embeddings_cache:/cache
     restart: unless-stopped
-    networks: [dokploy-network]
-
-  # ───────────────────────────────────────────────────────────────────────────
-  # Migración SQLite → Postgres bajo demanda:
-  #   docker compose run --rm migracion --dry-run
-  #   docker compose run --rm migracion
-  # ───────────────────────────────────────────────────────────────────────────
-  migracion:
-    image: python:3.11-slim
-    depends_on:
-      db:
-        condition: service_healthy
-    profiles: ["herramientas"]
-    working_dir: /app
-    environment:
-      DATABASE_URL: postgres://aprentix@db:5432/aprentix
-      PGPASSWORD: ${DB_PASS}
-      SQLITE_PATH: /sqlite/bot.db
-    volumes:
-      - ./migracion:/app:ro
-      - /mnt/data/bot:/sqlite:ro
-    entrypoint: ["sh", "-c", "pip install -q -r requirements.txt && python migrar_sqlite_a_pg.py \"$$@\"", "--"]
     networks: [dokploy-network]
 
 volumes:
