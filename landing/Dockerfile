@@ -1,6 +1,8 @@
 FROM caddy:2-alpine
 
-COPY Caddyfile /etc/caddy/Caddyfile
-COPY site      /srv
+# Build context es la raíz del repo (para poder incluir /shared).
+COPY landing/Caddyfile /etc/caddy/Caddyfile
+COPY landing/site      /srv
+COPY shared            /srv/shared
 
 EXPOSE 80

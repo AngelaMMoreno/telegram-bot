@@ -1,0 +1,105 @@
+/*
+ * Aprentix · cabecera unificada.
+ *
+ * Estilo compartido entre la app de tests y la de teoría. La landing usa
+ * un layout distinto (hero + apps grid) y no incluye esta hoja.
+ */
+
+/* display:contents hace que <aprentix-header> desaparezca del árbol de
+ * layout y su .topbar hija sea, a efectos de CSS Grid/Flex, hija directa
+ * de <body>. Así las apps que colocan la topbar en una zona de un grid
+ * (tests desktop) siguen funcionando sin cambios. */
+aprentix-header { display: contents; }
+
+.topbar {
+  display: flex; align-items: center; gap: 0.7rem;
+  height: var(--topbar-h);
+  padding: 0 0.8rem;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0;
+  z-index: 30;
+  color: var(--txt);
+}
+.hamburger {
+  background: none; border: 0; color: var(--txt);
+  font-size: 1.5rem; cursor: pointer;
+  padding: 0.35rem 0.5rem; line-height: 0;
+  display: inline-flex; align-items: center;
+}
+.brand {
+  display: inline-flex; align-items: center; gap: 8px;
+  color: var(--pri-d);
+  text-decoration: none;
+  font-weight: 700; font-size: 1.05rem;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--pri-soft);
+  transition: background 0.15s;
+}
+.brand:hover { background: var(--pri-glow); }
+.brand .brand-logo { width: 22px; height: 22px; }
+.brand-name { letter-spacing: 0.3px; }
+
+.hdr-nav {
+  display: none; align-items: center; gap: 4px;
+  background: var(--bg-soft);
+  padding: 4px; border-radius: 999px;
+}
+.nav-tab {
+  padding: 5px 14px; border-radius: 999px;
+  font-size: 0.85rem; font-weight: 600;
+  color: var(--txt-soft);
+  cursor: pointer; user-select: none;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+.nav-tab:hover:not(.active) { color: var(--txt); background: rgba(0, 0, 0, 0.04); }
+[data-theme="dark"] .nav-tab:hover:not(.active) { background: rgba(255, 255, 255, 0.08); }
+.nav-tab.active {
+  background: var(--pri); color: #fff;
+  cursor: default; pointer-events: none;
+}
+@media (min-width: 640px) { .hdr-nav { display: inline-flex; } }
+
+.hdr-spacer { flex: 1; min-width: 0; }
+
+.user-chip {
+  display: flex; align-items: center; gap: 0.4rem;
+  min-width: 0;
+}
+.user-btn {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  background: transparent; border: 0; padding: 4px 8px 4px 4px;
+  border-radius: 999px; cursor: pointer; color: var(--txt);
+  transition: background 0.15s;
+  font: inherit;
+}
+.user-btn:hover { background: var(--bg-soft); }
+.user-chip .avatar {
+  width: 34px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--grad-a), var(--grad-b));
+  color: #fff; font-weight: 700;
+  border-radius: 50%; font-size: 0.95rem;
+  user-select: none; flex: 0 0 auto;
+}
+.user-chip .user-name {
+  font-weight: 600; max-width: 90px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: none;
+}
+.btn-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px;
+  background: var(--bg-soft); color: var(--txt);
+  border: 0; border-radius: 50%;
+  cursor: pointer; padding: 0;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+}
+.btn-icon:hover { background: var(--pri-soft); color: var(--pri-d); }
+.btn-icon.danger-icon:hover { background: var(--danger); color: #fff; }
+.btn-icon:active { transform: scale(0.92); }
+
+@media (min-width: 600px) {
+  .user-chip .user-name { display: inline; max-width: 180px; }
+}

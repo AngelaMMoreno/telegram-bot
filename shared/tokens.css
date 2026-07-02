@@ -1,0 +1,94 @@
+/*
+ * Aprentix · design tokens compartidos.
+ *
+ * Único origen para paleta, tipografía y radios. Se incluye en las tres
+ * apps (landing, tests, teoría) para que cualquier cambio de marca se
+ * haga en un solo sitio.
+ *
+ * Los nombres canónicos son --txt/--txt-soft/--bg-panel/--bg-alt. Los
+ * alias --text/--sub/--card/--card-alt existen porque el CSS histórico
+ * de landing y teoría todavía los usa; con el tiempo se pueden ir
+ * eliminando renombrando en los CSS locales.
+ */
+
+:root {
+  --pri: #6366F1;
+  --pri-d: #4F46E5;
+  --pri-hover: #4F46E5;
+  --pri-light: #EEF2FF;
+  --pri-soft: rgba(99, 102, 241, 0.10);
+  --pri-glow: rgba(99, 102, 241, 0.18);
+  --grad-a: #6366F1;
+  --grad-b: #8B5CF6;
+
+  --bg: #F1F5F9;
+  --bg-soft: #EEF2FF;
+  --bg-panel: #ffffff;
+  --bg-alt: #F8FAFC;
+  --txt: #0F172A;
+  --txt-soft: #64748B;
+  --border: #E2E8F0;
+
+  --primary: var(--pri);
+  --primary-hover: var(--pri-d);
+
+  --danger: #EF4444;
+  --danger-light: #FEE2E2;
+  --danger-soft: #FEF2F2;
+  --success: #16A34A;
+  --success-light: #D1FAE5;
+  --ok: var(--success);
+  --ok-light: var(--success-light);
+
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 8px 20px rgba(99, 102, 241, 0.15);
+  --shadow-lg: 0 12px 30px rgba(99, 102, 241, 0.18);
+
+  --radius: 12px;
+  --radius-lg: 18px;
+  --topbar-h: 60px;
+  --sidebar-w: 240px;
+
+  --nav-side-bg: #111827;
+  --nav-side-text: rgba(255, 255, 255, 0.85);
+
+  /* Alias legado (landing y teoría lo usan hoy) */
+  --text: var(--txt);
+  --sub: var(--txt-soft);
+  --card: var(--bg-panel);
+  --card-alt: var(--bg-alt);
+}
+
+[data-theme="dark"] {
+  --pri: #818CF8;
+  --pri-d: #6366F1;
+  --pri-hover: #6366F1;
+  --pri-light: #1E1B4B;
+  --pri-soft: rgba(129, 140, 248, 0.14);
+  --pri-glow: rgba(129, 140, 248, 0.28);
+  --grad-a: #6366F1;
+  --grad-b: #A78BFA;
+
+  --bg: #0B1220;
+  --bg-soft: #111827;
+  --bg-panel: #1E293B;
+  --bg-alt: #172033;
+  --txt: #E2E8F0;
+  --txt-soft: #94A3B8;
+  --border: #334155;
+
+  --danger: #F87171;
+  --danger-light: rgba(248, 113, 113, 0.18);
+  --danger-soft: rgba(248, 113, 113, 0.08);
+  --success: #34D399;
+  --success-light: rgba(52, 211, 153, 0.15);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 20px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.5);
+
+  --nav-side-bg: #0F172A;
+  --nav-side-text: rgba(226, 232, 240, 0.85);
+}

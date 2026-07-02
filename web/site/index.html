@@ -4,8 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Aprentix · Tests</title>
+  <link rel="stylesheet" href="/shared/tokens.css">
+  <link rel="stylesheet" href="/shared/base.css">
+  <link rel="stylesheet" href="/shared/header.css">
+  <link rel="stylesheet" href="/shared/config.css">
   <link rel="stylesheet" href="/style.css">
-  <link rel="icon" type="image/svg+xml" href="/logo.svg">
+  <link rel="icon" type="image/svg+xml" href="/shared/logo.svg">
+  <!-- Registra el custom element antes de que el parser llegue a él. -->
+  <script src="/shared/header.js"></script>
   <script>
     (function () {
       var m = document.cookie.match(/(?:^|;\s*)aprentix_theme=(dark|light|auto)/);
@@ -19,45 +25,8 @@
 </head>
 <body>
 
-<!-- Cabecera unificada (compartida con la app de Teoría) -->
-<header class="topbar hidden" id="topbar">
-  <button class="hamburger" id="btn-menu" aria-label="Menú">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <line x1="3" y1="6" x2="21" y2="6"/>
-      <line x1="3" y1="12" x2="21" y2="12"/>
-      <line x1="3" y1="18" x2="21" y2="18"/>
-    </svg>
-  </button>
-  <a href="https://aprentix.es" class="brand" title="Volver al inicio">
-    <span class="brand-logo" aria-hidden="true"></span>
-    <span class="brand-name">Aprentix</span>
-  </a>
-  <nav class="hdr-nav" aria-label="Secciones">
-    <span class="nav-tab active" data-nav="tests" aria-current="page">Tests</span>
-    <a href="https://teoria.aprentix.es" class="nav-tab" data-nav="teoria" id="nav-teoria" hidden>Teoría</a>
-  </nav>
-  <div class="hdr-spacer"></div>
-  <div class="user-chip">
-    <button class="user-btn" id="btn-user-menu" title="Configuración">
-      <span class="avatar" id="user-avatar"></span>
-      <span class="user-name" id="user-name"></span>
-    </button>
-    <button class="btn-icon" id="btn-config" title="Configuración" aria-label="Configuración">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="3"/>
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-      </svg>
-    </button>
-    <button class="btn-icon danger-icon" id="btn-logout" title="Cerrar sesión" aria-label="Cerrar sesión">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-        <polyline points="16 17 21 12 16 7"/>
-        <line x1="21" y1="12" x2="9" y2="12"/>
-      </svg>
-    </button>
-  </div>
-</header>
+<!-- Cabecera común: <aprentix-header> vive en shared/header.js -->
+<aprentix-header active="tests" hamburger teoria-hidden start-hidden></aprentix-header>
 
 <!-- Backdrop del sidebar (visible solo en móvil cuando está abierto) -->
 <div class="sidebar-backdrop hidden" id="sidebar-backdrop"></div>

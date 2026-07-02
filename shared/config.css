@@ -1,0 +1,108 @@
+/*
+ * Aprentix · modal de configuración.
+ *
+ * Estilos comunes del selector de tema, agrupador por secciones y del
+ * bloque "reset repasos". Se comparten entre landing, tests y teoría.
+ */
+
+.config-group + .config-group {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 2px solid var(--border);
+}
+.config-group-title {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--pri-d);
+  margin: 0 0 14px;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.config-group-title::before {
+  content: ""; display: inline-block;
+  width: 4px; height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--grad-a), var(--grad-b));
+}
+[data-theme="dark"] .config-group-title { color: var(--pri); }
+.config-section h5 {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--txt-soft);
+  margin: 0 0 10px;
+}
+.config-section + .config-section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+}
+.config-section.danger-section h5 { color: var(--danger); }
+
+.theme-toggle { display: flex; gap: 8px; flex-wrap: wrap; }
+.theme-option {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px;
+  background: var(--bg-soft);
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px; font-weight: 500;
+  color: var(--txt); cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.theme-option input { display: none; }
+.theme-option:has(input:checked) {
+  background: var(--pri-soft);
+  border-color: var(--pri);
+  color: var(--pri-d);
+  font-weight: 700;
+}
+
+.link-pri { color: var(--pri); font-weight: 600; text-decoration: none; }
+.link-pri:hover { text-decoration: underline; }
+
+/* Reset repasos: bien diferenciado del resto */
+.reset-repasos {
+  padding: 14px;
+  border: 1.5px dashed var(--danger);
+  border-radius: 12px;
+  background: var(--danger-soft);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.reset-repasos-copy {
+  display: flex; flex-direction: column; gap: 4px;
+  flex: 1 1 220px; min-width: 0;
+}
+.reset-repasos-copy strong { font-size: 14px; color: var(--danger); }
+
+/* Ritmo de repaso cards */
+.ritmo-opciones {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+.ritmo-card {
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  padding: 0.8rem 1rem;
+  cursor: pointer;
+  background: var(--bg-panel);
+  color: var(--txt);
+  transition: border-color 0.15s, background 0.15s;
+}
+.ritmo-card:hover { border-color: var(--pri); }
+.ritmo-card.active {
+  border-color: var(--pri);
+  background: var(--pri-soft);
+}
+.ritmo-card .titulo {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.ritmo-card .curva {
+  font-size: 0.8rem;
+  color: var(--txt-soft);
+  margin-top: 0.3rem;
+}

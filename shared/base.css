@@ -1,0 +1,68 @@
+/*
+ * Aprentix · primitives compartidas.
+ *
+ * Marca (logo con CSS mask), botones y toast que se usan idénticos en
+ * las tres apps. Depende de shared/tokens.css.
+ */
+
+.hidden { display: none !important; }
+
+/* Logo mask: se colorea con currentColor, así funciona tanto en topbars
+ * claras (color: var(--pri-d)) como en fondos degradados (color: #fff). */
+.brand-logo {
+  width: 28px; height: 28px;
+  display: inline-block;
+  background: currentColor;
+  -webkit-mask: url(/shared/logo.svg) center / contain no-repeat;
+          mask: url(/shared/logo.svg) center / contain no-repeat;
+  flex: 0 0 auto;
+}
+.brand-logo-lg { width: 64px; height: 64px; }
+
+/* ── Botones ──────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 0.4rem;
+  min-height: 44px; padding: 0.55rem 1rem;
+  border: 0; border-radius: var(--radius);
+  font-size: 0.95rem; font-weight: 500;
+  cursor: pointer; font-family: inherit;
+  transition: background 0.15s, opacity 0.15s;
+  color: var(--txt);
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary, .btn-pri { background: var(--primary); color: #fff; }
+.btn-primary:hover, .btn-pri:hover { background: var(--primary-hover); }
+.btn-ghost { background: transparent; color: var(--txt); }
+.btn-ghost:hover, .btn-ghost:active { background: var(--bg-soft); }
+.btn-sec { background: var(--pri-light); color: var(--pri-d); }
+.btn-sec:hover { background: var(--pri-soft); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-cancel { background: var(--bg); color: var(--txt); border: 1px solid var(--border); }
+.btn-danger-outline {
+  background: transparent; color: var(--danger);
+  border: 1.5px solid var(--danger);
+  min-height: 44px; padding: 0.55rem 1rem;
+  border-radius: var(--radius);
+  font-size: 0.95rem; font-weight: 700;
+  cursor: pointer; font-family: inherit;
+  transition: background 0.15s, color 0.15s;
+}
+.btn-danger-outline:hover { background: var(--danger); color: #fff; }
+.btn-sm { min-height: 34px; padding: 0.35rem 0.7rem; font-size: 0.85rem; }
+
+/* ── Toast ────────────────────────────────────────────────────────── */
+.toast {
+  position: fixed; bottom: 1rem;
+  left: 1rem; right: 1rem;
+  background: var(--txt); color: var(--bg);
+  padding: 0.7rem 1rem; border-radius: var(--radius);
+  text-align: center; z-index: 100; line-height: 1.3;
+}
+@media (min-width: 600px) {
+  .toast {
+    left: 50%; right: auto;
+    transform: translateX(-50%); bottom: 2rem;
+    text-align: left; min-width: 240px;
+  }
+}

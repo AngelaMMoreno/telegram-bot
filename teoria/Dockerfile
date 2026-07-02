@@ -1,11 +1,13 @@
 FROM python:3.11-slim
 
+# Build context es la raíz del repo (para poder incluir /shared).
 WORKDIR /app
-COPY requirements.txt .
+COPY teoria/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
-COPY site ./site
+COPY teoria/app.py .
+COPY teoria/site   ./site
+COPY shared        ./site/shared
 
 ENV BASE_DIR=/ficheros \
     POSTGREST_URL=http://postgrest:3000 \
