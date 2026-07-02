@@ -458,6 +458,7 @@ function cerrarModalConfig() { modalConfig.classList.add('hidden'); }
 document.getElementById('btn-config')?.addEventListener('click', abrirModalConfig);
 document.getElementById('btn-user-menu')?.addEventListener('click', abrirModalConfig);
 document.getElementById('btn-config-cerrar')?.addEventListener('click', cerrarModalConfig);
+document.getElementById('btn-config-cerrar-x')?.addEventListener('click', cerrarModalConfig);
 modalConfig?.addEventListener('click', (e) => {
   if (e.target === modalConfig) cerrarModalConfig();
 });
@@ -483,14 +484,20 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 });
 document.getElementById('grid').addEventListener('click', onGridAction);
 
-// Rellena el chip de usuario (avatar + nombre).
-if (CLAIMS) {
-  const uname = CLAIMS.sub || CLAIMS.username || (CLAIMS.roles || []).join(', ') || 'sesión';
-  const nameEl = document.getElementById('user-name-lbl');
+// Rellena el chip de usuario (avatar + nombre). El JWT sólo trae el
+// user_id en 'sub'; el username lo pide el backend a mi_sesion() y lo
+// devuelve por /api/sesion, así mostramos el nombre real en la cabecera.
+function pintarUsuario(nombre) {
+  const uname = (nombre || '').trim() || 'sesión';
+  const nameEl = document.getElementById('user-name');
   const avEl = document.getElementById('user-avatar');
   if (nameEl) nameEl.textContent = uname;
-  if (avEl) avEl.textContent = (uname.trim()[0] || '?').toUpperCase();
+  if (avEl) avEl.textContent = (uname[0] || '?').toUpperCase();
 }
+pintarUsuario('…');
+api('GET', '/api/sesion')
+  .then(s => pintarUsuario(s && s.username))
+  .catch(() => pintarUsuario(''));
 
 cargar(ESTADO.ruta).catch(err => {
   document.getElementById('grid').innerHTML =

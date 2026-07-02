@@ -19,7 +19,7 @@
 </head>
 <body>
 
-<!-- Header con búsqueda global -->
+<!-- Cabecera unificada (compartida con la app de Teoría) -->
 <header class="topbar hidden" id="topbar">
   <button class="hamburger" id="btn-menu" aria-label="Menú">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -36,10 +36,7 @@
     <span class="nav-tab active" data-nav="tests" aria-current="page">Tests</span>
     <a href="https://teoria.aprentix.es" class="nav-tab" data-nav="teoria" id="nav-teoria" hidden>Teoría</a>
   </nav>
-  <div class="search-wrap">
-    <input id="global-search" type="search" placeholder="Buscar preguntas o tests…">
-    <div id="search-results" class="search-results hidden"></div>
-  </div>
+  <div class="hdr-spacer"></div>
   <div class="user-chip">
     <button class="user-btn" id="btn-user-menu" title="Configuración">
       <span class="avatar" id="user-avatar"></span>
@@ -458,37 +455,43 @@
     </header>
     <div class="modal-body">
 
-      <section class="config-section">
-        <h4>Apariencia</h4>
-        <div class="theme-toggle">
-          <label class="theme-option"><input type="radio" name="theme" value="light"><span>☀️ Claro</span></label>
-          <label class="theme-option"><input type="radio" name="theme" value="dark"><span>🌙 Oscuro</span></label>
-          <label class="theme-option"><input type="radio" name="theme" value="auto"><span>🖥️ Sistema</span></label>
+      <section class="config-group">
+        <h4 class="config-group-title">Sistema</h4>
+        <div class="config-section">
+          <h5>Apariencia</h5>
+          <div class="theme-toggle">
+            <label class="theme-option"><input type="radio" name="theme" value="light"><span>☀️ Claro</span></label>
+            <label class="theme-option"><input type="radio" name="theme" value="dark"><span>🌙 Oscuro</span></label>
+            <label class="theme-option"><input type="radio" name="theme" value="auto"><span>🖥️ Sistema</span></label>
+          </div>
         </div>
       </section>
 
-      <section class="config-section">
-        <h4>Ritmo de repaso</h4>
-        <p class="muted small">
-          Elige la cadencia con la que quieres que se te repitan las preguntas.
-          Solo afecta a los intervalos futuros; las fechas ya programadas no cambian.
-        </p>
-        <div id="ritmo-opciones" class="ritmo-opciones"></div>
-      </section>
+      <section class="config-group">
+        <h4 class="config-group-title">Tests</h4>
+        <div class="config-section">
+          <h5>Ritmo de repaso</h5>
+          <p class="muted small">
+            Elige la cadencia con la que quieres que se te repitan las preguntas.
+            Solo afecta a los intervalos futuros; las fechas ya programadas no cambian.
+          </p>
+          <div id="ritmo-opciones" class="ritmo-opciones"></div>
+        </div>
 
-      <section class="config-section danger-section">
-        <h4>Zona peligrosa</h4>
-        <div class="reset-repasos">
-          <div class="reset-repasos-copy">
-            <strong>Empezar el repaso de cero</strong>
-            <span class="muted small">
-              Borra las cajas Leitner de todas tus preguntas. No toca tus respuestas ni tus intentos:
-              solo se olvida en qué fase de repaso está cada pregunta.
-            </span>
+        <div class="config-section danger-section">
+          <h5>Resetear repaso</h5>
+          <div class="reset-repasos">
+            <div class="reset-repasos-copy">
+              <strong>Empezar el repaso de cero</strong>
+              <span class="muted small">
+                Borra las cajas Leitner de todas tus preguntas. No toca tus respuestas ni tus intentos:
+                solo se olvida en qué fase de repaso está cada pregunta.
+              </span>
+            </div>
+            <button class="btn btn-danger-outline" id="btn-resetear-repasos">
+              Resetear mi repaso
+            </button>
           </div>
-          <button class="btn btn-danger-outline" id="btn-resetear-repasos">
-            Resetear mi repaso
-          </button>
         </div>
       </section>
 

@@ -58,7 +58,6 @@ const state = {
   filtroEtiquetaBuscar: null,          // legado (single-tag), no se usa ya
   filtroEtiquetasBuscar: [],            // multi-tag actual
   etiquetasCache: [],
-  searchAbort: null,
 };
 
 /* ── Helpers DOM ─────────────────────────────────────────────────────────── */
@@ -274,65 +273,6 @@ $("#form-register").addEventListener("submit", async e => {
     });
   } catch (err) { toast(err.message); }
 });
-
-/* ── Búsqueda global en topbar ───────────────────────────────────────────── */
-const searchInput = $("#global-search");
-const searchResults = $("#search-results");
-
-let searchDebounce;
-searchInput.addEventListener("input", e => {
-  clearTimeout(searchDebounce);
-  const q = e.target.value.trim();
-  if (!q) { searchResults.classList.add("hidden"); return; }
-  searchDebounce = setTimeout(() => doSearch(q), 220);
-});
-
-async function doSearch(q) {
-  if (state.searchAbort) state.searchAbort.abort();
-  state.searchAbort = new AbortController();
-  try {
-    const preguntas = await pg(`/rpc/buscar_preguntas`, {
-      method: "POST", body: { p_q: q, p_lim: 6 }, signal: state.searchAbort.signal
-    });
-    const tests = await pg(
-      `/tests?titulo=ilike.*${encodeURIComponent(q)}*&select=id,titulo&limit=4`,
-      { signal: state.searchAbort.signal }
-    );
-    let html = "";
-    if (tests.length) {
-      html += `<div class="item label">TESTS</div>`;
-      html += tests.map(t => `<div class="item" data-kind="test" data-id="${t.id}">${esc(t.titulo)}</div>`).join("");
-    }
-    if (preguntas.length) {
-      html += `<div class="item label">PREGUNTAS</div>`;
-      html += preguntas.map(p => `<div class="item" data-kind="preg" data-id="${p.id}">${esc(p.enunciado.slice(0,90))}…</div>`).join("");
-    }
-    if (!html) html = `<div class="item muted">Sin resultados</div>`;
-    searchResults.innerHTML = html;
-    searchResults.classList.remove("hidden");
-  } catch (e) {
-    if (e.name !== "AbortError") toast(e.message);
-  }
-}
-
-searchResults.addEventListener("click", e => {
-  const it = e.target.closest(".item[data-kind]");
-  if (!it) return;
-  searchResults.classList.add("hidden");
-  searchInput.value = "";
-  if (it.dataset.kind === "test") loadTestDetail(it.dataset.id);
-  if (it.dataset.kind === "preg") {
-    navigate("buscar");
-    $("#buscar-input").value = it.textContent.replace(/…$/, "");
-    runBuscarView(it.textContent.replace(/…$/, ""));
-  }
-});
-
-document.addEventListener("click", e => {
-  if (!searchResults.contains(e.target) && e.target !== searchInput)
-    searchResults.classList.add("hidden");
-});
-
 
 /* ─────────────────────────────────────────────────────────────────────────
  * VIEWS
