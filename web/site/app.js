@@ -119,11 +119,28 @@ function persistSession() {
   else localStorage.removeItem("user");
 }
 
+function jwtSub(token) {
+  try {
+    const b64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const pad = b64.length % 4 ? b64 + "=".repeat(4 - (b64.length % 4)) : b64;
+    return JSON.parse(atob(pad)).sub || null;
+  } catch (_) { return null; }
+}
+
 async function refrescarUsuarioDesdeJwt() {
   // Cuando entramos con cookie válida pero sin user en localStorage (típico
   // tras hacer login en la landing y volver aquí), reconstruimos el user
-  // consultando mi_sesion() de PostgREST.
-  if (!state.jwt || state.user) return;
+  // consultando mi_sesion() de PostgREST. También detectamos el caso en el
+  // que otro usuario ha iniciado sesión en otro subdominio (landing/teoría):
+  // la cookie compartida trae un JWT distinto al user cacheado en el
+  // localStorage de este subdominio, así que descartamos el user viejo.
+  if (!state.jwt) return;
+  const sub = jwtSub(state.jwt);
+  if (state.user && sub && String(state.user.user_id) !== String(sub)) {
+    state.user = null;
+    localStorage.removeItem("user");
+  }
+  if (state.user) return;
   try {
     const r = await rpc("mi_sesion", {});
     if (r && r.user_id) {
