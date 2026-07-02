@@ -6,7 +6,9 @@
 services:
 
   landing:
-    build: ../../landing
+    build:
+      context: ../..
+      dockerfile: landing/Dockerfile
     restart: unless-stopped
     networks: [dokploy-network]
     labels:

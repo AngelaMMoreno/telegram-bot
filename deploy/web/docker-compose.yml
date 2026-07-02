@@ -5,7 +5,9 @@
 services:
 
   web:
-    build: ../../web
+    build:
+      context: ../..
+      dockerfile: web/Dockerfile
     restart: unless-stopped
     networks: [dokploy-network]
     labels:

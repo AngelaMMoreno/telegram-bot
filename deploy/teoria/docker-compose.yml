@@ -6,7 +6,9 @@
 services:
 
   teoria:
-    build: ../../teoria
+    build:
+      context: ../..
+      dockerfile: teoria/Dockerfile
     environment:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET requerida}
       BASE_DIR: /ficheros

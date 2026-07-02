@@ -4,8 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Aprentix</title>
+  <link rel="stylesheet" href="/shared/tokens.css">
+  <link rel="stylesheet" href="/shared/base.css">
+  <link rel="stylesheet" href="/shared/config.css">
   <link rel="stylesheet" href="/style.css">
-  <link rel="icon" type="image/svg+xml" href="/logo.svg">
+  <link rel="icon" type="image/svg+xml" href="/shared/logo.svg">
   <script>
     // Aplica el tema oscuro antes del primer render para evitar el flash.
     (function () {
@@ -104,46 +107,43 @@
       </header>
       <div class="modal-body">
 
-        <section class="config-section">
-          <h4>Apariencia</h4>
-          <div class="theme-toggle">
-            <label class="theme-option">
-              <input type="radio" name="theme" value="light">
-              <span>☀️ Claro</span>
-            </label>
-            <label class="theme-option">
-              <input type="radio" name="theme" value="dark">
-              <span>🌙 Oscuro</span>
-            </label>
-            <label class="theme-option">
-              <input type="radio" name="theme" value="auto">
-              <span>🖥️ Sistema</span>
-            </label>
+        <section class="config-group">
+          <h4 class="config-group-title">Sistema</h4>
+          <div class="config-section">
+            <h5>Apariencia</h5>
+            <div class="theme-toggle">
+              <label class="theme-option"><input type="radio" name="theme" value="light"><span>☀️ Claro</span></label>
+              <label class="theme-option"><input type="radio" name="theme" value="dark"><span>🌙 Oscuro</span></label>
+              <label class="theme-option"><input type="radio" name="theme" value="auto"><span>🖥️ Sistema</span></label>
+            </div>
           </div>
         </section>
 
-        <section class="config-section">
-          <h4>Ritmo de repaso</h4>
-          <p class="muted small">
-            Elige la cadencia con la que quieres que se te repitan las preguntas.
-            Solo afecta a los intervalos futuros; las fechas ya programadas no cambian.
-          </p>
-          <div id="ritmo-opciones" class="ritmo-opciones"></div>
-        </section>
+        <section class="config-group">
+          <h4 class="config-group-title">Tests</h4>
+          <div class="config-section">
+            <h5>Ritmo de repaso</h5>
+            <p class="muted small">
+              Elige la cadencia con la que quieres que se te repitan las preguntas.
+              Solo afecta a los intervalos futuros; las fechas ya programadas no cambian.
+            </p>
+            <div id="ritmo-opciones" class="ritmo-opciones"></div>
+          </div>
 
-        <section class="config-section danger-section">
-          <h4>Zona peligrosa</h4>
-          <div class="reset-repasos">
-            <div class="reset-repasos-copy">
-              <strong>Empezar el repaso de cero</strong>
-              <span class="muted small">
-                Borra las cajas Leitner de todas tus preguntas. No toca tus respuestas ni tus intentos:
-                solo se olvida en qué fase de repaso está cada pregunta.
-              </span>
+          <div class="config-section danger-section">
+            <h5>Resetear repaso</h5>
+            <div class="reset-repasos">
+              <div class="reset-repasos-copy">
+                <strong>Empezar el repaso de cero</strong>
+                <span class="muted small">
+                  Borra las cajas Leitner de todas tus preguntas. No toca tus respuestas ni tus intentos:
+                  solo se olvida en qué fase de repaso está cada pregunta.
+                </span>
+              </div>
+              <button class="btn btn-danger-outline" id="btn-resetear-repasos">
+                Resetear mi repaso
+              </button>
             </div>
-            <button class="btn btn-danger-outline" id="btn-resetear-repasos">
-              Resetear mi repaso
-            </button>
           </div>
         </section>
 
