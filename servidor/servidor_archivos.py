@@ -110,36 +110,40 @@ _CSS_BASE = """
   --pri:#6366F1;--pri-d:#4F46E5;--pri-light:#EEF2FF;
   --bg:#F1F5F9;--card:#fff;--text:#1E293B;--sub:#64748B;
   --border:#E2E8F0;--file-bg:#F0F9FF;--ok:#10B981;
+  --hdr-h:56px;--pad-x:16px;--content-pad-x:16px;
 }
+@media(min-width:900px){:root{--pad-x:24px;--content-pad-x:40px}}
 body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 a{text-decoration:none;color:inherit}
 
-/* ── header ── */
+/* ── header (misma altura y padding que la topbar de tests) ── */
 .hdr{background:linear-gradient(135deg,#6366F1,#8B5CF6);color:#fff;
-  padding:14px 24px;display:flex;align-items:center;justify-content:space-between;
-  box-shadow:0 2px 8px rgba(0,0,0,.2);gap:12px;flex-wrap:wrap}
-.hdr-title{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:700}
+  padding:0 var(--pad-x);min-height:var(--hdr-h);
+  display:flex;align-items:center;justify-content:space-between;
+  box-shadow:0 2px 8px rgba(0,0,0,.2);gap:10px;flex-wrap:wrap}
+.hdr-title{display:flex;align-items:center;gap:8px;font-size:17px;font-weight:700}
 .hdr-search{flex:1;max-width:400px;min-width:150px}
-.hdr-search input{width:100%;padding:8px 14px;border:none;border-radius:8px;
+.hdr-search input{width:100%;padding:6px 12px;border:none;border-radius:8px;
   font-size:14px;background:rgba(255,255,255,.2);color:#fff;
   outline:none;transition:background .15s}
 .hdr-search input::placeholder{color:rgba(255,255,255,.6)}
 .hdr-search input:focus{background:rgba(255,255,255,.3)}
-.hdr-actions{display:flex;gap:8px;flex-wrap:wrap}
+.hdr-actions{display:flex;gap:6px;flex-wrap:wrap}
+.hdr-actions .btn{padding:6px 10px;font-size:12px;border-radius:6px}
 
 /* ── breadcrumb ── */
-.bc{background:#fff;padding:10px 24px;border-bottom:1px solid var(--border);
+.bc{background:#fff;padding:10px var(--content-pad-x);border-bottom:1px solid var(--border);
   font-size:13px;color:var(--sub);display:flex;align-items:center;gap:4px;flex-wrap:wrap}
 .bc a{color:var(--pri);font-weight:500}.bc a:hover{text-decoration:underline}
 .bc-sep{color:var(--border)}
 
 /* ── stats bar ── */
-.stats{padding:8px 24px;font-size:12px;color:var(--sub);
+.stats{padding:8px var(--content-pad-x);font-size:12px;color:var(--sub);
   display:flex;gap:12px;background:#fff;border-bottom:1px solid var(--border)}
 
 /* ── grid ── */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
-  gap:14px;padding:24px}
+  gap:14px;padding:24px var(--content-pad-x)}
 
 /* ── card ── */
 .card{background:var(--card);border-radius:12px;padding:18px 12px 14px;
@@ -155,8 +159,9 @@ a{text-decoration:none;color:inherit}
 .card-name{font-size:12px;font-weight:600;word-break:break-word;
   max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%}
 .card-meta{font-size:11px;color:var(--sub)}
-.card-actions{display:flex;gap:4px;margin-top:4px;opacity:0;transition:opacity .15s}
-.card:hover .card-actions{opacity:1}
+.card-actions{display:flex;gap:4px;margin-top:4px;opacity:.65;transition:opacity .15s}
+.card:hover .card-actions,.card:focus-within .card-actions{opacity:1}
+@media(hover:none){.card-actions{opacity:1}}
 .card-btn{background:none;border:1px solid var(--border);border-radius:6px;
   padding:3px 8px;font-size:13px;cursor:pointer;transition:background .12s,border-color .12s;line-height:1}
 .card-btn:hover{background:var(--pri-light);border-color:var(--pri)}
@@ -165,7 +170,7 @@ a{text-decoration:none;color:inherit}
 .selector-item input{width:18px;height:18px;cursor:pointer}
 .card{position:relative}
 .card.seleccionada{outline:2px solid var(--pri);border-color:var(--pri)}
-.barra-seleccion{padding:10px 24px;background:#fff;border-bottom:1px solid var(--border);
+.barra-seleccion{padding:10px var(--content-pad-x);background:#fff;border-bottom:1px solid var(--border);
   display:none;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .barra-seleccion.visible{display:flex}
 .seleccion-texto{font-size:13px;color:var(--text);font-weight:600}
@@ -268,19 +273,28 @@ _CSS_MARKDOWN = """
   --pri:#6366F1;--pri-d:#4F46E5;--pri-light:#EEF2FF;
   --bg:#F1F5F9;--card:#fff;--text:#1E293B;--sub:#64748B;
   --border:#E2E8F0;
+  --hdr-h:56px;--pad-x:16px;--content-pad-x:16px;
 }
+@media(min-width:900px){:root{--pad-x:24px;--content-pad-x:40px}}
 body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 a{color:var(--pri);text-decoration:none}a:hover{text-decoration:underline}
 .md-header{background:linear-gradient(135deg,#6366F1,#8B5CF6);color:#fff;
-  padding:14px 24px;display:flex;align-items:center;justify-content:space-between;
-  box-shadow:0 2px 8px rgba(0,0,0,.2);gap:12px;flex-wrap:wrap}
-.md-header-title{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:700}
-.md-header a{color:#fff;font-size:14px;opacity:.85}
-.md-header a:hover{opacity:1}
-.md-wrap{max-width:900px;margin:32px auto;background:var(--card);
-  border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08);padding:40px 48px;
+  padding:0 var(--pad-x);min-height:var(--hdr-h);
+  display:flex;align-items:center;justify-content:space-between;
+  box-shadow:0 2px 8px rgba(0,0,0,.2);gap:10px;flex-wrap:wrap}
+.md-header-title{display:flex;align-items:center;gap:8px;font-size:17px;font-weight:700;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.md-header-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.md-header-actions a,.md-header-actions button{color:#fff;font-size:12px;
+  background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);
+  padding:5px 10px;border-radius:6px;text-decoration:none;font-weight:600;
+  cursor:pointer;transition:background .15s}
+.md-header-actions a:hover,.md-header-actions button:hover{background:rgba(255,255,255,.28);text-decoration:none}
+.md-outer{padding:24px var(--content-pad-x)}
+.md-wrap{max-width:900px;margin:0 auto;background:var(--card);
+  border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08);padding:32px 40px;
   border:1px solid var(--border)}
-@media(max-width:640px){.md-wrap{margin:16px;padding:24px 20px;border-radius:8px}}
+@media(max-width:640px){.md-outer{padding:16px}.md-wrap{padding:20px 18px;border-radius:8px}}
 
 /* ── tipografía markdown ── */
 .md-body{line-height:1.7;font-size:16px;color:var(--text)}
@@ -518,8 +532,8 @@ class FileBrowserHandler(BaseHTTPRequestHandler):
     <input type="text" id="buscador" placeholder="🔍 Buscar ficheros..." oninput="filtrarFicheros(this.value)">
   </div>
   <div class="hdr-actions">
-    <a href="/editarMarkdown" class="btn btn-ghost">📝 Crear Markdown</a>
-    <a href="{upload_link}" class="btn btn-white">📤 Subir / Nueva carpeta</a>
+    <a href="/editarMarkdown" class="btn btn-ghost" title="Crear un nuevo fichero Markdown">📝 Nuevo</a>
+    <a href="{upload_link}" class="btn btn-white" title="Subir ficheros o crear carpeta">📤 Subir</a>
   </div>
 </div>
 <div class="bc">{bc}</div>
@@ -841,6 +855,8 @@ initArrastreMover();
         rel = os.path.relpath(os.path.dirname(fs_path), self.base_dir)
         parent_url = "/" if rel == "." else "/" + rel.replace(os.sep, "/") + "/"
 
+        rel_url = self._ruta_url_desde_fs(fs_path)
+        edit_href = f"/editarMarkdown?editar={urllib.parse.quote(rel_url)}"
         page = f"""<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -852,10 +868,15 @@ initArrastreMover();
 <body>
 <div class="md-header">
   <div class="md-header-title">📝 {title}</div>
-  <a href="{html.escape(parent_url)}">← Volver</a>
+  <div class="md-header-actions">
+    <a href="{html.escape(parent_url)}">← Volver</a>
+    <a href="{html.escape(edit_href)}">✏️ Editar</a>
+  </div>
 </div>
-<div class="md-wrap">
-  <div class="md-body">{md_html}</div>
+<div class="md-outer">
+  <div class="md-wrap">
+    <div class="md-body">{md_html}</div>
+  </div>
 </div>
 </body>
 </html>"""
@@ -1448,6 +1469,12 @@ document.getElementById('md-input').addEventListener('keydown', function(e) {{
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
+        # El servidor de teoría es público sin sesión propia: forzamos
+        # que el navegador no cachee páginas para evitar que, tras
+        # cambiar de usuario en otra pestaña, esta pestaña muestre
+        # información desactualizada de la sesión anterior.
+        self.send_header("Cache-Control", "no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
         self.end_headers()
         self.wfile.write(data)
 
