@@ -1,158 +1,201 @@
 # Despliegue en Dokploy
 
-Guía para levantar el stack completo (PostgreSQL + PostgREST + landing +
-tests + teoría + embeddings + pgAdmin) y servirlo en los dominios de
-producción.
+El proyecto está partido en **cuatro stacks independientes** para poder
+redesplegarlos por separado desde Dokploy. Cada stack es una **Compose
+Application** distinta que apunta a su propio fichero:
 
-Todo el frontend comparte la misma cuenta: el JWT se guarda como cookie
-en dominio `.aprentix.es`, así que iniciar sesión en la landing te deja
-autenticado también en `test.aprentix.es` y `teoria.aprentix.es`.
+```
+deploy/
+├── core/docker-compose.yml     ← db + postgrest + embeddings + pgadmin
+├── landing/docker-compose.yml  ← aprentix.es / www.aprentix.es
+├── web/docker-compose.yml      ← test.aprentix.es / www.test.aprentix.es
+└── teoria/docker-compose.yml   ← teoria.aprentix.es / www.teoria.aprentix.es
+```
 
-## 1. Servicios que componen el stack
+Los cuatro comparten la red externa `dokploy-network` y se ven entre sí
+por nombre de servicio (`db:5432`, `postgrest:3000`).
 
-| Servicio    | Imagen / build      | Dominio                                                                     |
-|-------------|---------------------|-----------------------------------------------------------------------------|
-| `db`        | `pgvector/pgvector:pg16` | — (solo red interna `dokploy-network`)                                  |
-| `postgrest` | `postgrest/postgrest:v12.2.3` | `api.aprentix.es` (`DOMINIO_API`)                                 |
-| `landing`   | build `./landing` (Caddy) | `aprentix.es` **+** `www.aprentix.es` (login + chooser)               |
-| `web`       | build `./web` (Caddy) | `test.aprentix.es` **+** `www.test.aprentix.es` (SPA de tests)          |
-| `teoria`    | build `./teoria` (FastAPI) | `teoria.aprentix.es` **+** `www.teoria.aprentix.es` (ficheros)     |
-| `embeddings`| build `./embeddings` | — (worker interno)                                                         |
-| `pgadmin`   | `dpage/pgadmin4:9`   | `pgadmin.aprentix.es` (`DOMINIO_PGADMIN`)                                  |
+El `docker-compose.yml` raíz **solo es para desarrollo local**: usa
+`include:` para levantar los cuatro composes de una tacada
+(`docker compose up`). Dokploy no lo utiliza.
 
-Postgres no publica puerto al host: solo escucha en `dokploy-network`. El
-acceso administrativo entra por HTTPS vía pgAdmin.
+## 0. Preparar el servidor
 
-El servicio de teoría monta `/mnt/data/ficheros` (misma ruta que tenía el
-servidor de ficheros antiguo). No hace falta mover nada al desplegar por
-primera vez sobre un servidor con ese volumen ya poblado.
+1. Instalar Dokploy si aún no lo tienes.
+2. La red `dokploy-network` la crea Dokploy automáticamente al
+   desplegar el primer stack; no hace falta hacer nada.
+3. Crear el volumen de datos en el host (una sola vez):
 
-## 2. Roles y flujo de usuario
+   ```bash
+   sudo mkdir -p /mnt/data/pg /mnt/data/embeddings_cache /mnt/data/ficheros
+   ```
 
-Roles funcionales de la aplicación (columna `roles` del JWT):
+4. Crear los registros DNS **A** apuntando a la IP del servidor para
+   los ocho dominios (Let's Encrypt los necesita):
+   `aprentix.es`, `www.aprentix.es`, `test.aprentix.es`,
+   `www.test.aprentix.es`, `teoria.aprentix.es`, `www.teoria.aprentix.es`,
+   `api.aprentix.es`, `pgadmin.aprentix.es`.
 
-| Rol      | Puede |
-|----------|-------|
-| `alumno` | Realizar tests, ver su progreso y sus repasos. |
-| `editor` | Todo lo de `alumno` + crear/editar preguntas, tests y etiquetas. |
-| `admin`  | Todo lo anterior + gestión de usuarios y CRUD sobre teoría. |
-| `teoria` | Ver y descargar el material de teoría. Ortogonal a los demás. |
+## 1. Orden de despliegue
 
-Un usuario puede tener varios roles a la vez (por ejemplo `alumno + teoria`
-si ha contratado ambas cosas). Los admin siempre pueden entrar a teoría
-aunque no tengan asignado el rol `teoria`.
+Crea las Compose Applications en Dokploy en este orden:
 
-Flujo típico:
+1. **core** — imprescindible; el resto depende de que la BBDD esté viva.
+2. **teoria** — necesita compartir el `JWT_SECRET` con `core`.
+3. **landing** y **web** — independientes entre sí, se pueden desplegar
+   en cualquier orden después de `core`.
 
-1. Registro en `aprentix.es` → el usuario nuevo entra como `alumno`.
-2. Un admin le añade `teoria` cuando corresponda desde el panel de
-   usuarios (los admin tienen acceso vía `asignar_rol`).
-3. Al hacer login, la landing enseña una tarjeta para Tests y otra para
-   Teoría (la de Teoría solo si el usuario tiene el permiso).
+En Dokploy, para cada una:
 
-## 3. Crear la aplicación en Dokploy
-
-1. Dokploy → **Create Compose Application**.
+1. **Create Compose Application**.
 2. Source: este repositorio, rama por defecto.
-3. Compose path: `docker-compose.yml`.
-4. **Environment Variables** (copiar de `.env.example` y rellenar):
+3. **Compose path**: el fichero correspondiente (ver tabla más abajo).
+4. Variables de entorno: copiar del `.env.example` de la carpeta.
+5. Deploy.
 
-   | Clave                | Ejemplo / notas                                             |
-   |----------------------|-------------------------------------------------------------|
-   | `DB_PASS`            | Contraseña fuerte del rol `aprentix`.                       |
-   | `AUTH_PASS`          | Contraseña del rol `autenticador` (PostgREST).              |
-   | `JWT_SECRET`         | ≥ 32 caracteres (`openssl rand -hex 32`).                   |
-   | `ADMIN_PASS`         | Contraseña inicial del usuario `admin` (mínimo 8).          |
-   | `DOMINIO_LANDING`    | `aprentix.es`.                                              |
-   | `DOMINIO_LANDING_ALT`| `www.aprentix.es`.                                          |
-   | `DOMINIO_WEB`        | `test.aprentix.es`.                                         |
-   | `DOMINIO_WEB_ALT`    | `www.test.aprentix.es`.                                     |
-   | `DOMINIO_TEORIA`     | `teoria.aprentix.es`.                                       |
-   | `DOMINIO_TEORIA_ALT` | `www.teoria.aprentix.es`.                                   |
-   | `DOMINIO_API`        | `api.aprentix.es` (PostgREST).                              |
-   | `DOMINIO_PGADMIN`    | `pgadmin.aprentix.es`.                                      |
-   | `PGADMIN_EMAIL`      | Correo del login de pgAdmin.                                |
-   | `PGADMIN_PASS`       | Contraseña de pgAdmin.                                      |
+| Stack     | Compose path                          | .env de referencia            |
+|-----------|---------------------------------------|-------------------------------|
+| `core`    | `deploy/core/docker-compose.yml`      | `deploy/core/.env.example`    |
+| `landing` | `deploy/landing/docker-compose.yml`   | `deploy/landing/.env.example` |
+| `web`     | `deploy/web/docker-compose.yml`       | `deploy/web/.env.example`     |
+| `teoria`  | `deploy/teoria/docker-compose.yml`    | `deploy/teoria/.env.example`  |
 
-5. Crea los registros DNS **A** apuntando a la IP del servidor para
-   cada uno de los ocho dominios (Let's Encrypt los necesita accesibles
-   antes de emitir el certificado).
-6. **Deploy**.
+## 2. Variables de entorno por stack
 
-Dokploy ejecuta `docker compose up -d`. Al arrancar por primera vez, `db`
-corre `db/init/01_esquema.sql` (crea tablas, funciones, RLS, seed y
-usuario `admin`).
+### `core` (db + postgrest + embeddings + pgadmin)
 
-## 4. Verificación rápida
+| Clave              | Uso                                                            |
+|--------------------|----------------------------------------------------------------|
+| `DB_PASS`          | Contraseña del rol `aprentix` (owner de la BBDD).              |
+| `AUTH_PASS`        | Contraseña del rol `autenticador` (con el que conecta PostgREST). |
+| `JWT_SECRET`       | HMAC HS256 con el que Postgres firma los JWT. **Debe coincidir con el de `teoria`.** |
+| `ADMIN_PASS`       | Contraseña inicial del usuario `admin` de la app (solo se aplica en el primer init). |
+| `PGADMIN_EMAIL`    | Login de pgAdmin.                                              |
+| `PGADMIN_PASS`     | Contraseña de pgAdmin.                                         |
+| `DOMINIO_API`      | Host de PostgREST (por defecto `api.aprentix.es`).             |
+| `DOMINIO_PGADMIN`  | Host de pgAdmin (por defecto `pgadmin.aprentix.es`).           |
+
+### `landing` (aprentix.es)
+
+| Clave                 | Uso                                                    |
+|-----------------------|--------------------------------------------------------|
+| `DOMINIO_LANDING`     | Host principal (por defecto `aprentix.es`).            |
+| `DOMINIO_LANDING_ALT` | Host alternativo (por defecto `www.aprentix.es`).      |
+
+### `web` (SPA de tests)
+
+| Clave              | Uso                                                            |
+|--------------------|----------------------------------------------------------------|
+| `DOMINIO_WEB`      | Host principal (por defecto `test.aprentix.es`).               |
+| `DOMINIO_WEB_ALT`  | Host alternativo (por defecto `www.test.aprentix.es`).         |
+
+### `teoria` (navegador de ficheros)
+
+| Clave                | Uso                                                                    |
+|----------------------|------------------------------------------------------------------------|
+| `JWT_SECRET`         | Igual que el de `core` (el backend verifica los JWT).                  |
+| `DOMINIO_TEORIA`     | Host principal (por defecto `teoria.aprentix.es`).                     |
+| `DOMINIO_TEORIA_ALT` | Host alternativo (por defecto `www.teoria.aprentix.es`).               |
+
+> **Importante:** `JWT_SECRET` aparece en `core` y `teoria`; los dos
+> deben tener EXACTAMENTE el mismo valor, si no, las cookies emitidas
+> por PostgREST no valdrán para el backend de teoría.
+
+## 3. Verificación
 
 Desde el host del servidor:
 
 ```bash
-docker compose -f /etc/dokploy/applications/<id>/code/docker-compose.yml ps
-docker compose ... logs db --tail=80
-docker compose ... logs landing web teoria postgrest embeddings --tail=40
+docker network inspect dokploy-network | jq '.[].Containers | keys'
 ```
 
-En los logs de `db` debes ver `database system is ready to accept
-connections` y la ejecución de `01_esquema.sql`.
+Deberías ver contenedores de los cuatro stacks conectados a la misma red.
+
+Compose por compose:
+
+```bash
+docker compose -f deploy/core/docker-compose.yml logs db --tail=80
+docker compose -f deploy/teoria/docker-compose.yml logs teoria --tail=40
+docker compose -f deploy/web/docker-compose.yml logs web --tail=40
+docker compose -f deploy/landing/docker-compose.yml logs landing --tail=40
+```
 
 En el navegador:
 
 - `https://aprentix.es` → landing con login + chooser.
 - `https://test.aprentix.es` → SPA de tests.
-- `https://teoria.aprentix.es` → navegador de ficheros (bloquea si no tienes rol).
+- `https://teoria.aprentix.es` → navegador de ficheros.
 - `https://api.aprentix.es` → OpenAPI de PostgREST.
 - `https://pgadmin.aprentix.es` → panel de administración.
 
+## 4. Redespliegues por parte
+
+- **Cambio en el esquema SQL** (`db/init/01_esquema.sql`) → redeploy
+  solo `core`. La BBDD reejecuta scripts de `docker-entrypoint-initdb.d`
+  solo si el volumen está vacío; para BBDD viva, aplica el `ALTER` /
+  `CREATE OR REPLACE` desde pgAdmin.
+- **Cambio en la SPA de tests** → redeploy solo `web`.
+- **Cambio en teoría (backend o SPA)** → redeploy solo `teoria`.
+- **Cambio en la landing** → redeploy solo `landing`.
+
+Los stacks son independientes: reiniciar `web` no toca a `db`.
+
 ## 5. Login inicial
 
-- Usuario `admin` con la contraseña `ADMIN_PASS` que configuraste en
-  el `.env` (creada por el bloque final de `01_esquema.sql`).
-- Cualquier registro nuevo desde la landing entra como rol `alumno`; el
-  admin puede promoverlo a `editor` / `admin` / `teoria` desde el panel
-  de usuarios (o llamando a `asignar_rol` desde pgAdmin).
+- Usuario `admin` con la contraseña `ADMIN_PASS` del stack `core`
+  (creada por el bloque final de `db/init/01_esquema.sql`).
+- Registros nuevos entran como `alumno`. El admin promueve al rol
+  `teoria` desde el panel de usuarios de la SPA de tests (o llamando a
+  `asignar_rol` desde pgAdmin).
 
-## 6. Conexión con pgAdmin
-
-1. `https://pgadmin.aprentix.es` → login con `PGADMIN_EMAIL` /
-   `PGADMIN_PASS`.
-2. En el panel izquierdo aparece precargado el servidor **aprentix**
-   (`pgadmin/servers.json`) apuntando a `db:5432`.
-3. Click derecho → *Connect Server* → introducir `DB_PASS`.
-
-## 7. Backup / restauración
+## 6. Backup / restauración
 
 ```bash
-# Backup en el servidor
-docker compose exec db pg_dump -Fc -U aprentix -d aprentix \
-    > db/backups/aprentix_$(date +%F).dump
+# Backup de la BBDD (dentro del contenedor db del stack core)
+docker compose -f deploy/core/docker-compose.yml exec db \
+    pg_dump -Fc -U aprentix -d aprentix > db/backups/aprentix_$(date +%F).dump
 
-# Restauración en otro servidor (con el stack levantado sobre BBDD vacía)
+# Restauración sobre BBDD vacía
 cat aprentix_YYYY-MM-DD.dump | \
-    docker compose exec -T db pg_restore -U aprentix -d aprentix -c
+    docker compose -f deploy/core/docker-compose.yml exec -T db \
+    pg_restore -U aprentix -d aprentix -c
 ```
 
-Los ficheros de teoría se respaldan aparte (`rsync` de `/mnt/data/ficheros`).
+Los ficheros de teoría se respaldan aparte: `rsync -a
+/mnt/data/ficheros/ destino/`.
 
-## 8. Cambios de esquema
+## 7. Desarrollo local
 
-El proyecto **no usa carpetas de migraciones**: el estado actual vive
-en un único fichero:
+Con Docker Compose ≥ 2.20:
 
-- `db/init/01_esquema.sql` — SQL autoritativo.
-- `db/ESTADO_BBDD.md` — documentación de referencia.
+```bash
+cp .env.example .env
+# edita .env con tus valores
+docker compose up --build
+```
 
-Al cambiar el esquema:
+El `include:` del `docker-compose.yml` raíz agrupa los cuatro composes
+como si fuera uno solo, así que sale toda la plataforma con un único
+comando. Para levantar solo una parte:
 
-1. Edita `01_esquema.sql` y `ESTADO_BBDD.md`.
-2. Aplica el `ALTER`/`CREATE OR REPLACE` correspondiente contra la
-   BBDD viva (pgAdmin → Query Tool) — el fichero solo se ejecuta al
-   inicializar una BBDD vacía.
+```bash
+docker compose -f deploy/core/docker-compose.yml up -d
+docker compose -f deploy/web/docker-compose.yml up -d
+```
+
+## 8. Cambios de esquema en BBDD viva
+
+El proyecto **no usa carpetas de migraciones**; el estado autoritativo
+vive en `db/init/01_esquema.sql`. Al modificarlo:
+
+1. Edita `01_esquema.sql` y `db/ESTADO_BBDD.md`.
+2. Aplica el `ALTER` / `CREATE OR REPLACE` correspondiente contra la
+   BBDD viva (pgAdmin → Query Tool). El script solo se ejecuta cuando
+   Postgres se inicializa sobre volumen vacío.
+3. Commit + push; Dokploy no redeploya nada solo por esto — el
+   contenedor `db` no arranca de cero.
 
 ## 9. Histórico de plazas para el simulacro
-
-El cálculo del simulacro lee de la tabla `config`. Para rellenar los
-baremos históricos (pgAdmin → Query Tool):
 
 ```sql
 UPDATE config SET valor = '[[55,1],[50,200],[45,500]]'::jsonb

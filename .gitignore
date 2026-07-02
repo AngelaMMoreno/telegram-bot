@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 users/
+
+# Secretos: solo se versiona el .env.example.
+.env
+.env.local

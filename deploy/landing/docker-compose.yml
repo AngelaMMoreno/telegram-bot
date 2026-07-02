@@ -1,0 +1,22 @@
+# Stack LANDING — solo aprentix.es / www.aprentix.es.
+# Redespliega cuando toques landing/site/* o su Caddyfile.
+# Habla con PostgREST (stack core) por http://postgrest:3000 en la red
+# externa dokploy-network.
+
+services:
+
+  landing:
+    build: ../../landing
+    restart: unless-stopped
+    networks: [dokploy-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.landing.rule=Host(`${DOMINIO_LANDING:-aprentix.es}`) || Host(`${DOMINIO_LANDING_ALT:-www.aprentix.es}`)"
+      - "traefik.http.routers.landing.entrypoints=websecure"
+      - "traefik.http.routers.landing.tls=true"
+      - "traefik.http.routers.landing.tls.certresolver=letsencrypt"
+      - "traefik.http.services.landing.loadbalancer.server.port=80"
+
+networks:
+  dokploy-network:
+    external: true
