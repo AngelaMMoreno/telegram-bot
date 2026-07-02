@@ -1740,6 +1740,35 @@ $("#btn-ritmo-cancelar")?.addEventListener("click", () => {
   $("#modal-ritmo").classList.add("hidden");
 });
 
+/* ── Reset de repasos ───────────────────────────────────────────────────── */
+$("#btn-resetear-repasos")?.addEventListener("click", () => {
+  $("#modal-reset-repasos").classList.remove("hidden");
+});
+$("#btn-reset-cancelar")?.addEventListener("click", () => {
+  $("#modal-reset-repasos").classList.add("hidden");
+});
+$("#btn-reset-confirmar")?.addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try {
+    const r = await rpc("resetear_mis_repasos", { p_test_id: null });
+    const n = r && typeof r.borradas === "number" ? r.borradas : 0;
+    toast(n === 0
+      ? "No había repasos que borrar"
+      : `Repaso reseteado (${n} pregunta${n === 1 ? "" : "s"})`);
+    $("#modal-reset-repasos").classList.add("hidden");
+    $("#modal-ritmo").classList.add("hidden");
+    // Refresca la home si estamos ahí para que se actualicen los contadores.
+    if ($("#view-home")?.classList.contains("active")) {
+      navigate("home");
+    }
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 
 /* ── Arranque ───────────────────────────────────────────────────────────── */
 inicializarInputsTiempo();

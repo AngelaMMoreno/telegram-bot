@@ -226,15 +226,15 @@ def api_listar(request: Request, ruta: str = "/"):
 
 @app.get("/api/ver")
 def api_ver(request: Request, ruta: str):
-    claims = require_teoria(request)
+    require_teoria(request)
     url_path = normalize_url_path(ruta)
     fs = resolve_fs(url_path)
     if not fs.exists() or not fs.is_file():
         raise HTTPException(status_code=404)
 
-    # Fire-and-forget: marcar como visto (los admin también, así saben
-    # qué han "revisado"; la tabla es por usuario).
-    _pg(claims["_token"], "marcar_fichero_visto", {"p_ruta": url_path})
+    # NO se marca como visto automáticamente: el usuario decide con el
+    # tick de la tarjeta si ya lo ha estudiado o no. Abrir un fichero
+    # para echarle un vistazo no cuenta como "visto".
 
     mime, _ = mimetypes.guess_type(fs.name)
     return FileResponse(

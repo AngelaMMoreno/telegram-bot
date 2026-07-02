@@ -158,8 +158,15 @@ function tarjetaFichero(f) {
   card.dataset.ruta = f.ruta;
   card.dataset.tipo = 'fichero';
   const emoji = emojiParaFichero(f.nombre, f.mime);
+  const tickTitle = f.visto ? 'Marcar como no visto' : 'Marcar como visto';
   card.innerHTML = `
-    ${f.visto ? '<span class="visto-badge">✓ Visto</span>' : ''}
+    <button class="visto-tick ${f.visto ? 'on' : 'off'}"
+            data-accion="toggle-visto"
+            title="${tickTitle}"
+            aria-label="${tickTitle}"
+            aria-pressed="${f.visto ? 'true' : 'false'}">
+      <span class="visto-tick-check">${f.visto ? '✓' : ''}</span>
+    </button>
     <div class="card-emoji">${emoji}</div>
     <div class="card-name" title="${f.nombre}">${f.nombre}</div>
     <div class="card-meta">${fmtSize(f.size)} · ${fmtDate(f.modificado)}</div>
@@ -174,7 +181,7 @@ function tarjetaFichero(f) {
     card.appendChild(actions);
   }
   card.addEventListener('click', (e) => {
-    if (e.target.closest('.card-btn')) return;
+    if (e.target.closest('[data-accion]')) return;
     verFichero(f);
   });
   card.addEventListener('contextmenu', (e) => {
@@ -250,15 +257,41 @@ function renderGrid(data) {
 }
 
 function onGridAction(e) {
-  const btn = e.target.closest('.card-btn');
+  const btn = e.target.closest('[data-accion]');
   if (!btn) return;
   e.stopPropagation();
+  e.preventDefault();
   const card = btn.closest('.card');
   const ruta = card.dataset.ruta;
   const tipo = card.dataset.tipo;
   const item = { ruta, nombre: ruta.split('/').pop(), es_carpeta: tipo === 'carpeta' };
-  if (btn.dataset.accion === 'renombrar') pedirRenombrar(item);
-  else if (btn.dataset.accion === 'borrar') pedirBorrar(item);
+  const accion = btn.dataset.accion;
+  if (accion === 'renombrar') pedirRenombrar(item);
+  else if (accion === 'borrar') pedirBorrar(item);
+  else if (accion === 'toggle-visto') toggleVistoInline(item, btn, card);
+}
+
+async function toggleVistoInline(item, btn, card) {
+  const estabaVisto = btn.classList.contains('on');
+  const rpc = estabaVisto ? 'marcar_no_visto' : 'marcar_visto';
+  // Actualización optimista para que el clic se sienta instantáneo.
+  btn.classList.toggle('on',  !estabaVisto);
+  btn.classList.toggle('off', estabaVisto);
+  btn.setAttribute('aria-pressed', String(!estabaVisto));
+  btn.title = estabaVisto ? 'Marcar como visto' : 'Marcar como no visto';
+  btn.querySelector('.visto-tick-check').textContent = estabaVisto ? '' : '✓';
+  card.classList.toggle('visto', !estabaVisto);
+  try {
+    await api('POST', `/api/${rpc}`, { ruta: item.ruta });
+  } catch (err) {
+    // Revierte si falla.
+    btn.classList.toggle('on',  estabaVisto);
+    btn.classList.toggle('off', !estabaVisto);
+    btn.setAttribute('aria-pressed', String(estabaVisto));
+    btn.querySelector('.visto-tick-check').textContent = estabaVisto ? '✓' : '';
+    card.classList.toggle('visto', estabaVisto);
+    toast(`⚠️ ${err.message}`);
+  }
 }
 
 // ── Navegación ─────────────────────────────────────────────────────────────
@@ -280,11 +313,8 @@ function navegar(ruta) {
 function recargar() { cargar(ESTADO.ruta); }
 
 function verFichero(f) {
-  // Abre el fichero. El backend marca como visto en el mismo GET.
-  const url = '/api/ver?ruta=' + encodeURIComponent(f.ruta);
-  window.open(url, '_blank', 'noopener');
-  // Refresca el listado para que se actualice el badge "visto".
-  setTimeout(recargar, 500);
+  // Solo abre; el tick de "visto" lo pone el usuario a mano.
+  window.open('/api/ver?ruta=' + encodeURIComponent(f.ruta), '_blank', 'noopener');
 }
 
 // ── Acciones ───────────────────────────────────────────────────────────────

@@ -390,8 +390,44 @@
         Solo afecta a los intervalos futuros; las fechas ya programadas no cambian.
       </p>
       <div id="ritmo-opciones" class="ritmo-opciones"></div>
+
+      <div class="reset-repasos">
+        <div class="reset-repasos-copy">
+          <strong>Empezar el repaso de cero</strong>
+          <span class="muted small">
+            Borra las cajas Leitner de todas tus preguntas. No toca tus respuestas ni tus intentos:
+            solo se olvida en qué fase de repaso está cada pregunta.
+          </span>
+        </div>
+        <button class="btn btn-danger btn-outline" id="btn-resetear-repasos">
+          Resetear mi repaso
+        </button>
+      </div>
+
       <div class="modal-actions" style="flex-direction:column; align-items:stretch; gap:0.5rem; margin-top:1rem">
         <button class="btn btn-ghost" id="btn-ritmo-cancelar">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de confirmación de reset -->
+<div id="modal-reset-repasos" class="modal hidden">
+  <div class="modal-card">
+    <header class="modal-header">
+      <h3>¿Resetear tu repaso?</h3>
+    </header>
+    <div class="modal-body">
+      <p>
+        Se borrarán todas las cajas Leitner (aciertos, fallos y programación de repasos).
+        Volverás a empezar como si nunca hubieras repasado nada.
+      </p>
+      <p class="muted small">
+        Tus respuestas históricas, intentos y estadísticas se conservan intactos.
+      </p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="btn-reset-cancelar">Cancelar</button>
+        <button class="btn btn-danger" id="btn-reset-confirmar">Sí, resetear</button>
       </div>
     </div>
   </div>

@@ -2032,6 +2032,33 @@ BEGIN
     RETURN jsonb_build_object('ritmo', p_ritmo);
 END $$;
 
+-- Vacía por completo el estado del motor de cajas del usuario actual.
+-- No toca respuestas ni intentos (histórico intacto); solo borra
+-- 'repasos'. En la siguiente respuesta correcta, la pregunta volverá a
+-- entrar en caja 2 (comportamiento por defecto de registrar_respuesta).
+-- Opcionalmente restringe el reset a un test concreto.
+CREATE OR REPLACE FUNCTION resetear_mis_repasos(p_test_id uuid DEFAULT NULL)
+RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_uid uuid := jwt_usuario_id();
+    v_n   int;
+BEGIN
+    IF v_uid IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
+
+    IF p_test_id IS NULL THEN
+        DELETE FROM repasos WHERE usuario_id = v_uid;
+    ELSE
+        DELETE FROM repasos
+         WHERE usuario_id = v_uid
+           AND pregunta_id IN (
+               SELECT pregunta_id FROM test_preguntas WHERE test_id = p_test_id
+           );
+    END IF;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    RETURN jsonb_build_object('borradas', v_n);
+END $$;
+
 CREATE OR REPLACE FUNCTION resumen_repaso_test(p_test_id uuid) RETURNS jsonb
 LANGUAGE plpgsql STABLE AS $$
 DECLARE
@@ -2419,6 +2446,7 @@ GRANT EXECUTE ON FUNCTION encolar_revectorizado_total()               TO web_use
 
 GRANT EXECUTE ON FUNCTION mi_ritmo_repaso()                           TO web_user;
 GRANT EXECUTE ON FUNCTION set_ritmo_repaso(text)                      TO web_user;
+GRANT EXECUTE ON FUNCTION resetear_mis_repasos(uuid)                  TO web_user;
 GRANT EXECUTE ON FUNCTION ritmo_repaso_usuario(uuid)                  TO web_user;
 GRANT EXECUTE ON FUNCTION intervalo_repaso(int, text)                 TO web_user;
 GRANT EXECUTE ON FUNCTION resumen_repaso_test(uuid)                   TO web_user;

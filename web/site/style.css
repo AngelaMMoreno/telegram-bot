@@ -629,6 +629,36 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
   vertical-align: middle;
 }
 .badge.calma { background: #94a3b8; }
+
+/* Reset de repasos dentro del modal de ritmo */
+.reset-repasos {
+  margin-top: 1.25rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border, #d0d5dd);
+  border-radius: 12px;
+  background: #fef2f2;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+.reset-repasos-copy {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  flex: 1 1 220px; min-width: 200px;
+}
+.reset-repasos-copy strong { font-size: 0.95rem; color: var(--danger); }
+.btn.btn-outline {
+  background: transparent;
+}
+.btn.btn-danger.btn-outline {
+  color: var(--danger);
+  border: 1.5px solid var(--danger);
+}
+.btn.btn-danger.btn-outline:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
 .ritmo-opciones {
   display: flex;
   flex-direction: column;

@@ -522,6 +522,11 @@ Auxiliares invisibles al cliente pero clave para el resto del sistema.
 - **`set_ritmo_repaso(ritmo) → jsonb`** — solo actualiza
   `preferencias_usuario`. Como la fecha del próximo repaso se deriva al
   vuelo, no hay UPDATE masivo.
+- **`resetear_mis_repasos(test_id?) → jsonb`** — borra las filas del
+  usuario en `repasos` (opcionalmente restringido a las preguntas de un
+  test). No toca `respuestas` ni `intentos`. Devuelve
+  `{borradas: N}`. En la siguiente respuesta correcta cada pregunta
+  vuelve a entrar en caja 2 (comportamiento por defecto).
 - **`resumen_repaso_test(test_id) → jsonb`** — `{total_repasos, vencidas,
   dominadas, siguiente, test_realizado}`.
 - **`resumen_repaso_global() → jsonb`** — mismo formato pero sobre
