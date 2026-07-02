@@ -9,12 +9,21 @@ html, body { margin: 0; }
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
+  background-image:
+    radial-gradient(60% 40% at 100% 0%, var(--accent-soft) 0%, transparent 60%),
+    radial-gradient(50% 50% at 0% 100%, var(--sky-soft) 0%, transparent 60%);
+  background-attachment: fixed;
   color: var(--txt);
   min-height: 100vh;
   display: flex; flex-direction: column;
   -webkit-text-size-adjust: 100%;
   overflow-x: hidden;
   transition: background-color 0.2s, color 0.2s;
+}
+[data-theme="dark"] body {
+  background-image:
+    radial-gradient(60% 40% at 100% 0%, rgba(244, 208, 63, 0.06) 0%, transparent 60%),
+    radial-gradient(50% 50% at 0% 100%, rgba(92, 229, 213, 0.06) 0%, transparent 60%);
 }
 
 /* ─── Sidebar (drawer en móvil) ─── */
@@ -37,22 +46,25 @@ body {
   z-index: 24;
 }
 .nav-item {
-  display: inline-flex; align-items: center; gap: 0.6rem;
+  display: inline-flex; align-items: center; gap: 0.75rem;
   background: none; border: 0; color: var(--nav-side-text);
-  padding: 0.7rem 0.85rem; border-radius: var(--radius);
+  padding: 0.85rem 1rem; border-radius: var(--radius);
   text-align: left;
   cursor: pointer;
-  font-size: 0.95rem;
+  font-size: 1rem;
+  font-weight: 500;
   font-family: inherit;
   width: 100%;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.18s, color 0.18s;
 }
-.nav-item:hover, .nav-item:active { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.nav-item:hover, .nav-item:active { background: rgba(255, 255, 255, 0.10); color: #fff; }
 .nav-item.active {
   background: linear-gradient(135deg, var(--grad-a), var(--grad-b));
-  color: #fff;
+  color: #14241D;
+  font-weight: 700;
   pointer-events: none;
   cursor: default;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
 }
 .nav-ico {
   width: 18px; height: 18px; flex: 0 0 auto;
@@ -71,7 +83,7 @@ body {
   display: flex; flex-direction: column;
   align-items: stretch; gap: 0.6rem; margin-bottom: 0.9rem;
 }
-.view-header h2 { margin: 0; font-size: 1.3rem; color: var(--txt); }
+.view-header h2 { margin: 0; font-size: 1.55rem; color: var(--txt); font-weight: 700; letter-spacing: -0.01em; }
 .view-header input[type=search] {
   padding: 0.55rem 0.75rem;
   border: 1px solid var(--border); border-radius: var(--radius);
@@ -138,10 +150,11 @@ body {
   text-align: center;
 }
 .stat-card .v {
-  font-size: 1.55rem; font-weight: 700;
-  color: var(--pri); line-height: 1.1;
+  font-size: 1.85rem; font-weight: 800;
+  color: var(--pri-d); line-height: 1.1;
 }
-.stat-card .l { color: var(--txt-soft); font-size: 0.85rem; }
+[data-theme="dark"] .stat-card .v { color: var(--pri); }
+.stat-card .l { color: var(--txt-soft); font-size: 0.95rem; font-weight: 500; }
 
 /* ─── Action cards ─── */
 .actions-grid {
@@ -286,14 +299,15 @@ body {
 .option-btn.wrong { background: var(--danger-light); border-color: var(--danger); color: var(--txt); }
 .option-btn.disabled { pointer-events: none; opacity: 0.9; }
 .explanation {
-  background: rgba(251, 191, 36, 0.15);
-  border: 1px solid rgba(251, 191, 36, 0.4);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
   color: var(--txt);
-  padding: 0.8rem 1rem;
+  padding: 0.95rem 1.15rem;
   border-radius: var(--radius); margin-top: 1rem;
   word-break: break-word;
+  line-height: 1.55;
 }
-[data-theme="dark"] .explanation { background: rgba(251, 191, 36, 0.1); }
+[data-theme="dark"] .explanation { background: rgba(244, 208, 63, 0.10); border-color: rgba(244, 208, 63, 0.45); }
 .quiz-actions { margin-top: 1.3rem; display: flex; gap: 0.45rem; flex-wrap: wrap; }
 .quiz-actions > span { display: none; } /* spacer solo en desktop */
 
@@ -316,12 +330,12 @@ body {
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
-  padding: 0.6rem 2.2rem 0.6rem 0.9rem;
+  padding: 0.6rem 2.2rem 0.6rem 1rem;
   border: 1.5px solid var(--border); border-radius: 999px;
   background-color: var(--bg-panel); color: var(--txt);
-  font-family: inherit; font-size: 0.9rem; font-weight: 500;
-  min-height: 42px; cursor: pointer;
-  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366F1' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e");
+  font-family: inherit; font-size: 0.95rem; font-weight: 500;
+  min-height: 44px; cursor: pointer;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23556B2F' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e");
   background-repeat: no-repeat;
   background-position: right 0.75rem center;
   background-size: 16px;
@@ -421,6 +435,7 @@ body {
 .tag-chips .chip.active {
   background: var(--pri); color: #fff; border-color: var(--pri);
 }
+[data-theme="dark"] .tag-chips .chip.active { color: #14241D; }
 
 /* ─── Progreso ─── */
 .por-test { list-style: none; padding: 0; }
@@ -447,6 +462,7 @@ body {
 .pagination .page.active {
   background: var(--pri); color: #fff; border-color: var(--pri);
 }
+[data-theme="dark"] .pagination .page.active { color: #14241D; }
 
 /* ─── Forms ─── */
 textarea {
@@ -460,21 +476,27 @@ textarea:focus { outline: none; border-color: var(--pri); box-shadow: 0 0 0 4px 
 .muted { color: var(--txt-soft); font-size: 0.9rem; }
 .actions { display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap; margin-top: 0.5rem; }
 
-/* ─── Modal ─── */
+/* ─── Modal (cristal esmerilado) ─── */
 .modal {
   position: fixed; inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(46, 59, 44, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex; z-index: 200;
   padding: 0.5rem;
 }
+[data-theme="dark"] .modal { background: rgba(20, 36, 29, 0.65); }
 .modal-card {
-  background: var(--bg-panel); color: var(--txt);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  color: var(--txt);
   width: 100%; max-width: 560px;
   margin: auto;
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   max-height: 95vh; overflow-y: auto;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--glass-border);
 }
 .modal-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -526,6 +548,7 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
   border-radius: 50%; font-size: 1rem;
   user-select: none;
 }
+[data-theme="dark"] .usuarios-list .avatar-row { color: #14241D; }
 .usuarios-list .nombre { font-weight: 600; word-break: break-word; }
 .usuarios-list .meta { color: var(--txt-soft); font-size: 0.8rem; }
 .usuarios-list .roles-chips {
@@ -536,8 +559,8 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
   padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.75rem;
   font-weight: 600;
 }
-.usuarios-list .role-chip.admin { background: #fde68a; color: #92400e; }
-[data-theme="dark"] .usuarios-list .role-chip.admin { background: rgba(253, 230, 138, 0.2); color: #fbbf24; }
+.usuarios-list .role-chip.admin { background: var(--accent-soft); color: var(--accent-d); }
+[data-theme="dark"] .usuarios-list .role-chip.admin { background: rgba(244, 208, 63, 0.20); color: var(--accent); }
 .usuarios-list .inactivo { opacity: 0.55; }
 
 .modal-body { padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: 0.9rem; }
@@ -556,6 +579,7 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
 .modal-body .role-toggle.active {
   background: var(--pri); color: #fff; border-color: var(--pri);
 }
+[data-theme="dark"] .modal-body .role-toggle.active { color: #14241D; }
 .modal-body .input-row {
   display: flex; gap: 0.5rem; align-items: stretch; flex-wrap: wrap;
 }
@@ -620,16 +644,17 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
 .badge {
   display: inline-block;
   min-width: 1.4em;
-  padding: 0.1em 0.45em;
+  padding: 0.1em 0.5em;
   margin-left: 0.35em;
   border-radius: 999px;
-  background: #e11d48;
-  color: #fff;
+  background: var(--accent);
+  color: #3B2A0F;
   font-size: 0.75em;
   line-height: 1.3;
-  font-weight: 600;
+  font-weight: 700;
   text-align: center;
   vertical-align: middle;
 }
-.badge.calma { background: var(--txt-soft); }
+[data-theme="dark"] .badge { color: #14241D; }
+.badge.calma { background: var(--txt-soft); color: var(--bg); }
 
