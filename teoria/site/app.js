@@ -197,8 +197,10 @@ function menuContextualFichero(evt, f) {
   m.className = 'ctx-menu';
   m.style.left = evt.clientX + 'px';
   m.style.top = evt.clientY + 'px';
+  const puedeEditar = ESTADO.puede_gestionar && esMarkdown(f.nombre);
   m.innerHTML = `
     <div class="ctx-item" data-a="ver">📖 Abrir</div>
+    ${puedeEditar ? `<div class="ctx-item" data-a="editar">✏️ Editar</div>` : ''}
     <div class="ctx-item" data-a="descargar">⬇️ Descargar</div>
     <div class="ctx-sep"></div>
     <div class="ctx-item" data-a="${f.visto ? 'no-visto' : 'visto'}">
@@ -215,6 +217,7 @@ function menuContextualFichero(evt, f) {
     const a = e.target.closest('.ctx-item')?.dataset.a;
     cerrarMenu();
     if (a === 'ver') verFichero(f);
+    else if (a === 'editar') { await abrirMarkdown(f.ruta, f.nombre); mdEntrarEdicion(); }
     else if (a === 'descargar') window.open('/api/ver?ruta=' + encodeURIComponent(f.ruta), '_blank');
     else if (a === 'visto') { await api('POST', '/api/marcar_visto', { ruta: f.ruta }); recargar(); }
     else if (a === 'no-visto') { await api('POST', '/api/marcar_no_visto', { ruta: f.ruta }); recargar(); }
@@ -665,6 +668,15 @@ document.querySelectorAll('input[name="theme"]').forEach(r => {
 });
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
+
+// Si el usuario cambia de sesión (logout / login con otra cuenta) en otra
+// pestaña, la cookie compartida `aprentix_token` cambia bajo nuestros pies.
+// El TOKEN que capturamos al arrancar quedó obsoleto: recargamos para volver
+// a leerla y no seguir haciendo llamadas con el JWT del usuario anterior.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  if (getCookie(COOKIE_NAME) !== TOKEN) location.reload();
+});
 
 window.addEventListener('hashchange', () => cargar(location.hash.slice(1) || '/'));
 

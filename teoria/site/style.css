@@ -36,6 +36,11 @@ button { font: inherit; cursor: pointer; }
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
 }
 .admin-hint { color: var(--sub); font-size: 12px; margin-left: auto; }
+/* Admin-bar botones más compactos que el resto de la app. */
+.admin-bar .btn {
+  min-height: 34px; padding: 0.35rem 0.75rem;
+  font-size: 0.85rem; font-weight: 500;
+}
 
 /* ── Grid ────────────────────────────────────────────────────────────── */
 .grid {
@@ -172,10 +177,15 @@ button { font: inherit; cursor: pointer; }
 .md-view.hidden { display: none; }
 .md-view-header {
   display: flex; align-items: center; gap: 8px;
-  padding: 10px 16px;
+  padding: 10px 24px;
   background: var(--card);
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
+}
+/* Botón "Volver" del visor: compacto para que no domine la cabecera. */
+.md-back {
+  min-height: 34px; padding: 0.3rem 0.7rem;
+  font-size: 0.85rem; font-weight: 500;
 }
 .md-title {
   font-weight: 700; font-size: 15px;
@@ -213,7 +223,7 @@ button { font: inherit; cursor: pointer; }
 .md-body.editing .md-editor { display: block; }
 .md-render {
   overflow: auto;
-  padding: 24px 28px;
+  padding: 24px;
   background: var(--card);
   color: var(--text);
   line-height: 1.65;

@@ -1767,6 +1767,18 @@ $("#btn-reset-confirmar")?.addEventListener("click", async (e) => {
 });
 
 
+/* ── Cambios de sesión en otra pestaña ───────────────────────────────────
+ * La cookie `aprentix_token` vive en .aprentix.es y la comparten tests y
+ * teoría. Si el usuario hace logout o entra con otra cuenta en otra
+ * pestaña (o subdominio), esta pestaña sigue con el state.jwt viejo. Al
+ * volver a esta pestaña recargamos si la cookie ya no coincide con lo que
+ * teníamos, para no operar con la sesión anterior. */
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  const cookieNow = getCookie(COOKIE_NAME);
+  if (cookieNow !== state.jwt) location.reload();
+});
+
 /* ── Arranque ───────────────────────────────────────────────────────────── */
 inicializarInputsTiempo();
 (async () => {
