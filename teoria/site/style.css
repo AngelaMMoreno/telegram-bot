@@ -8,17 +8,10 @@ html, body { min-height: 100%; }
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
-  background-image:
-    radial-gradient(50% 40% at 100% 0%, var(--accent-soft) 0%, transparent 60%),
-    radial-gradient(45% 40% at 0% 100%, var(--sky-soft) 0%, transparent 60%);
+  background-image: var(--bg-ambient);
   background-attachment: fixed;
   color: var(--text);
   transition: background-color 0.2s, color 0.2s;
-}
-[data-theme="dark"] body {
-  background-image:
-    radial-gradient(50% 40% at 100% 0%, rgba(244, 208, 63, 0.05) 0%, transparent 60%),
-    radial-gradient(45% 40% at 0% 100%, rgba(92, 229, 213, 0.06) 0%, transparent 60%);
 }
 a { color: inherit; text-decoration: none; }
 button { font: inherit; cursor: pointer; }
@@ -76,9 +69,17 @@ button { font: inherit; cursor: pointer; }
   box-shadow: var(--shadow-md);
   border-color: var(--pri);
 }
-.card.folder { background: var(--pri-light); }
+/* Cada carpeta hereda un matiz distinto ciclando entre 5 acentos: */
+.card.folder { background: linear-gradient(160deg, var(--accent-soft) 0%, var(--card) 70%); }
+.card.folder:nth-child(5n+2) { background: linear-gradient(160deg, var(--sky-soft) 0%, var(--card) 70%); }
+.card.folder:nth-child(5n+3) { background: linear-gradient(160deg, var(--lavender-soft) 0%, var(--card) 70%); }
+.card.folder:nth-child(5n+4) { background: linear-gradient(160deg, var(--coral-soft) 0%, var(--card) 70%); }
+.card.folder:nth-child(5n)   { background: linear-gradient(160deg, var(--leaf-soft) 0%, var(--card) 70%); }
 .card.file { background: var(--card); }
-.card.visto { background: var(--ok-light); border-color: rgba(16, 185, 129, 0.35); }
+.card.visto {
+  background: linear-gradient(160deg, var(--ok-light) 0%, var(--card) 70%);
+  border-color: var(--ok);
+}
 .card-emoji { font-size: 44px; line-height: 1; }
 .card-name {
   font-size: 14px; font-weight: 600;

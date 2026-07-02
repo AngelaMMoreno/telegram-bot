@@ -5,8 +5,12 @@
  * apps (landing, tests, teoría) para que cualquier cambio de marca se
  * haga en un solo sitio.
  *
- * Paleta de día: invernadero al sol (crema + verde salvia + ámbar + azul pizarra).
- * Paleta de noche: bosque bioluminiscente (verde pino + musgo + cian suave).
+ * Paleta de día:  "Un día soleado en el invernadero". Marfil luminoso
+ *                 con toques de miel, coral melocotón, verde salvia,
+ *                 cielo turquesa y lavanda glicinia.
+ * Paleta de noche: "Bosque bioluminiscente". Verde pino profundo con
+ *                 luces LED bajo consumo: cian aguamarina, luciérnaga,
+ *                 magenta de setas y verde neón musgo.
  *
  * Los nombres canónicos son --txt/--txt-soft/--bg-panel/--bg-alt. Los
  * alias --text/--sub/--card/--card-alt existen porque el CSS histórico
@@ -16,50 +20,64 @@
 :root {
   /* ─── Marca / primarios (verde salvia + verde musgo) ─── */
   --pri: #6B8E23;          /* Verde musgo (acción principal) */
-  --pri-d: #556B2F;        /* Verde oliva oscuro (hover / texto sobre crema) */
-  --pri-hover: #556B2F;
-  --pri-light: #E8EDDE;    /* Musgo muy pálido para fondos suaves */
-  --pri-soft: rgba(107, 142, 35, 0.12);
-  --pri-glow: rgba(107, 142, 35, 0.22);
-  --grad-a: #8DA399;       /* Verde salvia */
+  --pri-d: #4E6B1F;        /* Musgo oscuro (hover / texto sobre marfil) */
+  --pri-hover: #4E6B1F;
+  --pri-light: #E6F0CE;    /* Musgo pálido para fondos suaves */
+  --pri-soft: rgba(107, 142, 35, 0.13);
+  --pri-glow: rgba(107, 142, 35, 0.24);
+  --grad-a: #A8C88A;       /* Verde salvia claro */
   --grad-b: #6B8E23;       /* Verde musgo */
 
-  /* ─── Superficies (crema / marfil) ─── */
-  --bg: #F7F5F0;           /* Blanco crema principal */
-  --bg-soft: #EFEDE4;      /* Ligeramente más cálido */
-  --bg-panel: #FDFCF7;     /* Superficies elevadas (tarjetas) */
-  --bg-alt: #F1EFE6;       /* Zonas alternas / hover */
+  /* ─── Superficies (marfil luminoso al sol) ─── */
+  --bg: #FBF9F0;           /* Marfil casi luminoso, mucho más claro que #F7F5F0 */
+  --bg-soft: #F3F5DE;      /* Amarillo pastel muy suave (luz de sol) */
+  --bg-panel: #FFFDF5;     /* Superficie elevada (tarjetas), casi blanco */
+  --bg-alt: #F1F6E1;       /* Verde muy pálido para hover / alternos */
 
   /* ─── Tipografía (contraste alto, sin negros puros) ─── */
-  --txt: #2E3B2C;          /* Verde tierra oscuro (más legible que negro puro) */
-  --txt-soft: #5F6B58;     /* Gris verdoso para texto secundario */
-  --border: #D9D4C4;       /* Borde arcilla clara */
+  --txt: #2B3A24;          /* Verde tierra oscuro */
+  --txt-soft: #62705A;     /* Gris verdoso para texto secundario */
+  --border: #DDE4C8;       /* Borde verde claro (más luminoso que arcilla) */
 
   /* Alias para compatibilidad histórica */
   --primary: var(--pri);
   --primary-hover: var(--pri-d);
 
-  /* ─── Acentos ─── */
-  --accent: #EAA14F;       /* Ámbar / miel (luz solar) */
-  --accent-d: #C7822F;
-  --accent-soft: rgba(234, 161, 79, 0.15);
-  --sky: #A8C0CE;          /* Azul pizarra claro (agua / cielo) */
-  --sky-soft: rgba(168, 192, 206, 0.20);
+  /* ─── Acentos: 5 colores para más variedad y luz ─── */
+  --accent: #F4B740;       /* Ámbar sol (más saturado y luminoso) */
+  --accent-d: #D6941F;
+  --accent-soft: rgba(244, 183, 64, 0.18);
+  --accent-glow: rgba(244, 183, 64, 0.32);
 
-  --danger: #C0533E;       /* Terracota (menos estridente que el rojo puro) */
+  --coral: #F27E62;        /* Coral melocotón (amanecer) */
+  --coral-d: #DA5A3B;
+  --coral-soft: rgba(242, 126, 98, 0.16);
+
+  --sky: #7FBEC6;          /* Turquesa cielo (más vivo que pizarra) */
+  --sky-d: #4E9AA4;
+  --sky-soft: rgba(127, 190, 198, 0.22);
+
+  --lavender: #B79BD9;     /* Lavanda glicinia */
+  --lavender-d: #8E6EBC;
+  --lavender-soft: rgba(183, 155, 217, 0.18);
+
+  --leaf: #9BC53D;         /* Verde lima hoja tierna */
+  --leaf-soft: rgba(155, 197, 61, 0.18);
+
+  --danger: #C0533E;       /* Terracota */
   --danger-light: #F5DDD5;
   --danger-soft: #FBEFEA;
-  --success: #6B8E23;      /* Mismo verde musgo (crecimiento) */
+  --success: #6B8E23;
   --success-light: #DDE7C8;
   --ok: var(--success);
   --ok-light: var(--success-light);
-  --warn: #EAA14F;
+  --warn: var(--accent);
 
-  /* ─── Sombras (más suaves, sin gris tecnológico) ─── */
-  --shadow-sm: 0 1px 3px rgba(46, 59, 44, 0.06);
-  --shadow: 0 2px 6px rgba(46, 59, 44, 0.08), 0 1px 2px rgba(46, 59, 44, 0.05);
-  --shadow-md: 0 10px 24px rgba(107, 142, 35, 0.16);
-  --shadow-lg: 0 16px 40px rgba(107, 142, 35, 0.20);
+  /* ─── Sombras: cálidas y con matiz miel para reforzar el sol ─── */
+  --shadow-sm: 0 1px 3px rgba(180, 130, 30, 0.08);
+  --shadow: 0 3px 8px rgba(180, 130, 30, 0.10), 0 1px 3px rgba(46, 59, 44, 0.05);
+  --shadow-md: 0 12px 28px rgba(244, 183, 64, 0.20);
+  --shadow-lg: 0 20px 48px rgba(107, 142, 35, 0.22);
 
   /* ─── Formas orgánicas ─── */
   --radius-sm: 10px;
@@ -68,21 +86,29 @@
   --radius-xl: 28px;
 
   /* ─── Layout ─── */
-  --topbar-h: 72px;        /* Antes 60; hueco para logo/nombre más grandes */
+  --topbar-h: 72px;
   --sidebar-w: 240px;
 
   /* ─── Tipografía base (accesibilidad) ─── */
-  --font-size-base: 17px;  /* Antes 16; más legible en temarios largos */
+  --font-size-base: 17px;
   --line-height-base: 1.6;
 
-  /* Sidebar oscuro sigue teniendo estética "bosque" en modo día */
+  /* Sidebar oscuro sigue teniendo estética "bosque" incluso en modo día */
   --nav-side-bg: #2E3B2C;
-  --nav-side-text: rgba(247, 245, 240, 0.90);
+  --nav-side-text: rgba(251, 249, 240, 0.92);
 
   /* Cristal esmerilado (glassmorphism) para modales/barras */
-  --glass-bg: rgba(253, 252, 247, 0.75);
-  --glass-border: rgba(107, 142, 35, 0.18);
-  --glass-blur: 14px;
+  --glass-bg: rgba(255, 253, 245, 0.72);
+  --glass-border: rgba(107, 142, 35, 0.20);
+  --glass-blur: 16px;
+
+  /* ─── Fondos ambientales: gradientes multi-color para "día soleado" ─── */
+  --bg-ambient:
+    radial-gradient(70% 45% at 12% 8%,  rgba(244, 183, 64, 0.28) 0%, transparent 55%),
+    radial-gradient(60% 40% at 92% 6%,  rgba(127, 190, 198, 0.24) 0%, transparent 60%),
+    radial-gradient(55% 45% at 88% 92%, rgba(242, 126, 98, 0.16) 0%, transparent 60%),
+    radial-gradient(55% 40% at 6% 96%,  rgba(155, 197, 61, 0.20) 0%, transparent 60%),
+    radial-gradient(60% 50% at 50% 55%, rgba(183, 155, 217, 0.10) 0%, transparent 65%);
 
   /* Alias legado (landing y teoría lo usan hoy) */
   --text: var(--txt);
@@ -92,53 +118,76 @@
 }
 
 [data-theme="dark"] {
-  /* ─── Marca (bioluminiscencia: cian suave / luciérnaga) ─── */
+  /* ─── Marca (bioluminiscencia cian) ─── */
   --pri: #5CE5D5;          /* Cian bioluminiscente */
   --pri-d: #2FB8A7;
   --pri-hover: #2FB8A7;
-  --pri-light: #1E3A34;
-  --pri-soft: rgba(92, 229, 213, 0.14);
-  --pri-glow: rgba(92, 229, 213, 0.30);
+  --pri-light: #123832;
+  --pri-soft: rgba(92, 229, 213, 0.16);
+  --pri-glow: rgba(92, 229, 213, 0.35);
   --grad-a: #5CE5D5;
-  --grad-b: #F4D03F;       /* Amarillo luciérnaga */
+  --grad-b: #B084F5;       /* Púrpura bioluminiscente (setas) */
 
-  /* ─── Superficies (bosque profundo) ─── */
-  --bg: #14241D;           /* Verde pino oscuro */
-  --bg-soft: #1A2E25;
-  --bg-panel: #23352B;     /* Hoja en sombra (tarjetas) */
-  --bg-alt: #1B2D24;
+  /* ─── Superficies: bosque nocturno con toques violáceos ─── */
+  --bg: #101E1A;           /* Verde pino muy profundo */
+  --bg-soft: #16261F;
+  --bg-panel: #1D3126;     /* Hoja en sombra */
+  --bg-alt: #182920;
 
-  /* ─── Tipografía (verde pálido / hueso) ─── */
-  --txt: #E1EAE4;          /* Verde muy pálido, más suave que blanco puro */
-  --txt-soft: #9DB3A5;
-  --border: #34493E;
+  /* ─── Tipografía ─── */
+  --txt: #E4EEE7;
+  --txt-soft: #9DBBAB;
+  --border: #2F4738;
 
-  /* ─── Acentos ─── */
+  /* ─── Acentos bioluminiscentes: LED bajo consumo, 5 colores ─── */
   --accent: #F4D03F;       /* Amarillo luciérnaga */
   --accent-d: #D6B32E;
-  --accent-soft: rgba(244, 208, 63, 0.15);
-  --sky: #7BB3C7;
-  --sky-soft: rgba(123, 179, 199, 0.18);
+  --accent-soft: rgba(244, 208, 63, 0.16);
+  --accent-glow: rgba(244, 208, 63, 0.32);
+
+  --coral: #FF9B85;        /* Coral amanecer bioluminiscente */
+  --coral-d: #F27860;
+  --coral-soft: rgba(255, 155, 133, 0.16);
+
+  --sky: #6FD3E8;          /* Turquesa neón agua */
+  --sky-d: #3FADC5;
+  --sky-soft: rgba(111, 211, 232, 0.18);
+
+  --lavender: #B084F5;     /* Magenta / púrpura de setas bioluminiscentes */
+  --lavender-d: #8B60D5;
+  --lavender-soft: rgba(176, 132, 245, 0.18);
+
+  --leaf: #9CE87B;         /* Verde neón musgo bioluminiscente */
+  --leaf-soft: rgba(156, 232, 123, 0.18);
 
   --danger: #E8836C;
-  --danger-light: rgba(232, 131, 108, 0.18);
+  --danger-light: rgba(232, 131, 108, 0.20);
   --danger-soft: rgba(232, 131, 108, 0.10);
   --success: #7EDDA0;
   --success-light: rgba(126, 221, 160, 0.16);
   --ok: var(--success);
   --ok-light: var(--success-light);
-  --warn: #F4D03F;
+  --warn: var(--accent);
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 10px 24px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55);
+  /* Sombras con leve halo bioluminiscente */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 12px 28px rgba(0, 0, 0, 0.55), 0 0 24px rgba(92, 229, 213, 0.08);
+  --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.60), 0 0 36px rgba(176, 132, 245, 0.10);
 
-  --nav-side-bg: #0E1A15;
-  --nav-side-text: rgba(225, 234, 228, 0.88);
+  --nav-side-bg: #0A1612;
+  --nav-side-text: rgba(228, 238, 231, 0.90);
 
-  --glass-bg: rgba(35, 53, 43, 0.70);
-  --glass-border: rgba(92, 229, 213, 0.22);
+  --glass-bg: rgba(29, 49, 38, 0.72);
+  --glass-border: rgba(92, 229, 213, 0.24);
+
+  /* Fondo ambiental nocturno: bioluminiscencia multi-color */
+  --bg-ambient:
+    radial-gradient(60% 40% at 15% 10%, rgba(92, 229, 213, 0.14) 0%, transparent 60%),
+    radial-gradient(55% 40% at 88% 12%, rgba(244, 208, 63, 0.10) 0%, transparent 60%),
+    radial-gradient(55% 45% at 90% 90%, rgba(176, 132, 245, 0.14) 0%, transparent 60%),
+    radial-gradient(55% 45% at 8% 92%,  rgba(156, 232, 123, 0.10) 0%, transparent 60%),
+    radial-gradient(60% 50% at 50% 55%, rgba(111, 211, 232, 0.08) 0%, transparent 65%);
 }
 
 /* ─── Accesibilidad: respeta prefers-reduced-motion ─── */
