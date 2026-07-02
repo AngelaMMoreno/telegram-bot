@@ -21,6 +21,9 @@ aprentix-header { display: contents; }
   z-index: 30;
   color: var(--txt);
 }
+@media (min-width: 900px) {
+  .topbar { padding: 0 1.5rem; gap: 1.2rem; }
+}
 .hamburger {
   background: none; border: 0; color: var(--txt);
   font-size: 1.5rem; cursor: pointer;

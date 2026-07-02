@@ -596,11 +596,7 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
       "side main" 1fr
       / var(--sidebar-w) 1fr;
   }
-  .topbar {
-    grid-area: header; position: sticky;
-    padding: 0 1.5rem;
-    gap: 1.2rem;
-  }
+  .topbar { grid-area: header; }
   .brand-name { font-size: 1.05rem; }
   .user-chip {
     margin-left: auto;
@@ -615,7 +611,7 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
     height: auto;
   }
   .sidebar-backdrop { display: none !important; }
-  .content { grid-area: main; padding: 1.5rem 2.5rem; max-width: none; overflow-x: hidden; }
+  .content { grid-area: main; padding: 1.5rem; max-width: none; overflow-x: hidden; }
   .quiz-actions > span { display: block; flex: 1; }
   .auth-card { margin-top: 3rem; padding: 2rem; }
 }
