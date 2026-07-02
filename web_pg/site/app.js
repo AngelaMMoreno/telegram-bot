@@ -120,6 +120,22 @@ function logout(navigateAway = true) {
   if (navigateAway) navigate("login");
 }
 
+/* Sincroniza el estado si se hace login/logout en otra pestaña
+   del mismo origen. Sin esto, la pestaña "vieja" seguiría
+   mostrando el usuario anterior hasta la próxima petición 401. */
+window.addEventListener("storage", (ev) => {
+  if (ev.key !== "jwt" && ev.key !== "user") return;
+  const newJwt  = localStorage.getItem("jwt") || null;
+  const newUser = JSON.parse(localStorage.getItem("user") || "null");
+  const changed = newJwt !== state.jwt ||
+                  JSON.stringify(newUser) !== JSON.stringify(state.user);
+  if (!changed) return;
+  state.jwt = newJwt;
+  state.user = newUser;
+  applySession();
+  navigate(state.jwt && state.user ? "home" : "login");
+});
+
 /* ── Navegación ──────────────────────────────────────────────────────────── */
 function navigate(view) {
   $$(".view").forEach(v => v.classList.remove("active"));
