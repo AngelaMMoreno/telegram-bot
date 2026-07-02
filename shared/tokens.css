@@ -1,57 +1,88 @@
 /*
- * Aprentix · design tokens compartidos.
+ * Aprentix · design tokens compartidos (Solarpunk).
  *
  * Único origen para paleta, tipografía y radios. Se incluye en las tres
  * apps (landing, tests, teoría) para que cualquier cambio de marca se
  * haga en un solo sitio.
  *
+ * Paleta de día: invernadero al sol (crema + verde salvia + ámbar + azul pizarra).
+ * Paleta de noche: bosque bioluminiscente (verde pino + musgo + cian suave).
+ *
  * Los nombres canónicos son --txt/--txt-soft/--bg-panel/--bg-alt. Los
  * alias --text/--sub/--card/--card-alt existen porque el CSS histórico
- * de landing y teoría todavía los usa; con el tiempo se pueden ir
- * eliminando renombrando en los CSS locales.
+ * de landing y teoría todavía los usa.
  */
 
 :root {
-  --pri: #6366F1;
-  --pri-d: #4F46E5;
-  --pri-hover: #4F46E5;
-  --pri-light: #EEF2FF;
-  --pri-soft: rgba(99, 102, 241, 0.10);
-  --pri-glow: rgba(99, 102, 241, 0.18);
-  --grad-a: #6366F1;
-  --grad-b: #8B5CF6;
+  /* ─── Marca / primarios (verde salvia + verde musgo) ─── */
+  --pri: #6B8E23;          /* Verde musgo (acción principal) */
+  --pri-d: #556B2F;        /* Verde oliva oscuro (hover / texto sobre crema) */
+  --pri-hover: #556B2F;
+  --pri-light: #E8EDDE;    /* Musgo muy pálido para fondos suaves */
+  --pri-soft: rgba(107, 142, 35, 0.12);
+  --pri-glow: rgba(107, 142, 35, 0.22);
+  --grad-a: #8DA399;       /* Verde salvia */
+  --grad-b: #6B8E23;       /* Verde musgo */
 
-  --bg: #F1F5F9;
-  --bg-soft: #EEF2FF;
-  --bg-panel: #ffffff;
-  --bg-alt: #F8FAFC;
-  --txt: #0F172A;
-  --txt-soft: #64748B;
-  --border: #E2E8F0;
+  /* ─── Superficies (crema / marfil) ─── */
+  --bg: #F7F5F0;           /* Blanco crema principal */
+  --bg-soft: #EFEDE4;      /* Ligeramente más cálido */
+  --bg-panel: #FDFCF7;     /* Superficies elevadas (tarjetas) */
+  --bg-alt: #F1EFE6;       /* Zonas alternas / hover */
 
+  /* ─── Tipografía (contraste alto, sin negros puros) ─── */
+  --txt: #2E3B2C;          /* Verde tierra oscuro (más legible que negro puro) */
+  --txt-soft: #5F6B58;     /* Gris verdoso para texto secundario */
+  --border: #D9D4C4;       /* Borde arcilla clara */
+
+  /* Alias para compatibilidad histórica */
   --primary: var(--pri);
   --primary-hover: var(--pri-d);
 
-  --danger: #EF4444;
-  --danger-light: #FEE2E2;
-  --danger-soft: #FEF2F2;
-  --success: #16A34A;
-  --success-light: #D1FAE5;
+  /* ─── Acentos ─── */
+  --accent: #EAA14F;       /* Ámbar / miel (luz solar) */
+  --accent-d: #C7822F;
+  --accent-soft: rgba(234, 161, 79, 0.15);
+  --sky: #A8C0CE;          /* Azul pizarra claro (agua / cielo) */
+  --sky-soft: rgba(168, 192, 206, 0.20);
+
+  --danger: #C0533E;       /* Terracota (menos estridente que el rojo puro) */
+  --danger-light: #F5DDD5;
+  --danger-soft: #FBEFEA;
+  --success: #6B8E23;      /* Mismo verde musgo (crecimiento) */
+  --success-light: #DDE7C8;
   --ok: var(--success);
   --ok-light: var(--success-light);
+  --warn: #EAA14F;
 
-  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06);
-  --shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-md: 0 8px 20px rgba(99, 102, 241, 0.15);
-  --shadow-lg: 0 12px 30px rgba(99, 102, 241, 0.18);
+  /* ─── Sombras (más suaves, sin gris tecnológico) ─── */
+  --shadow-sm: 0 1px 3px rgba(46, 59, 44, 0.06);
+  --shadow: 0 2px 6px rgba(46, 59, 44, 0.08), 0 1px 2px rgba(46, 59, 44, 0.05);
+  --shadow-md: 0 10px 24px rgba(107, 142, 35, 0.16);
+  --shadow-lg: 0 16px 40px rgba(107, 142, 35, 0.20);
 
-  --radius: 12px;
-  --radius-lg: 18px;
-  --topbar-h: 60px;
+  /* ─── Formas orgánicas ─── */
+  --radius-sm: 10px;
+  --radius: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 28px;
+
+  /* ─── Layout ─── */
+  --topbar-h: 72px;        /* Antes 60; hueco para logo/nombre más grandes */
   --sidebar-w: 240px;
 
-  --nav-side-bg: #111827;
-  --nav-side-text: rgba(255, 255, 255, 0.85);
+  /* ─── Tipografía base (accesibilidad) ─── */
+  --font-size-base: 17px;  /* Antes 16; más legible en temarios largos */
+  --line-height-base: 1.6;
+
+  /* Sidebar oscuro sigue teniendo estética "bosque" en modo día */
+  --nav-side-bg: #2E3B2C;
+  --nav-side-text: rgba(247, 245, 240, 0.90);
+
+  /* Cristal esmerilado (glassmorphism) para modales/barras */
+  --glass-bg: rgba(253, 252, 247, 0.75);
+  --glass-border: rgba(107, 142, 35, 0.18);
+  --glass-blur: 14px;
 
   /* Alias legado (landing y teoría lo usan hoy) */
   --text: var(--txt);
@@ -61,34 +92,68 @@
 }
 
 [data-theme="dark"] {
-  --pri: #818CF8;
-  --pri-d: #6366F1;
-  --pri-hover: #6366F1;
-  --pri-light: #1E1B4B;
-  --pri-soft: rgba(129, 140, 248, 0.14);
-  --pri-glow: rgba(129, 140, 248, 0.28);
-  --grad-a: #6366F1;
-  --grad-b: #A78BFA;
+  /* ─── Marca (bioluminiscencia: cian suave / luciérnaga) ─── */
+  --pri: #5CE5D5;          /* Cian bioluminiscente */
+  --pri-d: #2FB8A7;
+  --pri-hover: #2FB8A7;
+  --pri-light: #1E3A34;
+  --pri-soft: rgba(92, 229, 213, 0.14);
+  --pri-glow: rgba(92, 229, 213, 0.30);
+  --grad-a: #5CE5D5;
+  --grad-b: #F4D03F;       /* Amarillo luciérnaga */
 
-  --bg: #0B1220;
-  --bg-soft: #111827;
-  --bg-panel: #1E293B;
-  --bg-alt: #172033;
-  --txt: #E2E8F0;
-  --txt-soft: #94A3B8;
-  --border: #334155;
+  /* ─── Superficies (bosque profundo) ─── */
+  --bg: #14241D;           /* Verde pino oscuro */
+  --bg-soft: #1A2E25;
+  --bg-panel: #23352B;     /* Hoja en sombra (tarjetas) */
+  --bg-alt: #1B2D24;
 
-  --danger: #F87171;
-  --danger-light: rgba(248, 113, 113, 0.18);
-  --danger-soft: rgba(248, 113, 113, 0.08);
-  --success: #34D399;
-  --success-light: rgba(52, 211, 153, 0.15);
+  /* ─── Tipografía (verde pálido / hueso) ─── */
+  --txt: #E1EAE4;          /* Verde muy pálido, más suave que blanco puro */
+  --txt-soft: #9DB3A5;
+  --border: #34493E;
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 8px 20px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.5);
+  /* ─── Acentos ─── */
+  --accent: #F4D03F;       /* Amarillo luciérnaga */
+  --accent-d: #D6B32E;
+  --accent-soft: rgba(244, 208, 63, 0.15);
+  --sky: #7BB3C7;
+  --sky-soft: rgba(123, 179, 199, 0.18);
 
-  --nav-side-bg: #0F172A;
-  --nav-side-text: rgba(226, 232, 240, 0.85);
+  --danger: #E8836C;
+  --danger-light: rgba(232, 131, 108, 0.18);
+  --danger-soft: rgba(232, 131, 108, 0.10);
+  --success: #7EDDA0;
+  --success-light: rgba(126, 221, 160, 0.16);
+  --ok: var(--success);
+  --ok-light: var(--success-light);
+  --warn: #F4D03F;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 10px 24px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55);
+
+  --nav-side-bg: #0E1A15;
+  --nav-side-text: rgba(225, 234, 228, 0.88);
+
+  --glass-bg: rgba(35, 53, 43, 0.70);
+  --glass-border: rgba(92, 229, 213, 0.22);
+}
+
+/* ─── Accesibilidad: respeta prefers-reduced-motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Foco visible y consistente en todo el sitio (WCAG). */
+:focus-visible {
+  outline: 3px solid var(--pri);
+  outline-offset: 2px;
+  border-radius: 4px;
 }

@@ -59,9 +59,9 @@
 
 /* Reset repasos: bien diferenciado del resto */
 .reset-repasos {
-  padding: 14px;
+  padding: 16px;
   border: 1.5px dashed var(--danger);
-  border-radius: 12px;
+  border-radius: var(--radius);
   background: var(--danger-soft);
   display: flex;
   align-items: center;
@@ -83,8 +83,8 @@
 }
 .ritmo-card {
   border: 1.5px solid var(--border);
-  border-radius: 12px;
-  padding: 0.8rem 1rem;
+  border-radius: var(--radius);
+  padding: 0.9rem 1.1rem;
   cursor: pointer;
   background: var(--bg-panel);
   color: var(--txt);
