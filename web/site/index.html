@@ -5,21 +5,53 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Aprentix · Tests</title>
   <link rel="stylesheet" href="/style.css">
+  <link rel="icon" type="image/svg+xml" href="/logo.svg">
+  <script>
+    (function () {
+      var m = document.cookie.match(/(?:^|;\s*)aprentix_theme=(dark|light|auto)/);
+      var theme = m ? m[1] : 'auto';
+      if (theme === 'auto') {
+        theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    })();
+  </script>
 </head>
 <body>
 
 <!-- Header con búsqueda global -->
 <header class="topbar hidden" id="topbar">
-  <button class="hamburger" id="btn-menu" aria-label="Menú">☰</button>
-  <div class="brand">Aprentix</div>
+  <button class="hamburger" id="btn-menu" aria-label="Menú">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="3" y1="6" x2="21" y2="6"/>
+      <line x1="3" y1="12" x2="21" y2="12"/>
+      <line x1="3" y1="18" x2="21" y2="18"/>
+    </svg>
+  </button>
+  <a href="https://aprentix.es" class="brand" title="Volver al inicio">
+    <span class="brand-logo" aria-hidden="true"></span>
+    <span class="brand-name">Aprentix</span>
+  </a>
+  <nav class="hdr-nav" aria-label="Secciones">
+    <span class="nav-tab active" data-nav="tests" aria-current="page">Tests</span>
+    <a href="https://teoria.aprentix.es" class="nav-tab" data-nav="teoria" id="nav-teoria" hidden>Teoría</a>
+  </nav>
   <div class="search-wrap">
     <input id="global-search" type="search" placeholder="Buscar preguntas o tests…">
     <div id="search-results" class="search-results hidden"></div>
   </div>
   <div class="user-chip">
-    <span class="avatar" id="user-avatar"></span>
-    <span class="user-name" id="user-name"></span>
-    <button class="btn-icon" id="btn-logout" title="Cerrar sesión" aria-label="Cerrar sesión">
+    <button class="user-btn" id="btn-user-menu" title="Configuración">
+      <span class="avatar" id="user-avatar"></span>
+      <span class="user-name" id="user-name"></span>
+    </button>
+    <button class="btn-icon" id="btn-config" title="Configuración" aria-label="Configuración">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
+    <button class="btn-icon danger-icon" id="btn-logout" title="Cerrar sesión" aria-label="Cerrar sesión">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
@@ -35,16 +67,47 @@
 
 <!-- Navegación lateral -->
 <nav class="sidebar hidden" id="sidebar">
-  <button class="nav-item" data-view="home">🏠 Inicio</button>
-  <button class="nav-item" data-view="tests">📚 Tests</button>
-  <button class="nav-item" data-view="fallos">❌ Mis fallos</button>
-  <button class="nav-item" data-view="favoritas">⭐ Favoritas</button>
-  <button class="nav-item" data-view="buscar">🔍 Buscar</button>
-  <button class="nav-item gestion" data-view="upload">⬆️ Subir test</button>
-  <button class="nav-item gestion" data-view="etiquetas">🏷️ Etiquetas</button>
-  <button class="nav-item solo-admin" data-view="usuarios">👥 Usuarios</button>
-  <button class="nav-item" data-view="progreso">📈 Progreso</button>
-  <button class="nav-item" id="btn-abrir-ritmo" title="Ritmo de repaso">⚙️ Ritmo de repaso</button>
+  <button class="nav-item" data-view="home">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-9 9 9"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>
+    <span>Inicio</span>
+  </button>
+  <button class="nav-item" data-view="tests">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h6M8 12h8M8 16h5"/><circle cx="16.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/></svg>
+    <span>Tests</span>
+  </button>
+  <button class="nav-item" data-view="fallos">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+    <span>Mis fallos</span>
+  </button>
+  <button class="nav-item" data-view="favoritas">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15 8.5 22 9.3 17 14 18.5 21 12 17.5 5.5 21 7 14 2 9.3 9 8.5"/></svg>
+    <span>Favoritas</span>
+  </button>
+  <button class="nav-item" data-view="buscar">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <span>Buscar</span>
+  </button>
+  <button class="nav-item gestion" data-view="upload">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    <span>Subir test</span>
+  </button>
+  <button class="nav-item gestion" data-view="etiquetas">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/><circle cx="7" cy="7" r="1.5" fill="currentColor" stroke="none"/></svg>
+    <span>Etiquetas</span>
+  </button>
+  <button class="nav-item solo-admin" data-view="usuarios">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    <span>Usuarios</span>
+  </button>
+  <button class="nav-item" data-view="progreso">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
+    <span>Progreso</span>
+  </button>
+  <div class="nav-sep"></div>
+  <button class="nav-item" id="btn-abrir-config" title="Configuración">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    <span>Configuración</span>
+  </button>
 </nav>
 
 <main class="content">
@@ -52,7 +115,11 @@
   <!-- Login / Registro -->
   <section id="view-login" class="view active">
     <div class="auth-card">
-      <h1>Aprentix</h1>
+      <div class="auth-hero">
+        <span class="brand-logo brand-logo-lg" aria-hidden="true"></span>
+        <h1>Aprentix</h1>
+        <p class="tagline">Tu oposición, a tu ritmo.</p>
+      </div>
 
       <div class="tabs">
         <button class="tab active" data-tab="login">Iniciar sesión</button>
@@ -78,22 +145,27 @@
   <!-- Home -->
   <section id="view-home" class="view">
     <h2>Hola, <span id="hello-name"></span></h2>
+    <p class="tagline muted">Tu oposición, a tu ritmo.</p>
     <div class="stats-grid" id="stats-grid"></div>
     <div class="actions-grid">
       <button class="action-card" data-view="tests">
-        <span class="ico">📚</span><strong>Hacer un test</strong>
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h6M8 12h8M8 16h5"/><circle cx="16.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/></svg>
+        <strong>Hacer un test</strong>
         <small>Elige un test y empieza a responder</small>
       </button>
       <button class="action-card" data-view="fallos">
-        <span class="ico">❌</span><strong>Repasar fallos</strong>
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+        <strong>Repasar fallos</strong>
         <small>Las preguntas que llevas fallando</small>
       </button>
       <button class="action-card" data-view="favoritas">
-        <span class="ico">⭐</span><strong>Mis favoritas</strong>
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15 8.5 22 9.3 17 14 18.5 21 12 17.5 5.5 21 7 14 2 9.3 9 8.5"/></svg>
+        <strong>Mis favoritas</strong>
         <small>Las que marcaste para revisar</small>
       </button>
       <button class="action-card" data-view="buscar">
-        <span class="ico">🔍</span><strong>Buscar</strong>
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <strong>Buscar</strong>
         <small>Encuentra preguntas y tests</small>
       </button>
     </div>
@@ -116,7 +188,7 @@
       </div>
       <label class="orden-wrap">
         Ordenar por
-        <select id="tests-orden">
+        <select id="tests-orden" class="select-styled">
           <option value="reciente">Más reciente</option>
           <option value="antiguo">Más antiguo</option>
           <option value="intentos_desc">Más veces intentado</option>
@@ -259,7 +331,7 @@
       <input id="et-nombre" placeholder="nombre (ej: java)" required>
       <input id="et-descripcion" placeholder="descripción rica para el auto-tagger (cuanto más, mejor)">
       <input id="et-palabras" placeholder="palabras clave separadas por coma (ej: java, jdk, junit, springboot)">
-      <select id="et-padre" title="Etiqueta padre (opcional). Buscar por 'programación' encontrará todas las hijas.">
+      <select id="et-padre" class="select-styled" title="Etiqueta padre (opcional). Buscar por 'programación' encontrará todas las hijas.">
         <option value="">— sin padre —</option>
       </select>
       <button class="btn btn-primary" type="submit">Crear / actualizar</button>
@@ -377,35 +449,51 @@
   </div>
 </div>
 
-<!-- Modal de ritmo de repaso -->
-<div id="modal-ritmo" class="modal hidden">
+<!-- Modal de configuración (apariencia + ritmo + reset) -->
+<div id="modal-config" class="modal hidden">
   <div class="modal-card">
     <header class="modal-header">
-      <h3>Ritmo de repaso</h3>
-      <button class="btn btn-ghost" id="modal-ritmo-close">✕</button>
+      <h3>Configuración</h3>
+      <button class="btn btn-ghost" id="modal-config-close" aria-label="Cerrar">✕</button>
     </header>
     <div class="modal-body">
-      <p class="muted small">
-        Elige la cadencia con la que quieres que se te repitan las preguntas.
-        Solo afecta a los intervalos futuros; las fechas ya programadas no cambian.
-      </p>
-      <div id="ritmo-opciones" class="ritmo-opciones"></div>
 
-      <div class="reset-repasos">
-        <div class="reset-repasos-copy">
-          <strong>Empezar el repaso de cero</strong>
-          <span class="muted small">
-            Borra las cajas Leitner de todas tus preguntas. No toca tus respuestas ni tus intentos:
-            solo se olvida en qué fase de repaso está cada pregunta.
-          </span>
+      <section class="config-section">
+        <h4>Apariencia</h4>
+        <div class="theme-toggle">
+          <label class="theme-option"><input type="radio" name="theme" value="light"><span>☀️ Claro</span></label>
+          <label class="theme-option"><input type="radio" name="theme" value="dark"><span>🌙 Oscuro</span></label>
+          <label class="theme-option"><input type="radio" name="theme" value="auto"><span>🖥️ Sistema</span></label>
         </div>
-        <button class="btn btn-danger btn-outline" id="btn-resetear-repasos">
-          Resetear mi repaso
-        </button>
-      </div>
+      </section>
 
-      <div class="modal-actions" style="flex-direction:column; align-items:stretch; gap:0.5rem; margin-top:1rem">
-        <button class="btn btn-ghost" id="btn-ritmo-cancelar">Cerrar</button>
+      <section class="config-section">
+        <h4>Ritmo de repaso</h4>
+        <p class="muted small">
+          Elige la cadencia con la que quieres que se te repitan las preguntas.
+          Solo afecta a los intervalos futuros; las fechas ya programadas no cambian.
+        </p>
+        <div id="ritmo-opciones" class="ritmo-opciones"></div>
+      </section>
+
+      <section class="config-section danger-section">
+        <h4>Zona peligrosa</h4>
+        <div class="reset-repasos">
+          <div class="reset-repasos-copy">
+            <strong>Empezar el repaso de cero</strong>
+            <span class="muted small">
+              Borra las cajas Leitner de todas tus preguntas. No toca tus respuestas ni tus intentos:
+              solo se olvida en qué fase de repaso está cada pregunta.
+            </span>
+          </div>
+          <button class="btn btn-danger-outline" id="btn-resetear-repasos">
+            Resetear mi repaso
+          </button>
+        </div>
+      </section>
+
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="btn-config-cerrar">Cerrar</button>
       </div>
     </div>
   </div>
