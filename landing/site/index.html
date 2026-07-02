@@ -5,15 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Aprentix</title>
   <link rel="stylesheet" href="/style.css">
+  <link rel="icon" type="image/svg+xml" href="/logo.svg">
+  <script>
+    // Aplica el tema oscuro antes del primer render para evitar el flash.
+    (function () {
+      var m = document.cookie.match(/(?:^|;\s*)aprentix_theme=(dark|light)/);
+      var theme = m ? m[1] : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    })();
+  </script>
 </head>
 <body>
   <div class="wrap">
     <header class="hero">
       <div class="brand">
-        <span class="logo-dot"></span>
+        <span class="brand-logo" aria-hidden="true"></span>
         <span class="brand-name">Aprentix</span>
       </div>
-      <p class="lead">Tu plataforma de estudio: tests y teoría, en un mismo sitio.</p>
+      <p class="lead">Tu oposición, a tu ritmo.</p>
+      <p class="sub-lead">Tests y teoría, en un mismo sitio.</p>
     </header>
 
     <!-- Login (mientras no hay sesión) -->
@@ -50,24 +60,30 @@
     <!-- Selector (una vez logueado) -->
     <section id="chooser" class="chooser" hidden>
       <div class="welcome">
-        <span>Hola, <strong id="who"></strong></span>
-        <button id="btn-logout" class="btn btn-ghost-dark">Salir</button>
+        <button id="btn-user-menu" class="user-menu-btn" title="Configuración">
+          <span class="avatar" id="user-avatar"></span>
+          <span>Hola, <strong id="who"></strong></span>
+        </button>
+        <div class="welcome-actions">
+          <button id="btn-config" class="btn btn-ghost-dark" title="Configuración">⚙️ Configuración</button>
+          <button id="btn-logout" class="btn btn-ghost-dark">Salir</button>
+        </div>
       </div>
       <div class="apps">
         <a class="app-card tests" href="https://test.aprentix.es">
-          <div class="app-emoji">📝</div>
+          <div class="app-icon icon-test" aria-hidden="true"></div>
           <div class="app-title">Tests</div>
           <div class="app-desc">Cuestionarios, simulacros, repasos espaciados y estadísticas.</div>
           <div class="app-cta">Entrar →</div>
         </a>
         <a class="app-card teoria" id="tarjeta-teoria" href="https://teoria.aprentix.es" hidden>
-          <div class="app-emoji">📚</div>
+          <div class="app-icon icon-teoria" aria-hidden="true"></div>
           <div class="app-title">Teoría</div>
           <div class="app-desc">Apuntes, PDFs y material de estudio organizado por temas.</div>
           <div class="app-cta">Entrar →</div>
         </a>
         <div class="app-card locked" id="tarjeta-teoria-bloqueada" hidden>
-          <div class="app-emoji">🔒</div>
+          <div class="app-icon icon-lock" aria-hidden="true"></div>
           <div class="app-title">Teoría</div>
           <div class="app-desc">Habla con el administrador para activar el acceso al material.</div>
         </div>
@@ -75,9 +91,89 @@
     </section>
 
     <footer class="foot">
-      <span>© Aprentix</span>
+      <span>© Aprentix · Tu oposición, a tu ritmo.</span>
     </footer>
   </div>
+
+  <!-- Modal de configuración -->
+  <div id="modal-config" class="modal hidden">
+    <div class="modal-card">
+      <header class="modal-header">
+        <h3>Configuración</h3>
+        <button class="btn btn-ghost-dark btn-sm" id="modal-config-close" aria-label="Cerrar">✕</button>
+      </header>
+      <div class="modal-body">
+
+        <section class="config-section">
+          <h4>Apariencia</h4>
+          <div class="theme-toggle">
+            <label class="theme-option">
+              <input type="radio" name="theme" value="light">
+              <span>☀️ Claro</span>
+            </label>
+            <label class="theme-option">
+              <input type="radio" name="theme" value="dark">
+              <span>🌙 Oscuro</span>
+            </label>
+            <label class="theme-option">
+              <input type="radio" name="theme" value="auto">
+              <span>🖥️ Sistema</span>
+            </label>
+          </div>
+        </section>
+
+        <section class="config-section">
+          <h4>Ritmo de repaso</h4>
+          <p class="muted small">
+            Elige la cadencia con la que quieres que se te repitan las preguntas.
+            Solo afecta a los intervalos futuros; las fechas ya programadas no cambian.
+          </p>
+          <div id="ritmo-opciones" class="ritmo-opciones"></div>
+        </section>
+
+        <section class="config-section danger-section">
+          <h4>Zona peligrosa</h4>
+          <div class="reset-repasos">
+            <div class="reset-repasos-copy">
+              <strong>Empezar el repaso de cero</strong>
+              <span class="muted small">
+                Borra las cajas Leitner de todas tus preguntas. No toca tus respuestas ni tus intentos:
+                solo se olvida en qué fase de repaso está cada pregunta.
+              </span>
+            </div>
+            <button class="btn btn-danger-outline" id="btn-resetear-repasos">
+              Resetear mi repaso
+            </button>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de confirmación de reset -->
+  <div id="modal-reset-repasos" class="modal hidden">
+    <div class="modal-card">
+      <header class="modal-header">
+        <h3>¿Resetear tu repaso?</h3>
+      </header>
+      <div class="modal-body">
+        <p>
+          Se borrarán todas las cajas Leitner (aciertos, fallos y programación de repasos).
+          Volverás a empezar como si nunca hubieras repasado nada.
+        </p>
+        <p class="muted small">
+          Tus respuestas históricas, intentos y estadísticas se conservan intactos.
+        </p>
+        <div class="modal-actions">
+          <button class="btn btn-ghost-dark" id="btn-reset-cancelar">Cancelar</button>
+          <button class="btn btn-danger" id="btn-reset-confirmar">Sí, resetear</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
 
   <script src="/app.js"></script>
 </body>

@@ -411,6 +411,63 @@ async function subirFicheros(files) {
   } catch (e) { toast(`⚠️ ${e.message}`); }
 }
 
+// ── Theme (compartido en .aprentix.es) ─────────────────────────────────────
+
+const THEME_COOKIE = 'aprentix_theme';
+
+function currentTheme() {
+  const c = getCookie(THEME_COOKIE);
+  if (c === 'dark' || c === 'light' || c === 'auto') return c;
+  return 'auto';
+}
+function effectiveTheme(t) {
+  if (t === 'auto') return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  return t;
+}
+function applyTheme(t) {
+  const eff = effectiveTheme(t);
+  if (eff === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+  else document.documentElement.removeAttribute('data-theme');
+}
+function setTheme(t) {
+  // Cookie compartida con el resto de subdominios de aprentix.es
+  const host = location.hostname;
+  const parent = host.split('.').slice(-2).join('.');
+  const attrs = [
+    'Max-Age=31536000', 'Path=/', 'SameSite=Lax',
+    location.protocol === 'https:' ? 'Secure' : '',
+    parent ? `Domain=.${parent}` : '',
+  ].filter(Boolean);
+  document.cookie = `${THEME_COOKIE}=${t}; ${attrs.join('; ')}`;
+  applyTheme(t);
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if (currentTheme() === 'auto') applyTheme('auto');
+});
+applyTheme(currentTheme());
+
+// ── Config modal ───────────────────────────────────────────────────────────
+
+const modalConfig = document.getElementById('modal-config');
+function abrirModalConfig() {
+  const t = currentTheme();
+  document.querySelectorAll('input[name="theme"]').forEach(r => { r.checked = (r.value === t); });
+  modalConfig.classList.remove('hidden');
+}
+function cerrarModalConfig() { modalConfig.classList.add('hidden'); }
+document.getElementById('btn-config')?.addEventListener('click', abrirModalConfig);
+document.getElementById('btn-user-menu')?.addEventListener('click', abrirModalConfig);
+document.getElementById('btn-config-cerrar')?.addEventListener('click', cerrarModalConfig);
+modalConfig?.addEventListener('click', (e) => {
+  if (e.target === modalConfig) cerrarModalConfig();
+});
+document.querySelectorAll('input[name="theme"]').forEach(r => {
+  r.addEventListener('change', () => {
+    setTheme(r.value);
+    toast(`Modo ${r.value === 'dark' ? 'oscuro' : r.value === 'light' ? 'claro' : 'automático'} activado`);
+  });
+});
+
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 
 window.addEventListener('hashchange', () => cargar(location.hash.slice(1) || '/'));
@@ -426,11 +483,13 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 });
 document.getElementById('grid').addEventListener('click', onGridAction);
 
-// Muestra el nombre del usuario en el badge
+// Rellena el chip de usuario (avatar + nombre).
 if (CLAIMS) {
-  const badge = document.getElementById('user-badge');
-  const rolesTxt = (CLAIMS.roles || []).join(', ');
-  badge.textContent = rolesTxt || 'sesión';
+  const uname = CLAIMS.sub || CLAIMS.username || (CLAIMS.roles || []).join(', ') || 'sesión';
+  const nameEl = document.getElementById('user-name-lbl');
+  const avEl = document.getElementById('user-avatar');
+  if (nameEl) nameEl.textContent = uname;
+  if (avEl) avEl.textContent = (uname.trim()[0] || '?').toUpperCase();
 }
 
 cargar(ESTADO.ruta).catch(err => {

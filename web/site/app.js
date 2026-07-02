@@ -9,6 +9,7 @@
 const COOKIE_NAME = "aprentix_token";
 const COOKIE_HORAS = 12;
 const LANDING_URL = "https://aprentix.es";
+const THEME_COOKIE = "aprentix_theme";
 
 function cookieDomain() {
   // '.aprentix.es' desde cualquier subdominio; vacío en localhost.
@@ -149,6 +150,13 @@ function applySession() {
     $("#user-name").textContent = u;
     $("#user-avatar").textContent = (u.trim()[0] || "?").toUpperCase();
     $("#hello-name").textContent = u;
+    // Muestra el enlace a Teoría en el header si el usuario tiene el permiso.
+    // (chequea roles; el bit real "teoria.acceder" vive en la BBDD, pero los
+    // roles del JWT incluyen 'teoria' o 'admin' cuando aplica).
+    const roles = state.user.roles || [];
+    const puedeTeoria = roles.includes("admin") || roles.includes("teoria");
+    const navT = $("#nav-teoria");
+    if (navT) navT.hidden = !puedeTeoria;
   }
 }
 
@@ -188,12 +196,16 @@ function logout(navigateAway = true) {
 
 /* ── Navegación ──────────────────────────────────────────────────────────── */
 function navigate(view) {
+  // Si ya estamos en la vista pedida, no vuelvas a lanzar el loader (evita
+  // llamadas innecesarias cuando el usuario hace clic sobre la opción activa).
+  const yaActiva = $("#view-" + view)?.classList.contains("active");
   $$(".view").forEach(v => v.classList.remove("active"));
   const el = $("#view-" + view);
   if (el) el.classList.add("active");
   $$(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.view === view));
   $("#sidebar").classList.remove("open");
   if (view !== "login" && (!state.jwt || !state.user)) { navigate("login"); return; }
+  if (yaActiva) return;
   const loader = loaders[view];
   if (loader) loader().catch(e => toast(e.message));
 }
@@ -1701,13 +1713,49 @@ async function refrescarBadgeTest(testId) {
   };
 })();
 
-/* ── Ritmo de repaso (preferencia por usuario) ────────────────────────── */
-$("#btn-abrir-ritmo")?.addEventListener("click", async () => {
+/* ── Tema (compartido en .aprentix.es) ────────────────────────────────── */
+function currentTheme() {
+  const c = getCookie(THEME_COOKIE);
+  if (c === "dark" || c === "light" || c === "auto") return c;
+  return "auto";
+}
+function effectiveTheme(t) {
+  if (t === "auto") return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  return t;
+}
+function applyTheme(t) {
+  const eff = effectiveTheme(t);
+  if (eff === "dark") document.documentElement.setAttribute("data-theme", "dark");
+  else document.documentElement.removeAttribute("data-theme");
+}
+function setThemePref(t) {
+  setCookie(THEME_COOKIE, t, 365 * 24);
+  applyTheme(t);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (currentTheme() === "auto") applyTheme("auto");
+});
+applyTheme(currentTheme());
+
+/* ── Configuración (apariencia + ritmo + reset) ───────────────────────── */
+async function abrirModalConfig() {
+  // Tema
+  const t = currentTheme();
+  $$('input[name="theme"]').forEach(r => { r.checked = (r.value === t); });
+  // Ritmo
+  await cargarRitmoOpcionesConfig();
+  $("#modal-config").classList.remove("hidden");
+}
+function cerrarModalConfig() { $("#modal-config").classList.add("hidden"); }
+
+async function cargarRitmoOpcionesConfig() {
+  const cont = $("#ritmo-opciones");
+  cont.innerHTML = "<p class='muted small'>Cargando…</p>";
   try {
     const d = await rpc("mi_ritmo_repaso");
     const actual = d.ritmo || "normal";
     const curvas = d.curvas || {};
-    const html = ["intensivo", "normal", "relajado"].map(k => {
+    cont.innerHTML = ["intensivo", "normal", "relajado"].map(k => {
       const meta = RITMO_LABELS[k];
       const horas = curvas[k] || [];
       const preview = horas.map(fmtHoras).join(" → ");
@@ -1718,9 +1766,25 @@ $("#btn-abrir-ritmo")?.addEventListener("click", async () => {
           <div class="curva">${esc(preview)}</div>
         </div>`;
     }).join("");
-    $("#ritmo-opciones").innerHTML = html;
-    $("#modal-ritmo").classList.remove("hidden");
-  } catch (e) { toast(e.message); }
+  } catch (e) {
+    cont.innerHTML = `<p class='muted small'>No se pudo cargar el ritmo: ${esc(e.message)}</p>`;
+  }
+}
+
+$("#btn-abrir-config")?.addEventListener("click", abrirModalConfig);
+$("#btn-config")?.addEventListener("click", abrirModalConfig);
+$("#btn-user-menu")?.addEventListener("click", abrirModalConfig);
+$("#modal-config-close")?.addEventListener("click", cerrarModalConfig);
+$("#btn-config-cerrar")?.addEventListener("click", cerrarModalConfig);
+$("#modal-config")?.addEventListener("click", e => {
+  if (e.target.id === "modal-config") cerrarModalConfig();
+});
+
+$$('input[name="theme"]').forEach(r => {
+  r.addEventListener("change", () => {
+    setThemePref(r.value);
+    toast(`Modo ${r.value === "dark" ? "oscuro" : r.value === "light" ? "claro" : "automático"} activado`);
+  });
 });
 
 $("#ritmo-opciones")?.addEventListener("click", async e => {
@@ -1729,15 +1793,8 @@ $("#ritmo-opciones")?.addEventListener("click", async e => {
   try {
     await rpc("set_ritmo_repaso", { p_ritmo: card.dataset.ritmo });
     toast(`Ritmo cambiado a ${RITMO_LABELS[card.dataset.ritmo].nombre}`);
-    $("#modal-ritmo").classList.add("hidden");
+    cargarRitmoOpcionesConfig();
   } catch (err) { toast(err.message); }
-});
-
-$("#modal-ritmo-close")?.addEventListener("click", () => {
-  $("#modal-ritmo").classList.add("hidden");
-});
-$("#btn-ritmo-cancelar")?.addEventListener("click", () => {
-  $("#modal-ritmo").classList.add("hidden");
 });
 
 /* ── Reset de repasos ───────────────────────────────────────────────────── */
@@ -1757,7 +1814,7 @@ $("#btn-reset-confirmar")?.addEventListener("click", async (e) => {
       ? "No había repasos que borrar"
       : `Repaso reseteado (${n} pregunta${n === 1 ? "" : "s"})`);
     $("#modal-reset-repasos").classList.add("hidden");
-    $("#modal-ritmo").classList.add("hidden");
+    $("#modal-config").classList.add("hidden");
     // Refresca la home si estamos ahí para que se actualicen los contadores.
     if ($("#view-home")?.classList.contains("active")) {
       navigate("home");
