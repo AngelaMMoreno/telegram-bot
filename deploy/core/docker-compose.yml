@@ -1,0 +1,111 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Stack CORE — el estado y la API.
+#
+# Servicios: db (Postgres+pgvector), postgrest, embeddings, pgadmin.
+# Redespliega esto cuando cambien:
+#   - db/init/01_esquema.sql       (esquema, funciones, RLS, seed)
+#   - la versión de PostgREST
+#   - el worker de embeddings
+#   - el servers.json de pgAdmin
+#
+# Los demás stacks (landing/web/teoria) se conectan a estos servicios por
+# nombre en la red externa dokploy-network. Levanta este stack primero.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: aprentix
+      POSTGRES_USER: aprentix
+      POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS requerida}
+    command:
+      - postgres
+      - -c
+      - app.jwt_secret=${JWT_SECRET:?JWT_SECRET requerida}
+      - -c
+      - app.admin_pass=${ADMIN_PASS:?ADMIN_PASS requerida}
+      - -c
+      - app.auth_pass=${AUTH_PASS:?AUTH_PASS requerida}
+    volumes:
+      - /mnt/data/pg:/var/lib/postgresql/data
+      - ../../db/init:/docker-entrypoint-initdb.d:ro
+      - ../../db/backups:/backups
+    restart: unless-stopped
+    networks: [dokploy-network]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aprentix -d aprentix"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  pgadmin:
+    image: dpage/pgadmin4:9
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    ${PGADMIN_EMAIL:?PGADMIN_EMAIL requerido}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASS:?PGADMIN_PASS requerida}
+      PGADMIN_CONFIG_PROXY_X_FOR_COUNT:    "1"
+      PGADMIN_CONFIG_PROXY_X_PROTO_COUNT:  "1"
+      PGADMIN_CONFIG_PROXY_X_HOST_COUNT:   "1"
+      PGADMIN_CONFIG_PROXY_X_PORT_COUNT:   "1"
+      PGADMIN_CONFIG_PROXY_X_PREFIX_COUNT: "1"
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ../../pgadmin/servers.json:/pgadmin4/servers.json:ro
+    restart: unless-stopped
+    networks: [dokploy-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pgadmin.rule=Host(`${DOMINIO_PGADMIN:-pgadmin.aprentix.es}`)"
+      - "traefik.http.routers.pgadmin.entrypoints=websecure"
+      - "traefik.http.routers.pgadmin.tls=true"
+      - "traefik.http.routers.pgadmin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
+
+  postgrest:
+    image: postgrest/postgrest:v12.2.3
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://autenticador@db:5432/aprentix
+      PGPASSWORD: ${AUTH_PASS:?AUTH_PASS requerida}
+      PGRST_DB_ANON_ROLE: web_anon
+      PGRST_DB_SCHEMAS: public
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_OPENAPI_SERVER_PROXY_URI: https://${DOMINIO_API:-api.aprentix.es}
+    restart: unless-stopped
+    networks: [dokploy-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`${DOMINIO_API:-api.aprentix.es}`)"
+      - "traefik.http.routers.api.entrypoints=websecure"
+      - "traefik.http.routers.api.tls=true"
+      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.api.loadbalancer.server.port=3000"
+
+  embeddings:
+    build: ../../embeddings
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://aprentix@db:5432/aprentix
+      PGPASSWORD: ${DB_PASS}
+      EMB_LOTE: "32"
+    volumes:
+      - /mnt/data/embeddings_cache:/cache
+    restart: unless-stopped
+    networks: [dokploy-network]
+
+volumes:
+  pgadmin_data:
+
+networks:
+  dokploy-network:
+    external: true
