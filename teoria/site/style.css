@@ -161,6 +161,121 @@ button { font: inherit; cursor: pointer; }
 .small { font-size: 12.5px; }
 .muted { color: var(--sub); }
 
+/* ── Visor / editor de markdown ──────────────────────────────────────── */
+.md-view {
+  position: fixed; inset: 0;
+  background: var(--bg);
+  color: var(--text);
+  display: flex; flex-direction: column;
+  z-index: 500;
+}
+.md-view.hidden { display: none; }
+.md-view-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.md-title {
+  font-weight: 700; font-size: 15px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0; max-width: 100%;
+}
+.md-flex { flex: 1 1 auto; }
+.md-status {
+  font-size: 12px; color: var(--sub);
+  padding: 4px 8px; border-radius: 8px;
+  background: var(--bg-soft);
+}
+.md-status.dirty { color: #b45309; background: rgba(251, 191, 36, 0.18); }
+[data-theme="dark"] .md-status.dirty { color: #fbbf24; }
+.md-status.saved { color: var(--ok); background: var(--ok-light); }
+.md-btn { padding: 8px 14px; }
+
+.md-body {
+  flex: 1; min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  overflow: hidden;
+}
+.md-body.editing { grid-template-columns: 1fr 1fr; }
+.md-editor {
+  display: none;
+  width: 100%; height: 100%;
+  padding: 16px 20px;
+  border: 0; outline: none; resize: none;
+  background: var(--card-alt); color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px; line-height: 1.55;
+  border-right: 1px solid var(--border);
+}
+.md-body.editing .md-editor { display: block; }
+.md-render {
+  overflow: auto;
+  padding: 24px 28px;
+  background: var(--card);
+  color: var(--text);
+  line-height: 1.65;
+  font-size: 15px;
+}
+.md-body.editing .md-render { border-left: 0; }
+.md-body.preview-only .md-editor { display: none; }
+.md-body.preview-only { grid-template-columns: 1fr; }
+
+/* Solo pantallas anchas: editor y preview lado a lado. En móvil se
+ * alternan con el botón "Vista previa" para que el textarea sea usable. */
+@media (max-width: 720px) {
+  .md-body.editing { grid-template-columns: 1fr; }
+  .md-body.editing .md-render { display: none; }
+  .md-body.editing.show-preview .md-editor { display: none; }
+  .md-body.editing.show-preview .md-render { display: block; }
+}
+
+/* Contenido markdown renderizado */
+.md-render h1, .md-render h2, .md-render h3, .md-render h4 {
+  margin: 1.4em 0 0.5em; line-height: 1.25;
+}
+.md-render h1 { font-size: 1.9em; border-bottom: 1px solid var(--border); padding-bottom: 0.2em; }
+.md-render h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 0.2em; }
+.md-render h3 { font-size: 1.25em; }
+.md-render h4 { font-size: 1.05em; color: var(--sub); }
+.md-render p { margin: 0.7em 0; }
+.md-render a { color: var(--pri); text-decoration: underline; }
+.md-render ul, .md-render ol { padding-left: 1.4em; margin: 0.6em 0; }
+.md-render li { margin: 0.2em 0; }
+.md-render blockquote {
+  border-left: 4px solid var(--pri);
+  background: var(--pri-soft);
+  color: var(--text);
+  margin: 0.9em 0; padding: 0.4em 1em;
+  border-radius: 6px;
+}
+.md-render code {
+  background: var(--bg-soft);
+  padding: 1px 6px; border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+.md-render pre {
+  background: var(--bg-soft);
+  padding: 12px 14px; border-radius: 8px;
+  overflow: auto; margin: 0.9em 0;
+  border: 1px solid var(--border);
+}
+.md-render pre code { background: transparent; padding: 0; font-size: 0.9em; }
+.md-render hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
+.md-render table {
+  border-collapse: collapse; margin: 0.8em 0;
+  width: 100%;
+}
+.md-render th, .md-render td {
+  border: 1px solid var(--border);
+  padding: 6px 10px; text-align: left;
+}
+.md-render th { background: var(--bg-soft); }
+.md-render img { max-width: 100%; height: auto; border-radius: 6px; }
+
 /* ── Menú contextual ─────────────────────────────────────────────────── */
 .ctx-menu {
   position: fixed; z-index: 9998;
