@@ -6,6 +6,9 @@
  */
 
 .hidden { display: none !important; }
+/* Restaura el default del atributo [hidden]: reglas como `.btn { display:
+ * inline-flex }` lo sobrescriben si no forzamos aquí `display: none`. */
+[hidden] { display: none !important; }
 
 /* Logo mask: se colorea con currentColor, así funciona tanto en topbars
  * claras (color: var(--pri-d)) como en fondos degradados (color: #fff). */
