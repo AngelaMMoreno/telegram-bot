@@ -256,6 +256,94 @@ def api_ver(request: Request, ruta: str):
     )
 
 
+# ── Lectura y edición de markdown ──────────────────────────────────────────
+
+# Límite de tamaño para servir/aceptar contenido de texto en JSON. Los
+# markdown de apuntes rara vez superan unos pocos KB; con 2 MB va sobrado
+# y evita que un fichero enorme (renombrado a .md) tumbe el navegador.
+MAX_TEXTO_BYTES = 2 * 1024 * 1024
+TEXTO_EXTS = {".md", ".markdown", ".txt"}
+
+
+def _es_texto(nombre: str) -> bool:
+    ext = os.path.splitext(nombre)[1].lower()
+    return ext in TEXTO_EXTS
+
+
+@app.get("/api/leer")
+def api_leer(request: Request, ruta: str):
+    """Devuelve el contenido de texto de un .md/.markdown/.txt para que la
+    SPA pueda renderizarlo o editarlo. Se limita por extensión y tamaño."""
+    require_teoria(request)
+    url_path = normalize_url_path(ruta)
+    fs = resolve_fs(url_path)
+    if not fs.exists() or not fs.is_file():
+        raise HTTPException(status_code=404, detail="fichero_no_encontrado")
+    if not _es_texto(fs.name):
+        raise HTTPException(status_code=415, detail="no_es_texto")
+    if fs.stat().st_size > MAX_TEXTO_BYTES:
+        raise HTTPException(status_code=413, detail="fichero_demasiado_grande")
+    try:
+        contenido = fs.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=415, detail="codificacion_no_utf8")
+    return {"ruta": url_path, "nombre": fs.name, "contenido": contenido}
+
+
+@app.post("/api/guardar")
+def api_guardar(request: Request, body: dict):
+    """Sobrescribe un fichero de texto ya existente. Solo admin."""
+    require_admin(request)
+    url_path = normalize_url_path(body.get("ruta", ""))
+    contenido = body.get("contenido", "")
+    if not isinstance(contenido, str):
+        raise HTTPException(status_code=400, detail="contenido_invalido")
+    if len(contenido.encode("utf-8")) > MAX_TEXTO_BYTES:
+        raise HTTPException(status_code=413, detail="contenido_demasiado_grande")
+
+    fs = resolve_fs(url_path)
+    if not fs.exists() or not fs.is_file():
+        raise HTTPException(status_code=404, detail="fichero_no_encontrado")
+    if not _es_texto(fs.name):
+        raise HTTPException(status_code=415, detail="no_es_texto")
+
+    fs.write_text(contenido, encoding="utf-8")
+    st = fs.stat()
+    return {"ruta": url_path, "size": st.st_size, "modificado": st.st_mtime}
+
+
+@app.post("/api/crear_md")
+def api_crear_md(request: Request, body: dict):
+    """Crea un fichero markdown vacío (o con contenido inicial) dentro de
+    una carpeta. Solo admin. Añade la extensión .md si el nombre no la
+    trae. Devuelve la ruta final y el nombre normalizado."""
+    require_admin(request)
+    padre = normalize_url_path(body.get("padre", "/"))
+    nombre_raw = (body.get("nombre") or "").strip()
+    nombre = Path(nombre_raw).name
+    if not nombre or nombre.startswith("."):
+        raise HTTPException(status_code=400, detail="nombre_invalido")
+
+    ext = os.path.splitext(nombre)[1].lower()
+    if ext not in TEXTO_EXTS:
+        nombre = nombre + ".md"
+
+    contenido = body.get("contenido") or f"# {os.path.splitext(nombre)[0]}\n\n"
+    if not isinstance(contenido, str):
+        raise HTTPException(status_code=400, detail="contenido_invalido")
+    if len(contenido.encode("utf-8")) > MAX_TEXTO_BYTES:
+        raise HTTPException(status_code=413, detail="contenido_demasiado_grande")
+
+    padre_fs = resolve_fs(padre)
+    if not padre_fs.exists() or not padre_fs.is_dir():
+        raise HTTPException(status_code=404, detail="padre_no_existe")
+
+    nombre = _nombre_unico(padre_fs, nombre)
+    destino = padre_fs / nombre
+    destino.write_text(contenido, encoding="utf-8")
+    return {"ruta": join_url(padre, nombre), "nombre": nombre}
+
+
 @app.post("/api/marcar_visto")
 def api_marcar_visto(request: Request, body: dict):
     claims = require_teoria(request)

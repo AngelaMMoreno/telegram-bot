@@ -22,6 +22,9 @@
   </script>
   <!-- Registra el custom element antes de que el parser llegue a él. -->
   <script src="/shared/header.js"></script>
+  <!-- Markdown: parser + saneador (se inyecta HTML de terceros). -->
+  <script src="/shared/vendor/marked.min.js"></script>
+  <script src="/shared/vendor/purify.min.js"></script>
 </head>
 <body>
 
@@ -35,10 +38,29 @@
     <input id="file-input" type="file" multiple hidden>
   </label>
   <button id="btn-nueva-carpeta" class="btn btn-sec">📁 Nueva carpeta</button>
+  <button id="btn-nuevo-md" class="btn btn-sec">📝 Nuevo markdown</button>
   <span class="admin-hint">Doble clic sobre un fichero para renombrarlo · botón derecho para más opciones</span>
 </div>
 
 <main id="grid" class="grid" aria-live="polite"></main>
+
+<!-- Visor / editor de markdown -->
+<div id="md-view" class="md-view hidden" aria-hidden="true">
+  <header class="md-view-header">
+    <button class="btn btn-cancel md-back" id="md-back" aria-label="Volver">← Volver</button>
+    <span class="md-title" id="md-title"></span>
+    <span class="md-flex"></span>
+    <span class="md-status" id="md-status" hidden></span>
+    <button class="btn btn-sec md-btn" id="md-editar" hidden>✏️ Editar</button>
+    <button class="btn btn-sec md-btn" id="md-preview-toggle" hidden>👁️ Vista previa</button>
+    <button class="btn btn-pri md-btn" id="md-guardar" hidden>💾 Guardar</button>
+    <button class="btn btn-cancel md-btn" id="md-cancelar" hidden>Cancelar</button>
+  </header>
+  <div class="md-body" id="md-body">
+    <textarea class="md-editor" id="md-editor" spellcheck="false" placeholder="# Escribe aquí…"></textarea>
+    <article class="md-render" id="md-render"></article>
+  </div>
+</div>
 
 <div id="modal-host"></div>
 

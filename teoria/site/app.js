@@ -312,10 +312,205 @@ function navegar(ruta) {
 
 function recargar() { cargar(ESTADO.ruta); }
 
+const EXT_MARKDOWN = new Set(['md', 'markdown', 'txt']);
+
+function esMarkdown(nombre) {
+  return EXT_MARKDOWN.has((nombre.split('.').pop() || '').toLowerCase());
+}
+
 function verFichero(f) {
-  // Solo abre; el tick de "visto" lo pone el usuario a mano.
+  // Los ficheros de texto (.md/.markdown/.txt) se abren dentro de la
+  // plataforma con el visor/editor de markdown; el resto sigue yendo a
+  // una pestaña nueva (PDFs, imágenes, etc.). El tick de "visto" lo
+  // sigue poniendo el usuario a mano.
+  if (esMarkdown(f.nombre)) {
+    abrirMarkdown(f.ruta, f.nombre);
+    return;
+  }
   window.open('/api/ver?ruta=' + encodeURIComponent(f.ruta), '_blank', 'noopener');
 }
+
+// ── Visor / editor de markdown ─────────────────────────────────────────────
+//
+// El visor vive en #md-view. `MD.ruta` guarda la ruta del fichero abierto,
+// `MD.original` el contenido guardado en disco (para saber si hay cambios),
+// y `MD.creando` marca cuando estamos redactando un fichero nuevo (aún no
+// existe en disco: al guardar hay que llamar a /api/crear_md, no /guardar).
+
+const MD = { ruta: null, nombre: '', original: '', creando: false, padreCreacion: null };
+
+if (window.marked && window.marked.setOptions) {
+  marked.setOptions({ gfm: true, breaks: true });
+}
+
+function mdRender(texto) {
+  const html = (window.marked && marked.parse) ? marked.parse(texto || '') : esc(texto || '');
+  return (window.DOMPurify && DOMPurify.sanitize)
+    ? DOMPurify.sanitize(html)
+    : html;
+}
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+const mdView   = () => document.getElementById('md-view');
+const mdBody   = () => document.getElementById('md-body');
+const mdEd     = () => document.getElementById('md-editor');
+const mdOut    = () => document.getElementById('md-render');
+const mdTitle  = () => document.getElementById('md-title');
+const mdStatus = () => document.getElementById('md-status');
+
+function mdEnEdicion() { return mdBody().classList.contains('editing'); }
+
+function mdMostrarBotones() {
+  const editable = ESTADO.puede_gestionar;
+  const editing = mdEnEdicion();
+  document.getElementById('md-editar').hidden        = editing || !editable;
+  document.getElementById('md-guardar').hidden       = !editing;
+  document.getElementById('md-cancelar').hidden      = !editing;
+  document.getElementById('md-preview-toggle').hidden = !editing;
+}
+
+function mdMarcarEstado() {
+  const dirty = mdEnEdicion() && mdEd().value !== MD.original;
+  const el = mdStatus();
+  el.classList.toggle('dirty', dirty);
+  el.classList.toggle('saved', false);
+  if (mdEnEdicion()) {
+    el.hidden = false;
+    el.textContent = dirty ? 'Sin guardar' : 'Guardado';
+    if (!dirty) el.classList.add('saved');
+  } else {
+    el.hidden = true;
+  }
+}
+
+function mdActualizarPreview() {
+  mdOut().innerHTML = mdRender(mdEd().value);
+  mdMarcarEstado();
+}
+
+function mdAbrirVista(nombre, contenido) {
+  mdTitle().textContent = nombre;
+  mdEd().value = contenido;
+  mdOut().innerHTML = mdRender(contenido);
+  mdBody().classList.remove('editing', 'show-preview', 'preview-only');
+  mdView().classList.remove('hidden');
+  mdView().setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+  mdMostrarBotones();
+  mdMarcarEstado();
+}
+
+function mdEntrarEdicion() {
+  mdBody().classList.add('editing');
+  mdBody().classList.remove('show-preview');
+  mdMostrarBotones();
+  mdActualizarPreview();
+  mdEd().focus();
+}
+
+function mdCerrar() {
+  if (mdEnEdicion() && mdEd().value !== MD.original) {
+    if (!confirm('Tienes cambios sin guardar. ¿Descartarlos?')) return;
+  }
+  mdView().classList.add('hidden');
+  mdView().setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = '';
+  MD.ruta = null; MD.nombre = ''; MD.original = '';
+  MD.creando = false; MD.padreCreacion = null;
+}
+
+async function abrirMarkdown(ruta, nombre) {
+  try {
+    const r = await api('GET', '/api/leer?ruta=' + encodeURIComponent(ruta));
+    MD.ruta = r.ruta; MD.nombre = r.nombre;
+    MD.original = r.contenido || '';
+    MD.creando = false; MD.padreCreacion = null;
+    mdAbrirVista(r.nombre, MD.original);
+  } catch (e) {
+    toast(`⚠️ ${e.message}`);
+  }
+}
+
+function pedirNuevoMarkdown() {
+  modal({
+    titulo: 'Nuevo markdown',
+    texto: `Dentro de ${ESTADO.ruta}`,
+    campo: 'apuntes.md',
+    aceptar: 'Crear',
+    onOk: (nombre) => {
+      if (!nombre) return;
+      // No creamos el fichero todavía: lo escribes en el editor y se
+      // guarda al pulsar "Guardar". Así puedes cancelar sin dejar un .md
+      // vacío en disco.
+      MD.creando = true;
+      MD.padreCreacion = ESTADO.ruta;
+      MD.ruta = null;
+      MD.nombre = nombre.endsWith('.md') || nombre.endsWith('.markdown') || nombre.endsWith('.txt')
+        ? nombre
+        : nombre + '.md';
+      const inicial = `# ${MD.nombre.replace(/\.(md|markdown|txt)$/i, '')}\n\n`;
+      MD.original = '';
+      mdAbrirVista(MD.nombre, inicial);
+      mdEntrarEdicion();
+    },
+  });
+}
+
+async function mdGuardar() {
+  const contenido = mdEd().value;
+  try {
+    if (MD.creando) {
+      const r = await api('POST', '/api/crear_md', {
+        padre: MD.padreCreacion,
+        nombre: MD.nombre,
+        contenido,
+      });
+      MD.ruta = r.ruta; MD.nombre = r.nombre;
+      MD.creando = false; MD.padreCreacion = null;
+      mdTitle().textContent = r.nombre;
+      toast('Creado');
+    } else {
+      await api('POST', '/api/guardar', { ruta: MD.ruta, contenido });
+      toast('Guardado');
+    }
+    MD.original = contenido;
+    mdMarcarEstado();
+    recargar();
+  } catch (e) {
+    toast(`⚠️ ${e.message}`);
+  }
+}
+
+document.getElementById('md-back').addEventListener('click', mdCerrar);
+document.getElementById('md-editar').addEventListener('click', mdEntrarEdicion);
+document.getElementById('md-cancelar').addEventListener('click', () => {
+  if (MD.creando) { mdCerrar(); return; }
+  if (mdEd().value !== MD.original &&
+      !confirm('Descartar los cambios sin guardar?')) return;
+  mdEd().value = MD.original;
+  mdBody().classList.remove('editing', 'show-preview');
+  mdOut().innerHTML = mdRender(MD.original);
+  mdMostrarBotones();
+  mdMarcarEstado();
+});
+document.getElementById('md-guardar').addEventListener('click', mdGuardar);
+document.getElementById('md-preview-toggle').addEventListener('click', () => {
+  mdBody().classList.toggle('show-preview');
+});
+document.getElementById('md-editor').addEventListener('input', mdActualizarPreview);
+document.addEventListener('keydown', (e) => {
+  if (mdView().classList.contains('hidden')) return;
+  if (e.key === 'Escape') { mdCerrar(); return; }
+  // Ctrl/Cmd+S guarda cuando estás editando.
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && mdEnEdicion()) {
+    e.preventDefault();
+    mdGuardar();
+  }
+});
 
 // ── Acciones ───────────────────────────────────────────────────────────────
 
@@ -478,6 +673,7 @@ document.getElementById('btn-logout').addEventListener('click', () => {
   location.href = LANDING_URL;
 });
 document.getElementById('btn-nueva-carpeta').addEventListener('click', pedirNuevaCarpeta);
+document.getElementById('btn-nuevo-md').addEventListener('click', pedirNuevoMarkdown);
 document.getElementById('file-input').addEventListener('change', (e) => {
   subirFicheros(e.target.files);
   e.target.value = '';
