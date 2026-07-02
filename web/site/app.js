@@ -5,9 +5,46 @@
 (() => {
 "use strict";
 
+/* ── Sesión compartida (cookie en .aprentix.es) ─────────────────────────── */
+const COOKIE_NAME = "aprentix_token";
+const COOKIE_HORAS = 12;
+const LANDING_URL = "https://aprentix.es";
+
+function cookieDomain() {
+  // '.aprentix.es' desde cualquier subdominio; vacío en localhost.
+  const parts = location.hostname.split(".");
+  return parts.length >= 2 ? "." + parts.slice(-2).join(".") : "";
+}
+function getCookie(name) {
+  for (const raw of document.cookie.split(";")) {
+    const [k, ...v] = raw.trim().split("=");
+    if (k === name) return decodeURIComponent(v.join("="));
+  }
+  return null;
+}
+function setCookie(name, value, horas) {
+  const dom = cookieDomain();
+  const attrs = [
+    `Max-Age=${Math.round(horas * 3600)}`,
+    "Path=/",
+    "SameSite=Lax",
+    location.protocol === "https:" ? "Secure" : "",
+    dom ? `Domain=${dom}` : "",
+  ].filter(Boolean);
+  document.cookie = `${name}=${encodeURIComponent(value)}; ${attrs.join("; ")}`;
+}
+function deleteCookie(name) {
+  const dom = cookieDomain();
+  document.cookie = `${name}=; Max-Age=0; Path=/; ${dom ? "Domain=" + dom : ""}`;
+  document.cookie = `${name}=; Max-Age=0; Path=/`;
+}
+
 /* ── Estado global ───────────────────────────────────────────────────────── */
 const state = {
-  jwt:       localStorage.getItem("jwt") || null,
+  // Legacy: si el JWT quedó en localStorage por una sesión anterior, lo
+  // trasladamos a la cookie compartida para que el resto de subdominios
+  // (landing, teoria) lo vean.
+  jwt:       getCookie(COOKIE_NAME) || localStorage.getItem("jwt") || null,
   user:      JSON.parse(localStorage.getItem("user") || "null"),
   quiz:      null,
   qi:        0,
@@ -71,10 +108,34 @@ const rpc = (name, args = {}) =>
 
 /* ── Sesión ──────────────────────────────────────────────────────────────── */
 function persistSession() {
-  if (state.jwt) localStorage.setItem("jwt", state.jwt);
-  else localStorage.removeItem("jwt");
+  // JWT en cookie compartida entre subdominios (.aprentix.es); el resto de
+  // metadatos del usuario en localStorage (fáciles de recomputar via
+  // mi_sesion() si se pierden).
+  if (state.jwt) setCookie(COOKIE_NAME, state.jwt, COOKIE_HORAS);
+  else deleteCookie(COOKIE_NAME);
+  // Limpia el localStorage legado con el token (ya vive en la cookie).
+  localStorage.removeItem("jwt");
   if (state.user) localStorage.setItem("user", JSON.stringify(state.user));
   else localStorage.removeItem("user");
+}
+
+async function refrescarUsuarioDesdeJwt() {
+  // Cuando entramos con cookie válida pero sin user en localStorage (típico
+  // tras hacer login en la landing y volver aquí), reconstruimos el user
+  // consultando mi_sesion() de PostgREST.
+  if (!state.jwt || state.user) return;
+  try {
+    const r = await rpc("mi_sesion", {});
+    if (r && r.user_id) {
+      state.user = {
+        user_id: r.user_id,
+        username: r.username,
+        puede_gestionar: !!r.puede_gestionar,
+        roles: r.roles || [],
+      };
+      persistSession();
+    }
+  } catch (_) { /* si falla, el flujo de navigate() manda a login */ }
 }
 
 function applySession() {
@@ -117,7 +178,12 @@ async function register(form) {
 function logout(navigateAway = true) {
   state.jwt = null; state.user = null;
   persistSession(); applySession();
-  if (navigateAway) navigate("login");
+  if (navigateAway) {
+    // La sesión es global; salir del stack manda a la landing para que la
+    // decisión de volver a los tests o ir a teoría la tome allí.
+    location.href = LANDING_URL;
+    return;
+  }
 }
 
 /* ── Navegación ──────────────────────────────────────────────────────────── */
@@ -1674,10 +1740,46 @@ $("#btn-ritmo-cancelar")?.addEventListener("click", () => {
   $("#modal-ritmo").classList.add("hidden");
 });
 
+/* ── Reset de repasos ───────────────────────────────────────────────────── */
+$("#btn-resetear-repasos")?.addEventListener("click", () => {
+  $("#modal-reset-repasos").classList.remove("hidden");
+});
+$("#btn-reset-cancelar")?.addEventListener("click", () => {
+  $("#modal-reset-repasos").classList.add("hidden");
+});
+$("#btn-reset-confirmar")?.addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try {
+    const r = await rpc("resetear_mis_repasos", { p_test_id: null });
+    const n = r && typeof r.borradas === "number" ? r.borradas : 0;
+    toast(n === 0
+      ? "No había repasos que borrar"
+      : `Repaso reseteado (${n} pregunta${n === 1 ? "" : "s"})`);
+    $("#modal-reset-repasos").classList.add("hidden");
+    $("#modal-ritmo").classList.add("hidden");
+    // Refresca la home si estamos ahí para que se actualicen los contadores.
+    if ($("#view-home")?.classList.contains("active")) {
+      navigate("home");
+    }
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 
 /* ── Arranque ───────────────────────────────────────────────────────────── */
 inicializarInputsTiempo();
-applySession();
-navigate(state.jwt && state.user ? "home" : "login");
+(async () => {
+  await refrescarUsuarioDesdeJwt();
+  if (state.jwt && localStorage.getItem("jwt")) {
+    // Migración legada: token en localStorage → cookie compartida.
+    persistSession();
+  }
+  applySession();
+  navigate(state.jwt && state.user ? "home" : "login");
+})();
 
 })();

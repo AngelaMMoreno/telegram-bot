@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aprentix — Teoría</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="hdr">
+    <div class="hdr-left">
+      <a href="https://aprentix.es" class="hdr-logo" title="Volver al inicio">
+        <span class="logo-dot"></span>
+        <span>Aprentix · Teoría</span>
+      </a>
+    </div>
+    <div class="hdr-right">
+      <span id="user-badge" class="user-badge"></span>
+      <a href="https://test.aprentix.es" class="btn btn-ghost">Tests</a>
+      <button id="btn-logout" class="btn btn-ghost">Salir</button>
+    </div>
+  </header>
+
+  <nav id="bc" class="bc" aria-label="Ruta"></nav>
+
+  <div id="admin-bar" class="admin-bar" hidden>
+    <label class="btn btn-sec">
+      📤 Subir ficheros
+      <input id="file-input" type="file" multiple hidden>
+    </label>
+    <button id="btn-nueva-carpeta" class="btn btn-sec">📁 Nueva carpeta</button>
+    <span class="admin-hint">Doble clic sobre un fichero para renombrarlo · botón derecho para más opciones</span>
+  </div>
+
+  <main id="grid" class="grid" aria-live="polite"></main>
+
+  <div id="modal-host"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
