@@ -103,8 +103,18 @@ async function api(method, url, body, isForm = false) {
 
 // ── Estado ──────────────────────────────────────────────────────────────────
 
+// `location.hash` devuelve el fragmento percent-encoded (p.ej. "/Mi%20Carpeta"),
+// así que hay que decodificarlo antes de mandarlo a la API — si no, al llamar
+// a `encodeURIComponent` en `cargar()` se codifica dos veces y el servidor
+// busca literalmente una carpeta llamada "Mi%20Carpeta".
+function rutaDeHash() {
+  const raw = location.hash.slice(1);
+  if (!raw) return '/';
+  try { return decodeURIComponent(raw); } catch { return raw; }
+}
+
 let ESTADO = {
-  ruta: location.hash.slice(1) || '/',
+  ruta: rutaDeHash(),
   puede_gestionar: false,
 };
 
@@ -678,7 +688,7 @@ document.addEventListener('visibilitychange', () => {
   if (getCookie(COOKIE_NAME) !== TOKEN) location.reload();
 });
 
-window.addEventListener('hashchange', () => cargar(location.hash.slice(1) || '/'));
+window.addEventListener('hashchange', () => cargar(rutaDeHash()));
 
 document.getElementById('btn-logout').addEventListener('click', () => {
   deleteCookie(COOKIE_NAME);
