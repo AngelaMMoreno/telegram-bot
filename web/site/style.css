@@ -149,18 +149,7 @@ body {
 }
 @media (min-width: 640px) { .hdr-nav { display: inline-flex; } }
 
-.search-wrap { flex: 1; min-width: 0; position: relative; }
-#global-search {
-  width: 100%; padding: 0.5rem 0.8rem;
-  border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--bg-alt); color: var(--txt);
-  font-size: 0.95rem;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-#global-search:focus {
-  outline: none; border-color: var(--pri);
-  box-shadow: 0 0 0 4px var(--pri-glow);
-}
+.hdr-spacer { flex: 1; min-width: 0; }
 .user-chip {
   display: flex; align-items: center; gap: 0.4rem;
   min-width: 0;
@@ -196,28 +185,6 @@ body {
 .btn-icon:hover { background: var(--pri-soft); color: var(--pri-d); }
 .btn-icon.danger-icon:hover { background: var(--danger); color: #fff; }
 .btn-icon:active { transform: scale(0.92); }
-
-/* ─── Search results ─── */
-.search-results {
-  position: absolute; top: calc(100% + 6px); left: 0; right: 0;
-  background: var(--bg-panel);
-  border: 1px solid var(--border); border-radius: var(--radius);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.18);
-  max-height: 70vh; overflow: auto;
-  z-index: 50;
-}
-.search-results .item {
-  padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border);
-  cursor: pointer; color: var(--txt);
-}
-.search-results .item:last-child { border-bottom: 0; }
-.search-results .item.label {
-  background: var(--bg-soft); cursor: default;
-  font-size: 0.7rem; letter-spacing: 0.05em;
-  color: var(--txt-soft); text-transform: uppercase;
-}
-.search-results .item:not(.label):hover,
-.search-results .item:not(.label):active { background: var(--pri-soft); }
 
 /* ─── Sidebar (drawer en móvil) ─── */
 .sidebar {
@@ -842,10 +809,6 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
     gap: 1.2rem;
   }
   .brand-name { font-size: 1.05rem; }
-  .search-wrap {
-    flex: 0 1 480px;
-    margin: 0 auto;
-  }
   .user-chip {
     margin-left: auto;
     padding-left: 0.4rem;
@@ -887,18 +850,35 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
 .badge.calma { background: var(--txt-soft); }
 
 /* ── Config modal ── */
-.config-section h4 {
+.config-group + .config-group {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 2px solid var(--border);
+}
+.config-group-title {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--pri-d);
+  margin: 0 0 14px;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.config-group-title::before {
+  content: ""; display: inline-block;
+  width: 4px; height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--grad-a), var(--grad-b));
+}
+[data-theme="dark"] .config-group-title { color: var(--pri); }
+.config-section h5 {
   font-size: 12px; font-weight: 700; letter-spacing: 0.05em;
-  text-transform: uppercase; color: var(--txt-soft); margin-bottom: 10px;
+  text-transform: uppercase; color: var(--txt-soft);
+  margin: 0 0 10px;
 }
 .config-section + .config-section {
-  border-top: 1px solid var(--border);
-  padding-top: 16px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
 }
-.config-section.danger-section {
-  border-top: 1px solid var(--border);
-  padding-top: 16px;
-}
+.config-section.danger-section h5 { color: var(--danger); }
 .theme-toggle { display: flex; gap: 8px; flex-wrap: wrap; }
 .theme-option {
   display: inline-flex; align-items: center; gap: 6px;

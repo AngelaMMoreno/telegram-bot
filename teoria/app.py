@@ -146,8 +146,18 @@ def vistos_prefijo(token: str, prefijo: str) -> set[str]:
 def api_sesion(request: Request):
     claims = require_teoria(request)
     roles = claims.get("roles") or []
+    # El JWT sólo contiene el user_id (claim 'sub'); el username lo pedimos
+    # a PostgREST para poder mostrarlo en la cabecera.
+    username = None
+    r = _pg(claims["_token"], "mi_sesion", {})
+    if r is not None and r.status_code == 200:
+        try:
+            username = r.json().get("username")
+        except Exception:
+            pass
     return {
         "user_id": claims.get("sub"),
+        "username": username,
         "roles": roles,
         "puede_gestionar": "admin" in roles,
     }
