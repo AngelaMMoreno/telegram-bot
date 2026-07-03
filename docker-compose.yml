@@ -12,3 +12,4 @@ include:
   - deploy/landing/docker-compose.yml
   - deploy/web/docker-compose.yml
   - deploy/teoria/docker-compose.yml
+  - deploy/notificador/docker-compose.yml
