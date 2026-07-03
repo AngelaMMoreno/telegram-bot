@@ -1,15 +1,15 @@
 {
   "id": "/",
-  "name": "Aprentix — Tests de oposiciones",
+  "name": "Aprentix — Teoría",
   "short_name": "Aprentix",
-  "description": "Tu oposición, a tu ritmo. Tests, repasos y teoría con seguimiento personalizado.",
+  "description": "Material de estudio y apuntes organizados por temas.",
   "start_url": "/?src=pwa",
   "scope": "/",
   "scope_extensions": [
     { "origin": "https://aprentix.es" },
     { "origin": "https://www.aprentix.es" },
-    { "origin": "https://teoria.aprentix.es" },
-    { "origin": "https://www.teoria.aprentix.es" }
+    { "origin": "https://test.aprentix.es" },
+    { "origin": "https://www.test.aprentix.es" }
   ],
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
@@ -49,29 +49,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "Repasar vencidas",
-      "short_name": "Repasar",
-      "description": "Abre las preguntas de repaso pendientes",
-      "url": "/?atajo=repasar",
-      "icons": [{ "src": "/shared/pwa-icons/icon-any-192.png", "sizes": "192x192", "type": "image/png" }]
-    },
-    {
-      "name": "Mis fallos",
-      "short_name": "Fallos",
-      "description": "Repasa las preguntas que has ido fallando",
-      "url": "/?atajo=fallos",
-      "icons": [{ "src": "/shared/pwa-icons/icon-any-192.png", "sizes": "192x192", "type": "image/png" }]
-    },
-    {
-      "name": "Tests",
-      "short_name": "Tests",
-      "description": "Elige un test y empieza a responder",
-      "url": "/?atajo=tests",
-      "icons": [{ "src": "/shared/pwa-icons/icon-any-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ],
   "prefer_related_applications": false

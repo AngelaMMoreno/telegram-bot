@@ -8,9 +8,13 @@
 aprentix-header { display: contents; }
 
 .topbar {
-  display: flex; align-items: center; gap: 0.9rem;
+  display: flex; align-items: center; gap: 0.65rem;
   height: var(--topbar-h);
-  padding: 0 1rem;
+  padding: 0 0.75rem;
+  /* En PWA instalada respetamos el notch/safe-area para que la barra no
+     quede debajo del status bar del sistema. */
+  padding-top: env(safe-area-inset-top, 0);
+  box-sizing: content-box;
   background: var(--glass-bg);
   background-image:
     linear-gradient(90deg, var(--accent-soft) 0%, transparent 30%, transparent 70%, var(--sky-soft) 100%);
@@ -40,11 +44,11 @@ aprentix-header { display: contents; }
 
 /* Marca destacada: chip con toque solar + logo grande. */
 .brand {
-  display: inline-flex; align-items: center; gap: 12px;
+  display: inline-flex; align-items: center; gap: 8px;
   color: var(--pri-d);
   text-decoration: none;
-  font-weight: 800; font-size: 1.35rem;
-  padding: 8px 18px 8px 12px; border-radius: 999px;
+  font-weight: 800; font-size: 1.1rem;
+  padding: 5px 12px 5px 8px; border-radius: 999px;
   background:
     linear-gradient(120deg, var(--accent-soft) 0%, var(--pri-soft) 60%, var(--sky-soft) 100%);
   border: 1px solid var(--glass-border);
@@ -64,14 +68,14 @@ aprentix-header { display: contents; }
 [data-theme="dark"] .brand:hover {
   box-shadow: 0 4px 16px rgba(176, 132, 245, 0.30);
 }
-.brand .brand-logo { width: 40px; height: 40px; }
+.brand .brand-logo { width: 30px; height: 30px; }
 .brand-name {
   letter-spacing: 0.4px;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 @media (min-width: 640px) {
-  .brand { font-size: 1.5rem; padding: 8px 22px 8px 14px; }
-  .brand .brand-logo { width: 46px; height: 46px; }
+  .brand { font-size: 1.25rem; padding: 6px 16px 6px 10px; }
+  .brand .brand-logo { width: 34px; height: 34px; }
 }
 
 .hdr-nav {
@@ -117,7 +121,7 @@ aprentix-header { display: contents; }
 }
 .user-btn:hover { background: var(--pri-soft); }
 .user-chip .avatar {
-  width: 38px; height: 38px;
+  width: 32px; height: 32px;
   display: inline-flex; align-items: center; justify-content: center;
   background: linear-gradient(135deg, var(--grad-a), var(--grad-b));
   color: #fff; font-weight: 700;
@@ -137,7 +141,7 @@ aprentix-header { display: contents; }
 }
 .btn-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 42px; height: 42px;
+  width: 36px; height: 36px;
   background: var(--bg-soft); color: var(--txt);
   border: 1px solid var(--border); border-radius: 50%;
   cursor: pointer; padding: 0;
