@@ -1,10 +1,35 @@
 # Landing de aprentix.es/www.aprentix.es.
 # Traefik termina TLS y nos pasa HTTP por :80.
+#
+# Este Caddy es el HUB de toda la app: sirve la landing en /, la app de
+# tests bajo /tests/* y la app de teoría bajo /teoria/*, todo el mismo
+# origen para que la PWA no salga nunca del scope y no aparezca el
+# navegador con la X al saltar entre secciones.
 
 :80 {
     encode zstd gzip
 
-    # /api/* → PostgREST (login, mi_sesion, puede_ver_teoria).
+    # Sin barra final los prefijos no matchean; redirigimos para que el
+    # <base href> de cada SPA resuelva correctamente los assets.
+    @tests_no_slash path /tests
+    redir @tests_no_slash /tests/ 301
+    @teoria_no_slash path /teoria
+    redir @teoria_no_slash /teoria/ 301
+
+    # ── App de tests (contenedor web) ──────────────────────────────────
+    # handle_path descarta /tests del path antes de proxyar, así el
+    # contenedor sigue viendo /manifest.webmanifest, /api/*, etc. tal
+    # cual, y no hay que reconfigurar nada dentro del container.
+    handle_path /tests/* {
+        reverse_proxy web:80
+    }
+
+    # ── App de teoría (contenedor teoria) ──────────────────────────────
+    handle_path /teoria/* {
+        reverse_proxy teoria:80
+    }
+
+    # ── API de la landing (login, mi_sesion, puede_ver_teoria) ─────────
     handle /api/* {
         uri strip_prefix /api
         reverse_proxy postgrest:3000
@@ -14,19 +39,14 @@
     @manifest path *.webmanifest
     header @manifest Content-Type application/manifest+json
 
-    # Web App Scope Extensions: la landing es la PWA "raíz", y este
-    # fichero autoriza a las PWAs de tests y teoría a extender su
-    # scope hasta aprentix.es. Sin él, saltar entre subdominios abre
-    # un in-app browser con una X para volver.
+    # Ya no hace falta scope_extensions porque todo vive en el mismo
+    # origen, pero mantenemos el fichero servido con Content-Type JSON
+    # por si algún cliente instalado antiguo lo pide.
     @waoa path /.well-known/web-app-origin-association
     header @waoa Content-Type application/json
     header @waoa Access-Control-Allow-Origin *
 
-    # Service worker: sin caché para poder actualizar la PWA.
-    @sw path /service-worker.js
-    header @sw Cache-Control "no-cache, no-store, must-revalidate"
-    header @sw Service-Worker-Allowed "/"
-
+    # ── Landing SPA (root, /shared/, /app.js, /style.css, iconos…) ─────
     handle {
         root * /srv
         try_files {path} /index.html

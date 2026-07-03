@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Aprentix</title>
 
-  <!-- PWA instalable desde la landing (comparte identidad con
-       test.aprentix.es y teoria.aprentix.es vía scope_extensions,
-       así saltar entre subdominios no abre el navegador con la X). -->
+  <!-- Manifest único de la app. Todo (landing, /tests/, /teoria/) vive
+       en aprentix.es, así que scope "/" cubre toda la navegación como
+       una sola PWA instalada. -->
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="application-name" content="Aprentix">
   <meta name="theme-color" content="#6B8E23" media="(prefers-color-scheme: light)">
@@ -89,13 +89,13 @@
         </div>
       </div>
       <div class="apps">
-        <a class="app-card tests" href="https://test.aprentix.es">
+        <a class="app-card tests" href="/tests/">
           <div class="app-icon icon-test" aria-hidden="true"></div>
           <div class="app-title">Tests</div>
           <div class="app-desc">Cuestionarios, simulacros, repasos espaciados y estadísticas.</div>
           <div class="app-cta">Entrar →</div>
         </a>
-        <a class="app-card teoria" id="tarjeta-teoria" href="https://teoria.aprentix.es" hidden>
+        <a class="app-card teoria" id="tarjeta-teoria" href="/teoria/" hidden>
           <div class="app-icon icon-teoria" aria-hidden="true"></div>
           <div class="app-title">Teoría</div>
           <div class="app-desc">Apuntes, PDFs y material de estudio organizado por temas.</div>

@@ -5,12 +5,6 @@
   "description": "Tests, teoría y repasos personalizados para tu oposición.",
   "start_url": "/?src=pwa",
   "scope": "/",
-  "scope_extensions": [
-    { "origin": "https://test.aprentix.es" },
-    { "origin": "https://www.test.aprentix.es" },
-    { "origin": "https://teoria.aprentix.es" },
-    { "origin": "https://www.teoria.aprentix.es" }
-  ],
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait",
@@ -56,14 +50,14 @@
       "name": "Hacer un test",
       "short_name": "Tests",
       "description": "Ir directamente a la app de tests",
-      "url": "https://test.aprentix.es/?src=pwa",
+      "url": "/tests/?src=pwa",
       "icons": [{ "src": "/shared/pwa-icons/icon-any-192.png", "sizes": "192x192", "type": "image/png" }]
     },
     {
       "name": "Ver teoría",
       "short_name": "Teoría",
       "description": "Ir directamente a la app de teoría",
-      "url": "https://teoria.aprentix.es/?src=pwa",
+      "url": "/teoria/?src=pwa",
       "icons": [{ "src": "/shared/pwa-icons/icon-any-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ],

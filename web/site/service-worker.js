@@ -18,28 +18,39 @@
  *   clients.claim para que la actualización se aplique al siguiente refresh.
  * ==========================================================================*/
 
-const CACHE_VERSION = "aprentix-v1";
+// Subimos versión al cambiar la arquitectura de rutas: la SPA ahora vive
+// bajo /tests/ y las cachés antiguas apuntaban a la raíz.
+const CACHE_VERSION = "aprentix-v2";
 const SHELL_CACHE   = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
+// scope() acaba en "/" y se resuelve al mount real (p. ej.
+// "https://aprentix.es/tests/"). Con new URL() más un path RELATIVO
+// generamos URLs absolutas correctas sin acoplar el SW a un mount fijo.
+const BASE = new URL("./", self.registration && self.registration.scope
+  ? self.registration.scope
+  : self.location.href);
+
+function urlAt(p) { return new URL(p, BASE).toString(); }
+
 const SHELL_ASSETS = [
-  "/",
-  "/index.html",
-  "/app.js",
-  "/style.css",
-  "/manifest.webmanifest",
-  "/shared/tokens.css",
-  "/shared/base.css",
-  "/shared/header.css",
-  "/shared/config.css",
-  "/shared/header.js",
-  "/shared/logo.svg",
-  "/shared/pwa-icons/icon-any-192.png",
-  "/shared/pwa-icons/icon-any-512.png",
-  "/shared/pwa-icons/icon-any.svg",
-  "/shared/pwa-icons/icon-mono.svg",
-  "/shared/pwa-icons/apple-touch-icon.png",
-];
+  "./",
+  "index.html",
+  "app.js",
+  "style.css",
+  "manifest.webmanifest",
+  "shared/tokens.css",
+  "shared/base.css",
+  "shared/header.css",
+  "shared/config.css",
+  "shared/header.js",
+  "shared/logo.svg",
+  "shared/pwa-icons/icon-any-192.png",
+  "shared/pwa-icons/icon-any-512.png",
+  "shared/pwa-icons/icon-any.svg",
+  "shared/pwa-icons/icon-mono.svg",
+  "shared/pwa-icons/apple-touch-icon.png",
+].map(urlAt);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -73,7 +84,9 @@ self.addEventListener("activate", (event) => {
 });
 
 /* ── Estrategias por tipo de request ───────────────────────────────────── */
-function isApi(url)      { return url.pathname.startsWith("/api/"); }
+// El SW puede vivir bajo /tests/, así que las peticiones a la API
+// aparecen como /tests/api/... Con includes() cubrimos ambos casos.
+function isApi(url)      { return url.pathname.includes("/api/"); }
 function isNavigation(r) { return r.mode === "navigate"; }
 function isStatic(url) {
   return /\.(css|js|svg|png|jpg|jpeg|webp|ico|woff2?|ttf|webmanifest)$/i.test(
@@ -100,7 +113,7 @@ self.addEventListener("fetch", (event) => {
           cache.put(req, fresh.clone());
           return fresh;
         } catch (_) {
-          const shell = await caches.match("/index.html");
+          const shell = await caches.match(urlAt("index.html"));
           return shell || Response.error();
         }
       })()
@@ -145,8 +158,8 @@ self.addEventListener("message", (event) => {
  *   `?atajo=repasar` los interpreta la SPA para llevar al usuario a la
  *   vista correspondiente).
  */
-const ICON_DEFAULT = "/shared/pwa-icons/icon-any-192.png";
-const BADGE_DEFAULT = "/shared/pwa-icons/icon-mono.svg";
+const ICON_DEFAULT = urlAt("shared/pwa-icons/icon-any-192.png");
+const BADGE_DEFAULT = urlAt("shared/pwa-icons/icon-mono.svg");
 
 self.addEventListener("push", (event) => {
   let data = {};
@@ -158,7 +171,7 @@ self.addEventListener("push", (event) => {
     tag:   data.tag   || "aprentix",
     icon:  data.icon  || ICON_DEFAULT,
     badge: data.badge || BADGE_DEFAULT,
-    data:  { url: data.url || "/" },
+    data:  { url: data.url || BASE.pathname },
     renotify: true,      // vibra aunque haya una con el mismo tag
     requireInteraction: false,
   };
@@ -168,7 +181,7 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "/";
+  const url = (event.notification.data && event.notification.data.url) || BASE.pathname;
 
   event.waitUntil((async () => {
     const clients = await self.clients.matchAll({

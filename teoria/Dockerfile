@@ -10,8 +10,7 @@ COPY teoria/site   ./site
 COPY shared        ./site/shared
 
 ENV BASE_DIR=/ficheros \
-    POSTGREST_URL=http://postgrest:3000 \
-    LANDING_URL=https://aprentix.es
+    POSTGREST_URL=http://postgrest:3000
 
 EXPOSE 80
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "80", "--proxy-headers"]
