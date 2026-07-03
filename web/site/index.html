@@ -2,14 +2,35 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Aprentix · Tests</title>
+
+  <!-- ── PWA / instalable ───────────────────────────────────────────── -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="application-name" content="Aprentix">
+  <!-- theme-color por esquema: musgo en claro, verde bosque en oscuro. -->
+  <meta name="theme-color" content="#6B8E23" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#101E1A" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+
+  <!-- ── iOS: pantalla completa, título e icono al añadir al Inicio ─── -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Aprentix">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="/shared/pwa-icons/apple-touch-icon.png">
+
+  <!-- ── Favicons ───────────────────────────────────────────────────── -->
+  <link rel="icon" type="image/svg+xml" href="/shared/pwa-icons/icon-any.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="/shared/pwa-icons/icon-any-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="/shared/pwa-icons/icon-any-512.png">
+  <link rel="mask-icon" href="/shared/pwa-icons/icon-mono.svg" color="#6B8E23">
+
   <link rel="stylesheet" href="/shared/tokens.css">
   <link rel="stylesheet" href="/shared/base.css">
   <link rel="stylesheet" href="/shared/header.css">
   <link rel="stylesheet" href="/shared/config.css">
   <link rel="stylesheet" href="/style.css">
-  <link rel="icon" type="image/svg+xml" href="/shared/logo.svg">
   <!-- Registra el custom element antes de que el parser llegue a él. -->
   <script src="/shared/header.js"></script>
   <script>
@@ -21,6 +42,33 @@
       }
       if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
     })();
+  </script>
+  <script>
+    // Registro del service worker. Solo en https (o localhost); el navegador
+    // ya rechaza el registro fuera de contextos seguros, pero cortocircuitar
+    // aquí evita ruido en la consola.
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker
+          .register("/service-worker.js", { scope: "/" })
+          .then(function (reg) {
+            // Si aparece una versión nueva mientras la app está abierta,
+            // le pedimos al SW que se active de inmediato para el próximo
+            // recargo. No forzamos reload: el usuario decide.
+            if (reg.waiting) reg.waiting.postMessage("SKIP_WAITING");
+            reg.addEventListener("updatefound", function () {
+              var nw = reg.installing;
+              if (!nw) return;
+              nw.addEventListener("statechange", function () {
+                if (nw.state === "installed" && navigator.serviceWorker.controller) {
+                  nw.postMessage("SKIP_WAITING");
+                }
+              });
+            });
+          })
+          .catch(function () { /* silent: no bloquea la app */ });
+      });
+    }
   </script>
 </head>
 <body>
