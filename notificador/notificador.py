@@ -37,14 +37,65 @@ import time
 from dataclasses import dataclass
 from typing import Iterable
 
+import base64
+
 import psycopg
 from pywebpush import WebPushException, webpush
 
 
 # ── Configuración desde entorno ────────────────────────────────────────────
 
+def _normalizar_vapid_key(raw: str) -> str:
+    """
+    Acepta la clave privada VAPID en cualquiera de estos formatos:
+
+      1) PEM con saltos REALES:
+             -----BEGIN PRIVATE KEY-----
+             MIGHA...
+             -----END PRIVATE KEY-----
+         (funciona si tu backend de secretos permite valores multilínea)
+
+      2) PEM con '\\n' LITERALES:
+             -----BEGIN PRIVATE KEY-----\\nMIGHA...\\n-----END PRIVATE KEY-----\\n
+         (necesario en .env de Dokploy y en la mayoría de UIs de secretos,
+          porque los .env no soportan valores multilínea sin escape).
+
+      3) Base64 del PEM entero:
+             LS0tLS1CRUdJTiBQUklWQVRFI...
+         (útil si tu UI escapa mal las barras: base64 no tiene ni '/' ni
+          saltos que confundan al parser)
+
+    Devuelve siempre PEM con saltos reales, que es lo que espera
+    pywebpush → cryptography.
+    """
+    s = raw.strip()
+
+    # 1) Ya viene con saltos reales.
+    if "-----BEGIN" in s and "\n" in s:
+        return s
+
+    # 2) Saltos codificados como '\n' literales (dos caracteres).
+    if "-----BEGIN" in s and "\\n" in s:
+        return s.replace("\\n", "\n")
+
+    # 3) Base64 del PEM entero.
+    try:
+        # Padding tolerante (algunos generadores omiten '=').
+        pad = "=" * ((4 - len(s) % 4) % 4)
+        decoded = base64.b64decode(s + pad).decode("utf-8")
+        if "-----BEGIN" in decoded:
+            return decoded
+    except Exception:  # noqa: BLE001
+        pass
+
+    raise SystemExit(
+        "VAPID_PRIVATE_KEY no reconocida. Debe ser un PEM (con saltos reales "
+        "o con '\\n' literales) o el PEM entero codificado en base64."
+    )
+
+
 DATABASE_URL      = os.environ["DATABASE_URL"]
-VAPID_PRIVATE_KEY = os.environ["VAPID_PRIVATE_KEY"]
+VAPID_PRIVATE_KEY = _normalizar_vapid_key(os.environ["VAPID_PRIVATE_KEY"])
 VAPID_SUBJECT     = os.environ.get("VAPID_SUBJECT", "mailto:soporte@aprentix.es")
 TICK_SECONDS      = int(os.environ.get("TICK_SECONDS", "300"))
 BATCH_LIMIT       = int(os.environ.get("BATCH_LIMIT",  "500"))
