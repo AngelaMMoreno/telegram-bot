@@ -10,6 +10,23 @@
         reverse_proxy postgrest:3000
     }
 
+    # MIME correcto para el manifest PWA.
+    @manifest path *.webmanifest
+    header @manifest Content-Type application/manifest+json
+
+    # Web App Scope Extensions: la landing es la PWA "raíz", y este
+    # fichero autoriza a las PWAs de tests y teoría a extender su
+    # scope hasta aprentix.es. Sin él, saltar entre subdominios abre
+    # un in-app browser con una X para volver.
+    @waoa path /.well-known/web-app-origin-association
+    header @waoa Content-Type application/json
+    header @waoa Access-Control-Allow-Origin *
+
+    # Service worker: sin caché para poder actualizar la PWA.
+    @sw path /service-worker.js
+    header @sw Cache-Control "no-cache, no-store, must-revalidate"
+    header @sw Service-Worker-Allowed "/"
+
     handle {
         root * /srv
         try_files {path} /index.html

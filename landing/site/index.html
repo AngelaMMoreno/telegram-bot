@@ -2,13 +2,29 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Aprentix</title>
+
+  <!-- PWA instalable desde la landing (comparte identidad con
+       test.aprentix.es y teoria.aprentix.es vía scope_extensions,
+       así saltar entre subdominios no abre el navegador con la X). -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="application-name" content="Aprentix">
+  <meta name="theme-color" content="#6B8E23" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#101E1A" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Aprentix">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="/shared/pwa-icons/apple-touch-icon.png">
+
   <link rel="stylesheet" href="/shared/tokens.css">
   <link rel="stylesheet" href="/shared/base.css">
   <link rel="stylesheet" href="/shared/config.css">
   <link rel="stylesheet" href="/style.css">
-  <link rel="icon" type="image/svg+xml" href="/shared/logo.svg">
+  <link rel="icon" type="image/svg+xml" href="/shared/pwa-icons/icon-any.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="/shared/pwa-icons/icon-any-192.png">
   <script>
     // Aplica el tema oscuro antes del primer render para evitar el flash.
     (function () {
