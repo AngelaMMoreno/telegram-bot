@@ -1846,6 +1846,8 @@ async function abrirModalConfig() {
   $$('input[name="theme"]').forEach(r => { r.checked = (r.value === t); });
   // Ritmo
   await cargarRitmoOpcionesConfig();
+  // Estado de las notificaciones push
+  await refrescarEstadoPush();
   $("#modal-config").classList.remove("hidden");
 }
 function cerrarModalConfig() { $("#modal-config").classList.add("hidden"); }
@@ -1950,7 +1952,177 @@ inicializarInputsTiempo();
     persistSession();
   }
   applySession();
-  navigate(state.jwt && state.user ? "home" : "login");
+
+  // Atajos desde el manifest (Repasar / Fallos / Tests) o desde click en
+  // notificación. Solo respetamos el atajo si hay sesión válida.
+  const atajo = new URLSearchParams(location.search).get("atajo");
+  const destino = atajoAVista(atajo);
+  navigate(state.jwt && state.user ? (destino || "home") : "login");
+
+  // Si ya hay permiso concedido, sincronizamos silenciosamente la
+  // suscripción con el backend (por si se creó en otro dispositivo o
+  // el navegador rotó las claves).
+  if (state.jwt && state.user) sincronizarPushSilencioso();
 })();
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Notificaciones Web Push
+ *
+ * Contrato con el backend:
+ *   - push_config_publica()      → clave pública VAPID
+ *   - guardar_push_suscripcion() → upsert de suscripción del navegador
+ *   - borrar_push_suscripcion()  → al desactivar desde ajustes
+ *
+ * El motor de disparo vive fuera de la SPA (servicio 'notificador');
+ * aquí solo suscribimos, mostramos estado y limpiamos.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+function pushSoportado() {
+  return "serviceWorker" in navigator &&
+         "PushManager"    in window     &&
+         "Notification"   in window;
+}
+
+function atajoAVista(a) {
+  return ({
+    repasar:   "tests",     // la vista Tests trae el botón "Repasar todo"
+    fallos:    "fallos",
+    tests:     "tests",
+    home:      "home",
+    retos:     "retos",
+  })[a] || null;
+}
+
+// base64url → Uint8Array; el navegador exige la clave pública en ese formato.
+function b64urlToBytes(s) {
+  const pad = "=".repeat((4 - (s.length % 4)) % 4);
+  const raw = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+async function obtenerSubscripcion(reg) {
+  return (await reg.pushManager.getSubscription()) || null;
+}
+
+async function suscribir(reg) {
+  const cfg = await rpc("push_config_publica");
+  if (!cfg?.vapid_public_key) {
+    throw new Error("El servidor aún no tiene una clave VAPID configurada.");
+  }
+  return reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: b64urlToBytes(cfg.vapid_public_key),
+  });
+}
+
+async function enviarSubAlBackend(sub) {
+  const j = sub.toJSON();
+  await rpc("guardar_push_suscripcion", {
+    p_endpoint: j.endpoint,
+    p_p256dh:   j.keys?.p256dh || "",
+    p_auth:     j.keys?.auth   || "",
+    p_ua:       navigator.userAgent,
+    p_tz:       Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Madrid",
+  });
+}
+
+async function activarPush() {
+  if (!pushSoportado()) {
+    return toast("Este navegador no soporta notificaciones. Prueba a instalar la app desde el navegador.");
+  }
+  try {
+    const permiso = await Notification.requestPermission();
+    if (permiso !== "granted") {
+      return toast("Permiso de notificaciones denegado.");
+    }
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await obtenerSubscripcion(reg);
+    if (!sub) sub = await suscribir(reg);
+    await enviarSubAlBackend(sub);
+    toast("🔔 Notificaciones activadas");
+    await refrescarEstadoPush();
+  } catch (e) {
+    toast("No se pudieron activar: " + (e.message || e));
+  }
+}
+
+async function desactivarPush() {
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await obtenerSubscripcion(reg);
+    if (sub) {
+      try { await rpc("borrar_push_suscripcion", { p_endpoint: sub.endpoint }); } catch (_) {}
+      await sub.unsubscribe();
+    }
+    toast("🔕 Notificaciones desactivadas");
+    await refrescarEstadoPush();
+  } catch (e) {
+    toast("No se pudieron desactivar: " + (e.message || e));
+  }
+}
+
+async function refrescarEstadoPush() {
+  const wrap = $("#config-push-wrap");
+  if (!wrap) return;
+  const btnOn   = $("#btn-activar-push");
+  const btnOff  = $("#btn-desactivar-push");
+  const status  = $("#push-status");
+
+  if (!pushSoportado()) {
+    wrap.classList.add("push-nosoporte");
+    btnOn.disabled = true;
+    btnOn.textContent = "No disponible en este navegador";
+    btnOff.classList.add("hidden");
+    status.classList.remove("hidden");
+    status.textContent = "En iOS, instala primero la app desde Safari (Compartir → Añadir a pantalla de inicio) para poder activarlas.";
+    return;
+  }
+
+  const permiso = Notification.permission;
+  const reg     = await navigator.serviceWorker.ready;
+  const sub     = await obtenerSubscripcion(reg);
+  const activa  = permiso === "granted" && !!sub;
+
+  btnOn.disabled     = false;
+  btnOn.classList.toggle("hidden", activa);
+  btnOff.classList.toggle("hidden", !activa);
+
+  status.classList.remove("hidden");
+  if (permiso === "denied") {
+    status.textContent = "Están bloqueadas en el navegador; cámbialo en el candado de la barra de direcciones.";
+  } else if (activa) {
+    status.textContent = "Activas en este dispositivo.";
+  } else {
+    status.textContent = "";
+    status.classList.add("hidden");
+  }
+}
+
+// Ejecuta al arrancar si el usuario tiene sesión: si el navegador ya tiene
+// una suscripción push, la reenvía al backend por si es la primera vez que
+// entra en este subdominio o si perdimos la fila (p.ej. reset de BBDD).
+async function sincronizarPushSilencioso() {
+  if (!pushSoportado()) return;
+  if (Notification.permission !== "granted") return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await obtenerSubscripcion(reg);
+    if (sub) await enviarSubAlBackend(sub);
+  } catch (_) { /* silencioso a propósito */ }
+}
+
+$("#btn-activar-push")?.addEventListener("click", activarPush);
+$("#btn-desactivar-push")?.addEventListener("click", desactivarPush);
+
+// El service worker avisa cuando el navegador rota la suscripción para que
+// re-registremos con las nuevas claves sin intervención del usuario.
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("message", e => {
+    if (e.data?.type === "PUSH_SUBSCRIPTION_CHANGE") sincronizarPushSilencioso();
+  });
+}
 
 })();
