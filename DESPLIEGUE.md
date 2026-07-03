@@ -213,15 +213,29 @@ El stack `notificador` es un servicio Python que consulta la BBDD cada
 
 **Primer despliegue:**
 
-1. Genera el par de claves VAPID (en tu máquina o en un shell del
+1. Genera el par de claves VAPID en **tu máquina local** (no hace falta
    contenedor):
    ```bash
    pip install py-vapid
    python notificador/gen_vapid.py
    ```
-2. Copia `VAPID_PRIVATE_KEY` y `VAPID_PUBLIC_KEY` a las variables de
-   entorno del stack `notificador` en Dokploy (y a `.env` en local).
-3. Guarda la clave PÚBLICA también en la BBDD para que la SPA la lea:
+   El script imprime la privada en 3 formatos y la pública en 1.
+2. Copia `VAPID_PUBLIC_KEY` y una de las tres variantes de
+   `VAPID_PRIVATE_KEY` a las variables de entorno del stack `notificador`
+   en Dokploy (y a `.env` en local). El worker acepta cualquiera de:
+
+   | Formato | Uso |
+   |---|---|
+   | (A) PEM en una línea con `\n` literales | El más común, recomendado para .env |
+   | (B) Base64 del PEM completo | Si tu UI se atraganta con las barras `/` |
+   | (C) PEM multilínea con saltos reales | Solo si tu UI acepta valores multilínea |
+
+   **Errores típicos**: si Dokploy te dice
+   `unexpected character "/" in variable name`, tu UI ha guardado el PEM
+   como si cada línea fuera una variable distinta. Usa la variante (A) o
+   (B) del script.
+3. Guarda la clave PÚBLICA también en la BBDD para que la SPA la lea
+   (el script imprime este `UPDATE` listo para pegar en pgAdmin):
    ```sql
    UPDATE config
       SET valor = jsonb_build_object('valor', 'BFm...la_publica...',
