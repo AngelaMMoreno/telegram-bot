@@ -244,6 +244,72 @@ CREATE TABLE ficheros_vistas (
 CREATE INDEX ficheros_vistas_usuario_idx ON ficheros_vistas (usuario_id);
 
 
+-- ─────────────────────────── Gamificación ───────────────────────────────────
+-- Retos (diarios/semanales/mensuales), logros (hitos únicos), XP y racha.
+-- Todo el "día" se calcula en Europe/Madrid (ver hoy_madrid() más abajo).
+
+CREATE TABLE retos_catalogo (
+    id           serial PRIMARY KEY,
+    codigo       text UNIQUE NOT NULL,               -- clave estable para el motor
+    titulo       text NOT NULL,
+    descripcion  text NOT NULL,
+    periodo      text NOT NULL CHECK (periodo IN ('diario','semanal','mensual')),
+    objetivo     int  NOT NULL CHECK (objetivo > 0),
+    xp           int  NOT NULL DEFAULT 20 CHECK (xp >= 0),
+    icono        text NOT NULL DEFAULT '🎯',
+    activo       boolean NOT NULL DEFAULT true,
+    creado_en    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX retos_catalogo_periodo_idx
+    ON retos_catalogo (periodo) WHERE activo;
+
+-- Progreso por (usuario, reto, periodo actual). Al cambiar de día/semana/mes
+-- el motor crea una fila nueva; no hace falta un cron para "resetear" retos.
+CREATE TABLE retos_usuario (
+    usuario_id     uuid NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    reto_id        int  NOT NULL REFERENCES retos_catalogo(id) ON DELETE CASCADE,
+    periodo_inicio date NOT NULL,
+    progreso       int  NOT NULL DEFAULT 0,
+    completado_en  timestamptz,
+    meta           jsonb NOT NULL DEFAULT '{}'::jsonb,  -- p.ej. {set:[...]} para retos "N distintos"
+    actualizado_en timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (usuario_id, reto_id, periodo_inicio)
+);
+CREATE INDEX retos_usuario_uid_idx ON retos_usuario (usuario_id, periodo_inicio DESC);
+
+-- Logros: hitos únicos por vida del usuario.
+CREATE TABLE logros_catalogo (
+    id           serial PRIMARY KEY,
+    codigo       text UNIQUE NOT NULL,
+    titulo       text NOT NULL,
+    descripcion  text NOT NULL,
+    objetivo     int  NOT NULL DEFAULT 1 CHECK (objetivo > 0),
+    xp           int  NOT NULL DEFAULT 100 CHECK (xp >= 0),
+    icono        text NOT NULL DEFAULT '🏆',
+    activo       boolean NOT NULL DEFAULT true,
+    creado_en    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE logros_usuario (
+    usuario_id  uuid NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    logro_id    int  NOT NULL REFERENCES logros_catalogo(id) ON DELETE CASCADE,
+    progreso    int  NOT NULL DEFAULT 0,
+    obtenido_en timestamptz,
+    PRIMARY KEY (usuario_id, logro_id)
+);
+CREATE INDEX logros_usuario_uid_idx ON logros_usuario (usuario_id);
+
+-- Estado agregado por usuario (XP total → nivel derivado y racha diaria).
+CREATE TABLE usuario_gamificacion (
+    usuario_id        uuid PRIMARY KEY REFERENCES usuarios(id) ON DELETE CASCADE,
+    xp_total          int  NOT NULL DEFAULT 0,
+    racha_actual      int  NOT NULL DEFAULT 0,
+    racha_maxima      int  NOT NULL DEFAULT 0,
+    ultimo_dia_activo date,
+    actualizado_en    timestamptz NOT NULL DEFAULT now()
+);
+
+
 -- =============================================================================
 --                              ROLES Y GRANTS
 -- =============================================================================
@@ -274,6 +340,12 @@ GRANT SELECT, INSERT, UPDATE, DELETE
        preferencias_usuario, repasos, ficheros_vistas
     TO web_user;
 
+-- Gamificación: catálogos de solo lectura, progreso del propio usuario R/W.
+GRANT SELECT ON retos_catalogo, logros_catalogo TO web_user;
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON retos_usuario, logros_usuario, usuario_gamificacion
+    TO web_user;
+
 -- Cola de embeddings: los triggers de encolado son SECURITY DEFINER pero
 -- damos INSERT/SELECT también como defensa en profundidad.
 GRANT INSERT, SELECT ON cola_embeddings TO web_user;
@@ -302,6 +374,11 @@ ALTER TABLE config                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE preferencias_usuario  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE repasos               ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ficheros_vistas       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE retos_catalogo        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE logros_catalogo       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE retos_usuario         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE logros_usuario        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE usuario_gamificacion  ENABLE ROW LEVEL SECURITY;
 
 -- Las políticas usan jwt_usuario_id(), tiene_permiso() y es_admin(), que se
 -- definen a continuación.
@@ -430,6 +507,30 @@ CREATE POLICY vistas_propias ON ficheros_vistas
     USING (usuario_id = jwt_usuario_id() OR es_admin())
     WITH CHECK (usuario_id = jwt_usuario_id());
 
+-- Catálogos de gamificación: lectura pública para autenticados; escritura admin.
+CREATE POLICY retos_cat_lectura ON retos_catalogo FOR SELECT
+    USING (jwt_usuario_id() IS NOT NULL);
+CREATE POLICY retos_cat_admin ON retos_catalogo FOR ALL TO web_user
+    USING (es_admin()) WITH CHECK (es_admin());
+
+CREATE POLICY logros_cat_lectura ON logros_catalogo FOR SELECT
+    USING (jwt_usuario_id() IS NOT NULL);
+CREATE POLICY logros_cat_admin ON logros_catalogo FOR ALL TO web_user
+    USING (es_admin()) WITH CHECK (es_admin());
+
+-- Progreso y estado: cada uno el suyo; admin ve todo.
+CREATE POLICY retos_usr_propios ON retos_usuario
+    USING (usuario_id = jwt_usuario_id() OR es_admin())
+    WITH CHECK (usuario_id = jwt_usuario_id());
+
+CREATE POLICY logros_usr_propios ON logros_usuario
+    USING (usuario_id = jwt_usuario_id() OR es_admin())
+    WITH CHECK (usuario_id = jwt_usuario_id());
+
+CREATE POLICY gamif_propia ON usuario_gamificacion
+    USING (usuario_id = jwt_usuario_id() OR es_admin())
+    WITH CHECK (usuario_id = jwt_usuario_id());
+
 
 -- =============================================================================
 --                        DEFAULTS DEPENDIENTES DE JWT
@@ -443,6 +544,9 @@ ALTER TABLE preguntas            ALTER COLUMN autor_id   SET DEFAULT jwt_usuario
 ALTER TABLE tests                ALTER COLUMN autor_id   SET DEFAULT jwt_usuario_id();
 ALTER TABLE repasos              ALTER COLUMN usuario_id SET DEFAULT jwt_usuario_id();
 ALTER TABLE ficheros_vistas      ALTER COLUMN usuario_id SET DEFAULT jwt_usuario_id();
+ALTER TABLE retos_usuario        ALTER COLUMN usuario_id SET DEFAULT jwt_usuario_id();
+ALTER TABLE logros_usuario       ALTER COLUMN usuario_id SET DEFAULT jwt_usuario_id();
+ALTER TABLE usuario_gamificacion ALTER COLUMN usuario_id SET DEFAULT jwt_usuario_id();
 
 
 -- =============================================================================
@@ -870,9 +974,22 @@ BEGIN
 END $$;
 
 CREATE OR REPLACE FUNCTION finalizar_intento(p_intento_id uuid) RETURNS void
-LANGUAGE sql AS $$
-    UPDATE intentos SET finalizado_en = now() WHERE id = p_intento_id;
-$$;
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_test_id uuid;
+    v_uid     uuid;
+    v_tipo    text;
+BEGIN
+    -- Solo cerramos si no estaba cerrado ya (evita doble-disparo del motor).
+    UPDATE intentos SET finalizado_en = now()
+     WHERE id = p_intento_id AND finalizado_en IS NULL
+     RETURNING test_id, usuario_id INTO v_test_id, v_uid;
+
+    IF v_uid IS NULL OR v_test_id IS NULL THEN RETURN; END IF;
+
+    SELECT tipo INTO v_tipo FROM tests WHERE id = v_test_id;
+    PERFORM _gamif_on_test_finalizado(v_uid, v_test_id, COALESCE(v_tipo, 'manual'));
+END $$;
 
 CREATE OR REPLACE FUNCTION descartar_intento(p_intento_id uuid) RETURNS void
 LANGUAGE sql AS $$
@@ -930,13 +1047,26 @@ CREATE OR REPLACE FUNCTION registrar_respuesta(
 ) RETURNS void
 LANGUAGE plpgsql AS $$
 DECLARE
-    v_uid    uuid := jwt_usuario_id();
-    v_ritmo  text;
-    v_caja   int;
-    v_intv   interval;
+    v_uid       uuid := jwt_usuario_id();
+    v_ritmo     text;
+    v_caja_new  int;
+    v_caja_prev int;                  -- caja Leitner ANTES de esta respuesta
+    v_intv      interval;
+    v_era_fallo boolean;              -- pregunta ya estaba en 'fallos' del usuario
+    v_es_repaso boolean;              -- ya tenía fila en repasos → la ronda "cuenta como repaso"
 BEGIN
     INSERT INTO respuestas(intento_id, pregunta_id, opcion_elegida, correcta)
     VALUES (p_intento_id, p_pregunta_id, p_texto, p_correcta);
+
+    -- Contexto capturado para el motor de retos.
+    SELECT true INTO v_era_fallo
+      FROM marcadores
+     WHERE usuario_id = v_uid AND tipo = 'fallo' AND pregunta_id = p_pregunta_id;
+    v_era_fallo := COALESCE(v_era_fallo, false);
+
+    SELECT caja INTO v_caja_prev
+      FROM repasos WHERE usuario_id = v_uid AND pregunta_id = p_pregunta_id;
+    v_es_repaso := v_caja_prev IS NOT NULL;
 
     IF NOT p_correcta THEN
         INSERT INTO marcadores(usuario_id, tipo, pregunta_id, contador, actualizado_en)
@@ -954,40 +1084,41 @@ BEGIN
     v_ritmo := ritmo_repaso_usuario(v_uid);
 
     IF p_correcta AND p_adelantada THEN
+        -- Sesión adelantada: la caja no sube (no "farmear" repasos).
+        v_caja_new := COALESCE(v_caja_prev, 1);
         INSERT INTO repasos(usuario_id, pregunta_id, caja, aciertos, fallos, ultima_en)
         VALUES (v_uid, p_pregunta_id, 2, 1, 0, now())
         ON CONFLICT (usuario_id, pregunta_id) DO UPDATE
             SET aciertos = repasos.aciertos + 1;
 
     ELSIF p_correcta THEN
-        SELECT LEAST(COALESCE(caja, 1) + 1, 7)
-          INTO v_caja
-          FROM repasos
-         WHERE usuario_id = v_uid AND pregunta_id = p_pregunta_id;
-        v_caja := COALESCE(v_caja, 2);
+        v_caja_new := LEAST(COALESCE(v_caja_prev, 1) + 1, 7);
+        IF v_caja_prev IS NULL THEN v_caja_new := 2; END IF;
 
         INSERT INTO repasos(usuario_id, pregunta_id, caja, aciertos, fallos, ultima_en)
-        VALUES (v_uid, p_pregunta_id, v_caja, 1, 0, now())
+        VALUES (v_uid, p_pregunta_id, v_caja_new, 1, 0, now())
         ON CONFLICT (usuario_id, pregunta_id) DO UPDATE
-            SET caja      = v_caja,
+            SET caja      = v_caja_new,
                 aciertos  = repasos.aciertos + 1,
                 ultima_en = now();
 
     ELSE
-        SELECT GREATEST(COALESCE(caja, 1) - 2, 1)
-          INTO v_caja
-          FROM repasos
-         WHERE usuario_id = v_uid AND pregunta_id = p_pregunta_id;
-        v_caja := COALESCE(v_caja, 1);
-        v_intv := intervalo_repaso(v_caja, v_ritmo);
+        v_caja_new := GREATEST(COALESCE(v_caja_prev, 1) - 2, 1);
+        v_intv := intervalo_repaso(v_caja_new, v_ritmo);
 
         INSERT INTO repasos(usuario_id, pregunta_id, caja, aciertos, fallos, ultima_en)
-        VALUES (v_uid, p_pregunta_id, v_caja, 0, 1, now() - v_intv)
+        VALUES (v_uid, p_pregunta_id, v_caja_new, 0, 1, now() - v_intv)
         ON CONFLICT (usuario_id, pregunta_id) DO UPDATE
-            SET caja      = v_caja,
+            SET caja      = v_caja_new,
                 fallos    = repasos.fallos + 1,
                 ultima_en = now() - v_intv;
     END IF;
+
+    -- Motor de gamificación: solo UPSERTs, no bloqueante en la práctica.
+    PERFORM _gamif_on_respuesta(
+        v_uid, p_pregunta_id, p_correcta, p_adelantada,
+        v_es_repaso, v_caja_prev, v_caja_new, v_era_fallo
+    );
 END $$;
 
 
@@ -2228,15 +2359,29 @@ LANGUAGE sql STABLE AS $$
     SELECT tiene_permiso('teoria.acceder') OR es_admin();
 $$;
 
--- Marca (o remarca) un fichero como visto por el usuario actual.
+-- Marca (o remarca) un fichero como visto por el usuario actual. Solo la
+-- PRIMERA marca de un documento dispara la gamificación: releer un mismo
+-- PDF no debe contar como "otro documento" para el reto semanal ni para el
+-- logro de explorador.
 CREATE OR REPLACE FUNCTION marcar_fichero_visto(p_ruta text) RETURNS void
 LANGUAGE plpgsql AS $$
+DECLARE
+    v_uid       uuid := jwt_usuario_id();
+    v_ya_estaba boolean;
 BEGIN
-    IF jwt_usuario_id() IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
+    IF v_uid IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
+
+    SELECT true INTO v_ya_estaba
+      FROM ficheros_vistas WHERE usuario_id = v_uid AND ruta = p_ruta;
+
     INSERT INTO ficheros_vistas(usuario_id, ruta, vista_en)
-    VALUES (jwt_usuario_id(), p_ruta, now())
+    VALUES (v_uid, p_ruta, now())
     ON CONFLICT (usuario_id, ruta) DO UPDATE
         SET vista_en = EXCLUDED.vista_en;
+
+    IF NOT COALESCE(v_ya_estaba, false) THEN
+        PERFORM _gamif_on_fichero_visto(v_uid, p_ruta);
+    END IF;
 END $$;
 
 CREATE OR REPLACE FUNCTION marcar_fichero_no_visto(p_ruta text) RETURNS void
@@ -2297,6 +2442,463 @@ BEGIN
      WHERE ruta = p_ruta OR ruta LIKE p_ruta || '/%';
     GET DIAGNOSTICS v_n = ROW_COUNT;
     RETURN v_n;
+END $$;
+
+
+-- =============================================================================
+--                    GAMIFICACIÓN — MOTOR Y RPCs
+-- =============================================================================
+-- Todo el "día" se calcula en Europe/Madrid. Cambia hoy_madrid() (y las
+-- llamadas AT TIME ZONE dispersas) si necesitas otra zona horaria.
+--
+-- Las funciones _gamif_* son helpers privados; las RPCs públicas son
+-- mi_gamificacion, mis_retos_activos y mis_logros. El motor se ejecuta
+-- desde registrar_respuesta, finalizar_intento y marcar_fichero_visto.
+
+-- ─── Helpers de fecha ──────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION hoy_madrid() RETURNS date
+LANGUAGE sql STABLE AS $$
+    SELECT (now() AT TIME ZONE 'Europe/Madrid')::date;
+$$;
+
+CREATE OR REPLACE FUNCTION _gamif_periodo_inicio(p_periodo text) RETURNS date
+LANGUAGE sql STABLE AS $$
+    SELECT CASE p_periodo
+        WHEN 'diario'  THEN hoy_madrid()
+        WHEN 'semanal' THEN (date_trunc('week',  hoy_madrid()))::date
+        WHEN 'mensual' THEN (date_trunc('month', hoy_madrid()))::date
+    END;
+$$;
+
+-- ─── Nivel derivado del XP ─────────────────────────────────────────────────
+-- Curva cuadrática suave: nivel N pide (N-1)^2 * 50 XP.
+--   Nivel 1 → 0 XP · Nivel 5 → 800 XP · Nivel 10 → 4050 XP · Nivel 30 → 42050 XP
+CREATE OR REPLACE FUNCTION nivel_de_xp(p_xp int) RETURNS int
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT GREATEST(1, floor(sqrt(GREATEST(p_xp, 0)::numeric / 50.0))::int + 1);
+$$;
+
+CREATE OR REPLACE FUNCTION xp_para_nivel(p_nivel int) RETURNS int
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT (GREATEST(p_nivel, 1) - 1) * (GREATEST(p_nivel, 1) - 1) * 50;
+$$;
+
+-- ─── Helpers privados: XP, racha, bumps ────────────────────────────────────
+CREATE OR REPLACE FUNCTION _gamif_sumar_xp(p_uid uuid, p_xp int) RETURNS void
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF p_xp IS NULL OR p_xp = 0 THEN RETURN; END IF;
+    INSERT INTO usuario_gamificacion(usuario_id, xp_total, actualizado_en)
+    VALUES (p_uid, GREATEST(p_xp, 0), now())
+    ON CONFLICT (usuario_id) DO UPDATE
+        SET xp_total       = usuario_gamificacion.xp_total + EXCLUDED.xp_total,
+            actualizado_en = now();
+END $$;
+
+-- Actualiza la racha diaria. Solo cuenta una vez por día natural (Madrid);
+-- llamarla N veces en el mismo día no infla la racha.
+CREATE OR REPLACE FUNCTION _gamif_actualizar_racha(p_uid uuid) RETURNS void
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_hoy   date := hoy_madrid();
+    v_prev  date;
+    v_racha int;
+BEGIN
+    SELECT ultimo_dia_activo, racha_actual
+      INTO v_prev, v_racha
+      FROM usuario_gamificacion WHERE usuario_id = p_uid;
+
+    IF v_prev = v_hoy THEN RETURN; END IF;
+
+    IF v_prev = v_hoy - 1 THEN
+        v_racha := COALESCE(v_racha, 0) + 1;
+    ELSE
+        v_racha := 1;
+    END IF;
+
+    INSERT INTO usuario_gamificacion(
+        usuario_id, racha_actual, racha_maxima, ultimo_dia_activo, actualizado_en
+    ) VALUES (p_uid, v_racha, v_racha, v_hoy, now())
+    ON CONFLICT (usuario_id) DO UPDATE
+        SET racha_actual      = v_racha,
+            racha_maxima      = GREATEST(usuario_gamificacion.racha_maxima, v_racha),
+            ultimo_dia_activo = v_hoy,
+            actualizado_en    = now();
+
+    -- Logros de racha con el nuevo valor.
+    PERFORM _gamif_bump_logro(p_uid, 'primera_semana', v_racha);
+    PERFORM _gamif_bump_logro(p_uid, 'veterano_30',    v_racha);
+END $$;
+
+-- Incrementa progreso de un reto por código. Silencioso si el reto no
+-- existe o está inactivo. Nunca revierte un reto ya completado.
+CREATE OR REPLACE FUNCTION _gamif_bump_reto(
+    p_uid    uuid,
+    p_codigo text,
+    p_delta  int
+) RETURNS void
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_reto      retos_catalogo;
+    v_periodo   date;
+    v_prev      int;
+    v_new       int;
+    v_completo  timestamptz;
+BEGIN
+    IF p_delta IS NULL OR p_delta = 0 THEN RETURN; END IF;
+
+    SELECT * INTO v_reto FROM retos_catalogo
+     WHERE codigo = p_codigo AND activo;
+    IF v_reto.id IS NULL THEN RETURN; END IF;
+
+    v_periodo := _gamif_periodo_inicio(v_reto.periodo);
+
+    INSERT INTO retos_usuario(usuario_id, reto_id, periodo_inicio, progreso)
+    VALUES (p_uid, v_reto.id, v_periodo, 0)
+    ON CONFLICT (usuario_id, reto_id, periodo_inicio) DO NOTHING;
+
+    SELECT progreso, completado_en INTO v_prev, v_completo
+      FROM retos_usuario
+     WHERE usuario_id = p_uid AND reto_id = v_reto.id
+       AND periodo_inicio = v_periodo
+     FOR UPDATE;
+
+    IF v_completo IS NOT NULL THEN RETURN; END IF;
+
+    v_new := LEAST(GREATEST(v_prev + p_delta, 0), v_reto.objetivo);
+
+    UPDATE retos_usuario
+       SET progreso       = v_new,
+           completado_en  = CASE WHEN v_new >= v_reto.objetivo THEN now() END,
+           actualizado_en = now()
+     WHERE usuario_id = p_uid AND reto_id = v_reto.id
+       AND periodo_inicio = v_periodo;
+
+    IF v_new >= v_reto.objetivo AND v_prev < v_reto.objetivo THEN
+        PERFORM _gamif_sumar_xp(p_uid, v_reto.xp);
+    END IF;
+END $$;
+
+-- Cuenta un elemento distinto (test_id / etiqueta / ruta) hacia un reto
+-- "N cosas distintas". Guarda el conjunto en meta.set (jsonb array de textos).
+CREATE OR REPLACE FUNCTION _gamif_bump_reto_distintos(
+    p_uid    uuid,
+    p_codigo text,
+    p_elem   text
+) RETURNS void
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_reto      retos_catalogo;
+    v_periodo   date;
+    v_set       jsonb;
+    v_prev      int;
+    v_completo  timestamptz;
+BEGIN
+    IF p_elem IS NULL OR length(p_elem) = 0 THEN RETURN; END IF;
+
+    SELECT * INTO v_reto FROM retos_catalogo
+     WHERE codigo = p_codigo AND activo;
+    IF v_reto.id IS NULL THEN RETURN; END IF;
+
+    v_periodo := _gamif_periodo_inicio(v_reto.periodo);
+
+    INSERT INTO retos_usuario(usuario_id, reto_id, periodo_inicio, progreso, meta)
+    VALUES (p_uid, v_reto.id, v_periodo, 0, jsonb_build_object('set', '[]'::jsonb))
+    ON CONFLICT (usuario_id, reto_id, periodo_inicio) DO NOTHING;
+
+    SELECT COALESCE(meta->'set', '[]'::jsonb), progreso, completado_en
+      INTO v_set, v_prev, v_completo
+      FROM retos_usuario
+     WHERE usuario_id = p_uid AND reto_id = v_reto.id
+       AND periodo_inicio = v_periodo
+     FOR UPDATE;
+
+    IF v_completo IS NOT NULL THEN RETURN; END IF;
+    IF v_set ? p_elem THEN RETURN; END IF;
+
+    v_set  := v_set || to_jsonb(p_elem);
+    v_prev := LEAST(v_prev + 1, v_reto.objetivo);
+
+    UPDATE retos_usuario
+       SET progreso       = v_prev,
+           meta           = jsonb_set(meta, '{set}', v_set),
+           completado_en  = CASE WHEN v_prev >= v_reto.objetivo THEN now() END,
+           actualizado_en = now()
+     WHERE usuario_id = p_uid AND reto_id = v_reto.id
+       AND periodo_inicio = v_periodo;
+
+    IF v_prev >= v_reto.objetivo THEN
+        PERFORM _gamif_sumar_xp(p_uid, v_reto.xp);
+    END IF;
+END $$;
+
+-- Sube (nunca baja) el progreso de un logro y lo desbloquea al alcanzar el
+-- objetivo. Pasar el valor ABSOLUTO de la métrica (ej. total de respuestas),
+-- no un delta, para que sea idempotente al repetir llamadas.
+CREATE OR REPLACE FUNCTION _gamif_bump_logro(
+    p_uid              uuid,
+    p_codigo           text,
+    p_progreso_nuevo   int
+) RETURNS void
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_logro    logros_catalogo;
+    v_prev     int;
+    v_final    int;
+    v_obtenido timestamptz;
+BEGIN
+    IF p_progreso_nuevo IS NULL OR p_progreso_nuevo <= 0 THEN RETURN; END IF;
+
+    SELECT * INTO v_logro FROM logros_catalogo
+     WHERE codigo = p_codigo AND activo;
+    IF v_logro.id IS NULL THEN RETURN; END IF;
+
+    INSERT INTO logros_usuario(usuario_id, logro_id, progreso)
+    VALUES (p_uid, v_logro.id, 0)
+    ON CONFLICT (usuario_id, logro_id) DO NOTHING;
+
+    SELECT progreso, obtenido_en INTO v_prev, v_obtenido
+      FROM logros_usuario
+     WHERE usuario_id = p_uid AND logro_id = v_logro.id
+     FOR UPDATE;
+
+    IF v_obtenido IS NOT NULL THEN RETURN; END IF;
+
+    v_final := LEAST(GREATEST(v_prev, p_progreso_nuevo), v_logro.objetivo);
+
+    UPDATE logros_usuario
+       SET progreso    = v_final,
+           obtenido_en = CASE WHEN v_final >= v_logro.objetivo THEN now() END
+     WHERE usuario_id = p_uid AND logro_id = v_logro.id;
+
+    IF v_final >= v_logro.objetivo AND v_prev < v_logro.objetivo THEN
+        PERFORM _gamif_sumar_xp(p_uid, v_logro.xp);
+    END IF;
+END $$;
+
+-- ─── Reglas por evento ─────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION _gamif_on_respuesta(
+    p_uid         uuid,
+    p_pregunta_id uuid,
+    p_correcta    boolean,
+    p_adelantada  boolean,
+    p_es_repaso   boolean,
+    p_caja_prev   int,
+    p_caja_new    int,
+    p_era_fallo   boolean
+) RETURNS void
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_hoy         date := hoy_madrid();
+    v_respondidas int;
+    v_correctas   int;
+    v_totales     int;
+    v_domadas     int;
+BEGIN
+    PERFORM _gamif_actualizar_racha(p_uid);
+
+    -- ─ Diarios ─
+    PERFORM _gamif_bump_reto(p_uid, 'diario_responder_30',  1);
+    PERFORM _gamif_bump_reto(p_uid, 'diario_responder_60',  1);
+    PERFORM _gamif_bump_reto(p_uid, 'diario_responder_100', 1);
+
+    IF p_es_repaso THEN
+        PERFORM _gamif_bump_reto(p_uid, 'diario_repasar_15', 1);
+    END IF;
+
+    IF p_correcta AND p_era_fallo THEN
+        PERFORM _gamif_bump_reto(p_uid, 'diario_rescatar_5', 1);
+    END IF;
+
+    IF p_correcta AND p_caja_new IS NOT NULL AND p_caja_prev IS NOT NULL
+       AND p_caja_new > p_caja_prev THEN
+        PERFORM _gamif_bump_reto(p_uid, 'diario_domar_5', 1);
+    END IF;
+
+    -- Racha de aciertos consecutivos del día. Se resetea a 0 al fallar (si aún
+    -- no está completado).
+    IF p_correcta THEN
+        PERFORM _gamif_bump_reto(p_uid, 'diario_racha_10_aciertos', 1);
+    ELSE
+        UPDATE retos_usuario ru
+           SET progreso = 0, actualizado_en = now()
+          FROM retos_catalogo rc
+         WHERE ru.reto_id = rc.id
+           AND rc.codigo = 'diario_racha_10_aciertos'
+           AND ru.usuario_id = p_uid
+           AND ru.periodo_inicio = v_hoy
+           AND ru.completado_en IS NULL;
+    END IF;
+
+    -- Puntería fina (≥80% con ≥20 respuestas del día).
+    SELECT count(*), count(*) FILTER (WHERE r.correcta)
+      INTO v_respondidas, v_correctas
+      FROM respuestas r
+      JOIN intentos i ON i.id = r.intento_id
+     WHERE i.usuario_id = p_uid
+       AND (r.respondida_en AT TIME ZONE 'Europe/Madrid')::date = v_hoy;
+    IF v_respondidas >= 20 AND v_correctas * 100 >= v_respondidas * 80 THEN
+        PERFORM _gamif_bump_reto(p_uid, 'diario_acierto_80', 1);
+    END IF;
+
+    -- ─ Semanales / mensuales ─
+    PERFORM _gamif_bump_reto(p_uid, 'semanal_responder_250',  1);
+    PERFORM _gamif_bump_reto(p_uid, 'mensual_responder_1000', 1);
+
+    IF p_correcta AND p_caja_new = 7 AND p_caja_prev IS NOT NULL AND p_caja_prev < 7 THEN
+        PERFORM _gamif_bump_reto(p_uid, 'mensual_dominar_20', 1);
+    END IF;
+
+    IF v_respondidas = 150 THEN
+        PERFORM _gamif_bump_reto(p_uid, 'mensual_maraton_150', 1);
+    END IF;
+
+    SELECT count(*), count(*) FILTER (WHERE r.correcta)
+      INTO v_totales, v_correctas
+      FROM respuestas r
+      JOIN intentos i ON i.id = r.intento_id
+     WHERE i.usuario_id = p_uid
+       AND (r.respondida_en AT TIME ZONE 'Europe/Madrid')
+           >= date_trunc('month', hoy_madrid())::timestamp;
+    IF v_totales >= 500 AND v_correctas * 10 >= v_totales * 7 THEN
+        PERFORM _gamif_bump_reto(p_uid, 'mensual_media_7', 1);
+    END IF;
+
+    -- ─ Logros acumulativos ─
+    SELECT count(*) INTO v_totales
+      FROM respuestas r
+      JOIN intentos i ON i.id = r.intento_id
+     WHERE i.usuario_id = p_uid;
+    PERFORM _gamif_bump_logro(p_uid, 'centurion', v_totales);
+    PERFORM _gamif_bump_logro(p_uid, 'millar',    v_totales);
+    PERFORM _gamif_bump_logro(p_uid, 'decamil',   v_totales);
+
+    IF p_correcta AND p_caja_new = 7 AND p_caja_prev IS NOT NULL AND p_caja_prev < 7 THEN
+        PERFORM _gamif_bump_logro(p_uid, 'primer_dominio', 1);
+        SELECT count(*) INTO v_domadas
+          FROM repasos WHERE usuario_id = p_uid AND caja = 7;
+        PERFORM _gamif_bump_logro(p_uid, 'dominador_100', v_domadas);
+    END IF;
+
+    IF p_correcta AND p_era_fallo THEN
+        -- No hay contador histórico de rescates; incrementamos el progreso
+        -- del logro directamente cada vez que ocurre.
+        PERFORM _gamif_bump_logro(p_uid, 'resiliente_10',
+            COALESCE((SELECT progreso FROM logros_usuario lu
+                        JOIN logros_catalogo lc ON lc.id = lu.logro_id
+                       WHERE lu.usuario_id = p_uid AND lc.codigo = 'resiliente_10'), 0) + 1);
+    END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION _gamif_on_test_finalizado(
+    p_uid uuid, p_test_id uuid, p_tipo text
+) RETURNS void
+LANGUAGE plpgsql AS $$
+BEGIN
+    PERFORM _gamif_actualizar_racha(p_uid);
+    PERFORM _gamif_bump_reto(p_uid, 'diario_test_1', 1);
+    PERFORM _gamif_bump_reto_distintos(p_uid, 'semanal_5_tests_distintos', p_test_id::text);
+    IF p_tipo = 'simulacro' THEN
+        PERFORM _gamif_bump_reto(p_uid, 'semanal_simulacro_1', 1);
+    END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION _gamif_on_fichero_visto(
+    p_uid uuid, p_ruta text
+) RETURNS void
+LANGUAGE plpgsql AS $$
+DECLARE v_distintos int;
+BEGIN
+    PERFORM _gamif_actualizar_racha(p_uid);
+    PERFORM _gamif_bump_reto(p_uid, 'diario_teoria_1', 1);
+    PERFORM _gamif_bump_reto_distintos(p_uid, 'semanal_teoria_3', p_ruta);
+
+    SELECT count(*) INTO v_distintos
+      FROM ficheros_vistas WHERE usuario_id = p_uid;
+    PERFORM _gamif_bump_logro(p_uid, 'explorador_teoria_10', v_distintos);
+END $$;
+
+-- ─── RPCs públicas ─────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION mi_gamificacion() RETURNS jsonb
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_uid uuid := jwt_usuario_id();
+    v_row usuario_gamificacion;
+    v_niv int;
+BEGIN
+    IF v_uid IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
+    SELECT * INTO v_row FROM usuario_gamificacion WHERE usuario_id = v_uid;
+    v_niv := nivel_de_xp(COALESCE(v_row.xp_total, 0));
+
+    RETURN jsonb_build_object(
+        'xp_total',        COALESCE(v_row.xp_total, 0),
+        'nivel',           v_niv,
+        'xp_nivel_actual', xp_para_nivel(v_niv),
+        'xp_siguiente',    xp_para_nivel(v_niv + 1),
+        'racha_actual',    COALESCE(v_row.racha_actual, 0),
+        'racha_maxima',    COALESCE(v_row.racha_maxima, 0),
+        'ultimo_dia',      v_row.ultimo_dia_activo,
+        'hoy_madrid',      hoy_madrid()
+    );
+END $$;
+
+CREATE OR REPLACE FUNCTION mis_retos_activos() RETURNS jsonb
+LANGUAGE plpgsql STABLE AS $$
+DECLARE v_uid uuid := jwt_usuario_id();
+BEGIN
+    IF v_uid IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
+    RETURN (
+        SELECT COALESCE(jsonb_agg(jsonb_build_object(
+            'id',             rc.id,
+            'codigo',         rc.codigo,
+            'titulo',         rc.titulo,
+            'descripcion',    rc.descripcion,
+            'periodo',        rc.periodo,
+            'objetivo',       rc.objetivo,
+            'xp',             rc.xp,
+            'icono',          rc.icono,
+            'progreso',       COALESCE(ru.progreso, 0),
+            'completado',     ru.completado_en IS NOT NULL,
+            'completado_en',  ru.completado_en,
+            'periodo_inicio', _gamif_periodo_inicio(rc.periodo)
+        ) ORDER BY CASE rc.periodo
+                     WHEN 'diario'  THEN 0
+                     WHEN 'semanal' THEN 1
+                     WHEN 'mensual' THEN 2
+                   END,
+                   rc.xp), '[]'::jsonb)
+        FROM retos_catalogo rc
+        LEFT JOIN retos_usuario ru
+               ON ru.reto_id = rc.id
+              AND ru.usuario_id = v_uid
+              AND ru.periodo_inicio = _gamif_periodo_inicio(rc.periodo)
+        WHERE rc.activo
+    );
+END $$;
+
+CREATE OR REPLACE FUNCTION mis_logros() RETURNS jsonb
+LANGUAGE plpgsql STABLE AS $$
+DECLARE v_uid uuid := jwt_usuario_id();
+BEGIN
+    IF v_uid IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
+    RETURN (
+        SELECT COALESCE(jsonb_agg(jsonb_build_object(
+            'id',          lc.id,
+            'codigo',      lc.codigo,
+            'titulo',      lc.titulo,
+            'descripcion', lc.descripcion,
+            'objetivo',    lc.objetivo,
+            'xp',          lc.xp,
+            'icono',       lc.icono,
+            'progreso',    COALESCE(lu.progreso, 0),
+            'obtenido',    lu.obtenido_en IS NOT NULL,
+            'obtenido_en', lu.obtenido_en
+        ) ORDER BY (lu.obtenido_en IS NOT NULL) DESC, lc.xp DESC), '[]'::jsonb)
+        FROM logros_catalogo lc
+        LEFT JOIN logros_usuario lu
+               ON lu.logro_id = lc.id AND lu.usuario_id = v_uid
+        WHERE lc.activo
+    );
 END $$;
 
 
@@ -2470,6 +3072,14 @@ GRANT EXECUTE ON FUNCTION set_usuario_activo(uuid,boolean)            TO web_use
 
 GRANT EXECUTE ON FUNCTION leer_config()                               TO web_user, web_anon;
 
+-- Gamificación
+GRANT EXECUTE ON FUNCTION hoy_madrid()                                TO web_user, web_anon;
+GRANT EXECUTE ON FUNCTION nivel_de_xp(int)                            TO web_user, web_anon;
+GRANT EXECUTE ON FUNCTION xp_para_nivel(int)                          TO web_user, web_anon;
+GRANT EXECUTE ON FUNCTION mi_gamificacion()                           TO web_user;
+GRANT EXECUTE ON FUNCTION mis_retos_activos()                         TO web_user;
+GRANT EXECUTE ON FUNCTION mis_logros()                                TO web_user;
+
 
 -- =============================================================================
 --                            SEED DE DATOS BASE
@@ -2571,3 +3181,41 @@ INSERT INTO config(clave, valor) VALUES
         'relajado',  jsonb_build_array(48,  168, 504, 1080, 2160, 4320, 8760)
     ))
 ON CONFLICT (clave) DO NOTHING;
+
+
+-- ── Catálogo de retos por defecto ──────────────────────────────────────────
+INSERT INTO retos_catalogo(codigo, titulo, descripcion, periodo, objetivo, xp, icono) VALUES
+  ('diario_responder_30',       '30 preguntas',            'Responde 30 preguntas hoy',                           'diario', 30,  30, '💪'),
+  ('diario_responder_60',       'A tope: 60 preguntas',    'Responde 60 preguntas hoy',                           'diario', 60,  50, '🔥'),
+  ('diario_responder_100',      'Modo bestia',             '100 preguntas en un solo día',                        'diario', 100, 80, '🚀'),
+  ('diario_test_1',             'Un test más',             'Termina al menos 1 test hoy',                         'diario', 1,   25, '📋'),
+  ('diario_repasar_15',         'Repasa lo pendiente',     'Contesta 15 preguntas que ya tocaba repasar',         'diario', 15,  35, '🔁'),
+  ('diario_rescatar_5',         'Rescata fallos',          'Acierta 5 preguntas que tenías falladas',             'diario', 5,   35, '🩹'),
+  ('diario_domar_5',            'Doma preguntas',          'Sube de caja Leitner a 5 preguntas',                  'diario', 5,   30, '📈'),
+  ('diario_teoria_1',           'Un rato de teoría',       'Marca al menos 1 documento de teoría como leído',     'diario', 1,   20, '📚'),
+  ('diario_acierto_80',         'Puntería fina',           'Termina el día con ≥80% de acierto (mín. 20 resp.)',  'diario', 1,   40, '🎯'),
+  ('diario_racha_10_aciertos',  '10 seguidas',             'Encadena 10 aciertos consecutivos',                   'diario', 10,  30, '⚡'),
+
+  ('semanal_responder_250',     'Semana en marcha',        'Responde 250 preguntas esta semana',                  'semanal', 250, 120, '🏋️'),
+  ('semanal_5_tests_distintos', '5 tests distintos',       'Termina 5 tests diferentes esta semana',              'semanal', 5,   150, '🗂️'),
+  ('semanal_simulacro_1',       'Simulacro semanal',       'Haz al menos 1 simulacro completo',                   'semanal', 1,   150, '🧪'),
+  ('semanal_teoria_3',          'Explorador de teoría',    'Lee 3 documentos distintos de teoría',                'semanal', 3,   100, '🗺️'),
+
+  ('mensual_responder_1000',    'Kilómetro cero',          '1000 preguntas respondidas este mes',                 'mensual', 1000, 500, '🛤️'),
+  ('mensual_dominar_20',        'Domador',                 'Lleva 20 preguntas a la caja 7 este mes',             'mensual', 20,   500, '👑'),
+  ('mensual_maraton_150',       'Maratoniano',             'Un día del mes con ≥150 preguntas',                   'mensual', 1,    400, '🏃'),
+  ('mensual_media_7',           'Consistencia 7/10',       'Media mensual ≥7 (mín. 500 respuestas)',              'mensual', 1,    600, '🎓')
+ON CONFLICT (codigo) DO NOTHING;
+
+-- ── Catálogo de logros ─────────────────────────────────────────────────────
+INSERT INTO logros_catalogo(codigo, titulo, descripcion, objetivo, xp, icono) VALUES
+  ('primera_semana',       'Primera semana',       '7 días seguidos conectándote',        7,     200,  '🌱'),
+  ('veterano_30',          'Veterano',             '30 días seguidos: rutina de hierro',  30,    1000, '🌳'),
+  ('centurion',            'Centurión',            '100 respuestas de por vida',          100,   100,  '💯'),
+  ('millar',               'Millar',               '1000 respuestas de por vida',         1000,  500,  '🏵️'),
+  ('decamil',              'Diez mil',             '10 000 respuestas de por vida',       10000, 2000, '🌟'),
+  ('primer_dominio',       'Primera dominada',     'Llevas tu primera pregunta a caja 7', 1,     150,  '🥇'),
+  ('dominador_100',        'Dominador',            '100 preguntas en caja 7',             100,   750,  '👑'),
+  ('resiliente_10',        'Resiliente',           '10 fallos rescatados en total',       10,    150,  '🩹'),
+  ('explorador_teoria_10', 'Explorador de teoría', 'Lee 10 documentos distintos',         10,    200,  '📖')
+ON CONFLICT (codigo) DO NOTHING;

@@ -113,6 +113,10 @@
     <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
     <span>Usuarios</span>
   </button>
+  <button class="nav-item" data-view="retos">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.5 12.5L17 22l-5-3-5 3 1.5-9.5"/></svg>
+    <span>Retos</span>
+  </button>
   <button class="nav-item" data-view="progreso">
     <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
     <span>Progreso</span>
@@ -160,6 +164,7 @@
   <section id="view-home" class="view">
     <h2>Hola, <span id="hello-name"></span></h2>
     <p class="tagline muted">Tu oposición, a tu ritmo.</p>
+    <div id="home-gamif" class="gamif-card"></div>
     <div class="stats-grid" id="stats-grid"></div>
     <div class="actions-grid">
       <button class="action-card" data-view="tests">
@@ -374,6 +379,24 @@
       <div class="modal-body" id="modal-usuario-body"></div>
     </div>
   </div>
+
+  <!-- Retos y logros -->
+  <section id="view-retos" class="view">
+    <header class="view-header">
+      <h2>Retos y logros</h2>
+    </header>
+    <div id="retos-gamif" class="gamif-card"></div>
+
+    <div class="retos-tabs" role="tablist">
+      <button class="retos-tab active" data-retos-tab="diario"  role="tab">🎯 Diarios</button>
+      <button class="retos-tab"        data-retos-tab="semanal" role="tab">🗓️ Semanales</button>
+      <button class="retos-tab"        data-retos-tab="mensual" role="tab">📅 Mensuales</button>
+      <button class="retos-tab"        data-retos-tab="logros"  role="tab">🏆 Logros</button>
+    </div>
+
+    <div id="retos-list"   class="retos-grid"></div>
+    <div id="logros-list"  class="logros-grid hidden"></div>
+  </section>
 
   <!-- Progreso -->
   <section id="view-progreso" class="view">

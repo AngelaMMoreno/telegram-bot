@@ -16,6 +16,7 @@ sin efectos duplicados.
 | Fecha       | Fichero                                    | Qué añade |
 |-------------|--------------------------------------------|-----------|
 | 2026-07-02  | `2026-07-02_teoria_y_reset_repasos.sql`    | Rol `teoria`, permisos, tabla `ficheros_vistas`, RPCs de vistas y `resetear_mis_repasos`. |
+| 2026-07-03  | `2026-07-03_gamificacion.sql`              | Tablas de retos/logros/XP, motor de gamificación con hooks en `registrar_respuesta`, `finalizar_intento` y `marcar_fichero_visto`. Seed de 18 retos y 9 logros. |
 
 ## Al aplicar cada delta
 
