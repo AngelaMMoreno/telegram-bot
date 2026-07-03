@@ -862,3 +862,13 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
 
 .logro-card:not(.obtenido) .logro-icono { filter: grayscale(0.8) opacity(0.7); }
 
+/* Sección de notificaciones push en el modal de configuración */
+.push-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+#config-push-wrap.push-nosoporte #btn-activar-push { cursor: not-allowed; opacity: 0.7; }
+#push-status { margin-top: 0.5rem; }
+

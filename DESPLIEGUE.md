@@ -6,10 +6,11 @@ Application** distinta que apunta a su propio fichero:
 
 ```
 deploy/
-├── core/docker-compose.yml     ← db + postgrest + embeddings + pgadmin
-├── landing/docker-compose.yml  ← aprentix.es / www.aprentix.es
-├── web/docker-compose.yml      ← test.aprentix.es / www.test.aprentix.es
-└── teoria/docker-compose.yml   ← teoria.aprentix.es / www.teoria.aprentix.es
+├── core/docker-compose.yml         ← db + postgrest + embeddings + pgadmin
+├── landing/docker-compose.yml      ← aprentix.es / www.aprentix.es
+├── web/docker-compose.yml          ← test.aprentix.es / www.test.aprentix.es
+├── teoria/docker-compose.yml       ← teoria.aprentix.es / www.teoria.aprentix.es
+└── notificador/docker-compose.yml  ← worker de Web Push (sin dominio propio)
 ```
 
 Los cuatro comparten la red externa `dokploy-network` y se ven entre sí
@@ -204,3 +205,42 @@ UPDATE config SET valor = '[[60,1],[55,150],[50,400]]'::jsonb
  WHERE clave = 'historico_2022';
 UPDATE config SET valor = '844'::jsonb WHERE clave = 'plazas_referencia';
 ```
+
+## 10. Notificaciones Web Push
+
+El stack `notificador` es un servicio Python que consulta la BBDD cada
+`TICK_SECONDS` (5 min por defecto) y envía Web Push firmados con VAPID.
+
+**Primer despliegue:**
+
+1. Genera el par de claves VAPID (en tu máquina o en un shell del
+   contenedor):
+   ```bash
+   pip install py-vapid
+   python notificador/gen_vapid.py
+   ```
+2. Copia `VAPID_PRIVATE_KEY` y `VAPID_PUBLIC_KEY` a las variables de
+   entorno del stack `notificador` en Dokploy (y a `.env` en local).
+3. Guarda la clave PÚBLICA también en la BBDD para que la SPA la lea:
+   ```sql
+   UPDATE config
+      SET valor = jsonb_build_object('valor', 'BFm...la_publica...',
+                                     'descripcion', valor->>'descripcion')
+    WHERE clave = 'push_vapid_public';
+   ```
+4. Levanta el stack. En logs verás:
+   `notificador arrancado (tick=300s, batch=500)`.
+
+**Ajustar comportamiento sin redeployar:** cambia los valores en la tabla
+`config` (todas las claves empiezan por `push_`). El siguiente tick los
+recoge.
+
+| Clave                             | Default | Qué controla                                      |
+|-----------------------------------|--------:|---------------------------------------------------|
+| `push_ventana_ini`                |    `9`  | Hora inicial para enviar (Europe/Madrid)          |
+| `push_ventana_fin`                |   `22`  | Hora final exclusiva                              |
+| `push_intervalo_repaso_horas`     |    `5`  | Horas mínimas entre pushes de repaso por usuario  |
+| `push_inactividad_horas`          |   `24`  | Horas sin acceder para lanzar aviso motivacional  |
+| `push_inactividad_cooldown_horas` |   `48`  | Cooldown entre avisos de inactividad              |
+| `push_min_vencidas`               |    `5`  | Mínimo de preguntas vencidas para lanzar aviso    |
+| `push_tz`                         | `Europe/Madrid` | Zona horaria de la ventana                 |

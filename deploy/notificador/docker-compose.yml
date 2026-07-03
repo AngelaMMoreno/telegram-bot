@@ -1,0 +1,39 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Stack NOTIFICADOR — worker de notificaciones Web Push.
+#
+# Corre en un loop residente:
+#   1. Cada TICK_SECONDS (5 min por defecto) mira la BBDD.
+#   2. Si estamos dentro de la ventana horaria (Europe/Madrid), consulta
+#      candidatos de repaso y de inactividad.
+#   3. Envía push con pywebpush firmado con VAPID.
+#   4. Registra el envío para rate-limitar, y limpia suscripciones muertas.
+#
+# La cadencia, ventana y umbrales se editan en la tabla `config` (claves
+# push_*), sin necesidad de redesplegar este servicio.
+#
+# Requiere:
+#   - db (del stack core) accesible por nombre 'db' en la red dokploy-network
+#   - Variables VAPID_PRIVATE_KEY / VAPID_PUBLIC_KEY / VAPID_SUBJECT
+#   - La clave pública también debe estar en config.push_vapid_public
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  notificador:
+    build: ../../notificador
+    depends_on: []
+    environment:
+      DATABASE_URL:      postgres://aprentix@db:5432/aprentix
+      PGPASSWORD:        ${DB_PASS:?DB_PASS requerida}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:?VAPID_PRIVATE_KEY requerida}
+      VAPID_PUBLIC_KEY:  ${VAPID_PUBLIC_KEY:-}
+      VAPID_SUBJECT:     ${VAPID_SUBJECT:-mailto:soporte@aprentix.es}
+      TICK_SECONDS:      ${TICK_SECONDS:-300}
+      BATCH_LIMIT:       ${BATCH_LIMIT:-500}
+      LOG_LEVEL:         ${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    networks: [dokploy-network]
+
+networks:
+  dokploy-network:
+    external: true

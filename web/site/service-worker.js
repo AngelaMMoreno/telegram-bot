@@ -130,3 +130,75 @@ self.addEventListener("fetch", (event) => {
 self.addEventListener("message", (event) => {
   if (event.data === "SKIP_WAITING") self.skipWaiting();
 });
+
+
+/* ── Notificaciones Web Push ────────────────────────────────────────────
+ *
+ * El servidor envía payloads JSON con { title, body, tag, url, icon }.
+ * - Si el JSON no parsea, mostramos un aviso genérico (nunca callar el
+ *   push: navegadores desregistran suscripciones que "reciben pero no
+ *   muestran nada").
+ * - Usamos `tag` para que los avisos del mismo tipo (p. ej. "repaso") se
+ *   agrupen en uno solo, no en un stack de N notificaciones.
+ * - En notificationclick enfocamos una pestaña abierta si la hay, o
+ *   abrimos una nueva apuntando a la URL indicada (los shortcuts
+ *   `?atajo=repasar` los interpreta la SPA para llevar al usuario a la
+ *   vista correspondiente).
+ */
+const ICON_DEFAULT = "/shared/pwa-icons/icon-any-192.png";
+const BADGE_DEFAULT = "/shared/pwa-icons/icon-mono.svg";
+
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (_) { data = {}; }
+
+  const title = data.title || "Aprentix";
+  const options = {
+    body:  data.body  || "Tienes una novedad en Aprentix.",
+    tag:   data.tag   || "aprentix",
+    icon:  data.icon  || ICON_DEFAULT,
+    badge: data.badge || BADGE_DEFAULT,
+    data:  { url: data.url || "/" },
+    renotify: true,      // vibra aunque haya una con el mismo tag
+    requireInteraction: false,
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/";
+
+  event.waitUntil((async () => {
+    const clients = await self.clients.matchAll({
+      type: "window",
+      includeUncontrolled: true,
+    });
+    // Si ya hay una pestaña de Aprentix abierta, foco + navega.
+    for (const c of clients) {
+      try {
+        const u = new URL(c.url);
+        if (u.origin === self.location.origin) {
+          await c.focus();
+          if (c.url !== self.location.origin + url && "navigate" in c) {
+            await c.navigate(url);
+          }
+          return;
+        }
+      } catch (_) { /* c.url puede ser about:blank */ }
+    }
+    // Si no, abrimos una nueva.
+    await self.clients.openWindow(url);
+  })());
+});
+
+// Cuando el navegador rota las claves de la suscripción, avísalo a la app
+// para que re-registre. No hay backend action aquí: el frontend re-llamará
+// a guardar_push_suscripcion() con la nueva.
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil((async () => {
+    const clients = await self.clients.matchAll({ includeUncontrolled: true });
+    for (const c of clients) c.postMessage({ type: "PUSH_SUBSCRIPTION_CHANGE" });
+  })());
+});
