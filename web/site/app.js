@@ -305,11 +305,22 @@ const loaders = {
   etiquetas:   loadEtiquetas,
   usuarios:    loadUsuarios,
   progreso:    loadProgreso,
+  retos:       loadRetos,
 };
 
 /* ── Home ── */
 async function loadHome() {
-  const p = await rpc("mi_progreso");
+  // Cargamos progreso + gamificación + el próximo reto sin completar en
+  // paralelo: son RPCs independientes y hacen la vista sensiblemente más
+  // rápida al arrancar la app.
+  const [p, g, retos] = await Promise.all([
+    rpc("mi_progreso"),
+    rpc("mi_gamificacion").catch(() => null),
+    rpc("mis_retos_activos").catch(() => []),
+  ]);
+
+  renderGamifCard("#home-gamif", g, pickHomeReto(retos));
+
   $("#stats-grid").innerHTML = `
     <div class="stat-card"><div class="v">${p.respondidas_hoy}</div><div class="l">Hoy</div></div>
     <div class="stat-card"><div class="v">${Number(p.nota_general).toFixed(1)}</div><div class="l">Nota</div></div>
@@ -317,6 +328,140 @@ async function loadHome() {
     <div class="stat-card"><div class="v">${p.preguntas_favoritas}</div><div class="l">Favoritas</div></div>
   `;
 }
+
+/* Escoge un reto para mostrar en Home: preferimos uno diario en progreso;
+ * si no, cualquiera diario aún no completado; si todos completos, el más
+ * cercano a completar de semanal/mensual. */
+function pickHomeReto(retos) {
+  if (!Array.isArray(retos) || retos.length === 0) return null;
+  const activos = retos.filter(r => !r.completado);
+  if (activos.length === 0) return null;
+  const enProgreso = activos.filter(r => r.progreso > 0);
+  const pool = enProgreso.length ? enProgreso : activos;
+  // Ordena: diarios primero, después por % de progreso descendente.
+  pool.sort((a, b) => {
+    const pa = a.progreso / a.objetivo, pb = b.progreso / b.objetivo;
+    const rank = p => p === "diario" ? 0 : p === "semanal" ? 1 : 2;
+    return rank(a.periodo) - rank(b.periodo) || pb - pa;
+  });
+  return pool[0];
+}
+
+function renderGamifCard(sel, g, retoDestacado) {
+  const box = $(sel);
+  if (!box) return;
+  if (!g) { box.innerHTML = ""; return; }
+  const rango = Math.max(1, (g.xp_siguiente || 0) - (g.xp_nivel_actual || 0));
+  const pctNivel = Math.min(100, Math.round(
+    100 * ((g.xp_total - g.xp_nivel_actual) / rango)
+  ));
+  const rachaTxt = g.racha_actual > 0
+    ? `🔥 <strong>${g.racha_actual}</strong> día${g.racha_actual === 1 ? "" : "s"} seguido${g.racha_actual === 1 ? "" : "s"}`
+    : `😴 Sin racha — hoy es un buen día para empezar`;
+
+  const retoHtml = retoDestacado ? `
+    <div class="gamif-reto">
+      <span class="gamif-reto-icono" aria-hidden="true">${esc(retoDestacado.icono || "🎯")}</span>
+      <div class="gamif-reto-body">
+        <strong>${esc(retoDestacado.titulo)}</strong>
+        <div class="progress-bar" role="progressbar"
+             aria-valuenow="${retoDestacado.progreso}"
+             aria-valuemin="0" aria-valuemax="${retoDestacado.objetivo}">
+          <span style="width:${Math.round(100 * retoDestacado.progreso / retoDestacado.objetivo)}%"></span>
+        </div>
+        <span class="muted small">${retoDestacado.progreso} / ${retoDestacado.objetivo} · +${retoDestacado.xp} XP</span>
+      </div>
+    </div>` : "";
+
+  box.innerHTML = `
+    <div class="gamif-head">
+      <div class="gamif-level">
+        <span class="gamif-nivel-num" title="Nivel">${g.nivel}</span>
+        <div>
+          <strong>Nivel ${g.nivel}</strong>
+          <span class="muted small">${g.xp_total} / ${g.xp_siguiente} XP</span>
+        </div>
+      </div>
+      <div class="gamif-racha">${rachaTxt}</div>
+    </div>
+    <div class="progress-bar level" role="progressbar"
+         aria-valuenow="${pctNivel}" aria-valuemin="0" aria-valuemax="100">
+      <span style="width:${pctNivel}%"></span>
+    </div>
+    ${retoHtml}
+  `;
+}
+
+/* ── Retos y logros ─────────────────────────────────────────────────────── */
+async function loadRetos() {
+  const [g, retos, logros] = await Promise.all([
+    rpc("mi_gamificacion").catch(() => null),
+    rpc("mis_retos_activos"),
+    rpc("mis_logros"),
+  ]);
+  state.retosCache  = retos  || [];
+  state.logrosCache = logros || [];
+  renderGamifCard("#retos-gamif", g, pickHomeReto(retos));
+  activarPestanaRetos(state.retosTab || "diario");
+}
+
+function activarPestanaRetos(tab) {
+  state.retosTab = tab;
+  $$(".retos-tab").forEach(b =>
+    b.classList.toggle("active", b.dataset.retosTab === tab));
+  const list   = $("#retos-list");
+  const logros = $("#logros-list");
+  if (tab === "logros") {
+    list.classList.add("hidden");
+    logros.classList.remove("hidden");
+    logros.innerHTML = (state.logrosCache || []).map(l => `
+      <article class="logro-card ${l.obtenido ? "obtenido" : ""}">
+        <div class="logro-icono">${esc(l.icono || "🏆")}</div>
+        <div class="logro-body">
+          <strong>${esc(l.titulo)}</strong>
+          <p class="muted small">${esc(l.descripcion)}</p>
+          <div class="progress-bar" role="progressbar"
+               aria-valuenow="${l.progreso}" aria-valuemin="0" aria-valuemax="${l.objetivo}">
+            <span style="width:${Math.min(100, Math.round(100 * l.progreso / l.objetivo))}%"></span>
+          </div>
+          <span class="muted small">
+            ${l.progreso} / ${l.objetivo} · +${l.xp} XP
+            ${l.obtenido ? "· ✅ desbloqueado" : ""}
+          </span>
+        </div>
+      </article>
+    `).join("") || "<p class='muted'>Aún no hay logros configurados.</p>";
+    return;
+  }
+  logros.classList.add("hidden");
+  list.classList.remove("hidden");
+  const rs = (state.retosCache || []).filter(r => r.periodo === tab);
+  list.innerHTML = rs.map(r => {
+    const pct = Math.min(100, Math.round(100 * r.progreso / r.objetivo));
+    return `
+      <article class="reto-card ${r.completado ? "completado" : ""}">
+        <div class="reto-icono">${esc(r.icono || "🎯")}</div>
+        <div class="reto-body">
+          <strong>${esc(r.titulo)}</strong>
+          <p class="muted small">${esc(r.descripcion)}</p>
+          <div class="progress-bar" role="progressbar"
+               aria-valuenow="${r.progreso}" aria-valuemin="0" aria-valuemax="${r.objetivo}">
+            <span style="width:${pct}%"></span>
+          </div>
+          <span class="muted small">
+            ${r.progreso} / ${r.objetivo} · +${r.xp} XP
+            ${r.completado ? "· ✅ hecho" : ""}
+          </span>
+        </div>
+      </article>
+    `;
+  }).join("") || "<p class='muted'>No hay retos en este periodo.</p>";
+}
+
+document.addEventListener("click", e => {
+  const t = e.target.closest(".retos-tab");
+  if (t) activarPestanaRetos(t.dataset.retosTab);
+});
 
 /* ── Tests ── */
 async function loadTests() {

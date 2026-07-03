@@ -711,3 +711,154 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
 [data-theme="dark"] .badge { color: #14241D; }
 .badge.calma { background: var(--txt-soft); color: var(--bg); }
 
+
+/* ─────────────────────────── Gamificación ───────────────────────────────── */
+
+.gamif-card {
+  background: linear-gradient(135deg,
+    var(--pri-soft) 0%,
+    var(--accent-soft) 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  margin: 0.5rem 0 1.2rem;
+  box-shadow: var(--shadow);
+}
+.gamif-card:empty { display: none; }
+
+.gamif-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+.gamif-level {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+.gamif-nivel-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 50%;
+  background: var(--pri);
+  color: var(--bg-panel);
+  font-weight: 800;
+  font-size: 1.05rem;
+  box-shadow: 0 0 0 3px var(--pri-soft);
+}
+[data-theme="dark"] .gamif-nivel-num { color: var(--bg); }
+
+.gamif-level > div { display: flex; flex-direction: column; }
+.gamif-level strong { font-size: 1.05rem; }
+.gamif-level .small { font-size: 0.85rem; }
+
+.gamif-racha { font-size: 0.98rem; }
+.gamif-racha strong { color: var(--coral-d); }
+[data-theme="dark"] .gamif-racha strong { color: var(--coral); }
+
+.gamif-reto {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--border);
+}
+.gamif-reto-icono { font-size: 1.6rem; line-height: 1; }
+.gamif-reto-body { flex: 1; display: flex; flex-direction: column; gap: 0.3rem; }
+.gamif-reto-body strong { font-size: 1rem; }
+
+.progress-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+[data-theme="dark"] .progress-bar { background: rgba(255, 255, 255, 0.08); }
+.progress-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--grad-a), var(--grad-b));
+  transition: width .3s ease;
+}
+.progress-bar.level { height: 10px; }
+
+/* Vista completa de retos */
+.retos-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.5rem 0 1rem;
+}
+.retos-tab {
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--txt);
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform .15s ease, background .2s ease;
+}
+.retos-tab:hover { transform: translateY(-1px); background: var(--bg-alt); }
+.retos-tab.active {
+  background: var(--pri);
+  color: var(--bg-panel);
+  border-color: var(--pri);
+}
+[data-theme="dark"] .retos-tab.active { color: var(--bg); }
+
+.retos-grid, .logros-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.reto-card, .logro-card {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+  padding: 0.9rem 1rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  transition: transform .15s ease, box-shadow .2s ease;
+}
+.reto-card:hover, .logro-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+.reto-card.completado, .logro-card.obtenido {
+  background: linear-gradient(135deg, var(--pri-soft), var(--leaf-soft));
+  border-color: var(--pri);
+}
+.reto-card.completado .progress-bar > span,
+.logro-card.obtenido .progress-bar > span {
+  background: linear-gradient(90deg, var(--leaf), var(--pri));
+}
+
+.reto-icono, .logro-icono {
+  font-size: 1.9rem;
+  line-height: 1;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,.08));
+}
+.reto-body, .logro-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.reto-body strong, .logro-body strong { font-size: 1rem; }
+.reto-body p, .logro-body p { margin: 0; }
+
+.logro-card:not(.obtenido) .logro-icono { filter: grayscale(0.8) opacity(0.7); }
+
