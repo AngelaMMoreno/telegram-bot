@@ -18,6 +18,7 @@ sin efectos duplicados.
 | 2026-07-02  | `2026-07-02_teoria_y_reset_repasos.sql`    | Rol `teoria`, permisos, tabla `ficheros_vistas`, RPCs de vistas y `resetear_mis_repasos`. |
 | 2026-07-03  | `2026-07-03_gamificacion.sql`              | Tablas de retos/logros/XP, motor de gamificación con hooks en `registrar_respuesta`, `finalizar_intento` y `marcar_fichero_visto`. Seed de 18 retos y 9 logros. |
 | 2026-07-03  | `2026-07-03_push_notificaciones.sql`       | Tablas `push_suscripciones` y `push_envios`, RPCs de suscripción y helpers para el worker `notificador`. Semilla de config con la ventana horaria y los cooldowns. |
+| 2026-07-03  | `2026-07-03_logros_notificaciones.sql`     | `registrar_respuesta`, `finalizar_intento` y `marcar_fichero_visto` pasan a devolver `jsonb` con `logros_desbloqueados`. El motor de gamificación (`_gamif_bump_logro`, `_gamif_actualizar_racha`, los `on_*`) acumula los logros recién obtenidos para que el frontend pinte una tarjeta de notificación por logro. |
 
 ## Al aplicar cada delta
 

@@ -78,6 +78,57 @@ function toast(msg) {
   t._t = setTimeout(() => t.classList.add("hidden"), 2800);
 }
 
+/* ── Notificaciones de logros (gamificación) ─────────────────────────
+ * `logros` viene del backend como array de objetos:
+ *   { codigo, titulo, descripcion, icono, xp, objetivo, progreso }
+ * Renderizamos una tarjeta apilada por logro con la barra verde que
+ * se completa animándose de 0 a 100%.  Cada tarjeta se descarta sola
+ * a los ~5s (y se puede tocar para cerrar antes).
+ */
+function notificarLogros(logros) {
+  if (!Array.isArray(logros) || !logros.length) return;
+  const stack = $("#logros-notif-stack");
+  if (!stack) return;
+  logros.forEach((l, i) => {
+    const card = document.createElement("article");
+    card.className = "logro-notif";
+    card.setAttribute("role", "status");
+    card.innerHTML = `
+      <div class="logro-notif-icono" aria-hidden="true">${esc(l.icono || "🏆")}</div>
+      <div class="logro-notif-body">
+        <div class="logro-notif-head">
+          <strong>¡Logro desbloqueado!</strong>
+          <span class="logro-notif-xp">+${Number(l.xp) || 0} XP</span>
+        </div>
+        <div class="logro-notif-desc"><strong>${esc(l.titulo || "")}</strong>${
+          l.descripcion ? " · " + esc(l.descripcion) : ""
+        }</div>
+        <div class="logro-notif-bar" role="progressbar"
+             aria-valuenow="${l.progreso || l.objetivo || 1}"
+             aria-valuemin="0"
+             aria-valuemax="${l.objetivo || 1}"><span></span></div>
+      </div>`;
+    stack.appendChild(card);
+    // Barra: la CSS parte de width:0 y anima hasta 100% cuando añadimos .done.
+    // Escalonamos un pelín cada tarjeta para que el efecto encadene.
+    setTimeout(() => card.classList.add("done"), 60 + i * 120);
+    const cerrar = () => {
+      if (card._closed) return;
+      card._closed = true;
+      card.classList.add("out");
+      setTimeout(() => card.remove(), 350);
+    };
+    card.addEventListener("click", cerrar);
+    setTimeout(cerrar, 5000 + i * 400);
+  });
+}
+
+/* Extrae logros_desbloqueados de una respuesta RPC y los notifica. */
+function notificarDesdeRPC(res) {
+  const l = res && res.logros_desbloqueados;
+  if (Array.isArray(l) && l.length) notificarLogros(l);
+}
+
 /* ── Llamada HTTP a PostgREST ────────────────────────────────────────────── */
 async function pg(path, opts = {}) {
   const headers = { "Accept": "application/json" };
@@ -1048,13 +1099,14 @@ async function responder(idx, saltada = false) {
 
   if (state.quiz.intentoId) {
     try {
-      await rpc("registrar_respuesta", {
+      const res = await rpc("registrar_respuesta", {
         p_intento_id:  state.quiz.intentoId,
         p_pregunta_id: q.id,
         p_texto:       textoSel,
         p_correcta:    correcta,
         p_adelantada:  !!state.quiz.adelantada,
       });
+      notificarDesdeRPC(res);
     } catch (_) {}
   }
 }
@@ -1062,8 +1114,10 @@ async function responder(idx, saltada = false) {
 async function finalizarQuiz() {
   cancelarTimerQuiz();
   if (state.quiz.intentoId) {
-    try { await rpc("finalizar_intento", { p_intento_id: state.quiz.intentoId }); }
-    catch (_) {}
+    try {
+      const res = await rpc("finalizar_intento", { p_intento_id: state.quiz.intentoId });
+      notificarDesdeRPC(res);
+    } catch (_) {}
   }
   // Nota sobre 10 con penalización 1/3.  Si veníamos de una reanudación,
   // 'totalEfectivo' = respondidas previas + pendientes (sin contar las

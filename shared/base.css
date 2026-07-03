@@ -101,6 +101,108 @@ body {
   }
 }
 
+/* ── Notificaciones de logros (gamificación) ─────────────────────────
+ * Pila de tarjetas en la parte superior de la app.  Cada logro entra
+ * desde arriba con un pequeño rebote, muestra icono + título + barra
+ * verde que se rellena a 100% con una transición, y se auto-descarta.
+ * Si se completan varios a la vez, las tarjetas se apilan verticalmente
+ * y cada una anuncia su propio progreso.
+ */
+.logros-notif-stack {
+  position: fixed;
+  top: calc(var(--topbar-h) + 0.75rem);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  width: min(94vw, 420px);
+  pointer-events: none;
+}
+.logro-notif {
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 0.75rem;
+  align-items: center;
+  background: var(--bg-panel);
+  color: var(--txt);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--success);
+  border-radius: var(--radius);
+  padding: 0.75rem 0.9rem;
+  box-shadow: var(--shadow-lg);
+  animation: logro-notif-in 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+.logro-notif.out {
+  animation: logro-notif-out 0.32s ease forwards;
+}
+.logro-notif-icono {
+  font-size: 2rem;
+  line-height: 1;
+  text-align: center;
+  filter: drop-shadow(0 2px 4px rgba(107, 142, 35, 0.28));
+}
+.logro-notif-body { min-width: 0; }
+.logro-notif-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.15rem;
+}
+.logro-notif-head strong {
+  font-size: 0.98rem;
+  color: var(--success);
+}
+.logro-notif-head .logro-notif-xp {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--accent-d);
+  background: var(--accent-soft);
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+}
+.logro-notif-desc {
+  font-size: 0.83rem;
+  color: var(--txt-soft);
+  line-height: 1.35;
+  margin-bottom: 0.4rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.logro-notif-bar {
+  height: 8px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+.logro-notif-bar > span {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--grad-a), var(--success));
+  box-shadow: 0 0 6px rgba(107, 142, 35, 0.5);
+  transition: width 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) 0.15s;
+}
+.logro-notif.done .logro-notif-bar > span { width: 100%; }
+@keyframes logro-notif-in {
+  0%   { opacity: 0; transform: translateY(-14px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0)     scale(1); }
+}
+@keyframes logro-notif-out {
+  0%   { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .logro-notif,
+  .logro-notif.out { animation: none; }
+  .logro-notif-bar > span { transition: none; }
+}
+
 /* Utilidad glassmorphism: barras y modales pueden usarla. */
 .glass {
   background: var(--glass-bg);
