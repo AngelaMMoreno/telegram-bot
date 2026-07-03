@@ -1,8 +1,0 @@
-{
-  "web_apps": [
-    { "web_app_identity": "https://aprentix.es/" },
-    { "web_app_identity": "https://www.aprentix.es/" },
-    { "web_app_identity": "https://teoria.aprentix.es/" },
-    { "web_app_identity": "https://www.teoria.aprentix.es/" }
-  ]
-}

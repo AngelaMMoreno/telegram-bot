@@ -24,7 +24,7 @@ import jwt
 from fastapi import (
     FastAPI, File, Form, HTTPException, Request, UploadFile,
 )
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 
@@ -470,37 +470,6 @@ def api_mover(request: Request, body: dict):
 @app.exception_handler(HTTPException)
 async def http_exc_handler(request: Request, exc: HTTPException):
     return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
-
-
-# ── PWA: manifest y scope_extensions ────────────────────────────────────────
-
-@app.get("/manifest.webmanifest")
-def pwa_manifest():
-    """Sirve el manifest con el Content-Type correcto (StaticFiles no acierta
-    con .webmanifest y Chrome lo rechaza como PWA en ese caso)."""
-    site = Path(__file__).parent / "site" / "manifest.webmanifest"
-    return FileResponse(str(site), media_type="application/manifest+json")
-
-
-@app.get("/.well-known/web-app-origin-association")
-def pwa_scope_association():
-    """Autoriza que las PWAs de aprentix.es y test.aprentix.es extiendan
-    su scope hasta teoria.aprentix.es. Sin este fichero, cuando el usuario
-    entra desde la PWA de tests a teoría, Chrome abre un in-app browser con
-    una X para volver, en lugar de tratarlo como una vista más de la app."""
-    body = (
-        '{"web_apps":['
-        '{"web_app_identity":"https://aprentix.es/"},'
-        '{"web_app_identity":"https://www.aprentix.es/"},'
-        '{"web_app_identity":"https://test.aprentix.es/"},'
-        '{"web_app_identity":"https://www.test.aprentix.es/"}'
-        ']}'
-    )
-    return Response(
-        content=body,
-        media_type="application/json",
-        headers={"Access-Control-Allow-Origin": "*"},
-    )
 
 
 # ── SPA estática ────────────────────────────────────────────────────────────

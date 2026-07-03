@@ -1,5 +1,9 @@
-# Servidor estático para la SPA + reverse proxy hacia PostgREST.
-# Traefik termina TLS en :443 y nos envía HTTP plano por :80.
+# Servidor estático para la SPA de tests + reverse proxy hacia PostgREST.
+#
+# En producción este contenedor se sirve detrás del Caddy de la landing
+# (aprentix.es/tests/*). El Caddy padre desnuda el prefijo /tests antes de
+# proxyar, así que aquí seguimos viendo rutas como /api/*, /index.html,
+# /service-worker.js, etc. sin cambios.
 
 :80 {
     encode zstd gzip
@@ -10,24 +14,12 @@
         reverse_proxy postgrest:3000
     }
 
-    # El manifest necesita MIME correcto para que Chrome lo detecte como PWA.
-    @manifest path *.webmanifest
-    header @manifest Content-Type application/manifest+json
-
-    # Web App Scope Extensions: sirve el fichero de asociación con
-    # Content-Type application/json (no tiene extensión). Es lo que
-    # busca el navegador para permitir que la PWA extienda su scope
-    # a los otros subdominios de aprentix.es y que la navegación no
-    # abra un "in-app browser" con X.
-    @waoa path /.well-known/web-app-origin-association
-    header @waoa Content-Type application/json
-    header @waoa Access-Control-Allow-Origin *
-
-    # Service worker: si el navegador lo cachea "para siempre", la PWA se queda
-    # atascada en una versión vieja. Forzamos revalidación en cada visita.
+    # Service worker: sin caché para que el usuario reciba la última
+    # versión en cada visita. El header Service-Worker-Allowed lo
+    # limitamos a "./" para que no intente controlar rutas fuera de
+    # /tests/ cuando se sirve a través del proxy de la landing.
     @sw path /service-worker.js
     header @sw Cache-Control "no-cache, no-store, must-revalidate"
-    header @sw Service-Worker-Allowed "/"
 
     # SPA: sirve estáticos y cae a index.html para rutas del cliente.
     handle {

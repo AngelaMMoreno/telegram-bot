@@ -5,7 +5,15 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Aprentix · Tests</title>
 
+  <!-- Todos los assets y llamadas fetch de la SPA usan rutas relativas
+       para que la misma imagen del contenedor funcione tanto si se sirve
+       en test.aprentix.es (raíz) como en aprentix.es/tests/ (proxy). -->
+  <base href="/tests/">
+
   <!-- ── PWA / instalable ───────────────────────────────────────────── -->
+  <!-- Un único manifest para toda la app (servido por la landing en
+       aprentix.es/manifest.webmanifest). Con ello Chrome trata /tests/,
+       /teoria/ y / como la misma PWA instalada. -->
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="application-name" content="Aprentix">
   <!-- theme-color por esquema: musgo en claro, verde bosque en oscuro. -->
@@ -18,21 +26,21 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Aprentix">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <link rel="apple-touch-icon" href="/shared/pwa-icons/apple-touch-icon.png">
+  <link rel="apple-touch-icon" href="shared/pwa-icons/apple-touch-icon.png">
 
   <!-- ── Favicons ───────────────────────────────────────────────────── -->
-  <link rel="icon" type="image/svg+xml" href="/shared/pwa-icons/icon-any.svg">
-  <link rel="icon" type="image/png" sizes="192x192" href="/shared/pwa-icons/icon-any-192.png">
-  <link rel="icon" type="image/png" sizes="512x512" href="/shared/pwa-icons/icon-any-512.png">
-  <link rel="mask-icon" href="/shared/pwa-icons/icon-mono.svg" color="#6B8E23">
+  <link rel="icon" type="image/svg+xml" href="shared/pwa-icons/icon-any.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="shared/pwa-icons/icon-any-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="shared/pwa-icons/icon-any-512.png">
+  <link rel="mask-icon" href="shared/pwa-icons/icon-mono.svg" color="#6B8E23">
 
-  <link rel="stylesheet" href="/shared/tokens.css">
-  <link rel="stylesheet" href="/shared/base.css">
-  <link rel="stylesheet" href="/shared/header.css">
-  <link rel="stylesheet" href="/shared/config.css">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="shared/tokens.css">
+  <link rel="stylesheet" href="shared/base.css">
+  <link rel="stylesheet" href="shared/header.css">
+  <link rel="stylesheet" href="shared/config.css">
+  <link rel="stylesheet" href="style.css">
   <!-- Registra el custom element antes de que el parser llegue a él. -->
-  <script src="/shared/header.js"></script>
+  <script src="shared/header.js"></script>
   <script>
     (function () {
       var m = document.cookie.match(/(?:^|;\s*)aprentix_theme=(dark|light|auto)/);
@@ -49,8 +57,10 @@
     // aquí evita ruido en la consola.
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", function () {
+        // Rutas relativas: al servirse en aprentix.es/tests/ el scope
+        // queda automáticamente confinado a /tests/, sin invadir /teoria/.
         navigator.serviceWorker
-          .register("/service-worker.js", { scope: "/" })
+          .register("service-worker.js", { scope: "./" })
           .then(function (reg) {
             // Si aparece una versión nueva mientras la app está abierta,
             // le pedimos al SW que se active de inmediato para el próximo
@@ -633,6 +643,6 @@
 
 <div id="toast" class="toast hidden"></div>
 
-<script src="/app.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

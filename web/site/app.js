@@ -8,7 +8,10 @@
 /* ── Sesión compartida (cookie en .aprentix.es) ─────────────────────────── */
 const COOKIE_NAME = "aprentix_token";
 const COOKIE_HORAS = 12;
-const LANDING_URL = "https://aprentix.es";
+// La app vive en aprentix.es/tests/*; para volver a la landing basta con
+// navegar a "/" (mismo origen). Mantener una URL absoluta rompe la sensación
+// de app unificada y hace que la PWA salga de scope.
+const LANDING_URL = "/";
 const THEME_COOKIE = "aprentix_theme";
 
 function cookieDomain() {
@@ -82,7 +85,10 @@ async function pg(path, opts = {}) {
   if (state.jwt) headers["Authorization"] = "Bearer " + state.jwt;
   if (opts.headers) Object.assign(headers, opts.headers);
 
-  const res = await fetch("/api" + path, {
+  // Ruta relativa: resuelve contra el <base href> (/tests/), así el
+  // request va a /tests/api/... y el Caddy de la landing lo desnuda hasta
+  // /api/... en el contenedor web, que reenvía a PostgREST.
+  const res = await fetch("api" + path, {
     method: opts.method || "GET",
     headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,

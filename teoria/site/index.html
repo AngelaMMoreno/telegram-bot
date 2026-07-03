@@ -5,9 +5,15 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Aprentix — Teoría</title>
 
-  <!-- PWA: identidad compartida con landing y tests vía
-       scope_extensions para no salir al navegador al saltar entre
-       subdominios. -->
+  <!-- Todo relativo al mount /teoria/ para que la misma imagen del
+       contenedor sirva tanto en teoria.aprentix.es como en
+       aprentix.es/teoria/ (mismo origen que la landing y tests). -->
+  <base href="/teoria/">
+
+  <!-- PWA: parte de la app unificada bajo aprentix.es. -->
+  <!-- Un único manifest para toda la app (servido por la landing en
+       aprentix.es/manifest.webmanifest). Con ello Chrome trata /tests/,
+       /teoria/ y / como la misma PWA instalada. -->
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="application-name" content="Aprentix">
   <meta name="theme-color" content="#6B8E23" media="(prefers-color-scheme: light)">
@@ -17,15 +23,15 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Aprentix">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <link rel="apple-touch-icon" href="/shared/pwa-icons/apple-touch-icon.png">
+  <link rel="apple-touch-icon" href="shared/pwa-icons/apple-touch-icon.png">
 
-  <link rel="stylesheet" href="/shared/tokens.css">
-  <link rel="stylesheet" href="/shared/base.css">
-  <link rel="stylesheet" href="/shared/header.css">
-  <link rel="stylesheet" href="/shared/config.css">
-  <link rel="stylesheet" href="/style.css">
-  <link rel="icon" type="image/svg+xml" href="/shared/pwa-icons/icon-any.svg">
-  <link rel="icon" type="image/png" sizes="192x192" href="/shared/pwa-icons/icon-any-192.png">
+  <link rel="stylesheet" href="shared/tokens.css">
+  <link rel="stylesheet" href="shared/base.css">
+  <link rel="stylesheet" href="shared/header.css">
+  <link rel="stylesheet" href="shared/config.css">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" type="image/svg+xml" href="shared/pwa-icons/icon-any.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="shared/pwa-icons/icon-any-192.png">
   <script>
     (function () {
       var m = document.cookie.match(/(?:^|;\s*)aprentix_theme=(dark|light|auto)/);
@@ -37,10 +43,10 @@
     })();
   </script>
   <!-- Registra el custom element antes de que el parser llegue a él. -->
-  <script src="/shared/header.js"></script>
+  <script src="shared/header.js"></script>
   <!-- Markdown: parser + saneador (se inyecta HTML de terceros). -->
-  <script src="/shared/vendor/marked.min.js"></script>
-  <script src="/shared/vendor/purify.min.js"></script>
+  <script src="shared/vendor/marked.min.js"></script>
+  <script src="shared/vendor/purify.min.js"></script>
 </head>
 <body>
 
@@ -105,7 +111,7 @@
       <div class="config-section">
         <p class="muted small">
           El <strong>ritmo de repaso</strong> y el <strong>reset</strong> se gestionan desde
-          la <a href="https://test.aprentix.es" class="link-pri">app de tests</a>.
+          la <a href="/tests/" class="link-pri">app de tests</a>.
         </p>
       </div>
     </section>
@@ -116,6 +122,6 @@
   </div>
 </div>
 
-<script src="/app.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

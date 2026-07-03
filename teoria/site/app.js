@@ -6,7 +6,9 @@
  */
 'use strict';
 
-const LANDING_URL = 'https://aprentix.es';
+// La landing vive en el mismo origen (aprentix.es/) ahora que todo está
+// unificado. Usar una ruta relativa evita romper el scope de la PWA.
+const LANDING_URL = '/';
 const COOKIE_NAME = 'aprentix_token';
 
 // ── Utilidades ──────────────────────────────────────────────────────────────
@@ -228,9 +230,9 @@ function menuContextualFichero(evt, f) {
     cerrarMenu();
     if (a === 'ver') verFichero(f);
     else if (a === 'editar') { await abrirMarkdown(f.ruta, f.nombre); mdEntrarEdicion(); }
-    else if (a === 'descargar') window.open('/api/ver?ruta=' + encodeURIComponent(f.ruta), '_blank');
-    else if (a === 'visto') { await api('POST', '/api/marcar_visto', { ruta: f.ruta }); recargar(); }
-    else if (a === 'no-visto') { await api('POST', '/api/marcar_no_visto', { ruta: f.ruta }); recargar(); }
+    else if (a === 'descargar') window.open('api/ver?ruta=' + encodeURIComponent(f.ruta), '_blank');
+    else if (a === 'visto') { await api('POST', 'api/marcar_visto', { ruta: f.ruta }); recargar(); }
+    else if (a === 'no-visto') { await api('POST', 'api/marcar_no_visto', { ruta: f.ruta }); recargar(); }
     else if (a === 'renombrar') pedirRenombrar(f);
     else if (a === 'borrar') pedirBorrar(f);
   });
@@ -295,7 +297,7 @@ async function toggleVistoInline(item, btn, card) {
   btn.querySelector('.visto-tick-check').textContent = estabaVisto ? '' : '✓';
   card.classList.toggle('visto', !estabaVisto);
   try {
-    await api('POST', `/api/${rpc}`, { ruta: item.ruta });
+    await api('POST', `api/${rpc}`, { ruta: item.ruta });
   } catch (err) {
     // Revierte si falla.
     btn.classList.toggle('on',  estabaVisto);
@@ -310,7 +312,7 @@ async function toggleVistoInline(item, btn, card) {
 // ── Navegación ─────────────────────────────────────────────────────────────
 
 async function cargar(ruta) {
-  const data = await api('GET', '/api/listar?ruta=' + encodeURIComponent(ruta));
+  const data = await api('GET', 'api/listar?ruta=' + encodeURIComponent(ruta));
   ESTADO.ruta = data.ruta;
   ESTADO.puede_gestionar = !!data.puede_gestionar;
   document.getElementById('admin-bar').hidden = !ESTADO.puede_gestionar;
@@ -340,7 +342,7 @@ function verFichero(f) {
     abrirMarkdown(f.ruta, f.nombre);
     return;
   }
-  window.open('/api/ver?ruta=' + encodeURIComponent(f.ruta), '_blank', 'noopener');
+  window.open('api/ver?ruta=' + encodeURIComponent(f.ruta), '_blank', 'noopener');
 }
 
 // ── Visor / editor de markdown ─────────────────────────────────────────────
@@ -438,7 +440,7 @@ function mdCerrar() {
 
 async function abrirMarkdown(ruta, nombre) {
   try {
-    const r = await api('GET', '/api/leer?ruta=' + encodeURIComponent(ruta));
+    const r = await api('GET', 'api/leer?ruta=' + encodeURIComponent(ruta));
     MD.ruta = r.ruta; MD.nombre = r.nombre;
     MD.original = r.contenido || '';
     MD.creando = false; MD.padreCreacion = null;
@@ -477,7 +479,7 @@ async function mdGuardar() {
   const contenido = mdEd().value;
   try {
     if (MD.creando) {
-      const r = await api('POST', '/api/crear_md', {
+      const r = await api('POST', 'api/crear_md', {
         padre: MD.padreCreacion,
         nombre: MD.nombre,
         contenido,
@@ -487,7 +489,7 @@ async function mdGuardar() {
       mdTitle().textContent = r.nombre;
       toast('Creado');
     } else {
-      await api('POST', '/api/guardar', { ruta: MD.ruta, contenido });
+      await api('POST', 'api/guardar', { ruta: MD.ruta, contenido });
       toast('Guardado');
     }
     MD.original = contenido;
@@ -571,7 +573,7 @@ function pedirRenombrar(item) {
       if (!nuevo || nuevo === item.nombre) return;
       const padre = item.ruta.split('/').slice(0, -1).join('/') || '/';
       const destino = (padre === '/' ? '' : padre) + '/' + nuevo;
-      await api('POST', '/api/mover', { origen: item.ruta, destino });
+      await api('POST', 'api/mover', { origen: item.ruta, destino });
       toast('Renombrado');
       recargar();
     },
@@ -585,7 +587,7 @@ function pedirBorrar(item) {
     aceptar: 'Borrar',
     peligro: true,
     onOk: async () => {
-      await api('POST', '/api/borrar', { ruta: item.ruta });
+      await api('POST', 'api/borrar', { ruta: item.ruta });
       toast('Borrado');
       recargar();
     },
@@ -600,7 +602,7 @@ function pedirNuevaCarpeta() {
     aceptar: 'Crear',
     onOk: async (nombre) => {
       if (!nombre) return;
-      await api('POST', '/api/carpeta', { padre: ESTADO.ruta, nombre });
+      await api('POST', 'api/carpeta', { padre: ESTADO.ruta, nombre });
       toast('Carpeta creada');
       recargar();
     },
@@ -613,7 +615,7 @@ async function subirFicheros(files) {
   fd.append('ruta', ESTADO.ruta);
   for (const f of files) fd.append('files', f, f.name);
   try {
-    const r = await api('POST', '/api/subir', fd, /* isForm */ true);
+    const r = await api('POST', 'api/subir', fd, /* isForm */ true);
     toast(`${r.subidos.length} fichero${r.subidos.length === 1 ? '' : 's'} subido${r.subidos.length === 1 ? '' : 's'}`);
     recargar();
   } catch (e) { toast(`⚠️ ${e.message}`); }
@@ -713,7 +715,7 @@ function pintarUsuario(nombre) {
   if (avEl) avEl.textContent = (uname[0] || '?').toUpperCase();
 }
 pintarUsuario('…');
-api('GET', '/api/sesion')
+api('GET', 'api/sesion')
   .then(s => pintarUsuario(s && s.username))
   .catch(() => pintarUsuario(''));
 

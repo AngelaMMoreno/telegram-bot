@@ -19,9 +19,12 @@
 (function () {
   'use strict';
 
-  const LANDING_URL = 'https://aprentix.es';
-  const TESTS_URL   = 'https://test.aprentix.es';
-  const TEORIA_URL  = 'https://teoria.aprentix.es';
+  // Todo comparte origen bajo aprentix.es. Enlaces con rutas absolutas
+  // dentro del mismo origen para que el navegador los trate como una
+  // navegación normal (mismo scope, sin abrir in-app browser).
+  const LANDING_URL = '/';
+  const TESTS_URL   = '/tests/';
+  const TEORIA_URL  = '/teoria/';
 
   const ICO_MENU = `
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
