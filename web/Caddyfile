@@ -10,6 +10,16 @@
         reverse_proxy postgrest:3000
     }
 
+    # El manifest necesita MIME correcto para que Chrome lo detecte como PWA.
+    @manifest path *.webmanifest
+    header @manifest Content-Type application/manifest+json
+
+    # Service worker: si el navegador lo cachea "para siempre", la PWA se queda
+    # atascada en una versión vieja. Forzamos revalidación en cada visita.
+    @sw path /service-worker.js
+    header @sw Cache-Control "no-cache, no-store, must-revalidate"
+    header @sw Service-Worker-Allowed "/"
+
     # SPA: sirve estáticos y cae a index.html para rutas del cliente.
     handle {
         root * /srv

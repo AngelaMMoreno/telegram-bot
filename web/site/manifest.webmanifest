@@ -1,0 +1,72 @@
+{
+  "id": "/",
+  "name": "Aprentix — Tests de oposiciones",
+  "short_name": "Aprentix",
+  "description": "Tu oposición, a tu ritmo. Tests, repasos y teoría con seguimiento personalizado.",
+  "start_url": "/?src=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "lang": "es-ES",
+  "dir": "ltr",
+  "theme_color": "#6B8E23",
+  "background_color": "#FBF9F0",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/shared/pwa-icons/icon-any-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/shared/pwa-icons/icon-any-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/shared/pwa-icons/icon-any.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/shared/pwa-icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/shared/pwa-icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Repasar vencidas",
+      "short_name": "Repasar",
+      "description": "Abre las preguntas de repaso pendientes",
+      "url": "/?atajo=repasar",
+      "icons": [{ "src": "/shared/pwa-icons/icon-any-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Mis fallos",
+      "short_name": "Fallos",
+      "description": "Repasa las preguntas que has ido fallando",
+      "url": "/?atajo=fallos",
+      "icons": [{ "src": "/shared/pwa-icons/icon-any-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Tests",
+      "short_name": "Tests",
+      "description": "Elige un test y empieza a responder",
+      "url": "/?atajo=tests",
+      "icons": [{ "src": "/shared/pwa-icons/icon-any-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
+  "prefer_related_applications": false
+}
