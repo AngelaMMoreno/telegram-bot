@@ -9,7 +9,22 @@
   <link rel="stylesheet" href="/shared/header.css">
   <link rel="stylesheet" href="/shared/config.css">
   <link rel="stylesheet" href="/style.css">
+
+  <!-- PWA: manifest, iconos y colores de la barra de sistema. -->
+  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" type="image/svg+xml" href="/shared/logo.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
+  <meta name="theme-color" content="#6B8E23" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#101E1A" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Aprentix">
+  <meta name="application-name" content="Aprentix">
+  <meta name="description" content="Aprentix — Tu oposición, a tu ritmo. Tests, teoría y repaso espaciado.">
+
   <!-- Registra el custom element antes de que el parser llegue a él. -->
   <script src="/shared/header.js"></script>
   <script>
@@ -69,6 +84,16 @@
     <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg>
     <span>Progreso</span>
   </button>
+  <button class="nav-item" data-view="retos">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>
+    <span>Retos</span>
+    <span class="nav-badge hidden" id="nav-retos-badge"></span>
+  </button>
+  <button class="nav-item" data-view="amigos">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.6"/><path d="M14.5 15.5A5 5 0 0 1 22 20"/></svg>
+    <span>Amigos</span>
+    <span class="nav-badge hidden" id="nav-amigos-badge"></span>
+  </button>
   <div class="nav-sep"></div>
   <button class="nav-item" id="btn-abrir-config" title="Configuración">
     <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -113,6 +138,10 @@
     <h2>Hola, <span id="hello-name"></span></h2>
     <p class="tagline muted">Tu oposición, a tu ritmo.</p>
     <div class="stats-grid" id="stats-grid"></div>
+
+    <!-- Widget de retos + racha; lo puebla gamification.js -->
+    <div id="home-gamif" class="gamif-home hidden"></div>
+
     <div class="actions-grid">
       <button class="action-card" data-view="tests">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h6M8 12h8M8 16h5"/><circle cx="16.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/></svg>
@@ -335,6 +364,38 @@
     <ul id="progreso-por-test" class="por-test"></ul>
   </section>
 
+  <!-- Retos diarios -->
+  <section id="view-retos" class="view">
+    <header class="view-header">
+      <h2>Retos de hoy</h2>
+      <span id="retos-fecha" class="muted small"></span>
+    </header>
+    <div id="racha-panel" class="racha-panel"></div>
+    <ul id="retos-list" class="retos-list"></ul>
+    <div id="retos-push-hint" class="push-hint hidden">
+      <strong>💡 Activa las notificaciones</strong>
+      <p class="muted small">
+        Para que te avise cuando un amigo complete un reto o cuando tengas
+        muchas preguntas por repasar. Solo un push agregado al día como
+        mucho por lo del repaso; nada invasivo.
+      </p>
+      <button class="btn btn-primary" id="btn-activar-push">🔔 Activar notificaciones</button>
+    </div>
+  </section>
+
+  <!-- Amigos -->
+  <section id="view-amigos" class="view">
+    <header class="view-header">
+      <h2>Amigos</h2>
+      <input id="amigos-buscar" type="search" placeholder="Buscar por nombre de usuario…" autocomplete="off">
+    </header>
+    <div id="amigos-buscar-resultados" class="amigos-resultados"></div>
+    <h3 id="amigos-solicitudes-titulo" class="muted small hidden">Solicitudes</h3>
+    <ul id="amigos-solicitudes" class="amigos-list"></ul>
+    <h3 class="muted small" id="amigos-lista-titulo">Tus amigos</h3>
+    <ul id="amigos-lista" class="amigos-list"></ul>
+  </section>
+
 </main>
 
 <!-- Modal de borrado de test -->
@@ -549,5 +610,6 @@
 <div id="toast" class="toast hidden"></div>
 
 <script src="/app.js"></script>
+<script src="/gamification.js"></script>
 </body>
 </html>

@@ -16,6 +16,7 @@ sin efectos duplicados.
 | Fecha       | Fichero                                    | Qué añade |
 |-------------|--------------------------------------------|-----------|
 | 2026-07-02  | `2026-07-02_teoria_y_reset_repasos.sql`    | Rol `teoria`, permisos, tabla `ficheros_vistas`, RPCs de vistas y `resetear_mis_repasos`. |
+| 2026-07-02  | `2026-07-02_gamificacion.sql`              | Amistades, retos diarios, racha, Web Push (suscripciones + cola), triggers que avanzan retos al responder / estudiar / repasar / terminar test. |
 
 ## Al aplicar cada delta
 

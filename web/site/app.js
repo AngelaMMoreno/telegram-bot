@@ -1796,6 +1796,16 @@ document.addEventListener("visibilitychange", () => {
   if (cookieNow !== state.jwt) location.reload();
 });
 
+/* ── Puente para módulos externos (gamification.js) ─────────────────────── */
+// Exponemos un mini-API para que otros scripts puedan reutilizar la
+// misma sesión y el mismo enrutador de vistas sin duplicar lógica.
+window.aprentix = {
+  rpc, pg, toast, esc,
+  navigate, get state() { return state; },
+  registerLoader(name, fn) { loaders[name] = fn; },
+  emit(evt, detail) { document.dispatchEvent(new CustomEvent(evt, { detail })); },
+};
+
 /* ── Arranque ───────────────────────────────────────────────────────────── */
 inicializarInputsTiempo();
 (async () => {
@@ -1805,6 +1815,10 @@ inicializarInputsTiempo();
     persistSession();
   }
   applySession();
+  // Rehidrata la gamificación (retos, permisos push, service worker) en cuanto
+  // haya sesión válida. gamification.js escucha 'aprentix:session' además.
+  document.dispatchEvent(new CustomEvent("aprentix:session",
+    { detail: { loggedIn: !!(state.jwt && state.user) } }));
   navigate(state.jwt && state.user ? "home" : "login");
 })();
 

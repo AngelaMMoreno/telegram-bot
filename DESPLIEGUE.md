@@ -1,15 +1,16 @@
 # Despliegue en Dokploy
 
-El proyecto está partido en **cuatro stacks independientes** para poder
+El proyecto está partido en **cinco stacks independientes** para poder
 redesplegarlos por separado desde Dokploy. Cada stack es una **Compose
 Application** distinta que apunta a su propio fichero:
 
 ```
 deploy/
-├── core/docker-compose.yml     ← db + postgrest + embeddings + pgadmin
-├── landing/docker-compose.yml  ← aprentix.es / www.aprentix.es
-├── web/docker-compose.yml      ← test.aprentix.es / www.test.aprentix.es
-└── teoria/docker-compose.yml   ← teoria.aprentix.es / www.teoria.aprentix.es
+├── core/docker-compose.yml      ← db + postgrest + embeddings + pgadmin
+├── landing/docker-compose.yml   ← aprentix.es / www.aprentix.es
+├── web/docker-compose.yml       ← test.aprentix.es / www.test.aprentix.es
+├── teoria/docker-compose.yml    ← teoria.aprentix.es / www.teoria.aprentix.es
+└── notifier/docker-compose.yml  ← Web Push (VAPID) para amigos y repasos
 ```
 
 Los cuatro comparten la red externa `dokploy-network` y se ven entre sí
@@ -53,12 +54,29 @@ En Dokploy, para cada una:
 4. Variables de entorno: copiar del `.env.example` de la carpeta.
 5. Deploy.
 
-| Stack     | Compose path                          | .env de referencia            |
-|-----------|---------------------------------------|-------------------------------|
-| `core`    | `deploy/core/docker-compose.yml`      | `deploy/core/.env.example`    |
-| `landing` | `deploy/landing/docker-compose.yml`   | `deploy/landing/.env.example` |
-| `web`     | `deploy/web/docker-compose.yml`       | `deploy/web/.env.example`     |
-| `teoria`  | `deploy/teoria/docker-compose.yml`    | `deploy/teoria/.env.example`  |
+| Stack      | Compose path                           | .env de referencia            |
+|------------|----------------------------------------|-------------------------------|
+| `core`     | `deploy/core/docker-compose.yml`       | `deploy/core/.env.example`    |
+| `landing`  | `deploy/landing/docker-compose.yml`    | `deploy/landing/.env.example` |
+| `web`      | `deploy/web/docker-compose.yml`        | `deploy/web/.env.example`     |
+| `teoria`   | `deploy/teoria/docker-compose.yml`     | `deploy/teoria/.env.example`  |
+| `notifier` | `deploy/notifier/docker-compose.yml`   | ver `notifier/README.md`      |
+
+## Notificaciones Web Push (stack `notifier`)
+
+Con el stack `notifier` desplegado la app envía push a los dispositivos
+que hayan aceptado el permiso: sin ningún servicio de pago (usa el
+estándar Web Push con claves VAPID). Funciona en Android y en iOS 16.4+
+**una vez el usuario haya añadido la PWA a la pantalla de inicio**.
+
+1. Generar las claves VAPID una sola vez (ver receta en
+   `notifier/README.md`) y pegar en las variables `VAPID_PUBLIC_KEY_B64URL`
+   y `VAPID_PRIVATE_KEY_PEM` del stack.
+2. La primera vez que el notifier arranca publica la clave pública en
+   `config.vapid_public_key` para que la RPC `vapid_public_key()` la
+   sirva al frontend.
+3. Aplicar la migración `db/migraciones/2026-07-02_gamificacion.sql` en
+   BBDDs pre-existentes (init la trae de fábrica en despliegues nuevos).
 
 ## 2. Variables de entorno por stack
 

@@ -711,3 +711,167 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
 [data-theme="dark"] .badge { color: #14241D; }
 .badge.calma { background: var(--txt-soft); color: var(--bg); }
 
+
+/* ============================================================================
+ * Gamificación: retos, racha, amigos, PWA hints.
+ * Estética Solarpunk consistente con el resto: verde salvia, marfil,
+ * bordes generosos y sombras miel.
+ * ==========================================================================*/
+
+/* ── Badges en el sidebar ─────────────────────────────────────────────── */
+.nav-badge {
+  margin-left: auto;
+  min-width: 1.4rem;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--txt);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.4rem;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+}
+.nav-badge.hidden { display: none; }
+
+/* ── Widget de Home (racha + retos mini) ──────────────────────────────── */
+.gamif-home {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 2fr;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  margin: 0.8rem 0 1rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.gamif-home.hidden { display: none; }
+.gamif-racha {
+  display: flex; gap: 0.6rem; align-items: center;
+  padding-right: 0.75rem;
+  border-right: 1px dashed var(--border);
+}
+.gamif-racha strong { display: block; font-size: 1.5rem; color: var(--pri-d); }
+.racha-flame { font-size: 2rem; filter: drop-shadow(0 0 8px var(--accent-glow)); }
+.gamif-retos-mini { display: flex; flex-direction: column; gap: 0.35rem; }
+.gamif-retos-mini strong { font-size: 1.2rem; color: var(--txt); }
+.gamif-mini-list { display: flex; gap: 0.35rem; margin: 0.25rem 0 0.4rem; }
+.mini-reto {
+  flex: 1;
+  height: 0.5rem;
+  background: var(--bg-alt);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+.mini-reto-bar {
+  display: block; height: 100%;
+  background: linear-gradient(90deg, var(--grad-a), var(--grad-b));
+  transition: width 0.35s ease;
+}
+.mini-reto.done .mini-reto-bar { background: var(--success); }
+
+@media (max-width: 640px) {
+  .gamif-home { grid-template-columns: 1fr; }
+  .gamif-racha { border-right: 0; border-bottom: 1px dashed var(--border); padding: 0 0 0.5rem; }
+}
+
+/* ── Vista Retos ──────────────────────────────────────────────────────── */
+.racha-panel { margin-bottom: 1rem; }
+.racha-card {
+  display: flex; gap: 1.5rem; align-items: center;
+  padding: 1.1rem 1.4rem;
+  background: linear-gradient(135deg, var(--pri-soft), var(--accent-soft));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+}
+.racha-flame-big { font-size: 2.6rem; filter: drop-shadow(0 0 12px var(--accent-glow)); }
+.racha-num { font-size: 1.7rem; font-weight: 700; color: var(--pri-d); }
+[data-theme="dark"] .racha-num { color: var(--pri); }
+
+.retos-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.8rem; }
+.reto-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.reto-card.done {
+  background: linear-gradient(180deg, var(--success-light), var(--bg-panel));
+  border-color: var(--success);
+}
+.reto-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.reto-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+.reto-head strong { font-size: 1.05rem; }
+.reto-puntos {
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-d);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+[data-theme="dark"] .reto-puntos { color: var(--accent); }
+.reto-progress {
+  margin: 0.5rem 0 0.4rem;
+  height: 0.55rem;
+  background: var(--bg-alt);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.reto-progress-bar {
+  display: block; height: 100%;
+  background: linear-gradient(90deg, var(--grad-a), var(--grad-b));
+  transition: width 0.35s ease;
+}
+.reto-card.done .reto-progress-bar { background: var(--success); }
+.reto-meta { display: flex; justify-content: space-between; font-size: 0.85rem; }
+.reto-estado { color: var(--pri-d); font-weight: 600; }
+[data-theme="dark"] .reto-estado { color: var(--pri); }
+
+/* ── Push hint ────────────────────────────────────────────────────────── */
+.push-hint {
+  margin-top: 1.25rem;
+  padding: 1rem 1.1rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--sky-soft);
+}
+.push-hint.hidden { display: none; }
+.push-hint strong { display: block; margin-bottom: 0.25rem; }
+.push-hint .btn { margin-top: 0.5rem; }
+
+/* ── Vista Amigos ─────────────────────────────────────────────────────── */
+#view-amigos input[type="search"] { min-width: 240px; }
+.amigos-resultados {
+  display: grid;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+.amigos-resultados .amigo-card { padding: 0.5rem 0.75rem; }
+
+.amigos-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.5rem; }
+.amigo-card {
+  display: flex; align-items: center; gap: 0.8rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.amigo-card.compact { padding: 0.5rem 0.75rem; }
+.amigo-card .avatar {
+  width: 2.2rem; height: 2.2rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--grad-a), var(--grad-b));
+  color: var(--bg-panel);
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+.amigo-info { flex: 1; display: flex; flex-direction: column; }
+
