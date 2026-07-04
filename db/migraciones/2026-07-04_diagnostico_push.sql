@@ -18,8 +18,12 @@
 
 BEGIN;
 
+-- push_envios sólo la puede leer el worker (rol aprentix); web_user está
+-- vetado por RLS + falta de GRANT. La RPC accede como SECURITY DEFINER para
+-- poder leer el último envío del propio usuario sin abrir la tabla al
+-- resto de rutas de la API.  search_path fijado para evitar sorpresas.
 CREATE OR REPLACE FUNCTION mi_diagnostico_push() RETURNS jsonb
-LANGUAGE plpgsql STABLE AS $$
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
     v_uid          uuid := jwt_usuario_id();
     v_cfg          jsonb := push_config_worker();
@@ -85,6 +89,11 @@ BEGIN
     );
 END $$;
 
+-- Buenas prácticas de SECURITY DEFINER: quitar el EXECUTE a PUBLIC y
+-- concederlo solo al rol de la API. jwt_usuario_id() garantiza que un
+-- anónimo no obtiene nada, pero cerrar la puerta a nivel de GRANT es más
+-- barato de auditar.
+REVOKE ALL ON FUNCTION mi_diagnostico_push() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION mi_diagnostico_push() TO web_user;
 
 NOTIFY pgrst, 'reload schema';
