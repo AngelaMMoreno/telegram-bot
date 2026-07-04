@@ -72,6 +72,50 @@ function toast(msg, ms = 2500) {
   setTimeout(() => el.remove(), ms);
 }
 
+/* ── Notificaciones de logros (gamificación) ─────────────────────────
+ * Idéntico contrato que en /tests/: `logros` es el array del backend
+ * (marcar_visto RPC).  Pinta una tarjeta por logro con barra verde
+ * animándose de 0 → 100%.  Se auto-descarta y se puede cerrar tocando.
+ */
+function notificarLogros(logros) {
+  if (!Array.isArray(logros) || !logros.length) return;
+  const stack = document.getElementById('logros-notif-stack');
+  if (!stack) return;
+  const escLite = s => String(s ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+  logros.forEach((l, i) => {
+    const card = document.createElement('article');
+    card.className = 'logro-notif';
+    card.setAttribute('role', 'status');
+    card.innerHTML = `
+      <div class="logro-notif-icono" aria-hidden="true">${escLite(l.icono || '🏆')}</div>
+      <div class="logro-notif-body">
+        <div class="logro-notif-head">
+          <strong>¡Logro desbloqueado!</strong>
+          <span class="logro-notif-xp">+${Number(l.xp) || 0} XP</span>
+        </div>
+        <div class="logro-notif-desc"><strong>${escLite(l.titulo || '')}</strong>${
+          l.descripcion ? ' · ' + escLite(l.descripcion) : ''
+        }</div>
+        <div class="logro-notif-bar" role="progressbar"
+             aria-valuenow="${l.progreso || l.objetivo || 1}"
+             aria-valuemin="0"
+             aria-valuemax="${l.objetivo || 1}"><span></span></div>
+      </div>`;
+    stack.appendChild(card);
+    setTimeout(() => card.classList.add('done'), 60 + i * 120);
+    const cerrar = () => {
+      if (card._closed) return;
+      card._closed = true;
+      card.classList.add('out');
+      setTimeout(() => card.remove(), 350);
+    };
+    card.addEventListener('click', cerrar);
+    setTimeout(cerrar, 5000 + i * 400);
+  });
+}
+
 // ── Auth ────────────────────────────────────────────────────────────────────
 
 const TOKEN = getCookie(COOKIE_NAME);
@@ -231,7 +275,11 @@ function menuContextualFichero(evt, f) {
     if (a === 'ver') verFichero(f);
     else if (a === 'editar') { await abrirMarkdown(f.ruta, f.nombre); mdEntrarEdicion(); }
     else if (a === 'descargar') window.open('api/ver?ruta=' + encodeURIComponent(f.ruta), '_blank');
-    else if (a === 'visto') { await api('POST', 'api/marcar_visto', { ruta: f.ruta }); recargar(); }
+    else if (a === 'visto') {
+      const res = await api('POST', 'api/marcar_visto', { ruta: f.ruta });
+      if (res && Array.isArray(res.logros_desbloqueados)) notificarLogros(res.logros_desbloqueados);
+      recargar();
+    }
     else if (a === 'no-visto') { await api('POST', 'api/marcar_no_visto', { ruta: f.ruta }); recargar(); }
     else if (a === 'renombrar') pedirRenombrar(f);
     else if (a === 'borrar') pedirBorrar(f);
@@ -297,7 +345,10 @@ async function toggleVistoInline(item, btn, card) {
   btn.querySelector('.visto-tick-check').textContent = estabaVisto ? '' : '✓';
   card.classList.toggle('visto', !estabaVisto);
   try {
-    await api('POST', `api/${rpc}`, { ruta: item.ruta });
+    const res = await api('POST', `api/${rpc}`, { ruta: item.ruta });
+    if (res && Array.isArray(res.logros_desbloqueados)) {
+      notificarLogros(res.logros_desbloqueados);
+    }
   } catch (err) {
     // Revierte si falla.
     btn.classList.toggle('on',  estabaVisto);

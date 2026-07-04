@@ -347,11 +347,21 @@ def api_crear_md(request: Request, body: dict):
 @app.post("/api/marcar_visto")
 def api_marcar_visto(request: Request, body: dict):
     claims = require_teoria(request)
-    _pg(
+    # marcar_fichero_visto ahora devuelve { logros_desbloqueados: [...] }
+    # cuando el marcado dispara la primera vista del documento.  Reenviamos
+    # ese payload al frontend para pintar la notificación de logro.
+    r = _pg(
         claims["_token"], "marcar_fichero_visto",
         {"p_ruta": normalize_url_path(body.get("ruta", ""))},
     )
-    return {"ok": True}
+    logros = []
+    if r is not None and r.status_code == 200:
+        try:
+            data = r.json() or {}
+            logros = data.get("logros_desbloqueados") or []
+        except Exception:
+            logros = []
+    return {"ok": True, "logros_desbloqueados": logros}
 
 
 @app.post("/api/marcar_no_visto")
