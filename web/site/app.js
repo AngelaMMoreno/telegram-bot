@@ -2177,6 +2177,53 @@ async function sincronizarPushSilencioso() {
 $("#btn-activar-push")?.addEventListener("click", activarPush);
 $("#btn-desactivar-push")?.addEventListener("click", desactivarPush);
 
+/* Diagnóstico rápido: por qué el push no llega y si la tarjeta de logro
+ * renderiza. El backend `mi_diagnostico_push()` responde con las cuatro
+ * condiciones que el worker `notificador` evalúa. Con eso, un vistazo dice
+ * en qué se está atascando (mín. vencidas / ventana / cooldown / VAPID). */
+$("#btn-diagnostico-push")?.addEventListener("click", async () => {
+  const out = $("#push-diag-out");
+  if (!out) return;
+  out.classList.remove("hidden");
+  out.textContent = "Cargando…";
+  try {
+    const d = await rpc("mi_diagnostico_push");
+    const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription().catch(() => null);
+    const ck = (b) => (b ? "✅" : "❌");
+    const lineas = [
+      `${ck(!!sub)}  Este dispositivo suscrito al push del navegador`,
+      `${ck(d.suscripciones > 0)}  Suscripciones activas en BBDD: ${d.suscripciones}`,
+      `${ck(d.vapid_configurada)}  Clave VAPID pública configurada`,
+      `${ck(d.en_ventana)}  Dentro de la ventana horaria (${d.ventana_ini}h–${d.ventana_fin}h · ahora ${d.hora_actual}h ${d.zona})`,
+      `${ck(d.vencidas >= d.min_vencidas)}  Preguntas vencidas: ${d.vencidas} (mínimo para avisar: ${d.min_vencidas})`,
+      `— Último push de repaso: ${d.ultimo_push_repaso || "nunca"} (cooldown ${d.cooldown_repaso_h}h)`,
+      `— Días inactivo: ${d.dias_inactivo ?? "sin registro"} (umbral ${d.inactividad_horas}h)`,
+      `— Último push de inactividad: ${d.ultimo_push_inact || "nunca"} (cooldown ${d.cooldown_inact_h}h)`,
+    ];
+    out.textContent = lineas.join("\n");
+  } catch (e) {
+    out.textContent = "Error: " + (e.message || e);
+  }
+});
+
+$("#btn-probar-logro")?.addEventListener("click", () => {
+  // Dispara la MISMA tarjeta que dispararía un logro real, con datos falsos.
+  // Si esto se ve, el frontend está sano y el fallo está en el backend
+  // (migración no aplicada, cache de PostgREST, etc.).
+  notificarLogros([
+    { codigo: "test",  titulo: "¡Prueba superada!", descripcion: "Así se verá cuando desbloquees un logro", icono: "🏆", xp: 100, objetivo: 1, progreso: 1 },
+    { codigo: "test2", titulo: "Otro más",          descripcion: "Si se apilan varios, se muestra uno por logro", icono: "🌱", xp: 200, objetivo: 1, progreso: 1 },
+  ]);
+});
+
+// Helper de consola para pruebas manuales: window.__probarLogro()
+window.__probarLogro = (n = 1) => notificarLogros(
+  Array.from({ length: n }, (_, i) => ({
+    titulo: `Logro de prueba ${i + 1}`, descripcion: "Simulación", icono: "🏆",
+    xp: 100, objetivo: 1, progreso: 1,
+  }))
+);
+
 // El service worker avisa cuando el navegador rota la suscripción para que
 // re-registremos con las nuevas claves sin intervención del usuario.
 if ("serviceWorker" in navigator) {
