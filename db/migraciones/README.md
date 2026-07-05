@@ -20,6 +20,7 @@ sin efectos duplicados.
 | 2026-07-03  | `2026-07-03_push_notificaciones.sql`       | Tablas `push_suscripciones` y `push_envios`, RPCs de suscripción y helpers para el worker `notificador`. Semilla de config con la ventana horaria y los cooldowns. |
 | 2026-07-03  | `2026-07-03_logros_notificaciones.sql`     | `registrar_respuesta`, `finalizar_intento` y `marcar_fichero_visto` pasan a devolver `jsonb` con `logros_desbloqueados`. El motor de gamificación (`_gamif_bump_logro`, `_gamif_actualizar_racha`, los `on_*`) acumula los logros recién obtenidos para que el frontend pinte una tarjeta de notificación por logro. |
 | 2026-07-04  | `2026-07-04_diagnostico_push.sql`          | RPC `mi_diagnostico_push()` que devuelve las cuatro condiciones del worker (suscripciones activas, ventana horaria, umbral de vencidas, cooldown) para autoservicio desde la SPA. |
+| 2026-07-05  | `2026-07-05_notif_retos.sql`               | `_gamif_bump_reto` y `_gamif_bump_reto_distintos` devuelven jsonb con los datos del reto recién completado. Los `_gamif_on_*` acumulan tanto retos (`tipo:'reto'`, coral) como logros (`tipo:'logro'`, verde) en el mismo array. |
 
 ## Al aplicar cada delta
 

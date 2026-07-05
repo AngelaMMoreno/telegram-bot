@@ -90,14 +90,16 @@ function notificarLogros(logros) {
   const stack = $("#logros-notif-stack");
   if (!stack) return;
   logros.forEach((l, i) => {
+    const esReto = l.tipo === "reto";
+    const titular = esReto ? "¡Reto completado!" : "¡Logro desbloqueado!";
     const card = document.createElement("article");
-    card.className = "logro-notif";
+    card.className = "logro-notif" + (esReto ? " es-reto" : "");
     card.setAttribute("role", "status");
     card.innerHTML = `
-      <div class="logro-notif-icono" aria-hidden="true">${esc(l.icono || "🏆")}</div>
+      <div class="logro-notif-icono" aria-hidden="true">${esc(l.icono || (esReto ? "🎯" : "🏆"))}</div>
       <div class="logro-notif-body">
         <div class="logro-notif-head">
-          <strong>¡Logro desbloqueado!</strong>
+          <strong>${titular}</strong>
           <span class="logro-notif-xp">+${Number(l.xp) || 0} XP</span>
         </div>
         <div class="logro-notif-desc"><strong>${esc(l.titulo || "")}</strong>${
@@ -2207,12 +2209,13 @@ $("#btn-diagnostico-push")?.addEventListener("click", async () => {
 });
 
 $("#btn-probar-logro")?.addEventListener("click", () => {
-  // Dispara la MISMA tarjeta que dispararía un logro real, con datos falsos.
-  // Si esto se ve, el frontend está sano y el fallo está en el backend
-  // (migración no aplicada, cache de PostgREST, etc.).
+  // Dispara las MISMAS tarjetas que dispararía la app en real: una de reto
+  // (coral) y otra de logro (verde), con datos falsos. Si esto se ve, el
+  // frontend está sano y el fallo está en el backend (migración no aplicada,
+  // cache de PostgREST, etc.).
   notificarLogros([
-    { codigo: "test",  titulo: "¡Prueba superada!", descripcion: "Así se verá cuando desbloquees un logro", icono: "🏆", xp: 100, objetivo: 1, progreso: 1 },
-    { codigo: "test2", titulo: "Otro más",          descripcion: "Si se apilan varios, se muestra uno por logro", icono: "🌱", xp: 200, objetivo: 1, progreso: 1 },
+    { tipo: "reto",  titulo: "30 preguntas", descripcion: "Ejemplo de reto diario", icono: "💪", xp: 30,  objetivo: 30, progreso: 30 },
+    { tipo: "logro", titulo: "Centurión",    descripcion: "100 respuestas de por vida", icono: "💯", xp: 100, objetivo: 100, progreso: 100 },
   ]);
 });
 
