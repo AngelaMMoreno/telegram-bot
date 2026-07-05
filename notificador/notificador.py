@@ -40,6 +40,7 @@ from typing import Iterable
 import base64
 
 import psycopg
+from py_vapid import Vapid01
 from pywebpush import WebPushException, webpush
 
 
@@ -107,36 +108,79 @@ logging.basicConfig(
 log = logging.getLogger("notificador")
 
 
-def _validar_config_vapid() -> None:
+def _diagnosticar_pem(pem: str) -> str:
     """
-    Comprueba en arranque que la configuración VAPID es utilizable, para
-    fallar rápido con un mensaje claro en vez de lanzar ValueError en cada
-    push sin decir por qué.
+    Descripción no-secreta del contenido de VAPID_PRIVATE_KEY para el log de
+    arranque. Ayuda a detectar clásicos: '\\n' literales sin convertir,
+    espacios en lugar de saltos, PEM truncada, CRLF vs LF, etc.  NO imprime
+    la clave completa; sólo la longitud, tipo de saltos y las primeras y
+    últimas 30 caracteres (que son siempre los delimitadores del PEM).
     """
-    # 1) Subject: py-vapid exige mailto: o https:
+    n_nl_reales    = pem.count("\n")
+    n_cr           = pem.count("\r")
+    n_nl_literales = pem.count("\\n")
+    tiene_begin    = "-----BEGIN" in pem
+    tiene_end      = "-----END"   in pem
+    partes = [
+        f"len={len(pem)}",
+        f"BEGIN={tiene_begin}",
+        f"END={tiene_end}",
+        f"newlines_reales={n_nl_reales}",
+        f"CR={n_cr}",
+        f"'\\n'_literales={n_nl_literales}",
+        f"cabecera={pem[:32]!r}",
+        f"cola={pem[-32:]!r}",
+    ]
+    return " ".join(partes)
+
+
+def _cargar_vapid_privada(pem: str) -> Vapid01:
+    """
+    Parsea el PEM una sola vez con py-vapid; devuelve un objeto reutilizable
+    para todas las llamadas a webpush().  Esto evita que pywebpush vuelva a
+    intentar interpretar la clave como base64 raw en cada envío (donde solía
+    fallar con un ValueError críptico).
+    """
+    try:
+        return Vapid01.from_pem(pem.encode("utf-8"))
+    except Exception as e:  # noqa: BLE001
+        raise SystemExit(
+            "No he podido cargar VAPID_PRIVATE_KEY como PEM de EC P-256.\n"
+            f"Error real: {type(e).__name__}: {e}\n"
+            f"Descripción del contenido recibido: {_diagnosticar_pem(pem)}\n"
+            "Pistas:\n"
+            "  - Si 'newlines_reales' es < 4, el .env colapsó los saltos:\n"
+            "    regenera con notificador/gen_vapid.py y usa la variante (A)\n"
+            "    (una sola línea con '\\n' literales) o la (B) (base64 del PEM).\n"
+            "  - Si cabecera no empieza por '-----BEGIN PRIVATE KEY-----',\n"
+            "    algo pegó espacios o cambió el formato antes de llegar.\n"
+            "  - Si 'CR' > 0, el .env tiene CRLF; convierte a LF puro."
+        )
+
+
+def _validar_config_vapid(vapid: Vapid01) -> None:
+    """
+    Comprueba en arranque que la firma end-to-end funciona.  Cualquier fallo
+    aquí (subject inválido, clave con curva rara, etc.) mata el proceso con
+    un mensaje humano en lugar de spamear el log en cada tick.
+    """
     if not (VAPID_SUBJECT.startswith("mailto:") or VAPID_SUBJECT.startswith("https:")):
         raise SystemExit(
             f"VAPID_SUBJECT inválido ({VAPID_SUBJECT!r}). "
             "Debe empezar por 'mailto:' o 'https:'."
         )
-
-    # 2) Firma de prueba: si la clave privada no parsea, aquí sale el error
-    #    real (ValueError, ecdsa.BadDigestError, etc.), y no en cada push.
     try:
-        from py_vapid import Vapid02  # type: ignore
-        v = Vapid02.from_pem(VAPID_PRIVATE_KEY.encode("utf-8"))
-        v.sign({"sub": VAPID_SUBJECT, "aud": "https://example.org"})
+        vapid.sign({"sub": VAPID_SUBJECT, "aud": "https://example.org"})
     except Exception as e:  # noqa: BLE001
         raise SystemExit(
-            "No he podido firmar un JWT VAPID de prueba con la clave "
-            "privada configurada. Comprueba VAPID_PRIVATE_KEY (formato PEM "
-            "de EC P-256): "
+            "La clave VAPID cargó pero no firma un JWT de prueba: "
             f"{type(e).__name__}: {e}"
         )
-    log.info("VAPID validada (subject=%s)", VAPID_SUBJECT)
+    log.info("VAPID cargada y validada (subject=%s)", VAPID_SUBJECT)
 
 
-_validar_config_vapid()
+VAPID_PRIV_OBJ = _cargar_vapid_privada(VAPID_PRIVATE_KEY)
+_validar_config_vapid(VAPID_PRIV_OBJ)
 
 
 # ── Textos motivacionales ──────────────────────────────────────────────────
@@ -203,7 +247,7 @@ def enviar_push(sus: Suscripcion, payload: dict) -> tuple[bool, str | None]:
         webpush(
             subscription_info=sus.as_subscription_info(),
             data=json.dumps(payload),
-            vapid_private_key=VAPID_PRIVATE_KEY,
+            vapid_private_key=VAPID_PRIV_OBJ,
             vapid_claims={"sub": VAPID_SUBJECT},
             ttl=3600,
         )
