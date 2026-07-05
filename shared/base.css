@@ -189,6 +189,14 @@ body {
   transition: width 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) 0.15s;
 }
 .logro-notif.done .logro-notif-bar > span { width: 100%; }
+/* Retos: mismo diseño pero con acento coral en lugar de verde salvia, para
+ * que el usuario distinga de un vistazo "hito único" de "objetivo recurrente". */
+.logro-notif.es-reto { border-left-color: var(--coral); }
+.logro-notif.es-reto .logro-notif-head strong { color: var(--coral-d); }
+.logro-notif.es-reto .logro-notif-bar > span {
+  background: linear-gradient(90deg, var(--accent), var(--coral));
+  box-shadow: 0 0 6px var(--coral-soft);
+}
 @keyframes logro-notif-in {
   0%   { opacity: 0; transform: translateY(-14px) scale(0.96); }
   100% { opacity: 1; transform: translateY(0)     scale(1); }

@@ -107,6 +107,38 @@ logging.basicConfig(
 log = logging.getLogger("notificador")
 
 
+def _validar_config_vapid() -> None:
+    """
+    Comprueba en arranque que la configuración VAPID es utilizable, para
+    fallar rápido con un mensaje claro en vez de lanzar ValueError en cada
+    push sin decir por qué.
+    """
+    # 1) Subject: py-vapid exige mailto: o https:
+    if not (VAPID_SUBJECT.startswith("mailto:") or VAPID_SUBJECT.startswith("https:")):
+        raise SystemExit(
+            f"VAPID_SUBJECT inválido ({VAPID_SUBJECT!r}). "
+            "Debe empezar por 'mailto:' o 'https:'."
+        )
+
+    # 2) Firma de prueba: si la clave privada no parsea, aquí sale el error
+    #    real (ValueError, ecdsa.BadDigestError, etc.), y no en cada push.
+    try:
+        from py_vapid import Vapid02  # type: ignore
+        v = Vapid02.from_pem(VAPID_PRIVATE_KEY.encode("utf-8"))
+        v.sign({"sub": VAPID_SUBJECT, "aud": "https://example.org"})
+    except Exception as e:  # noqa: BLE001
+        raise SystemExit(
+            "No he podido firmar un JWT VAPID de prueba con la clave "
+            "privada configurada. Comprueba VAPID_PRIVATE_KEY (formato PEM "
+            "de EC P-256): "
+            f"{type(e).__name__}: {e}"
+        )
+    log.info("VAPID validada (subject=%s)", VAPID_SUBJECT)
+
+
+_validar_config_vapid()
+
+
 # ── Textos motivacionales ──────────────────────────────────────────────────
 # Deliberadamente cortos: en Android e iOS solo se ven ~2 líneas.
 
@@ -156,8 +188,18 @@ def enviar_push(sus: Suscripcion, payload: dict) -> tuple[bool, str | None]:
     """
     Devuelve (ok, motivo_si_falla). Un motivo con "gone" o "not_found" es
     señal de que la suscripción está muerta y hay que desactivarla.
+
+    El motivo incluye el mensaje real de la excepción (no solo el tipo) para
+    que se pueda diagnosticar sin abrir la sesión Python: los pywebpush /
+    py-vapid tiran ValueError con textos como "invalid_scheme", "expiration
+    too far in the future", etc. cuando la config está mal, y sin ese texto
+    todo se ve igual desde fuera.
     """
     try:
+        # vapid_claims se muta dentro de pywebpush (añade 'aud'/'exp'), y esa
+        # mutación persiste entre llamadas → después de la primera suscripción
+        # las siguientes reciben un 'aud' viejo y fallan. Le pasamos siempre
+        # un dict fresco.
         webpush(
             subscription_info=sus.as_subscription_info(),
             data=json.dumps(payload),
@@ -170,9 +212,9 @@ def enviar_push(sus: Suscripcion, payload: dict) -> tuple[bool, str | None]:
         status = getattr(e.response, "status_code", None)
         if status in (404, 410):
             return False, "gone"
-        return False, f"http_{status}" if status else "network"
+        return False, f"http_{status}: {e}" if status else f"network: {e}"
     except Exception as e:  # noqa: BLE001 — no queremos que un fallo pare el bucle
-        return False, f"error:{type(e).__name__}"
+        return False, f"error:{type(e).__name__}: {e}"
 
 
 # ── Ciclo principal ────────────────────────────────────────────────────────

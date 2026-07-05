@@ -85,14 +85,16 @@ function notificarLogros(logros) {
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
   ));
   logros.forEach((l, i) => {
+    const esReto = l.tipo === 'reto';
+    const titular = esReto ? '¡Reto completado!' : '¡Logro desbloqueado!';
     const card = document.createElement('article');
-    card.className = 'logro-notif';
+    card.className = 'logro-notif' + (esReto ? ' es-reto' : '');
     card.setAttribute('role', 'status');
     card.innerHTML = `
-      <div class="logro-notif-icono" aria-hidden="true">${escLite(l.icono || '🏆')}</div>
+      <div class="logro-notif-icono" aria-hidden="true">${escLite(l.icono || (esReto ? '🎯' : '🏆'))}</div>
       <div class="logro-notif-body">
         <div class="logro-notif-head">
-          <strong>¡Logro desbloqueado!</strong>
+          <strong>${titular}</strong>
           <span class="logro-notif-xp">+${Number(l.xp) || 0} XP</span>
         </div>
         <div class="logro-notif-desc"><strong>${escLite(l.titulo || '')}</strong>${
