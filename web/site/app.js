@@ -263,6 +263,7 @@ async function register(form) {
 
 function logout(navigateAway = true) {
   state.jwt = null; state.user = null;
+  state.progresoCache = null;
   persistSession(); applySession();
   if (navigateAway) {
     // La sesión es global; salir del stack manda a la landing para que la
@@ -369,7 +370,6 @@ const loaders = {
   upload:      async () => {},
   etiquetas:   loadEtiquetas,
   usuarios:    loadUsuarios,
-  progreso:    loadProgreso,
   retos:       loadRetos,
 };
 
@@ -562,9 +562,82 @@ function renderTests() {
       </span>
       <span class="tags">${(t.etiquetas||[]).map(e => `<span class="tag">${esc(e)}</span>`).join("")}</span>
       <span class="meta">${t.num_preguntas} preg. · ${t.num_intentos || 0} intentos</span>
+      <button class="stats-btn" data-stats="${t.id}" data-titulo="${esc(t.title)}" aria-label="Ver estadísticas" title="Ver estadísticas de este test">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="10" width="3" height="10"/><rect x="11" y="6" width="3" height="14"/><rect x="16" y="13" width="3" height="7"/></svg>
+      </button>
     </div>
   `).join("") || "<p class='muted'>Sin tests con estos filtros.</p>";
 }
+
+/* ── Estadísticas por test (modal) ──────────────────────────────────
+ * Reutiliza mi_progreso_detallado (ya devuelve intentos por test) y
+ * cachea el resultado para que abrir varios tests seguidos no repita
+ * la llamada. Se invalida en logout y al terminar un quiz. */
+async function abrirStatsTest(testId, titulo) {
+  const modal = $("#modal-stats-test");
+  const cont  = $("#modal-stats-test-body");
+  const tit   = $("#modal-stats-test-titulo");
+  if (!modal || !cont || !tit) return;
+  tit.textContent = titulo || "Estadísticas";
+  cont.innerHTML = "<p class='muted'>Cargando…</p>";
+  modal.classList.remove("hidden");
+  try {
+    if (!state.progresoCache) {
+      state.progresoCache = await rpc("mi_progreso_detallado");
+    }
+    const p = state.progresoCache;
+    const entry = (p.por_test || []).find(x => String(x.quiz_id) === String(testId));
+    const intentos = (entry && entry.intentos) || [];
+    if (!intentos.length) {
+      cont.innerHTML = `
+        <p class="muted">Todavía no has terminado ningún intento de este test.</p>
+        <p class="muted small">Empieza el test y sus estadísticas aparecerán aquí.</p>`;
+      return;
+    }
+    const notas = intentos.map(i => Number(i.nota) || 0);
+    const suma = notas.reduce((a, b) => a + b, 0);
+    const media = suma / notas.length;
+    const mejor = Math.max(...notas);
+    const ult   = notas[notas.length - 1];
+    const cell = (v, l, tone = "") => `
+      <div class="stat-tile ${tone}">
+        <div class="stat-tile-v">${v}</div>
+        <div class="stat-tile-l">${l}</div>
+      </div>`;
+    // Mini "sparkline" de barras con las últimas 12 notas.
+    const ultimos = notas.slice(-12);
+    const barras = ultimos.map(n => {
+      const alto = Math.round((Math.max(0, Math.min(10, n)) / 10) * 100);
+      return `<span class="bar" style="height:${alto}%" title="${n.toFixed(2)}"></span>`;
+    }).join("");
+    cont.innerHTML = `
+      <div class="stat-grid">
+        ${cell(intentos.length, "Veces intentado")}
+        ${cell(media.toFixed(2), "Nota media", media >= 5 ? "ok" : "warn")}
+        ${cell(ult.toFixed(2), "Última nota", ult >= 5 ? "ok" : "warn")}
+        ${cell(mejor.toFixed(2), "Mejor nota", "hi")}
+      </div>
+      <h4 class="stats-sub">Últimos intentos</h4>
+      <div class="stats-spark" aria-label="Notas de los últimos intentos">${barras}</div>
+      <p class="muted small stats-hint">Cada barra es un intento. Escala 0 – 10.</p>
+    `;
+  } catch (e) {
+    cont.innerHTML = `<p class='muted'>No se pudieron cargar las estadísticas: ${esc(e.message)}</p>`;
+  }
+}
+function cerrarStatsTest() {
+  $("#modal-stats-test")?.classList.add("hidden");
+}
+$("#tests-list")?.addEventListener("click", (e) => {
+  const btn = e.target.closest(".stats-btn");
+  if (!btn) return;
+  e.stopPropagation();  // que no dispare la navegación al detalle
+  abrirStatsTest(btn.dataset.stats, btn.dataset.titulo);
+});
+$("#modal-stats-test-close")?.addEventListener("click", cerrarStatsTest);
+$("#modal-stats-test")?.addEventListener("click", (e) => {
+  if (e.target.id === "modal-stats-test") cerrarStatsTest();
+});
 
 /* Listeners de los nuevos controles */
 $("#tests-vis-chips").addEventListener("click", e => {
@@ -1140,6 +1213,9 @@ async function finalizarQuiz() {
     <div class="stat-card"><div class="v">${nota.toFixed(2)}</div><div class="l">Nota</div></div>
   `;
   state.quiz = null;
+  // Las estadísticas por test cachean mi_progreso_detallado; al terminar
+  // un intento, invalidamos para reflejar la última nota inmediatamente.
+  state.progresoCache = null;
   navigate("quiz-summary");
 }
 
@@ -1506,25 +1582,6 @@ $("#quiz-tag-add").addEventListener("keydown", async e => {
   } catch (err) { toast(err.message); }
 });
 
-
-/* ── Progreso ── */
-async function loadProgreso() {
-  const p = await rpc("mi_progreso_detallado");
-  $("#progreso-stats").innerHTML = `
-    <div class="stat-card"><div class="v">${p.respondidas_hoy}</div><div class="l">Hoy</div></div>
-    <div class="stat-card"><div class="v">${Number(p.nota_general).toFixed(2)}</div><div class="l">Nota</div></div>
-    <div class="stat-card"><div class="v">${p.total_respondidas}</div><div class="l">Total respondidas</div></div>
-    <div class="stat-card"><div class="v">${p.preguntas_falladas}</div><div class="l">Fallos pendientes</div></div>
-  `;
-  $("#progreso-por-test").innerHTML = (p.por_test || []).map(t => {
-    const ult = t.intentos[t.intentos.length - 1];
-    return `<li>
-      <strong>${esc(t.titulo)}</strong>
-      &nbsp;·&nbsp; ${t.intentos.length} intento(s)
-      &nbsp;·&nbsp; última nota: <strong>${Number(ult?.nota || 0).toFixed(2)}</strong>
-    </li>`;
-  }).join("") || "<p class='muted'>Sin tests terminados aún.</p>";
-}
 
 /* ── Usuarios (solo admin) ──────────────────────────────────────────────── */
 async function loadUsuarios() {

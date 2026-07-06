@@ -417,15 +417,18 @@
     <div id="logros-list"  class="logros-grid hidden"></div>
   </section>
 
-  <!-- Progreso -->
-  <section id="view-progreso" class="view">
-    <header class="view-header"><h2>Mi progreso</h2></header>
-    <div id="progreso-stats" class="stats-grid"></div>
-    <h3>Por test</h3>
-    <ul id="progreso-por-test" class="por-test"></ul>
-  </section>
-
 </main>
+
+<!-- Modal de estadísticas por test (sustituye a la vieja vista "Progreso") -->
+<div id="modal-stats-test" class="modal hidden">
+  <div class="modal-card">
+    <header class="modal-header">
+      <h3 id="modal-stats-test-titulo">Estadísticas</h3>
+      <button class="btn btn-ghost" id="modal-stats-test-close" aria-label="Cerrar">✕</button>
+    </header>
+    <div class="modal-body" id="modal-stats-test-body"></div>
+  </div>
+</div>
 
 <!-- Modal de borrado de test -->
 <div id="modal-borrar-test" class="modal hidden">
