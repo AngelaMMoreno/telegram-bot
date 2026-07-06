@@ -1082,3 +1082,28 @@ button.check-item { background: transparent; }
   flex: 0 0 auto;
 }
 .check-item span { min-width: 0; }
+
+/* ── Modal BULK: picker de tests con filtros ─────────────────────────── */
+.modal-bulk-card { width: min(720px, 96vw); }
+.bulk-body { display: flex; flex-direction: column; gap: 0.6rem; }
+.bulk-toolbar {
+  display: grid; grid-template-columns: 1fr auto; gap: 0.5rem;
+}
+.bulk-toolbar input[type=search] {
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: 0.95rem; background: var(--bg-panel); color: var(--txt);
+}
+.bulk-toolbar input[type=search]:focus {
+  outline: none; border-color: var(--pri);
+}
+.bulk-actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.bulk-list {
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+}
+.bulk-list .check-item {
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+}
+.bulk-list .check-item strong { display: block; }
