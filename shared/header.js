@@ -35,6 +35,10 @@
  *   active         "tests" | "teoria" (pestaña marcada como activa).
  *   nav-items      JSON del bottom-nav móvil.
  *   more-items     JSON del sheet secundario.
+ *   admin-items    JSON del sheet de administración. Solo visible para
+ *                  usuarios con permiso de gestión o admin. Es común a
+ *                  todas las apps: cada item declara su acción (view
+ *                  local o href cross-app tipo /tests/?atajo=…).
  *   teoria-hidden  Oculta el link a Teoría hasta saber si el usuario
  *                  tiene el permiso (lo levanta el app.js).
  *   start-hidden   Empieza oculto (el app.js lo revela tras login).
@@ -65,6 +69,7 @@
     logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
     gear:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
     swap:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 3 21 7 17 11"/><path d="M3 7h18"/><polyline points="7 21 3 17 7 13"/><path d="M21 17H3"/></svg>',
+    shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L4 5v7c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V5l-8-3z"/><polyline points="9 12 11 14 15 10"/></svg>',
   };
 
   function icon(name) { return ICONS[name] || ICONS.more; }
@@ -136,6 +141,7 @@
 
       const navItems = parseItems(this.getAttribute('nav-items'));
       const moreItems = parseItems(this.getAttribute('more-items'));
+      const adminItems = parseItems(this.getAttribute('admin-items'));
       const activeKey = this.getAttribute('active-key') || (active === 'tests' ? 'home' : null);
 
       this.innerHTML = `
@@ -194,6 +200,13 @@
                 <span class="sheet-row-ico">${icon('gear')}</span>
                 <span class="sheet-row-label">Configuración</span>
               </button>
+              <!-- Fila destacada de admin: sólo si el usuario tiene permiso
+                   (body.puede-gestionar o body.es-admin). Ver CSS. -->
+              <button class="sheet-row admin-row" id="btn-admin-panel" type="button" data-more-sheet="admin-sheet">
+                <span class="sheet-row-ico">${icon('shield')}</span>
+                <span class="sheet-row-label">Panel de administración</span>
+                <span class="sheet-row-badge">ADMIN</span>
+              </button>
               <button class="sheet-row danger" id="btn-logout" type="button">
                 <span class="sheet-row-ico">${icon('logout')}</span>
                 <span class="sheet-row-label">Cerrar sesión</span>
@@ -202,7 +215,26 @@
           </div>
         </div>
 
-        <!-- Sheet "Más": opciones secundarias y admin -->
+        <!-- Sheet Admin: solo con permiso. Común a tests y teoría. -->
+        <div class="aprentix-sheet hidden" id="admin-sheet" role="dialog" aria-label="Panel de administración">
+          <div class="aprentix-sheet-backdrop" data-sheet-close="1"></div>
+          <div class="aprentix-sheet-card admin-card" role="document">
+            <header class="sheet-head">
+              <div class="sheet-head-txt">
+                <strong>Panel de administración</strong>
+                <span class="sheet-mode-label">Herramientas restringidas por rol</span>
+              </div>
+              <button class="sheet-close" data-sheet-close="1" aria-label="Cerrar">✕</button>
+            </header>
+            <div class="sheet-section more-list admin-list">
+              ${adminItems.length
+                ? adminItems.map(renderMoreItem).join('')
+                : '<p class="muted small" style="grid-column:1/-1; margin:0">Sin herramientas disponibles.</p>'}
+            </div>
+          </div>
+        </div>
+
+        <!-- Sheet "Más": opciones secundarias -->
         <div class="aprentix-sheet hidden" id="more-sheet" role="dialog" aria-label="Más opciones">
           <div class="aprentix-sheet-backdrop" data-sheet-close="1"></div>
           <div class="aprentix-sheet-card" role="document">
@@ -272,6 +304,15 @@
           e.preventDefault();
           openSheet('more-sheet');
         });
+      });
+
+      // Fila "Panel de admin" en el sheet del usuario → sheet admin.
+      // Cerramos primero el sheet del usuario para transición limpia.
+      this.querySelector('#btn-admin-panel')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        const userSheet = this.querySelector('#user-sheet');
+        if (userSheet) closeSheet(userSheet);
+        openSheet('admin-sheet');
       });
 
       // Items con data-nav-event → CustomEvent para el app.

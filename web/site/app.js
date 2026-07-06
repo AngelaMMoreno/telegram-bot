@@ -2057,6 +2057,14 @@ function atajoAVista(a) {
     tests:     "tests",
     home:      "home",
     retos:     "retos",
+    // Panel admin (accesible desde teoría vía /tests/?atajo=…): abrimos
+    // la vista correspondiente y confiamos en que el guardia de rol de
+    // cada vista bloquee al usuario que no le corresponda.
+    usuarios:  "usuarios",
+    etiquetas: "etiquetas",
+    upload:    "upload",
+    buscar:    "buscar",
+    favoritas: "favoritas",
   })[a] || null;
 }
 

@@ -480,5 +480,60 @@ body:not(.puede-gestionar) .bnav-item.gestion { display: none; }
 body:not(.es-admin) .more-item.solo-admin,
 body:not(.es-admin) .bnav-item.solo-admin { display: none; }
 
+/* Fila "Panel de admin" en el sheet del usuario: destacada con acento
+ * cálido para diferenciarla del resto y aviso ADMIN a la derecha.
+ * Se oculta si el usuario no es gestor ni admin. */
+body:not(.puede-gestionar):not(.es-admin) .sheet-row.admin-row {
+  display: none;
+}
+.sheet-row.admin-row {
+  background: linear-gradient(90deg, var(--accent-soft), var(--pri-soft));
+  border: 1.5px dashed var(--accent);
+  color: var(--accent-d);
+  margin: 4px 0;
+  font-weight: 700;
+}
+.sheet-row.admin-row:hover {
+  background: linear-gradient(90deg, var(--accent-soft), var(--coral-soft, #ffe0dc));
+  color: var(--accent-d);
+  border-color: var(--coral, #ea7a63);
+}
+.sheet-row.admin-row .sheet-row-ico { color: var(--accent-d); }
+.sheet-row-badge {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--coral, #ea7a63);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+/* Sheet de admin: mantiene la grid de items, con un aire más "serio". */
+.admin-card { border-top: 4px solid var(--coral, #ea7a63); }
+.admin-list .more-item {
+  /* Todos los items del panel admin salen ya destacados: no hace falta
+   * marcar "gestion" o "solo-admin" para diferenciar del resto. */
+  background: linear-gradient(135deg, var(--accent-soft), var(--pri-soft));
+  border-color: var(--accent);
+  color: var(--accent-d);
+}
+.admin-list .more-item:hover {
+  background: linear-gradient(135deg, var(--accent-soft), var(--coral-soft, #ffe0dc));
+  border-color: var(--coral, #ea7a63);
+  color: var(--coral-d, #b0432b);
+}
+.admin-list .more-item.solo-admin::after { content: "ADMIN"; }
+.admin-list .more-item.gestion::after {
+  content: "GESTIÓN";
+  position: absolute; top: 6px; right: 6px;
+  font-size: 8px; font-weight: 900; letter-spacing: 0.12em;
+  padding: 2px 5px;
+  background: var(--pri);
+  color: #fff;
+  border-radius: 999px;
+}
+
 /* Cuando hay un sheet abierto, congela el scroll del body. */
 body.sheet-open { overflow: hidden; }

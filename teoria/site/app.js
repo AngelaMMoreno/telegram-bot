@@ -128,6 +128,14 @@ const CLAIMS = TOKEN ? parseJwt(TOKEN) : null;
 if (CLAIMS && (!CLAIMS.roles || (!CLAIMS.roles.includes('teoria') && !CLAIMS.roles.includes('admin')))) {
   location.href = LANDING_URL;
 }
+// Marca desde el arranque si el usuario es admin, para que el sheet del
+// avatar muestre "Panel de admin" sin esperar al primer listar(). El bit
+// "puede-gestionar" seguirá refrescándose por ruta cuando llega listar().
+if (CLAIMS && Array.isArray(CLAIMS.roles)) {
+  const esAdmin = CLAIMS.roles.includes('admin');
+  document.body.classList.toggle('es-admin', esAdmin);
+  if (esAdmin) document.body.classList.add('puede-gestionar');
+}
 
 async function api(method, url, body, isForm = false) {
   const opts = {
