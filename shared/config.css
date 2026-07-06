@@ -106,3 +106,49 @@
   color: var(--txt-soft);
   margin-top: 0.3rem;
 }
+
+/*
+ * Modal común de configuración: la landing, tests y teoría tienen
+ * cada uno su propio `.modal`, pero el modal que inyecta shared/config.js
+ * debe verse igual siempre. Cualifica por #aprentix-config-modal e
+ * #aprentix-reset-modal para no pisar los estilos locales de otros
+ * modales de la app.
+ */
+#aprentix-config-modal.modal,
+#aprentix-reset-modal.modal {
+  position: fixed; inset: 0;
+  background: rgba(20, 36, 29, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  z-index: 500;
+}
+#aprentix-config-modal.modal.hidden,
+#aprentix-reset-modal.modal.hidden { display: none; }
+#aprentix-config-modal .modal-card,
+#aprentix-reset-modal .modal-card {
+  background: var(--card, var(--bg-panel));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl, 18px);
+  width: 100%; max-width: 560px;
+  max-height: 92vh; overflow-y: auto;
+  box-shadow: var(--shadow-lg, 0 12px 40px rgba(0, 0, 0, 0.25));
+  color: var(--text, var(--txt));
+}
+#aprentix-config-modal .modal-header,
+#aprentix-reset-modal .modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+#aprentix-config-modal .modal-header h3,
+#aprentix-reset-modal .modal-header h3 { margin: 0; font-size: 17px; }
+#aprentix-config-modal .modal-body,
+#aprentix-reset-modal .modal-body {
+  padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+#aprentix-config-modal .modal-actions,
+#aprentix-reset-modal .modal-actions {
+  display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;
+}
+.push-actions { display: flex; gap: 8px; flex-wrap: wrap; }

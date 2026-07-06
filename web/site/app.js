@@ -12,7 +12,6 @@ const COOKIE_HORAS = 12;
 // navegar a "/" (mismo origen). Mantener una URL absoluta rompe la sensación
 // de app unificada y hace que la PWA salga de scope.
 const LANDING_URL = "/";
-const THEME_COOKIE = "aprentix_theme";
 
 function cookieDomain() {
   // '.aprentix.es' desde cualquier subdominio; vacío en localhost.
@@ -240,6 +239,9 @@ function applySession() {
     const puedeTeoria = roles.includes("admin") || roles.includes("teoria");
     const navT = $("#nav-teoria");
     if (navT) navT.hidden = !puedeTeoria;
+    // Recuerda que el último modo fue "tests": la landing lo usa para
+    // volver aquí directamente en la próxima visita.
+    setCookie("aprentix_ultimo_modo", "tests", 365 * 24);
   }
 }
 
@@ -729,6 +731,9 @@ $("#tests-pagination").addEventListener("click", e => {
 });
 
 $("#tests-list").addEventListener("click", e => {
+  // El botón de estadísticas está dentro de .test-row; NO debe abrir el
+  // detalle del test — se maneja en su propio listener, aquí bailamos.
+  if (e.target.closest(".stats-btn")) return;
   const star = e.target.closest("[data-fav]");
   if (star) {
     rpc("toggle_favorita_test", { p_test_id: star.dataset.fav })
@@ -1794,23 +1799,6 @@ $("#modal-usuario-close").addEventListener("click", cerrarModalUsuario);
  * de forma que los aciertos NO reprograman la caja).
  */
 
-const RITMO_LABELS = {
-  intensivo: { emoji: "🔥", nombre: "Intensivo",
-               desc: "Para semanas previas a examen. Verás preguntas nuevas varias veces el mismo día." },
-  normal:    { emoji: "🎯", nombre: "Normal",
-               desc: "Leitner clásico. Para aprendizaje continuo." },
-  relajado:  { emoji: "🌱", nombre: "Relajado",
-               desc: "Mantenimiento. Para no oxidarte cuando ya te sabes el temario." },
-};
-
-function fmtHoras(h) {
-  if (h < 24) return h + " h";
-  const d = Math.round(h / 24);
-  if (d < 30) return d + " d";
-  const m = Math.round(d / 30);
-  return m + " mes" + (m > 1 ? "es" : "");
-}
-
 function fmtFechaRelativa(iso) {
   if (!iso) return "—";
   const ms = new Date(iso).getTime() - Date.now();
@@ -2002,121 +1990,19 @@ async function refrescarBadgeTest(testId) {
   };
 })();
 
-/* ── Tema (compartido en .aprentix.es) ────────────────────────────────── */
-function currentTheme() {
-  const c = getCookie(THEME_COOKIE);
-  if (c === "dark" || c === "light" || c === "auto") return c;
-  return "auto";
-}
-function effectiveTheme(t) {
-  if (t === "auto") return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-  return t;
-}
-function applyTheme(t) {
-  const eff = effectiveTheme(t);
-  if (eff === "dark") document.documentElement.setAttribute("data-theme", "dark");
-  else document.documentElement.removeAttribute("data-theme");
-}
-function setThemePref(t) {
-  setCookie(THEME_COOKIE, t, 365 * 24);
-  applyTheme(t);
-}
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-  if (currentTheme() === "auto") applyTheme("auto");
-});
-applyTheme(currentTheme());
-
-/* ── Configuración (apariencia + ritmo + reset) ───────────────────────── */
-async function abrirModalConfig() {
-  // Tema
-  const t = currentTheme();
-  $$('input[name="theme"]').forEach(r => { r.checked = (r.value === t); });
-  // Ritmo
-  await cargarRitmoOpcionesConfig();
-  // Estado de las notificaciones push
-  await refrescarEstadoPush();
-  $("#modal-config").classList.remove("hidden");
-}
-function cerrarModalConfig() { $("#modal-config").classList.add("hidden"); }
-
-async function cargarRitmoOpcionesConfig() {
-  const cont = $("#ritmo-opciones");
-  cont.innerHTML = "<p class='muted small'>Cargando…</p>";
-  try {
-    const d = await rpc("mi_ritmo_repaso");
-    const actual = d.ritmo || "normal";
-    const curvas = d.curvas || {};
-    cont.innerHTML = ["intensivo", "normal", "relajado"].map(k => {
-      const meta = RITMO_LABELS[k];
-      const horas = curvas[k] || [];
-      const preview = horas.map(fmtHoras).join(" → ");
-      return `
-        <div class="ritmo-card ${k===actual?"active":""}" data-ritmo="${k}">
-          <div class="titulo">${meta.emoji} ${meta.nombre} ${k===actual?"<span class='muted small'>(actual)</span>":""}</div>
-          <div class="muted small">${meta.desc}</div>
-          <div class="curva">${esc(preview)}</div>
-        </div>`;
-    }).join("");
-  } catch (e) {
-    cont.innerHTML = `<p class='muted small'>No se pudo cargar el ritmo: ${esc(e.message)}</p>`;
-  }
-}
-
-// El botón de configuración vive dentro del sheet del usuario que renderiza
-// <aprentix-header>. El avatar (#btn-user-menu) NO abre config directamente:
-// abre el sheet, y desde ahí el usuario elige Configuración.
-$("#btn-config")?.addEventListener("click", abrirModalConfig);
-$("#modal-config-close")?.addEventListener("click", cerrarModalConfig);
-$("#btn-config-cerrar")?.addEventListener("click", cerrarModalConfig);
-$("#modal-config")?.addEventListener("click", e => {
-  if (e.target.id === "modal-config") cerrarModalConfig();
-});
-
-$$('input[name="theme"]').forEach(r => {
-  r.addEventListener("change", () => {
-    setThemePref(r.value);
-    toast(`Modo ${r.value === "dark" ? "oscuro" : r.value === "light" ? "claro" : "automático"} activado`);
+/* ── Configuración unificada ─────────────────────────────────────────────
+ * La configuración (apariencia + notificaciones + ritmo + reset) la
+ * gestiona shared/config.js: es el mismo modal en landing, tests y
+ * teoría. Aquí solo la inicializamos y sincronizamos la home tras un
+ * reset. AprentixConfig lee/escribe la cookie aprentix_theme.
+ */
+if (window.AprentixConfig) {
+  window.AprentixConfig.init({ token: () => state.jwt, api: "/tests/api" });
+} else {
+  window.addEventListener("load", () => {
+    window.AprentixConfig?.init({ token: () => state.jwt, api: "/tests/api" });
   });
-});
-
-$("#ritmo-opciones")?.addEventListener("click", async e => {
-  const card = e.target.closest("[data-ritmo]");
-  if (!card) return;
-  try {
-    await rpc("set_ritmo_repaso", { p_ritmo: card.dataset.ritmo });
-    toast(`Ritmo cambiado a ${RITMO_LABELS[card.dataset.ritmo].nombre}`);
-    cargarRitmoOpcionesConfig();
-  } catch (err) { toast(err.message); }
-});
-
-/* ── Reset de repasos ───────────────────────────────────────────────────── */
-$("#btn-resetear-repasos")?.addEventListener("click", () => {
-  $("#modal-reset-repasos").classList.remove("hidden");
-});
-$("#btn-reset-cancelar")?.addEventListener("click", () => {
-  $("#modal-reset-repasos").classList.add("hidden");
-});
-$("#btn-reset-confirmar")?.addEventListener("click", async (e) => {
-  const btn = e.currentTarget;
-  btn.disabled = true;
-  try {
-    const r = await rpc("resetear_mis_repasos", { p_test_id: null });
-    const n = r && typeof r.borradas === "number" ? r.borradas : 0;
-    toast(n === 0
-      ? "No había repasos que borrar"
-      : `Repaso reseteado (${n} pregunta${n === 1 ? "" : "s"})`);
-    $("#modal-reset-repasos").classList.add("hidden");
-    $("#modal-config").classList.add("hidden");
-    // Refresca la home si estamos ahí para que se actualicen los contadores.
-    if ($("#view-home")?.classList.contains("active")) {
-      navigate("home");
-    }
-  } catch (err) {
-    toast(err.message);
-  } finally {
-    btn.disabled = false;
-  }
-});
+}
 
 
 /* ── Cambios de sesión en otra pestaña ───────────────────────────────────
@@ -2212,6 +2098,13 @@ async function cargarMisOposiciones() {
 function refrescarHintOposicion() {
   const el = document.getElementById("sheet-oposicion-actual");
   if (el) el.textContent = state.currentOposicionNombre || "Todas";
+  // Cabecera de Home: chip con la oposición actual + acceso rápido a cambiar.
+  const chip = document.getElementById("ap-op-actual");
+  if (chip) chip.textContent = state.currentOposicionNombre || "Todas";
+  const btnHome = document.getElementById("btn-cambiar-oposicion-home");
+  // Solo tiene sentido si el usuario tiene más de una oposición para elegir.
+  const varias = (state.misOposicionesCache || []).length > 1;
+  if (btnHome) btnHome.hidden = !varias;
 }
 
 function abrirSelectorOposicion() {
@@ -2249,6 +2142,7 @@ $("#elegir-oposicion-list")?.addEventListener("click", (e) => {
 });
 
 document.getElementById("btn-cambiar-oposicion")?.addEventListener("click", abrirSelectorOposicion);
+document.getElementById("btn-cambiar-oposicion-home")?.addEventListener("click", abrirSelectorOposicion);
 
 /* ── Vista Oposiciones (admin) ──────────────────────────────────────────── */
 loaders.oposiciones = loadOposicionesAdmin;
@@ -2533,6 +2427,30 @@ function pushSoportado() {
          "Notification"   in window;
 }
 
+// La suscripción y el toggle Activar/Desactivar los pinta shared/config.js.
+// Aquí sólo mantenemos la sincronización silenciosa: si el navegador ya
+// tenía una suscripción de una sesión anterior, la reenviamos al backend.
+async function enviarSubAlBackend(sub) {
+  const j = sub.toJSON();
+  await rpc("guardar_push_suscripcion", {
+    p_endpoint: j.endpoint,
+    p_p256dh:   j.keys?.p256dh || "",
+    p_auth:     j.keys?.auth   || "",
+    p_ua:       navigator.userAgent,
+    p_tz:       Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Madrid",
+  });
+}
+
+async function sincronizarPushSilencioso() {
+  if (!pushSoportado()) return;
+  if (Notification.permission !== "granted") return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) await enviarSubAlBackend(sub);
+  } catch (_) { /* silencioso a propósito */ }
+}
+
 function atajoAVista(a) {
   return ({
     repasar:   "tests",     // la vista Tests trae el botón "Repasar todo"
@@ -2559,160 +2477,6 @@ function b64urlToBytes(s) {
   for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
   return out;
 }
-
-async function obtenerSubscripcion(reg) {
-  return (await reg.pushManager.getSubscription()) || null;
-}
-
-async function suscribir(reg) {
-  const cfg = await rpc("push_config_publica");
-  if (!cfg?.vapid_public_key) {
-    throw new Error("El servidor aún no tiene una clave VAPID configurada.");
-  }
-  return reg.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: b64urlToBytes(cfg.vapid_public_key),
-  });
-}
-
-async function enviarSubAlBackend(sub) {
-  const j = sub.toJSON();
-  await rpc("guardar_push_suscripcion", {
-    p_endpoint: j.endpoint,
-    p_p256dh:   j.keys?.p256dh || "",
-    p_auth:     j.keys?.auth   || "",
-    p_ua:       navigator.userAgent,
-    p_tz:       Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Madrid",
-  });
-}
-
-async function activarPush() {
-  if (!pushSoportado()) {
-    return toast("Este navegador no soporta notificaciones. Prueba a instalar la app desde el navegador.");
-  }
-  try {
-    const permiso = await Notification.requestPermission();
-    if (permiso !== "granted") {
-      return toast("Permiso de notificaciones denegado.");
-    }
-    const reg = await navigator.serviceWorker.ready;
-    let sub = await obtenerSubscripcion(reg);
-    if (!sub) sub = await suscribir(reg);
-    await enviarSubAlBackend(sub);
-    toast("🔔 Notificaciones activadas");
-    await refrescarEstadoPush();
-  } catch (e) {
-    toast("No se pudieron activar: " + (e.message || e));
-  }
-}
-
-async function desactivarPush() {
-  try {
-    const reg = await navigator.serviceWorker.ready;
-    const sub = await obtenerSubscripcion(reg);
-    if (sub) {
-      try { await rpc("borrar_push_suscripcion", { p_endpoint: sub.endpoint }); } catch (_) {}
-      await sub.unsubscribe();
-    }
-    toast("🔕 Notificaciones desactivadas");
-    await refrescarEstadoPush();
-  } catch (e) {
-    toast("No se pudieron desactivar: " + (e.message || e));
-  }
-}
-
-async function refrescarEstadoPush() {
-  const wrap = $("#config-push-wrap");
-  if (!wrap) return;
-  const btnOn   = $("#btn-activar-push");
-  const btnOff  = $("#btn-desactivar-push");
-  const status  = $("#push-status");
-
-  if (!pushSoportado()) {
-    wrap.classList.add("push-nosoporte");
-    btnOn.disabled = true;
-    btnOn.textContent = "No disponible en este navegador";
-    btnOff.classList.add("hidden");
-    status.classList.remove("hidden");
-    status.textContent = "En iOS, instala primero la app desde Safari (Compartir → Añadir a pantalla de inicio) para poder activarlas.";
-    return;
-  }
-
-  const permiso = Notification.permission;
-  const reg     = await navigator.serviceWorker.ready;
-  const sub     = await obtenerSubscripcion(reg);
-  const activa  = permiso === "granted" && !!sub;
-
-  btnOn.disabled     = false;
-  btnOn.classList.toggle("hidden", activa);
-  btnOff.classList.toggle("hidden", !activa);
-
-  status.classList.remove("hidden");
-  if (permiso === "denied") {
-    status.textContent = "Están bloqueadas en el navegador; cámbialo en el candado de la barra de direcciones.";
-  } else if (activa) {
-    status.textContent = "Activas en este dispositivo.";
-  } else {
-    status.textContent = "";
-    status.classList.add("hidden");
-  }
-}
-
-// Ejecuta al arrancar si el usuario tiene sesión: si el navegador ya tiene
-// una suscripción push, la reenvía al backend por si es la primera vez que
-// entra en este subdominio o si perdimos la fila (p.ej. reset de BBDD).
-async function sincronizarPushSilencioso() {
-  if (!pushSoportado()) return;
-  if (Notification.permission !== "granted") return;
-  try {
-    const reg = await navigator.serviceWorker.ready;
-    const sub = await obtenerSubscripcion(reg);
-    if (sub) await enviarSubAlBackend(sub);
-  } catch (_) { /* silencioso a propósito */ }
-}
-
-$("#btn-activar-push")?.addEventListener("click", activarPush);
-$("#btn-desactivar-push")?.addEventListener("click", desactivarPush);
-
-/* Diagnóstico rápido: por qué el push no llega y si la tarjeta de logro
- * renderiza. El backend `mi_diagnostico_push()` responde con las cuatro
- * condiciones que el worker `notificador` evalúa. Con eso, un vistazo dice
- * en qué se está atascando (mín. vencidas / ventana / cooldown / VAPID). */
-$("#btn-diagnostico-push")?.addEventListener("click", async () => {
-  const out = $("#push-diag-out");
-  if (!out) return;
-  out.classList.remove("hidden");
-  out.textContent = "Cargando…";
-  try {
-    const d = await rpc("mi_diagnostico_push");
-    const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription().catch(() => null);
-    const ck = (b) => (b ? "✅" : "❌");
-    const lineas = [
-      `${ck(!!sub)}  Este dispositivo suscrito al push del navegador`,
-      `${ck(d.suscripciones > 0)}  Suscripciones activas en BBDD: ${d.suscripciones}`,
-      `${ck(d.vapid_configurada)}  Clave VAPID pública configurada`,
-      `${ck(d.en_ventana)}  Dentro de la ventana horaria (${d.ventana_ini}h–${d.ventana_fin}h · ahora ${d.hora_actual}h ${d.zona})`,
-      `${ck(d.vencidas >= d.min_vencidas)}  Preguntas vencidas: ${d.vencidas} (mínimo para avisar: ${d.min_vencidas})`,
-      `— Último push de repaso: ${d.ultimo_push_repaso || "nunca"} (cooldown ${d.cooldown_repaso_h}h)`,
-      `— Días inactivo: ${d.dias_inactivo ?? "sin registro"} (umbral ${d.inactividad_horas}h)`,
-      `— Último push de inactividad: ${d.ultimo_push_inact || "nunca"} (cooldown ${d.cooldown_inact_h}h)`,
-    ];
-    out.textContent = lineas.join("\n");
-  } catch (e) {
-    out.textContent = "Error: " + (e.message || e);
-  }
-});
-
-$("#btn-probar-logro")?.addEventListener("click", () => {
-  // Dispara las MISMAS tarjetas que dispararía la app en real: una de reto
-  // (coral) y otra de logro (verde), con datos falsos. Si esto se ve, el
-  // frontend está sano y el fallo está en el backend (migración no aplicada,
-  // cache de PostgREST, etc.).
-  notificarLogros([
-    { tipo: "reto",  titulo: "30 preguntas", descripcion: "Ejemplo de reto diario", icono: "💪", xp: 30,  objetivo: 30, progreso: 30 },
-    { tipo: "logro", titulo: "Centurión",    descripcion: "100 respuestas de por vida", icono: "💯", xp: 100, objetivo: 100, progreso: 100 },
-  ]);
-});
 
 // Helper de consola para pruebas manuales: window.__probarLogro()
 window.__probarLogro = (n = 1) => notificarLogros(

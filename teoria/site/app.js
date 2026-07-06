@@ -399,6 +399,7 @@ async function cargar(ruta) {
   document.title = `Aprentix — Teoría — ${data.ruta}`;
   renderBreadcrumb(data.breadcrumb, data.ruta);
   renderGrid(data);
+  pintarHomeHeader();
 }
 
 function navegar(ruta) {
@@ -1044,26 +1045,20 @@ async function subirFicheros(files) {
   } catch (e) { toast(`⚠️ ${e.message}`); }
 }
 
-// ── Theme (compartido en .aprentix.es) ─────────────────────────────────────
+// ── Configuración unificada (shared/config.js) ─────────────────────────────
+// El modal (apariencia + notificaciones + ritmo + reset) es el mismo en
+// landing, tests y teoría. Aquí solo delegamos al módulo compartido.
+if (window.AprentixConfig) {
+  window.AprentixConfig.init({ token: () => TOKEN, api: '/api' });
+} else {
+  window.addEventListener('load', () => {
+    window.AprentixConfig?.init({ token: () => TOKEN, api: '/api' });
+  });
+}
 
-const THEME_COOKIE = 'aprentix_theme';
-
-function currentTheme() {
-  const c = getCookie(THEME_COOKIE);
-  if (c === 'dark' || c === 'light' || c === 'auto') return c;
-  return 'auto';
-}
-function effectiveTheme(t) {
-  if (t === 'auto') return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  return t;
-}
-function applyTheme(t) {
-  const eff = effectiveTheme(t);
-  if (eff === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
-  else document.documentElement.removeAttribute('data-theme');
-}
-function setTheme(t) {
-  // Cookie compartida con el resto de subdominios de aprentix.es
+// Guarda que el último modo elegido por el usuario es "teoria". La landing
+// lo lee para redirigirle aquí directamente en la próxima visita.
+(function guardarUltimoModo() {
   const host = location.hostname;
   const parent = host.split('.').slice(-2).join('.');
   const attrs = [
@@ -1071,37 +1066,8 @@ function setTheme(t) {
     location.protocol === 'https:' ? 'Secure' : '',
     parent ? `Domain=.${parent}` : '',
   ].filter(Boolean);
-  document.cookie = `${THEME_COOKIE}=${t}; ${attrs.join('; ')}`;
-  applyTheme(t);
-}
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-  if (currentTheme() === 'auto') applyTheme('auto');
-});
-applyTheme(currentTheme());
-
-// ── Config modal ───────────────────────────────────────────────────────────
-
-const modalConfig = document.getElementById('modal-config');
-function abrirModalConfig() {
-  const t = currentTheme();
-  document.querySelectorAll('input[name="theme"]').forEach(r => { r.checked = (r.value === t); });
-  modalConfig.classList.remove('hidden');
-}
-function cerrarModalConfig() { modalConfig.classList.add('hidden'); }
-document.getElementById('btn-config')?.addEventListener('click', abrirModalConfig);
-// El botón del avatar (#btn-user-menu) abre el sheet que renderiza
-// <aprentix-header>; NO abre config directamente.
-document.getElementById('btn-config-cerrar')?.addEventListener('click', cerrarModalConfig);
-document.getElementById('btn-config-cerrar-x')?.addEventListener('click', cerrarModalConfig);
-modalConfig?.addEventListener('click', (e) => {
-  if (e.target === modalConfig) cerrarModalConfig();
-});
-document.querySelectorAll('input[name="theme"]').forEach(r => {
-  r.addEventListener('change', () => {
-    setTheme(r.value);
-    toast(`Modo ${r.value === 'dark' ? 'oscuro' : r.value === 'light' ? 'claro' : 'automático'} activado`);
-  });
-});
+  document.cookie = `aprentix_ultimo_modo=teoria; ${attrs.join('; ')}`;
+})();
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 
@@ -1332,6 +1298,69 @@ function guardarOposicionPersistida(op) {
 function refrescarHintOposicion() {
   const el = document.getElementById('sheet-oposicion-actual');
   if (el) el.textContent = ESTADO.currentOposicionNombre || 'Todas';
+  const chip = document.getElementById('ap-op-actual');
+  if (chip) chip.textContent = ESTADO.currentOposicionNombre || 'Todas';
+  const btnHome = document.getElementById('btn-cambiar-oposicion-home');
+  const varias = (ESTADO.misOposicionesCache || []).length > 1;
+  if (btnHome) btnHome.hidden = !varias;
+}
+
+/*
+ * Cabecera de "Inicio" en teoría: saludo, oposición actual y tarjeta de
+ * gamificación (mismo layout que en Tests). Solo se muestra cuando el
+ * usuario está en la raíz de la biblioteca.
+ */
+async function pintarHomeHeader() {
+  const box = document.getElementById('teoria-home-header');
+  if (!box) return;
+  const enRaiz = !ESTADO.ruta || ESTADO.ruta === '/' || ESTADO.ruta === '';
+  if (!enRaiz) { box.hidden = true; return; }
+  box.hidden = false;
+  const helloEl = document.getElementById('teoria-hello-name');
+  if (helloEl) {
+    // El nombre real llega por api/sesion; pintarUsuario ya rellena
+    // #user-name, así que lo espejamos.
+    const uname = document.getElementById('user-name')?.textContent || '';
+    helloEl.textContent = uname.trim() || '…';
+  }
+  refrescarHintOposicion();
+  // Gamificación: llamada opcional, mostramos la tarjeta si el backend
+  // responde. Si falla (usuario sin gamif o RPC no disponible), la
+  // ocultamos con "hidden" para que no ocupe espacio.
+  try {
+    const g = await rpcPostgrest('mi_gamificacion', {});
+    renderGamifCard('#teoria-home-gamif', g);
+  } catch {
+    const gCard = document.getElementById('teoria-home-gamif');
+    if (gCard) gCard.innerHTML = '';
+  }
+}
+
+function renderGamifCard(sel, g) {
+  const box = document.querySelector(sel);
+  if (!box) return;
+  if (!g) { box.innerHTML = ''; return; }
+  const rango = Math.max(1, (g.xp_siguiente || 0) - (g.xp_nivel_actual || 0));
+  const pctNivel = Math.min(100, Math.round(100 * ((g.xp_total - g.xp_nivel_actual) / rango)));
+  const rachaTxt = g.racha_actual > 0
+    ? `🔥 <strong>${g.racha_actual}</strong> día${g.racha_actual === 1 ? '' : 's'} seguido${g.racha_actual === 1 ? '' : 's'}`
+    : `😴 Sin racha — hoy es un buen día para empezar`;
+  box.innerHTML = `
+    <div class="gamif-head">
+      <div class="gamif-level">
+        <span class="gamif-nivel-num" title="Nivel">${g.nivel}</span>
+        <div>
+          <strong>Nivel ${g.nivel}</strong>
+          <span class="muted small">${g.xp_total} / ${g.xp_siguiente} XP</span>
+        </div>
+      </div>
+      <div class="gamif-racha">${rachaTxt}</div>
+    </div>
+    <div class="progress-bar level" role="progressbar"
+         aria-valuenow="${pctNivel}" aria-valuemin="0" aria-valuemax="100">
+      <span style="width:${pctNivel}%"></span>
+    </div>
+  `;
 }
 
 // PostgREST está expuesto en el mismo origen bajo /api/* (proxy del Caddy
@@ -1421,6 +1450,7 @@ document.getElementById('teoria-op-list')?.addEventListener('click', (e) => {
 });
 
 document.getElementById('btn-cambiar-oposicion')?.addEventListener('click', abrirSelectorOposicion);
+document.getElementById('btn-cambiar-oposicion-home')?.addEventListener('click', abrirSelectorOposicion);
 
 /* ── Picker de oposición para una carpeta (admin) ─────────────────── */
 async function abrirCarpetaOposicionPicker(item, card) {

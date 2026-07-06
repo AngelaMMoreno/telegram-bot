@@ -44,6 +44,8 @@
   </script>
   <!-- Registra el custom element antes de que el parser llegue a él. -->
   <script src="shared/header.js"></script>
+  <!-- Configuración unificada (misma en landing/tests/teoría). -->
+  <script src="shared/config.js" defer></script>
   <!-- Markdown: parser + saneador (se inyecta HTML de terceros). -->
   <script src="shared/vendor/marked.min.js"></script>
   <script src="shared/vendor/purify.min.js"></script>
@@ -63,6 +65,7 @@
     {"id":"nueva-carpeta","label":"Nueva carpeta","icon":"folder","event":"nueva-carpeta","gestion":true},
     {"id":"nuevo-md","label":"Nuevo markdown","icon":"book","event":"nuevo-md","gestion":true}
   ]'
+
   admin-items='[
     {"id":"usuarios","label":"Usuarios","icon":"users","href":"/tests/?atajo=usuarios","admin":true},
     {"id":"etiquetas","label":"Etiquetas","icon":"tag","href":"/tests/?atajo=etiquetas","gestion":true},
@@ -124,6 +127,23 @@
     </p>
   </div>
 </div>
+
+<!-- Cabecera común: saludo, oposición actual y tarjeta de gamificación.
+     Igual que la de Tests, pero servida en la raíz de teoría. -->
+<section class="teoria-home-header" id="teoria-home-header" hidden>
+  <div class="ap-user-header">
+    <h2>Hola, <span id="teoria-hello-name"></span></h2>
+    <button class="btn btn-ghost btn-sm ap-op-btn" id="btn-cambiar-oposicion-home"
+            type="button" title="Cambiar de oposición" hidden>
+      <span class="ap-op-ico" aria-hidden="true">🎓</span>
+      <span class="ap-op-txt">
+        <span class="ap-op-label">Oposición</span>
+        <strong id="ap-op-actual">Todas</strong>
+      </span>
+    </button>
+  </div>
+  <div id="teoria-home-gamif" class="gamif-card"></div>
+</section>
 
 <nav id="bc" class="bc" aria-label="Ruta"></nav>
 
@@ -205,41 +225,9 @@
 
 <div id="modal-host"></div>
 
-<!-- Modal de configuración -->
-<div id="modal-config" class="overlay hidden">
-  <div class="modal modal-config">
-    <div class="modal-config-header">
-      <h3>Configuración</h3>
-      <button class="modal-close" id="btn-config-cerrar-x" aria-label="Cerrar">✕</button>
-    </div>
+<!-- El modal de configuración lo inyecta shared/config.js — igual en las
+     tres apps (landing, tests y teoría). -->
 
-    <section class="config-group">
-      <h4 class="config-group-title">Sistema</h4>
-      <div class="config-section">
-        <h5>Apariencia</h5>
-        <div class="theme-toggle">
-          <label class="theme-option"><input type="radio" name="theme" value="light"><span>☀️ Claro</span></label>
-          <label class="theme-option"><input type="radio" name="theme" value="dark"><span>🌙 Oscuro</span></label>
-          <label class="theme-option"><input type="radio" name="theme" value="auto"><span>🖥️ Sistema</span></label>
-        </div>
-      </div>
-    </section>
-
-    <section class="config-group">
-      <h4 class="config-group-title">Tests</h4>
-      <div class="config-section">
-        <p class="muted small">
-          El <strong>ritmo de repaso</strong> y el <strong>reset</strong> se gestionan desde
-          la <a href="/tests/" class="link-pri">app de tests</a>.
-        </p>
-      </div>
-    </section>
-
-    <div class="modal-actions">
-      <button class="btn btn-cancel" id="btn-config-cerrar">Cerrar</button>
-    </div>
-  </div>
-</div>
 
 <!-- Notificaciones de logros: pila fija arriba, poblada por notificarLogros(). -->
 <div id="logros-notif-stack" class="logros-notif-stack" aria-live="polite" aria-atomic="false"></div>

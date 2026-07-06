@@ -565,3 +565,64 @@ button { font: inherit; cursor: pointer; }
   background: var(--pri-soft);
 }
 .teoria-op-list .check-item strong { font-size: 0.98rem; }
+
+/* ── Cabecera "Home" (raíz) ────────────────────────────────────────────── */
+.teoria-home-header {
+  max-width: 1100px;
+  margin: 0 auto 0.6rem;
+  padding: 0 1rem;
+}
+.ap-user-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  margin-bottom: 0.4rem;
+}
+.ap-user-header h2 { margin: 0; }
+.ap-op-btn {
+  display: inline-flex; align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--txt);
+  cursor: pointer;
+  font-weight: 500;
+  min-width: 0;
+}
+.ap-op-btn:hover { border-color: var(--pri); background: var(--pri-soft); }
+.ap-op-ico { font-size: 1.1em; }
+.ap-op-txt { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.1; min-width: 0; }
+.ap-op-label { font-size: 11px; color: var(--txt-soft); text-transform: uppercase; letter-spacing: 0.03em; }
+.ap-op-txt strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
+
+/* Gamif card mínima (misma que en tests, versión simplificada). */
+.gamif-card {
+  background: var(--card, var(--bg-panel));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.gamif-card:empty { display: none; }
+.gamif-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.gamif-level { display: flex; align-items: center; gap: 10px; }
+.gamif-nivel-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: var(--pri-soft);
+  color: var(--pri-d);
+  font-weight: 700;
+}
+.gamif-racha { font-size: 13px; color: var(--txt-soft); }
+.progress-bar {
+  position: relative; width: 100%; height: 6px;
+  border-radius: 999px; background: var(--border);
+  overflow: hidden;
+}
+.progress-bar > span {
+  display: block; height: 100%;
+  background: linear-gradient(90deg, var(--pri), var(--pri-d));
+  transition: width .3s;
+}
