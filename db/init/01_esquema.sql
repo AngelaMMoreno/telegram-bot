@@ -906,7 +906,6 @@ BEGIN
           AND (p_etiqueta IS NULL OR p_etiqueta = ANY(t.etiquetas))
           AND (
               p_oposicion_id IS NULL
-              OR NOT EXISTS (SELECT 1 FROM test_oposiciones WHERE test_id = t.id)
               OR EXISTS (SELECT 1 FROM test_oposiciones
                           WHERE test_id = t.id AND oposicion_id = p_oposicion_id)
           )
@@ -942,7 +941,6 @@ BEGIN
           AND (p_etiqueta IS NULL OR p_etiqueta = ANY(t.etiquetas))
           AND (
               p_oposicion_id IS NULL
-              OR NOT EXISTS (SELECT 1 FROM test_oposiciones WHERE test_id = t.id)
               OR EXISTS (SELECT 1 FROM test_oposiciones
                           WHERE test_id = t.id AND oposicion_id = p_oposicion_id)
           )
@@ -3537,12 +3535,17 @@ CREATE TABLE IF NOT EXISTS test_oposiciones (
 CREATE INDEX IF NOT EXISTS test_oposiciones_oposicion_idx
     ON test_oposiciones (oposicion_id);
 
+-- Una carpeta puede pertenecer a N oposiciones (PK compuesta). Cuando no
+-- hay filas para una ruta, la carpeta se considera global.
 CREATE TABLE IF NOT EXISTS carpeta_oposiciones (
-    ruta         text PRIMARY KEY,
-    oposicion_id uuid NOT NULL REFERENCES oposiciones(id) ON DELETE CASCADE
+    ruta         text NOT NULL,
+    oposicion_id uuid NOT NULL REFERENCES oposiciones(id) ON DELETE CASCADE,
+    PRIMARY KEY (ruta, oposicion_id)
 );
 CREATE INDEX IF NOT EXISTS carpeta_oposiciones_oposicion_idx
     ON carpeta_oposiciones (oposicion_id);
+CREATE INDEX IF NOT EXISTS carpeta_oposiciones_ruta_idx
+    ON carpeta_oposiciones (ruta);
 
 ALTER TABLE oposiciones          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE usuario_oposiciones  ENABLE ROW LEVEL SECURITY;
@@ -3732,39 +3735,58 @@ LANGUAGE sql STABLE SECURITY DEFINER AS $$
     WHERE tox.test_id = p_test_id;
 $$;
 
-CREATE OR REPLACE FUNCTION set_carpeta_oposicion(p_ruta text, p_oposicion_id uuid)
-RETURNS void
+-- Reemplaza el conjunto completo de oposiciones asignadas a una ruta.
+-- Un array vacío o NULL borra todas las asignaciones (carpeta global).
+CREATE OR REPLACE FUNCTION set_carpeta_oposiciones(
+    p_ruta text, p_oposicion_ids uuid[]
+) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
     IF NOT (es_admin() OR tiene_permiso('test.crear')) THEN RAISE EXCEPTION 'no_autorizado'; END IF;
     IF p_ruta IS NULL OR btrim(p_ruta) = '' OR p_ruta = '/' THEN RAISE EXCEPTION 'ruta_invalida'; END IF;
-    IF p_oposicion_id IS NULL THEN
-        DELETE FROM carpeta_oposiciones WHERE ruta = p_ruta;
-    ELSE
+    DELETE FROM carpeta_oposiciones WHERE ruta = p_ruta;
+    IF p_oposicion_ids IS NOT NULL AND array_length(p_oposicion_ids, 1) > 0 THEN
         INSERT INTO carpeta_oposiciones(ruta, oposicion_id)
-        VALUES (p_ruta, p_oposicion_id)
-        ON CONFLICT (ruta) DO UPDATE SET oposicion_id = EXCLUDED.oposicion_id;
+        SELECT p_ruta, oid
+        FROM UNNEST(p_oposicion_ids) oid
+        ON CONFLICT DO NOTHING;
     END IF;
 END $$;
 
+-- Shim de compatibilidad con la vieja API 1-a-1.
+CREATE OR REPLACE FUNCTION set_carpeta_oposicion(p_ruta text, p_oposicion_id uuid)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+    IF p_oposicion_id IS NULL THEN
+        PERFORM set_carpeta_oposiciones(p_ruta, '{}'::uuid[]);
+    ELSE
+        PERFORM set_carpeta_oposiciones(p_ruta, ARRAY[p_oposicion_id]);
+    END IF;
+END $$;
+
+-- Devuelve, por cada ruta con asignación, la lista de oposiciones asociadas.
 CREATE OR REPLACE FUNCTION listar_carpeta_oposiciones() RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER AS $$
-    SELECT COALESCE(jsonb_agg(jsonb_build_object(
-        'ruta',            co.ruta,
-        'oposicion_id',    co.oposicion_id,
-        'oposicion_nombre',o.nombre
-    ) ORDER BY co.ruta), '[]'::jsonb)
-    FROM carpeta_oposiciones co
-    JOIN oposiciones o ON o.id = co.oposicion_id;
+    SELECT COALESCE(jsonb_agg(x ORDER BY x->>'ruta'), '[]'::jsonb) FROM (
+        SELECT jsonb_build_object(
+            'ruta',              co.ruta,
+            'oposicion_ids',     jsonb_agg(co.oposicion_id ORDER BY o.nombre),
+            'oposicion_nombres', jsonb_agg(o.nombre        ORDER BY o.nombre)
+        ) AS x
+        FROM carpeta_oposiciones co
+        JOIN oposiciones o ON o.id = co.oposicion_id
+        GROUP BY co.ruta
+    ) t;
 $$;
 
-CREATE OR REPLACE FUNCTION oposicion_de_carpeta(p_ruta text) RETURNS jsonb
+CREATE OR REPLACE FUNCTION oposiciones_de_carpeta(p_ruta text) RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER AS $$
-    SELECT COALESCE(jsonb_build_object('id', o.id, 'nombre', o.nombre), 'null'::jsonb)
+    SELECT COALESCE(jsonb_agg(jsonb_build_object('id', o.id, 'nombre', o.nombre)
+                              ORDER BY o.nombre), '[]'::jsonb)
     FROM carpeta_oposiciones co
-    LEFT JOIN oposiciones o ON o.id = co.oposicion_id
-    WHERE co.ruta = p_ruta
-    LIMIT 1;
+    JOIN oposiciones o ON o.id = co.oposicion_id
+    WHERE co.ruta = p_ruta;
 $$;
 
 CREATE OR REPLACE FUNCTION mis_oposiciones_ids() RETURNS jsonb
@@ -3775,11 +3797,10 @@ BEGIN
         RETURN COALESCE((SELECT jsonb_agg(id) FROM oposiciones WHERE activa), '[]'::jsonb);
     END IF;
     RETURN COALESCE((
-        SELECT jsonb_agg(DISTINCT o.id)
-        FROM usuario_perfiles up
-        JOIN perfil_oposiciones po ON po.perfil_id = up.perfil_id
-        JOIN oposiciones o         ON o.id = po.oposicion_id
-        WHERE up.usuario_id = jwt_usuario_id() AND o.activa
+        SELECT jsonb_agg(o.id)
+        FROM usuario_oposiciones uo
+        JOIN oposiciones o ON o.id = uo.oposicion_id
+        WHERE uo.usuario_id = jwt_usuario_id() AND o.activa
     ), '[]'::jsonb);
 END $$;
 
@@ -3796,7 +3817,8 @@ GRANT EXECUTE ON FUNCTION tests_de_oposicion(uuid)                       TO web_
 GRANT EXECUTE ON FUNCTION listar_tests_min()                             TO web_user;
 GRANT EXECUTE ON FUNCTION listar_oposiciones_admin()                     TO web_user;
 GRANT EXECUTE ON FUNCTION oposiciones_de_test(uuid)                      TO web_user;
+GRANT EXECUTE ON FUNCTION set_carpeta_oposiciones(text, uuid[])          TO web_user;
 GRANT EXECUTE ON FUNCTION set_carpeta_oposicion(text, uuid)              TO web_user;
 GRANT EXECUTE ON FUNCTION listar_carpeta_oposiciones()                   TO web_user;
-GRANT EXECUTE ON FUNCTION oposicion_de_carpeta(text)                     TO web_user;
+GRANT EXECUTE ON FUNCTION oposiciones_de_carpeta(text)                   TO web_user;
 GRANT EXECUTE ON FUNCTION mis_oposiciones_ids()                          TO web_user;
