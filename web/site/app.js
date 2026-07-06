@@ -217,6 +217,9 @@ async function refrescarUsuarioDesdeJwt() {
 function applySession() {
   const logged = !!state.jwt && !!state.user;
   $("#topbar").classList.toggle("hidden", !logged);
+  // El bottom-nav lo pinta <aprentix-header>: también empieza oculto
+  // (por start-hidden) y hay que revelarlo al confirmar sesión.
+  $("#bottom-nav")?.classList.toggle("hidden", !logged);
   $("#sidebar").classList.toggle("hidden", !logged);
   document.body.classList.toggle("puede-gestionar", !!(state.user && state.user.puede_gestionar));
   document.body.classList.toggle("es-admin", !!(state.user && (state.user.roles || []).includes("admin")));
