@@ -50,7 +50,51 @@
 </head>
 <body>
 
-<aprentix-header active="teoria"></aprentix-header>
+<aprentix-header active="teoria"
+  active-key="home"
+  nav-items='[
+    {"id":"home","label":"Inicio","icon":"home","event":"home"},
+    {"id":"buscar","label":"Buscar","icon":"search","event":"buscar"},
+    {"id":"marcadores","label":"Marcadores","icon":"bookmark","event":"marcadores"},
+    {"id":"retos","label":"Retos","icon":"trophy","href":"/tests/?atajo=retos"},
+    {"id":"more","label":"Más","icon":"more","more":true}
+  ]'
+  more-items='[
+    {"id":"subir","label":"Subir ficheros","icon":"upload","event":"subir","gestion":true},
+    {"id":"nueva-carpeta","label":"Nueva carpeta","icon":"folder","event":"nueva-carpeta","gestion":true},
+    {"id":"nuevo-md","label":"Nuevo markdown","icon":"book","event":"nuevo-md","gestion":true}
+  ]'></aprentix-header>
+
+<!-- Buscador de teoría (modal simple, cliente-side sobre lo listado). -->
+<div id="teoria-buscar" class="overlay hidden" role="dialog" aria-label="Buscar en teoría">
+  <div class="modal teoria-buscar-modal">
+    <div class="modal-config-header">
+      <h3>Buscar en teoría</h3>
+      <button class="modal-close" id="teoria-buscar-cerrar" aria-label="Cerrar">✕</button>
+    </div>
+    <input type="search" id="teoria-buscar-input"
+           placeholder="Nombre de fichero o carpeta…"
+           autocomplete="off" spellcheck="false">
+    <ul id="teoria-buscar-results" class="teoria-buscar-results"></ul>
+    <p class="muted small" id="teoria-buscar-hint">
+      Busca por nombre en la ruta actual y subcarpetas ya vistas.
+    </p>
+  </div>
+</div>
+
+<!-- Placeholder de marcadores (Fase 2 los persistirá en BBDD). -->
+<div id="teoria-marcadores" class="overlay hidden" role="dialog" aria-label="Marcadores">
+  <div class="modal">
+    <div class="modal-config-header">
+      <h3>Marcadores</h3>
+      <button class="modal-close" id="teoria-marcadores-cerrar" aria-label="Cerrar">✕</button>
+    </div>
+    <p class="muted">
+      Aquí verás los documentos que marques como favoritos y los subrayados que hagas.
+      Estará disponible en la próxima fase del rediseño.
+    </p>
+  </div>
+</div>
 
 <nav id="bc" class="bc" aria-label="Ruta"></nav>
 

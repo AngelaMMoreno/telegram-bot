@@ -108,17 +108,30 @@ body {
  * Si se completan varios a la vez, las tarjetas se apilan verticalmente
  * y cada una anuncia su propio progreso.
  */
+/* En móvil el stack vive abajo, justo encima del bottom-nav, para no
+ * tapar el enunciado de una pregunta durante un quiz. En desktop
+ * mantiene su sitio arriba centrado. */
 .logros-notif-stack {
   position: fixed;
-  top: calc(var(--topbar-h) + 0.75rem);
+  bottom: calc(var(--bottom-nav-h, 58px) + 0.6rem);
+  top: auto;
   left: 50%;
   transform: translateX(-50%);
   z-index: 1000;
   display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-  width: min(94vw, 420px);
+  flex-direction: column-reverse;
+  gap: 0.5rem;
+  width: min(94vw, 380px);
   pointer-events: none;
+}
+@media (min-width: 900px) {
+  .logros-notif-stack {
+    top: calc(var(--topbar-h) + 0.75rem);
+    bottom: auto;
+    flex-direction: column;
+    gap: 0.65rem;
+    width: min(94vw, 420px);
+  }
 }
 .logro-notif {
   pointer-events: auto;
@@ -197,13 +210,43 @@ body {
   background: linear-gradient(90deg, var(--accent), var(--coral));
   box-shadow: 0 0 6px var(--coral-soft);
 }
+/* En móvil el stack está abajo → animaciones que suben desde abajo.
+ * En desktop está arriba → sigue bajando desde arriba (comportamiento
+ * histórico). Usamos animaciones distintas por breakpoint. */
 @keyframes logro-notif-in {
-  0%   { opacity: 0; transform: translateY(-14px) scale(0.96); }
-  100% { opacity: 1; transform: translateY(0)     scale(1); }
+  0%   { opacity: 0; transform: translateY(14px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0)    scale(1); }
 }
 @keyframes logro-notif-out {
   0%   { opacity: 1; transform: translateY(0); }
-  100% { opacity: 0; transform: translateY(-10px); }
+  100% { opacity: 0; transform: translateY(10px); }
+}
+@media (min-width: 900px) {
+  @keyframes logro-notif-in {
+    0%   { opacity: 0; transform: translateY(-14px) scale(0.96); }
+    100% { opacity: 1; transform: translateY(0)     scale(1); }
+  }
+  @keyframes logro-notif-out {
+    0%   { opacity: 1; transform: translateY(0); }
+    100% { opacity: 0; transform: translateY(-10px); }
+  }
+}
+/* Móvil: tarjeta más compacta para que ocupe menos y no sea invasiva. */
+@media (max-width: 899.98px) {
+  .logro-notif {
+    grid-template-columns: 40px 1fr;
+    gap: 0.55rem;
+    padding: 0.55rem 0.75rem;
+  }
+  .logro-notif-icono { font-size: 1.55rem; }
+  .logro-notif-head strong { font-size: 0.88rem; }
+  .logro-notif-desc {
+    font-size: 0.76rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .logro-notif-bar { height: 6px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .logro-notif,
