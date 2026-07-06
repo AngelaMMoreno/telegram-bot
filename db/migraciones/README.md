@@ -21,6 +21,7 @@ sin efectos duplicados.
 | 2026-07-03  | `2026-07-03_logros_notificaciones.sql`     | `registrar_respuesta`, `finalizar_intento` y `marcar_fichero_visto` pasan a devolver `jsonb` con `logros_desbloqueados`. El motor de gamificación (`_gamif_bump_logro`, `_gamif_actualizar_racha`, los `on_*`) acumula los logros recién obtenidos para que el frontend pinte una tarjeta de notificación por logro. |
 | 2026-07-04  | `2026-07-04_diagnostico_push.sql`          | RPC `mi_diagnostico_push()` que devuelve las cuatro condiciones del worker (suscripciones activas, ventana horaria, umbral de vencidas, cooldown) para autoservicio desde la SPA. |
 | 2026-07-05  | `2026-07-05_notif_retos.sql`               | `_gamif_bump_reto` y `_gamif_bump_reto_distintos` devuelven jsonb con los datos del reto recién completado. Los `_gamif_on_*` acumulan tanto retos (`tipo:'reto'`, coral) como logros (`tipo:'logro'`, verde) en el mismo array. |
+| 2026-07-06d | `2026-07-06d_teoria_multi_oposicion.sql`   | `carpeta_oposiciones` pasa a PK compuesta (ruta, oposicion_id) → una carpeta de teoría puede pertenecer a varias oposiciones. Nueva RPC `set_carpeta_oposiciones(text, uuid[])`; `listar_carpeta_oposiciones` agrega por ruta. `listar_tests` pasa a filtro estricto por `p_oposicion_id` (los tests globales dejan de aparecer al seleccionar una oposición). Corrige `mis_oposiciones_ids` que aún referenciaba las tablas de perfiles eliminadas. |
 
 ## Al aplicar cada delta
 

@@ -141,13 +141,28 @@ def vistos_prefijo(token: str, prefijo: str) -> set[str]:
 
 
 def _asignaciones_carpetas(token: str) -> dict[str, dict]:
-    """Mapa ruta → {oposicion_id, oposicion_nombre} tomado de la BD."""
+    """Mapa ruta → {oposicion_ids: [uuid...], oposicion_nombres: [str...]}
+    tomado de la BD. Una carpeta puede pertenecer a varias oposiciones.
+    """
     r = _pg(token, "listar_carpeta_oposiciones", {})
     if r is None or r.status_code != 200:
         return {}
     try:
         rows = r.json() or []
-        return {row["ruta"]: row for row in rows}
+        out: dict[str, dict] = {}
+        for row in rows:
+            ids = row.get("oposicion_ids") or []
+            nombres = row.get("oposicion_nombres") or []
+            # Compatibilidad con la respuesta antigua (1-a-1): si viene
+            # `oposicion_id` en singular, lo envolvemos en lista.
+            if not ids and row.get("oposicion_id"):
+                ids = [row.get("oposicion_id")]
+                nombres = [row.get("oposicion_nombre") or ""]
+            out[row["ruta"]] = {
+                "oposicion_ids": [str(x) for x in ids],
+                "oposicion_nombres": [str(x) for x in nombres],
+            }
+        return out
     except Exception:
         return {}
 
@@ -189,12 +204,13 @@ def api_sesion(request: Request):
 def api_listar(request: Request, ruta: str = "/", oposicion_id: str | None = None):
     """
     Lista una carpeta. Si se pasa `oposicion_id`, filtra la raíz para
-    mostrar solo carpetas asignadas a esa oposición (más las globales
-    sin asignación). Sin oposicion_id, el alumno ve global + las de
-    todas sus oposiciones; el admin ve todas.
+    mostrar SOLO carpetas asignadas a esa oposición (filtro estricto:
+    las carpetas globales no aparecen cuando el usuario ha elegido
+    una oposición). Sin oposicion_id, el alumno ve global + las
+    carpetas de cualquiera de sus oposiciones; el admin ve todas.
 
     Una vez dentro de una carpeta asignada, no se vuelve a filtrar:
-    el árbol interno pertenece a la misma oposición.
+    el árbol interno se hereda.
     """
     claims = require_teoria(request)
     url_path = normalize_url_path(ruta)
@@ -238,29 +254,32 @@ def api_listar(request: Request, ruta: str = "/", oposicion_id: str | None = Non
             "ruta": ruta_d,
             "num_elementos": n,
         }
-        # Adjuntamos la oposición si la carpeta está asignada. El frontend
-        # la pinta como badge para dar contexto (útil sobre todo al admin).
-        if ruta_d in asignaciones:
-            a = asignaciones[ruta_d]
-            entry["oposicion_id"]     = a.get("oposicion_id")
-            entry["oposicion_nombre"] = a.get("oposicion_nombre")
+        # Adjuntamos las oposiciones asignadas a la carpeta (0..N). El
+        # frontend las pinta como badges y las usa para el picker.
+        asig = asignaciones.get(ruta_d)
+        if asig:
+            entry["oposicion_ids"]     = asig.get("oposicion_ids", [])
+            entry["oposicion_nombres"] = asig.get("oposicion_nombres", [])
+        else:
+            entry["oposicion_ids"]     = []
+            entry["oposicion_nombres"] = []
 
-        # Filtrado de raíz para no-admin: aplicamos las reglas.
-        if url_path == "/" and not es_admin:
-            asig = asignaciones.get(ruta_d)
-            if asig is not None:
-                op_id = str(asig.get("oposicion_id"))
-                if oposicion_id:
-                    # Modo focalizado en una oposición: solo la seleccionada
-                    # más las globales.
-                    if op_id != str(oposicion_id):
-                        continue
-                else:
-                    # Vista "todas mis oposiciones": exclui las que no me
-                    # pertenecen (pero el resto queda visible).
-                    if op_id not in mis_ids:
-                        continue
-            # Si no está asignada (global) siempre entra.
+        # Filtrado en la raíz.
+        if url_path == "/":
+            op_ids = set(entry["oposicion_ids"])
+            if oposicion_id:
+                # Filtro ESTRICTO (para todos los roles): si hay una
+                # oposición seleccionada, solo aparecen las carpetas
+                # explícitamente asignadas a ella. Las globales / de
+                # otra oposición se ocultan.
+                if str(oposicion_id) not in op_ids:
+                    continue
+            elif not es_admin:
+                # Vista "todas mis oposiciones" del alumno: globales
+                # siempre visibles; asignadas solo si comparten alguna
+                # con el usuario.
+                if op_ids and not (op_ids & mis_ids):
+                    continue
 
         carpetas.append(entry)
 
@@ -539,6 +558,115 @@ def api_mover(request: Request, body: dict):
         {"p_origen": origen, "p_destino": destino},
     )
     return {"origen": origen, "destino": destino}
+
+
+@app.post("/api/borrar_lote")
+def api_borrar_lote(request: Request, body: dict):
+    """Borra varias rutas de una vez. Devuelve por ruta el resultado
+    para que el frontend pueda avisar de los fallos parcial."""
+    claims = require_admin(request)
+    rutas = body.get("rutas") or []
+    if not isinstance(rutas, list) or not rutas:
+        raise HTTPException(status_code=400, detail="rutas_invalidas")
+
+    borrados: list[str] = []
+    errores: list[dict] = []
+    for raw in rutas:
+        try:
+            ruta = normalize_url_path(str(raw))
+            if ruta == "/":
+                errores.append({"ruta": ruta, "error": "no_puedes_borrar_la_raiz"})
+                continue
+            fs = resolve_fs(ruta)
+            if not fs.exists():
+                errores.append({"ruta": ruta, "error": "no_existe"})
+                continue
+            if fs.is_dir():
+                shutil.rmtree(fs)
+            else:
+                fs.unlink()
+            _pg(claims["_token"], "borrar_ruta_vistas", {"p_ruta": ruta})
+            borrados.append(ruta)
+        except HTTPException as e:
+            errores.append({"ruta": str(raw), "error": e.detail})
+        except Exception as e:
+            errores.append({"ruta": str(raw), "error": str(e)})
+    return {"borrados": borrados, "errores": errores}
+
+
+@app.post("/api/mover_lote")
+def api_mover_lote(request: Request, body: dict):
+    """Mueve varias rutas a la carpeta destino. Conserva el nombre de
+    cada origen. Si ya existe algo con ese nombre, marca el error y
+    continúa con el resto (no se sobrescribe)."""
+    claims = require_admin(request)
+    rutas = body.get("rutas") or []
+    destino_padre = normalize_url_path(body.get("destino", "/"))
+    if not isinstance(rutas, list) or not rutas:
+        raise HTTPException(status_code=400, detail="rutas_invalidas")
+
+    dst_dir = resolve_fs(destino_padre)
+    if not dst_dir.exists() or not dst_dir.is_dir():
+        raise HTTPException(status_code=404, detail="destino_no_existe")
+
+    movidos: list[dict] = []
+    errores: list[dict] = []
+    for raw in rutas:
+        try:
+            origen = normalize_url_path(str(raw))
+            if origen == "/":
+                errores.append({"ruta": origen, "error": "ruta_invalida"})
+                continue
+            src = resolve_fs(origen)
+            if not src.exists():
+                errores.append({"ruta": origen, "error": "no_existe"})
+                continue
+            nombre = src.name
+            destino = join_url(destino_padre, nombre)
+            if origen == destino:
+                # Ya está en el destino, nada que hacer.
+                continue
+            dst = dst_dir / nombre
+            if dst.exists():
+                errores.append({"ruta": origen, "error": "destino_ya_existe"})
+                continue
+            # Evita mover una carpeta dentro de sí misma o de un descendiente.
+            try:
+                dst.resolve().relative_to(src.resolve())
+                errores.append({"ruta": origen, "error": "destino_dentro_de_origen"})
+                continue
+            except ValueError:
+                pass
+            src.rename(dst)
+            _pg(
+                claims["_token"], "renombrar_ruta_vistas",
+                {"p_origen": origen, "p_destino": destino},
+            )
+            movidos.append({"origen": origen, "destino": destino})
+        except HTTPException as e:
+            errores.append({"ruta": str(raw), "error": e.detail})
+        except Exception as e:
+            errores.append({"ruta": str(raw), "error": str(e)})
+    return {"movidos": movidos, "errores": errores, "destino": destino_padre}
+
+
+@app.get("/api/arbol_carpetas")
+def api_arbol_carpetas(request: Request):
+    """Devuelve la lista plana de carpetas del árbol para el selector
+    "Mover a…". Solo directorios (sin ficheros) y sin ocultos."""
+    require_admin(request)
+    rutas: list[str] = ["/"]
+    for dirpath, dirnames, _files in os.walk(BASE_DIR):
+        # Filtra ocultos in-place para no descender en ellos.
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+        for d in dirnames:
+            full = Path(dirpath) / d
+            try:
+                rel = full.relative_to(BASE_DIR)
+            except ValueError:
+                continue
+            rutas.append("/" + str(rel).replace("\\", "/"))
+    return {"carpetas": rutas}
 
 
 # ── Errores JSON ────────────────────────────────────────────────────────────

@@ -566,6 +566,66 @@ button { font: inherit; cursor: pointer; }
 }
 .teoria-op-list .check-item strong { font-size: 0.98rem; }
 
+/* Variante multi (con checkbox nativo dentro de un <label>). */
+.teoria-op-list .check-item-multi {
+  flex-direction: row; align-items: center; gap: 12px;
+}
+.teoria-op-list .check-item-multi input[type="checkbox"] {
+  width: 18px; height: 18px; margin: 0; flex: 0 0 auto;
+  accent-color: var(--pri);
+}
+.teoria-op-list .check-item-multi .check-item-body {
+  display: flex; flex-direction: column; gap: 3px; min-width: 0;
+}
+
+/* Badge multi-oposición (más de una). */
+.card-op-badge-multi {
+  background: var(--pri-soft);
+  color: var(--pri-d);
+}
+[data-theme="dark"] .card-op-badge-multi { color: var(--pri); }
+
+/* ── Modo selección múltiple ─────────────────────────────────────────── */
+.card-check {
+  position: absolute; top: 8px; left: 8px;
+  z-index: 3;
+}
+.card-check[hidden] { display: none; }
+.card-check input[type="checkbox"] {
+  width: 20px; height: 20px; margin: 0;
+  accent-color: var(--pri); cursor: pointer;
+}
+body.en-seleccion .card-check { display: block; }
+body.en-seleccion .card { cursor: pointer; }
+body.en-seleccion .card-actions { display: none !important; }
+body.en-seleccion .visto-tick { pointer-events: none; opacity: .5; }
+.card.seleccionada {
+  outline: 2px solid var(--pri);
+  outline-offset: 2px;
+  background: var(--pri-soft);
+}
+
+/* Barra flotante de acciones cuando hay selección. */
+.seleccion-bar {
+  position: fixed;
+  left: 50%; transform: translateX(-50%);
+  bottom: calc(72px + env(safe-area-inset-bottom, 0));
+  display: flex; gap: 10px; align-items: center;
+  padding: 10px 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-lg);
+  z-index: 800;
+  max-width: calc(100vw - 24px);
+  flex-wrap: wrap; justify-content: center;
+}
+.seleccion-bar[hidden] { display: none; }
+.seleccion-count { font-weight: 700; font-size: 14px; margin-right: 4px; }
+@media (max-width: 480px) {
+  .seleccion-bar { bottom: calc(72px + env(safe-area-inset-bottom, 0)); font-size: 13px; }
+}
+
 /* ── Cabecera "Home" (raíz) ────────────────────────────────────────────── */
 .teoria-home-header {
   max-width: 1100px;

@@ -102,15 +102,35 @@
   </div>
 </div>
 
-<!-- Picker para asignar una oposición a una carpeta (admin). -->
-<div id="teoria-carpeta-oposicion" class="overlay hidden" role="dialog" aria-label="Asignar oposición a carpeta">
+<!-- Picker para asignar oposiciones a una carpeta (admin). Multi-select. -->
+<div id="teoria-carpeta-oposicion" class="overlay hidden" role="dialog" aria-label="Asignar oposiciones a carpeta">
   <div class="modal">
     <div class="modal-config-header">
-      <h3 id="teoria-carpeta-op-titulo">Oposición de la carpeta</h3>
+      <h3 id="teoria-carpeta-op-titulo">Oposiciones de la carpeta</h3>
       <button class="modal-close" id="teoria-carpeta-op-cerrar" aria-label="Cerrar">✕</button>
     </div>
-    <p class="muted small">Elige una oposición o marca "Ninguna" para dejar la carpeta como global.</p>
-    <ul id="teoria-carpeta-op-list" class="teoria-op-list"></ul>
+    <p class="muted small">Marca todas las oposiciones a las que pertenece esta carpeta. Si no marcas ninguna, la carpeta queda como global (visible para todos con acceso a teoría).</p>
+    <ul id="teoria-carpeta-op-list" class="teoria-op-list check-list"></ul>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" id="teoria-carpeta-op-cancelar">Cancelar</button>
+      <button class="btn btn-pri" id="teoria-carpeta-op-guardar">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Selector de carpeta destino para "Mover a…". -->
+<div id="teoria-mover-modal" class="overlay hidden" role="dialog" aria-label="Mover a carpeta">
+  <div class="modal">
+    <div class="modal-config-header">
+      <h3 id="teoria-mover-titulo">Mover a…</h3>
+      <button class="modal-close" id="teoria-mover-cerrar" aria-label="Cerrar">✕</button>
+    </div>
+    <p class="muted small">Elige la carpeta destino. Se conservará el nombre de cada elemento.</p>
+    <input type="search" id="teoria-mover-filtro" placeholder="Filtrar carpetas…" autocomplete="off" spellcheck="false">
+    <ul id="teoria-mover-list" class="teoria-op-list"></ul>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" id="teoria-mover-cancelar">Cancelar</button>
+    </div>
   </div>
 </div>
 
@@ -154,7 +174,16 @@
   </label>
   <button id="btn-nueva-carpeta" class="btn btn-sec">📁 Nueva carpeta</button>
   <button id="btn-nuevo-md" class="btn btn-sec">📝 Nuevo markdown</button>
-  <span class="admin-hint">Doble clic sobre un fichero para renombrarlo · botón derecho para más opciones</span>
+  <button id="btn-modo-seleccion" class="btn btn-sec" aria-pressed="false">☑️ Seleccionar</button>
+  <span class="admin-hint">Botón derecho sobre un fichero para más opciones · Seleccionar para acciones por lote</span>
+</div>
+
+<!-- Barra flotante con acciones cuando hay elementos seleccionados. -->
+<div id="seleccion-bar" class="seleccion-bar" hidden role="region" aria-label="Acciones sobre selección">
+  <span class="seleccion-count" id="seleccion-count">0 seleccionados</span>
+  <button class="btn btn-sec" id="seleccion-mover">📂 Mover</button>
+  <button class="btn btn-danger" id="seleccion-borrar">🗑️ Borrar</button>
+  <button class="btn btn-cancel" id="seleccion-cancelar">Cancelar</button>
 </div>
 
 <main id="grid" class="grid" aria-live="polite"></main>

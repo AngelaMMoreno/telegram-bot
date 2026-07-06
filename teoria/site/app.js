@@ -202,30 +202,49 @@ function tarjetaCarpeta(c) {
   const card = document.createElement('div');
   card.className = 'card folder';
   card.dataset.ruta = c.ruta;
+  card.dataset.nombre = c.nombre;
   card.dataset.tipo = 'carpeta';
-  card.dataset.oposicionId = c.oposicion_id || '';
-  card.dataset.oposicionNombre = c.oposicion_nombre || '';
-  const badge = c.oposicion_nombre
-    ? `<span class="card-op-badge" title="Oposición asignada">🎓 ${esc(c.oposicion_nombre)}</span>`
-    : '';
+  // Compatibilidad: soporte multi-oposición nuevo y singular antiguo.
+  const opIds = Array.isArray(c.oposicion_ids)
+    ? c.oposicion_ids
+    : (c.oposicion_id ? [c.oposicion_id] : []);
+  const opNombres = Array.isArray(c.oposicion_nombres)
+    ? c.oposicion_nombres
+    : (c.oposicion_nombre ? [c.oposicion_nombre] : []);
+  card.dataset.oposicionIds = opIds.join(',');
+  card.dataset.oposicionNombres = opNombres.join('|');
+
+  let badgesHTML = '';
+  if (opNombres.length) {
+    const titulo = opNombres.join(', ');
+    if (opNombres.length === 1) {
+      badgesHTML = `<span class="card-op-badge" title="Oposición asignada">🎓 ${esc(opNombres[0])}</span>`;
+    } else {
+      badgesHTML = `<span class="card-op-badge card-op-badge-multi" title="${esc(titulo)}">🎓 ${opNombres.length} oposiciones</span>`;
+    }
+  }
+
   card.innerHTML = `
+    <div class="card-check" hidden><input type="checkbox" data-accion="toggle-select" aria-label="Seleccionar carpeta"></div>
     <div class="card-emoji">📁</div>
-    <div class="card-name" title="${c.nombre}">${c.nombre}</div>
+    <div class="card-name" title="${esc(c.nombre)}">${esc(c.nombre)}</div>
     <div class="card-meta">${c.num_elementos} elemento${c.num_elementos === 1 ? '' : 's'}</div>
-    ${badge}
+    ${badgesHTML}
   `;
   if (ESTADO.puede_gestionar) {
     const actions = document.createElement('div');
     actions.className = 'card-actions';
     actions.innerHTML = `
-      <button class="card-btn" data-accion="oposicion" title="Asignar oposición">🎓</button>
+      <button class="card-btn" data-accion="oposicion" title="Asignar oposiciones">🎓</button>
+      <button class="card-btn" data-accion="mover" title="Mover">📂</button>
       <button class="card-btn" data-accion="renombrar" title="Renombrar">✏️</button>
       <button class="card-btn del" data-accion="borrar" title="Borrar">🗑️</button>
     `;
     card.appendChild(actions);
   }
   card.addEventListener('click', (e) => {
-    if (e.target.closest('.card-btn')) return;
+    if (e.target.closest('[data-accion]')) return;
+    if (SELECCION.activo) { toggleSeleccion(c.ruta, card); return; }
     navegar(c.ruta);
   });
   return card;
@@ -235,10 +254,12 @@ function tarjetaFichero(f) {
   const card = document.createElement('div');
   card.className = 'card file' + (f.visto ? ' visto' : '');
   card.dataset.ruta = f.ruta;
+  card.dataset.nombre = f.nombre;
   card.dataset.tipo = 'fichero';
   const emoji = emojiParaFichero(f.nombre, f.mime);
   const tickTitle = f.visto ? 'Marcar como no visto' : 'Marcar como visto';
   card.innerHTML = `
+    <div class="card-check" hidden><input type="checkbox" data-accion="toggle-select" aria-label="Seleccionar fichero"></div>
     <button class="visto-tick ${f.visto ? 'on' : 'off'}"
             data-accion="toggle-visto"
             title="${tickTitle}"
@@ -247,13 +268,14 @@ function tarjetaFichero(f) {
       <span class="visto-tick-check">${f.visto ? '✓' : ''}</span>
     </button>
     <div class="card-emoji">${emoji}</div>
-    <div class="card-name" title="${f.nombre}">${f.nombre}</div>
+    <div class="card-name" title="${esc(f.nombre)}">${esc(f.nombre)}</div>
     <div class="card-meta">${fmtSize(f.size)} · ${fmtDate(f.modificado)}</div>
   `;
   if (ESTADO.puede_gestionar) {
     const actions = document.createElement('div');
     actions.className = 'card-actions';
     actions.innerHTML = `
+      <button class="card-btn" data-accion="mover" title="Mover">📂</button>
       <button class="card-btn" data-accion="renombrar" title="Renombrar">✏️</button>
       <button class="card-btn del" data-accion="borrar" title="Borrar">🗑️</button>
     `;
@@ -261,6 +283,7 @@ function tarjetaFichero(f) {
   }
   card.addEventListener('click', (e) => {
     if (e.target.closest('[data-accion]')) return;
+    if (SELECCION.activo) { toggleSeleccion(f.ruta, card); return; }
     verFichero(f);
   });
   card.addEventListener('contextmenu', (e) => {
@@ -345,17 +368,27 @@ function renderGrid(data) {
 function onGridAction(e) {
   const btn = e.target.closest('[data-accion]');
   if (!btn) return;
+  const accion = btn.dataset.accion;
+  // Los checkboxes se dejan burbujear su change de forma controlada:
+  // interceptamos y devolvemos sin stopPropagation para que el input
+  // conserve su estado nativo. La lógica se dispara en toggleSeleccion.
+  if (accion === 'toggle-select') {
+    e.stopPropagation();
+    const card = btn.closest('.card');
+    toggleSeleccion(card.dataset.ruta, card, btn.checked);
+    return;
+  }
   e.stopPropagation();
   e.preventDefault();
   const card = btn.closest('.card');
   const ruta = card.dataset.ruta;
   const tipo = card.dataset.tipo;
-  const item = { ruta, nombre: ruta.split('/').pop(), es_carpeta: tipo === 'carpeta' };
-  const accion = btn.dataset.accion;
+  const item = { ruta, nombre: card.dataset.nombre || ruta.split('/').pop(), es_carpeta: tipo === 'carpeta' };
   if (accion === 'renombrar') pedirRenombrar(item);
   else if (accion === 'borrar') pedirBorrar(item);
   else if (accion === 'toggle-visto') toggleVistoInline(item, btn, card);
   else if (accion === 'oposicion') abrirCarpetaOposicionPicker(item, card);
+  else if (accion === 'mover') abrirMoverDialogo([item.ruta]);
 }
 
 async function toggleVistoInline(item, btn, card) {
@@ -1452,41 +1485,52 @@ document.getElementById('teoria-op-list')?.addEventListener('click', (e) => {
 document.getElementById('btn-cambiar-oposicion')?.addEventListener('click', abrirSelectorOposicion);
 document.getElementById('btn-cambiar-oposicion-home')?.addEventListener('click', abrirSelectorOposicion);
 
-/* ── Picker de oposición para una carpeta (admin) ─────────────────── */
+/* ── Picker MULTI-oposición para una carpeta (admin) ────────────────
+ * Ahora una carpeta puede pertenecer a varias oposiciones a la vez.
+ * El picker es multi-selección con checkboxes; al pulsar "Guardar" se
+ * llama a set_carpeta_oposiciones(uuid[]).
+ */
 async function abrirCarpetaOposicionPicker(item, card) {
   const modal = document.getElementById('teoria-carpeta-oposicion');
   const lista = document.getElementById('teoria-carpeta-op-list');
   const tit   = document.getElementById('teoria-carpeta-op-titulo');
+  const guardar = document.getElementById('teoria-carpeta-op-guardar');
+  const cancelar = document.getElementById('teoria-carpeta-op-cancelar');
   if (!modal || !lista) return;
-  const actualId = card?.dataset.oposicionId || '';
-  tit.textContent = `Oposición de ${item.nombre}`;
+  const actualesRaw = (card?.dataset.oposicionIds || '').split(',').filter(Boolean);
+  const actuales = new Set(actualesRaw);
+  tit.textContent = `Oposiciones de ${item.nombre}`;
   try {
-    // Los admins ven TODAS las oposiciones. mis_oposiciones() ya lo hace.
     const ops = await rpcPostgrest('mis_oposiciones', {});
     const items = Array.isArray(ops) ? ops : [];
-    lista.innerHTML = [
-      `<li><button class="check-item" data-op-id="" ${actualId ? '' : 'aria-current="true"'}>
-         <strong>Ninguna (global)</strong>
-         <span class="muted small">Visible para todos los usuarios con acceso a teoría</span>
-       </button></li>`,
-      ...items.map(o => `
-        <li><button class="check-item" data-op-id="${o.id}" ${o.id === actualId ? 'aria-current="true"' : ''}>
-          <strong>${esc(o.nombre)}</strong>
-          ${o.descripcion ? `<span class="muted small">${esc(o.descripcion)}</span>` : ''}
-        </button></li>`),
-    ].join('');
+    if (!items.length) {
+      lista.innerHTML = `<li class="muted small" style="padding:.5rem 0">No hay oposiciones creadas todavía.</li>`;
+    } else {
+      lista.innerHTML = items.map(o => `
+        <li><label class="check-item check-item-multi">
+          <input type="checkbox" data-op-id="${o.id}" ${actuales.has(o.id) ? 'checked' : ''}>
+          <span class="check-item-body">
+            <strong>${esc(o.nombre)}</strong>
+            ${o.descripcion ? `<span class="muted small">${esc(o.descripcion)}</span>` : ''}
+          </span>
+        </label></li>`).join('');
+    }
     modal.classList.remove('hidden');
-    lista.onclick = async (ev) => {
-      const btn = ev.target.closest('[data-op-id]');
-      if (!btn) return;
-      const opId = btn.dataset.opId || null;
+
+    const cerrar = () => modal.classList.add('hidden');
+    cancelar.onclick = cerrar;
+    guardar.onclick = async () => {
+      const ids = Array.from(lista.querySelectorAll('input[type="checkbox"]:checked'))
+        .map(el => el.dataset.opId);
       try {
-        await rpcPostgrest('set_carpeta_oposicion', {
+        await rpcPostgrest('set_carpeta_oposiciones', {
           p_ruta: item.ruta,
-          p_oposicion_id: opId,
+          p_oposicion_ids: ids,
         });
-        modal.classList.add('hidden');
-        toast(opId ? 'Oposición asignada' : 'Carpeta puesta como global');
+        cerrar();
+        toast(ids.length
+          ? `Asignada${ids.length === 1 ? '' : 's'} a ${ids.length} oposicion${ids.length === 1 ? '' : 'es'}`
+          : 'Carpeta puesta como global');
         recargar();
       } catch (e) { toast(e.message); }
     };
@@ -1498,3 +1542,170 @@ document.getElementById('teoria-carpeta-op-cerrar')?.addEventListener('click', (
 
 // Arranque: intenta cargar oposiciones tras el primer render.
 refrescarMisOposiciones();
+
+
+/* ═════════════════════════════════════════════════════════════════════════
+ *  Modo selección múltiple + acciones por lote (Mover / Borrar)
+ *
+ *  Se activa desde el admin-bar (#btn-modo-seleccion). Al entrar, aparecen
+ *  checkboxes en cada tarjeta y la barra flotante #seleccion-bar. Los
+ *  clics en tarjetas alternan la selección en vez de navegar/abrir.
+ *  Solo disponible para gestores (admin).
+ * ═════════════════════════════════════════════════════════════════════════ */
+
+const SELECCION = { activo: false, rutas: new Set() };
+
+function toggleModoSeleccion(forzar) {
+  const nuevo = typeof forzar === 'boolean' ? forzar : !SELECCION.activo;
+  SELECCION.activo = nuevo;
+  document.body.classList.toggle('en-seleccion', nuevo);
+  const btn = document.getElementById('btn-modo-seleccion');
+  if (btn) btn.setAttribute('aria-pressed', String(nuevo));
+  if (!nuevo) {
+    // Limpiamos selección al salir.
+    SELECCION.rutas.clear();
+    document.querySelectorAll('.card.seleccionada').forEach(c => c.classList.remove('seleccionada'));
+    document.querySelectorAll('.card-check input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+  }
+  actualizarBarraSeleccion();
+}
+
+function toggleSeleccion(ruta, card, forzar) {
+  if (!SELECCION.activo) return;
+  const cb = card.querySelector('.card-check input[type="checkbox"]');
+  let seleccionada;
+  if (typeof forzar === 'boolean') seleccionada = forzar;
+  else seleccionada = !SELECCION.rutas.has(ruta);
+  if (seleccionada) SELECCION.rutas.add(ruta);
+  else SELECCION.rutas.delete(ruta);
+  card.classList.toggle('seleccionada', seleccionada);
+  if (cb) cb.checked = seleccionada;
+  actualizarBarraSeleccion();
+}
+
+function actualizarBarraSeleccion() {
+  const bar = document.getElementById('seleccion-bar');
+  const cnt = document.getElementById('seleccion-count');
+  if (!bar) return;
+  const n = SELECCION.rutas.size;
+  const visible = SELECCION.activo && n > 0;
+  bar.hidden = !visible;
+  if (cnt) cnt.textContent = `${n} seleccionado${n === 1 ? '' : 's'}`;
+}
+
+document.getElementById('btn-modo-seleccion')?.addEventListener('click', () => toggleModoSeleccion());
+document.getElementById('seleccion-cancelar')?.addEventListener('click', () => toggleModoSeleccion(false));
+document.getElementById('seleccion-borrar')?.addEventListener('click', () => pedirBorrarLote());
+document.getElementById('seleccion-mover')?.addEventListener('click', () => {
+  if (!SELECCION.rutas.size) return;
+  abrirMoverDialogo(Array.from(SELECCION.rutas));
+});
+
+function pedirBorrarLote() {
+  const rutas = Array.from(SELECCION.rutas);
+  if (!rutas.length) return;
+  modal({
+    titulo: `Borrar ${rutas.length} elemento${rutas.length === 1 ? '' : 's'}`,
+    texto: `Se borrarán:\n${rutas.map(r => '• ' + r).join('\n')}\n\nEsta acción no se puede deshacer.`,
+    aceptar: 'Borrar',
+    peligro: true,
+    onOk: async () => {
+      try {
+        const r = await api('POST', 'api/borrar_lote', { rutas });
+        const n = (r.borrados || []).length;
+        const errs = (r.errores || []).length;
+        toast(errs
+          ? `${n} borrado${n === 1 ? '' : 's'} · ${errs} con error`
+          : `${n} borrado${n === 1 ? '' : 's'}`);
+        toggleModoSeleccion(false);
+        recargar();
+      } catch (e) { toast(`⚠️ ${e.message}`); }
+    },
+  });
+}
+
+/* ── Diálogo "Mover a…" ─────────────────────────────────────────────── */
+
+async function abrirMoverDialogo(rutas) {
+  if (!rutas || !rutas.length) return;
+  const modalEl = document.getElementById('teoria-mover-modal');
+  const lista   = document.getElementById('teoria-mover-list');
+  const tit     = document.getElementById('teoria-mover-titulo');
+  const filtro  = document.getElementById('teoria-mover-filtro');
+  const cancelar = document.getElementById('teoria-mover-cancelar');
+  if (!modalEl || !lista) return;
+  tit.textContent = rutas.length === 1
+    ? `Mover «${rutas[0].split('/').pop()}» a…`
+    : `Mover ${rutas.length} elementos a…`;
+  lista.innerHTML = `<li class="muted small" style="padding:.5rem 0">Cargando…</li>`;
+  modalEl.classList.remove('hidden');
+  filtro.value = '';
+  filtro.focus();
+
+  let carpetas = [];
+  try {
+    const r = await api('GET', 'api/arbol_carpetas');
+    carpetas = r.carpetas || [];
+  } catch (e) {
+    lista.innerHTML = `<li class="muted small">Error: ${esc(e.message)}</li>`;
+    return;
+  }
+
+  // Excluye rutas que serían destinos inválidos:
+  //   - la propia carpeta actual (padre) de cada origen
+  //   - la carpeta origen y todo su subárbol (para no mover dentro de sí misma)
+  const padresOrigen = new Set(rutas.map(r => {
+    const parts = r.split('/').filter(Boolean);
+    parts.pop();
+    return '/' + parts.join('/');
+  }).map(p => p === '/' ? '/' : p));
+  const bloqueadas = (dst) => {
+    for (const r of rutas) {
+      if (dst === r) return true;
+      if (r !== '/' && dst.startsWith(r + '/')) return true;
+    }
+    return false;
+  };
+
+  const pintar = (q) => {
+    const qq = (q || '').trim().toLowerCase();
+    const filtered = carpetas
+      .filter(c => !bloqueadas(c))
+      .filter(c => !qq || c.toLowerCase().includes(qq));
+    if (!filtered.length) {
+      lista.innerHTML = `<li class="muted small">No hay carpetas destino disponibles</li>`;
+      return;
+    }
+    lista.innerHTML = filtered.map(c => {
+      const label = c === '/' ? '🏠 Inicio (raíz)' : c;
+      const marcado = padresOrigen.has(c) ? '<span class="muted small">(carpeta actual)</span>' : '';
+      const disabled = padresOrigen.has(c) ? 'disabled' : '';
+      return `<li><button class="check-item" data-destino="${esc(c)}" ${disabled}>
+        <strong>${esc(label)}</strong>${marcado}
+      </button></li>`;
+    }).join('');
+  };
+  pintar('');
+  filtro.oninput = () => pintar(filtro.value);
+
+  const cerrar = () => modalEl.classList.add('hidden');
+  cancelar.onclick = cerrar;
+  document.getElementById('teoria-mover-cerrar').onclick = cerrar;
+
+  lista.onclick = async (ev) => {
+    const btn = ev.target.closest('[data-destino]');
+    if (!btn || btn.disabled) return;
+    const destino = btn.dataset.destino;
+    try {
+      const r = await api('POST', 'api/mover_lote', { rutas, destino });
+      const n = (r.movidos || []).length;
+      const errs = (r.errores || []).length;
+      toast(errs
+        ? `${n} movido${n === 1 ? '' : 's'} · ${errs} con error`
+        : `${n} movido${n === 1 ? '' : 's'}`);
+      cerrar();
+      toggleModoSeleccion(false);
+      recargar();
+    } catch (e) { toast(`⚠️ ${e.message}`); }
+  };
+}
