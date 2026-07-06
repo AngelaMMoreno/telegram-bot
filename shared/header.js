@@ -196,6 +196,18 @@
             </div>
 
             <div class="sheet-section">
+              <!-- Retos: común a tests y teoría, así que vive en el sheet.
+                   En tests navega a la vista local; en teoría abre el
+                   apartado de retos de la app de tests. -->
+              ${active === 'tests'
+                ? `<button class="sheet-row" id="btn-retos" type="button" data-view="retos">
+                     <span class="sheet-row-ico">${icon('trophy')}</span>
+                     <span class="sheet-row-label">Retos y logros</span>
+                   </button>`
+                : `<a class="sheet-row" id="btn-retos" href="${TESTS_URL}?atajo=retos">
+                     <span class="sheet-row-ico">${icon('trophy')}</span>
+                     <span class="sheet-row-label">Retos y logros</span>
+                   </a>`}
               <button class="sheet-row" id="btn-config" type="button">
                 <span class="sheet-row-ico">${icon('gear')}</span>
                 <span class="sheet-row-label">Configuración</span>
@@ -326,9 +338,11 @@
         this.querySelectorAll('.aprentix-sheet.open').forEach(closeSheet);
       });
 
-      // Al pulsar cualquier item del bottom-nav o del sheet "Más",
-      // cerramos las sheets abiertas (el routing lo hace el app).
-      this.querySelectorAll('.bnav-item, .more-item').forEach(b => {
+      // Al pulsar cualquier item del bottom-nav, del sheet "Más" o una
+      // fila del sheet del avatar (excepto la de admin que abre otro
+      // sheet), cerramos las sheets abiertas — el routing lo hace el app.
+      this.querySelectorAll('.bnav-item, .more-item, .sheet-row').forEach(b => {
+        if (b.id === 'btn-admin-panel') return;  // abre otro sheet
         b.addEventListener('click', () => {
           setTimeout(() => {
             this.querySelectorAll('.aprentix-sheet.open').forEach(closeSheet);
