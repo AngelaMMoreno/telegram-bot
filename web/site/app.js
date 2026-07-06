@@ -1719,14 +1719,14 @@ function abrirModalUsuario(u) {
     </div>
 
     <div>
-      <h4>Oposiciones (perfiles asignados)</h4>
+      <h4>Oposiciones asignadas</h4>
       <div class="input-row">
-        <button class="btn btn-sec btn-sm" data-action="perfiles-usuario"
+        <button class="btn btn-sec btn-sm" data-action="oposiciones-usuario"
                 data-usuario-id="${esc(u.user_id || u.id)}" data-usuario-nombre="${esc(u.username)}">
-          🎓 Gestionar perfiles
+          🎓 Gestionar oposiciones
         </button>
         <span class="muted small" style="align-self:center">
-          Los perfiles agrupan oposiciones; asignando uno o varios se decide a qué tests puede acceder.
+          Marca a qué oposiciones puede acceder este usuario.
         </span>
       </div>
     </div>
@@ -2255,14 +2255,9 @@ loaders.oposiciones = loadOposicionesAdmin;
 
 async function loadOposicionesAdmin() {
   try {
-    const [ops, perfs] = await Promise.all([
-      rpc("listar_oposiciones_admin").catch(() => []),
-      rpc("listar_perfiles_admin").catch(() => []),
-    ]);
-    state.oposAdminCache    = Array.isArray(ops)   ? ops   : [];
-    state.perfilesAdminCache = Array.isArray(perfs) ? perfs : [];
+    const ops = await rpc("listar_oposiciones_admin").catch(() => []);
+    state.oposAdminCache = Array.isArray(ops) ? ops : [];
     renderOposicionesAdmin();
-    renderPerfilesAdmin();
   } catch (e) { toast(e.message); }
 }
 
@@ -2272,10 +2267,11 @@ function renderOposicionesAdmin() {
       <div class="opos-head">
         <strong>${esc(o.nombre)}</strong>
         ${o.activa ? "" : `<span class="tag">Inactiva</span>`}
-        <span class="muted small">${o.num_tests} tests · ${o.num_perfiles} perfiles</span>
+        <span class="muted small">${o.num_tests} tests · ${o.num_usuarios || 0} usuarios</span>
       </div>
       ${o.descripcion ? `<div class="muted small">${esc(o.descripcion)}</div>` : ""}
       <div class="opos-actions">
+        <button class="btn btn-primary btn-sm" data-action="bulk-tests">🧩 Asignar tests</button>
         <button class="btn btn-ghost btn-sm" data-action="editar-op">✏️ Editar</button>
         <button class="btn btn-ghost btn-sm" data-action="toggle-op">${o.activa ? "🚫 Desactivar" : "✅ Activar"}</button>
         <button class="btn btn-ghost btn-sm" data-action="borrar-op">🗑️ Borrar</button>
@@ -2283,31 +2279,6 @@ function renderOposicionesAdmin() {
     </li>
   `).join("") || "<p class='muted'>Sin oposiciones aún.</p>";
 }
-
-function renderPerfilesAdmin() {
-  $("#perfiles-list").innerHTML = (state.perfilesAdminCache || []).map(p => `
-    <li class="perf-item" data-id="${p.id}">
-      <div class="perf-head">
-        <strong>${esc(p.nombre)}</strong>
-        <span class="muted small">${(p.oposiciones || []).length} oposiciones</span>
-      </div>
-      ${p.descripcion ? `<div class="muted small">${esc(p.descripcion)}</div>` : ""}
-      <div class="tags">${(p.oposiciones || []).map(o => `<span class="tag">${esc(o.nombre)}</span>`).join("")}</div>
-      <div class="opos-actions">
-        <button class="btn btn-ghost btn-sm" data-action="editar-perf">✏️ Nombre</button>
-        <button class="btn btn-ghost btn-sm" data-action="oposiciones-perf">🎓 Oposiciones</button>
-        <button class="btn btn-ghost btn-sm" data-action="borrar-perf">🗑️ Borrar</button>
-      </div>
-    </li>
-  `).join("") || "<p class='muted'>Sin perfiles aún.</p>";
-}
-
-$$(".oposiciones-tab").forEach(tab => tab.addEventListener("click", () => {
-  const key = tab.dataset.otab;
-  $$(".oposiciones-tab").forEach(t => t.classList.toggle("active", t === tab));
-  $("#oposiciones-tab-oposiciones").classList.toggle("hidden", key !== "oposiciones");
-  $("#oposiciones-tab-perfiles").classList.toggle("hidden", key !== "perfiles");
-}));
 
 $("#form-oposicion")?.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -2320,19 +2291,6 @@ $("#form-oposicion")?.addEventListener("submit", async (e) => {
     $("#op-nombre").value = ""; $("#op-desc").value = "";
     loadOposicionesAdmin();
     cargarMisOposiciones();
-  } catch (err) { toast(err.message); }
-});
-
-$("#form-perfil")?.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const nombre = $("#pf-nombre").value.trim();
-  const desc   = $("#pf-desc").value.trim();
-  if (!nombre) return;
-  try {
-    await rpc("crear_perfil", { p_nombre: nombre, p_descripcion: desc || null });
-    toast("Perfil creado");
-    $("#pf-nombre").value = ""; $("#pf-desc").value = "";
-    loadOposicionesAdmin();
   } catch (err) { toast(err.message); }
 });
 
@@ -2362,54 +2320,113 @@ $("#oposiciones-list")?.addEventListener("click", async (e) => {
     } catch (err) { toast(err.message); }
   }
   if (action === "borrar-op") {
-    if (!confirm(`¿Borrar "${o.nombre}"? Se desasignará de sus tests y perfiles.`)) return;
+    if (!confirm(`¿Borrar "${o.nombre}"? Se desasignará de sus tests y usuarios.`)) return;
     try {
       await rpc("borrar_oposicion", { p_id: id });
       loadOposicionesAdmin();
       cargarMisOposiciones();
     } catch (err) { toast(err.message); }
   }
-});
-
-$("#perfiles-list")?.addEventListener("click", async (e) => {
-  const btn = e.target.closest("[data-action]");
-  if (!btn) return;
-  const li = btn.closest(".perf-item");
-  const id = li?.dataset.id;
-  const p = (state.perfilesAdminCache || []).find(x => x.id === id);
-  if (!p) return;
-  const action = btn.dataset.action;
-  if (action === "editar-perf") {
-    const nombre = prompt("Nuevo nombre:", p.nombre);
-    if (nombre == null) return;
-    const desc = prompt("Descripción (vacío para no tocar):", p.descripcion || "");
-    try {
-      await rpc("editar_perfil", { p_id: id, p_nombre: nombre.trim(), p_descripcion: desc && desc.trim() });
-      loadOposicionesAdmin();
-    } catch (err) { toast(err.message); }
-  }
-  if (action === "oposiciones-perf") {
-    abrirModalOposicionesDePerfil(p);
-  }
-  if (action === "borrar-perf") {
-    if (!confirm(`¿Borrar el perfil "${p.nombre}"? Los usuarios asignados perderán el acceso que daba.`)) return;
-    try {
-      await rpc("borrar_perfil", { p_id: id });
-      loadOposicionesAdmin();
-    } catch (err) { toast(err.message); }
+  if (action === "bulk-tests") {
+    abrirModalBulkTests(o);
   }
 });
 
-// Reutilizamos #modal-test-oposiciones como picker genérico de oposiciones.
-// Marca el "modo" con un dataset para saber sobre qué guardar.
-async function abrirModalOposicionesDePerfil(perfil) {
-  const modal = $("#modal-test-oposiciones");
-  modal.dataset.mode = "perfil";
-  modal.dataset.perfilId = perfil.id;
-  await pintarPickerOposiciones((perfil.oposiciones || []).map(o => o.id));
-  modal.querySelector("h3").textContent = `Oposiciones del perfil "${perfil.nombre}"`;
+/* ── Modal BULK: asignar tests a una oposición ─────────────────────────
+ * Carga todos los tests (listar_tests_min) y los tests ya asignados
+ * (tests_de_oposicion) para pre-marcar. Filtro por título + etiqueta
+ * en cliente. Guarda con set_oposicion_tests (reemplaza el conjunto). */
+const BULK = { oposicion: null, tests: [], seleccion: new Set() };
+
+async function abrirModalBulkTests(oposicion) {
+  const modal = $("#modal-bulk-tests");
+  $("#modal-bulk-titulo").textContent = `Tests de "${oposicion.nombre}"`;
+  BULK.oposicion = oposicion;
+  BULK.tests = [];
+  BULK.seleccion = new Set();
+  $("#bulk-tests-list").innerHTML = "<li class='muted'>Cargando…</li>";
   modal.classList.remove("hidden");
+  try {
+    const [all, actuales] = await Promise.all([
+      rpc("listar_tests_min").catch(() => []),
+      rpc("tests_de_oposicion", { p_oposicion_id: oposicion.id }).catch(() => []),
+    ]);
+    BULK.tests = Array.isArray(all) ? all : [];
+    (Array.isArray(actuales) ? actuales : []).forEach(id => BULK.seleccion.add(id));
+    // Cache de etiquetas ya la tenemos por otra vía; para robustez usamos las
+    // etiquetas que aparecen en la lista de tests.
+    const etsSet = new Set();
+    BULK.tests.forEach(t => (t.etiquetas || []).forEach(e => etsSet.add(e)));
+    const opts = ['<option value="">Todas las etiquetas</option>']
+      .concat([...etsSet].sort().map(t => `<option value="${esc(t)}">${esc(t)}</option>`));
+    $("#bulk-filter-etiqueta").innerHTML = opts.join("");
+    $("#bulk-filter-nombre").value = "";
+    pintarBulkTests();
+  } catch (e) {
+    $("#bulk-tests-list").innerHTML = `<li class='muted'>${esc(e.message)}</li>`;
+  }
 }
+
+function bulkFiltrar() {
+  const q  = ($("#bulk-filter-nombre").value || "").trim().toLowerCase();
+  const et = $("#bulk-filter-etiqueta").value || "";
+  return BULK.tests.filter(t => {
+    if (q && !t.titulo.toLowerCase().includes(q)) return false;
+    if (et && !(t.etiquetas || []).includes(et))  return false;
+    return true;
+  });
+}
+
+function pintarBulkTests() {
+  const lista = $("#bulk-tests-list");
+  const filtrados = bulkFiltrar();
+  lista.innerHTML = filtrados.map(t => `
+    <li>
+      <label class="check-item">
+        <input type="checkbox" data-test-id="${t.id}" ${BULK.seleccion.has(t.id) ? "checked" : ""}>
+        <span>
+          <strong>${esc(t.titulo)}</strong>
+          <span class="muted small">${t.num_preguntas || 0} preguntas${(t.etiquetas || []).length ? " · " + (t.etiquetas || []).map(esc).join(", ") : ""}</span>
+        </span>
+      </label>
+    </li>
+  `).join("") || "<li class='muted'>Sin tests con esos filtros.</li>";
+  $("#bulk-counter").textContent =
+    `${BULK.seleccion.size} / ${BULK.tests.length} seleccionados` +
+    (filtrados.length !== BULK.tests.length ? ` · ${filtrados.length} visibles` : "");
+}
+
+$("#bulk-filter-nombre")?.addEventListener("input", pintarBulkTests);
+$("#bulk-filter-etiqueta")?.addEventListener("change", pintarBulkTests);
+$("#bulk-tests-list")?.addEventListener("change", (e) => {
+  const cb = e.target.closest("input[type=checkbox][data-test-id]");
+  if (!cb) return;
+  if (cb.checked) BULK.seleccion.add(cb.dataset.testId);
+  else            BULK.seleccion.delete(cb.dataset.testId);
+  $("#bulk-counter").textContent = `${BULK.seleccion.size} / ${BULK.tests.length} seleccionados`;
+});
+$("#bulk-select-visible")?.addEventListener("click", () => {
+  bulkFiltrar().forEach(t => BULK.seleccion.add(t.id));
+  pintarBulkTests();
+});
+$("#bulk-clear-visible")?.addEventListener("click", () => {
+  bulkFiltrar().forEach(t => BULK.seleccion.delete(t.id));
+  pintarBulkTests();
+});
+$("#modal-bulk-close")?.addEventListener("click", () => $("#modal-bulk-tests").classList.add("hidden"));
+$("#modal-bulk-cancelar")?.addEventListener("click", () => $("#modal-bulk-tests").classList.add("hidden"));
+$("#modal-bulk-guardar")?.addEventListener("click", async () => {
+  if (!BULK.oposicion) return;
+  try {
+    await rpc("set_oposicion_tests", {
+      p_oposicion_id: BULK.oposicion.id,
+      p_test_ids: [...BULK.seleccion],
+    });
+    toast(`${BULK.seleccion.size} tests asignados a "${BULK.oposicion.nombre}"`);
+    $("#modal-bulk-tests").classList.add("hidden");
+    loadOposicionesAdmin();
+  } catch (e) { toast(e.message); }
+});
 
 async function pintarPickerOposiciones(seleccionadas) {
   const ops = state.oposAdminCache && state.oposAdminCache.length
@@ -2430,7 +2447,6 @@ async function pintarPickerOposiciones(seleccionadas) {
 $("#btn-test-oposiciones")?.addEventListener("click", async () => {
   if (!state.currentTestId) return;
   const modal = $("#modal-test-oposiciones");
-  modal.dataset.mode = "test";
   modal.querySelector("h3").textContent = "Oposiciones del test";
   try {
     const asignadas = await rpc("oposiciones_de_test", { p_test_id: state.currentTestId });
@@ -2444,64 +2460,58 @@ $("#modal-test-op-guardar")?.addEventListener("click", async () => {
   const modal = $("#modal-test-oposiciones");
   const ids = $$("#modal-test-op-list input[type=checkbox]:checked").map(x => x.dataset.opId);
   try {
-    if (modal.dataset.mode === "perfil") {
-      await rpc("set_perfil_oposiciones", { p_perfil_id: modal.dataset.perfilId, p_oposicion_ids: ids });
-      toast("Oposiciones del perfil actualizadas");
-      loadOposicionesAdmin();
-      cargarMisOposiciones();
-    } else {
-      await rpc("set_test_oposiciones", { p_test_id: state.currentTestId, p_oposicion_ids: ids });
-      toast("Oposiciones del test actualizadas");
-    }
+    await rpc("set_test_oposiciones", { p_test_id: state.currentTestId, p_oposicion_ids: ids });
+    toast("Oposiciones del test actualizadas");
     modal.classList.add("hidden");
   } catch (e) { toast(e.message); }
 });
 
-/* ── Modal usuario: asignar perfiles ─────────────────────────────────
- * Se dispara desde el botón "Perfiles" que añadimos al modal-usuario. */
-async function abrirPerfilesDeUsuario(usuarioId, nombreUsuario) {
-  const modal = $("#modal-perfiles-usuario");
+/* ── Modal usuario: asignar OPOSICIONES directamente ─────────────────
+ * Sustituye el flujo antiguo de "perfiles". Delegación desde el modal
+ * de usuario existente. */
+async function abrirOposicionesDeUsuario(usuarioId, nombreUsuario) {
+  const modal = $("#modal-oposiciones-usuario");
   modal.dataset.usuarioId = usuarioId;
-  modal.querySelector("h3").textContent = `Perfiles de ${nombreUsuario || "usuario"}`;
+  $("#modal-op-usuario-titulo").textContent = `Oposiciones de ${nombreUsuario || "usuario"}`;
   try {
-    const [todos, asignados] = await Promise.all([
-      rpc("listar_perfiles_admin").catch(() => []),
-      rpc("perfiles_de_usuario", { p_usuario_id: usuarioId }).catch(() => []),
+    const [todas, asignadas] = await Promise.all([
+      rpc("listar_oposiciones_admin").catch(() => []),
+      rpc("oposiciones_de_usuario", { p_usuario_id: usuarioId }).catch(() => []),
     ]);
-    const sel = new Set((asignados || []).map(x => x.id));
-    $("#modal-perfiles-list").innerHTML = (todos || []).map(p => `
+    const sel = new Set((asignadas || []).map(x => x.id));
+    $("#modal-op-usuario-list").innerHTML = (todas || []).map(o => `
       <li>
         <label class="check-item">
-          <input type="checkbox" data-perfil-id="${p.id}" ${sel.has(p.id) ? "checked" : ""}>
+          <input type="checkbox" data-op-id="${o.id}" ${sel.has(o.id) ? "checked" : ""}>
           <span>
-            <strong>${esc(p.nombre)}</strong>
-            <span class="muted small">${(p.oposiciones || []).map(o => esc(o.nombre)).join(", ") || "sin oposiciones"}</span>
+            <strong>${esc(o.nombre)}</strong>
+            ${o.descripcion ? `<span class="muted small">${esc(o.descripcion)}</span>` : ""}
           </span>
         </label>
       </li>
-    `).join("") || "<p class='muted'>No hay perfiles creados. Crea uno primero.</p>";
+    `).join("") || "<p class='muted'>No hay oposiciones creadas. Crea alguna primero.</p>";
     modal.classList.remove("hidden");
   } catch (e) { toast(e.message); }
 }
-$("#modal-perfiles-close")?.addEventListener("click", () => $("#modal-perfiles-usuario").classList.add("hidden"));
-$("#modal-perfiles-cancelar")?.addEventListener("click", () => $("#modal-perfiles-usuario").classList.add("hidden"));
-$("#modal-perfiles-guardar")?.addEventListener("click", async () => {
-  const modal = $("#modal-perfiles-usuario");
-  const ids = $$("#modal-perfiles-list input[type=checkbox]:checked").map(x => x.dataset.perfilId);
+$("#modal-op-usuario-close")?.addEventListener("click", () => $("#modal-oposiciones-usuario").classList.add("hidden"));
+$("#modal-op-usuario-cancelar")?.addEventListener("click", () => $("#modal-oposiciones-usuario").classList.add("hidden"));
+$("#modal-op-usuario-guardar")?.addEventListener("click", async () => {
+  const modal = $("#modal-oposiciones-usuario");
+  const ids = $$("#modal-op-usuario-list input[type=checkbox]:checked").map(x => x.dataset.opId);
   try {
-    await rpc("set_usuario_perfiles", { p_usuario_id: modal.dataset.usuarioId, p_perfil_ids: ids });
-    toast("Perfiles asignados");
+    await rpc("set_usuario_oposiciones", { p_usuario_id: modal.dataset.usuarioId, p_oposicion_ids: ids });
+    toast("Oposiciones asignadas");
     modal.classList.add("hidden");
   } catch (e) { toast(e.message); }
 });
-// Botón "Perfiles" dentro del modal usuario existente. Como el HTML del
-// modal se rellena dinámicamente en renderUsuarios(), delegamos.
+// Botón "Oposiciones" del modal usuario. El HTML del modal se rellena
+// dinámicamente en renderUsuarios(), así que delegamos.
 $("#modal-usuario-body")?.addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-action=perfiles-usuario]");
+  const btn = e.target.closest("[data-action=oposiciones-usuario]");
   if (!btn) return;
   const uid = btn.dataset.usuarioId;
   const nombre = btn.dataset.usuarioNombre || "";
-  abrirPerfilesDeUsuario(uid, nombre);
+  abrirOposicionesDeUsuario(uid, nombre);
 });
 
 

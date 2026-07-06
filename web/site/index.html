@@ -381,39 +381,23 @@
     <ul id="etiquetas-list" class="etiquetas-list"></ul>
   </section>
 
-  <!-- Oposiciones y perfiles (gestión) -->
+  <!-- Oposiciones (gestión) -->
   <section id="view-oposiciones" class="view">
     <header class="view-header">
-      <h2>Oposiciones y perfiles</h2>
+      <h2>Oposiciones</h2>
       <p class="muted small">
-        Una <strong>oposición</strong> agrupa tests y teoría del mismo tema. Un
-        <strong>perfil</strong> junta las oposiciones que quieres dar a un mismo
-        tipo de usuario. Un usuario puede tener uno o varios perfiles.
+        Una <strong>oposición</strong> agrupa tests y teoría del mismo tema.
+        Un usuario ve solo el material de las oposiciones que le asignes.
+        Los tests sin oposición son globales (los ve todo el mundo).
       </p>
     </header>
 
-    <div class="oposiciones-tabs" role="tablist">
-      <button class="oposiciones-tab active" data-otab="oposiciones" role="tab">Oposiciones</button>
-      <button class="oposiciones-tab" data-otab="perfiles" role="tab">Perfiles</button>
-    </div>
-
-    <div id="oposiciones-tab-oposiciones" class="oposiciones-panel">
-      <form id="form-oposicion" class="inline-form">
-        <input id="op-nombre" placeholder="Nombre (ej: Auxiliar administrativo Estado)" required>
-        <input id="op-desc"   placeholder="Descripción corta (opcional)">
-        <button class="btn btn-primary" type="submit">Crear oposición</button>
-      </form>
-      <ul id="oposiciones-list" class="oposiciones-list"></ul>
-    </div>
-
-    <div id="oposiciones-tab-perfiles" class="oposiciones-panel hidden">
-      <form id="form-perfil" class="inline-form">
-        <input id="pf-nombre" placeholder="Nombre (ej: Estado + AGE)" required>
-        <input id="pf-desc"   placeholder="Descripción corta (opcional)">
-        <button class="btn btn-primary" type="submit">Crear perfil</button>
-      </form>
-      <ul id="perfiles-list" class="perfiles-list"></ul>
-    </div>
+    <form id="form-oposicion" class="inline-form">
+      <input id="op-nombre" placeholder="Nombre (ej: Auxiliar administrativo Estado)" required>
+      <input id="op-desc"   placeholder="Descripción corta (opcional)">
+      <button class="btn btn-primary" type="submit">Crear oposición</button>
+    </form>
+    <ul id="oposiciones-list" class="oposiciones-list"></ul>
   </section>
 
   <!-- Usuarios (solo admin) -->
@@ -474,19 +458,48 @@
   </div>
 </div>
 
-<!-- Modal para asignar perfiles a un usuario -->
-<div id="modal-perfiles-usuario" class="modal hidden">
+<!-- Modal para asignar oposiciones directamente a un usuario -->
+<div id="modal-oposiciones-usuario" class="modal hidden">
   <div class="modal-card">
     <header class="modal-header">
-      <h3>Perfiles del usuario</h3>
-      <button class="btn btn-ghost" id="modal-perfiles-close" aria-label="Cerrar">✕</button>
+      <h3 id="modal-op-usuario-titulo">Oposiciones del usuario</h3>
+      <button class="btn btn-ghost" id="modal-op-usuario-close" aria-label="Cerrar">✕</button>
     </header>
     <div class="modal-body">
-      <p class="muted small">Marca los perfiles que dan acceso a este usuario. Las oposiciones accesibles serán la unión de las que traiga cada perfil.</p>
-      <ul id="modal-perfiles-list" class="check-list"></ul>
+      <p class="muted small">Marca todas las oposiciones a las que este usuario debe tener acceso.</p>
+      <ul id="modal-op-usuario-list" class="check-list"></ul>
       <div class="modal-actions">
-        <button class="btn btn-ghost" id="modal-perfiles-cancelar">Cancelar</button>
-        <button class="btn btn-primary" id="modal-perfiles-guardar">Guardar</button>
+        <button class="btn btn-ghost" id="modal-op-usuario-cancelar">Cancelar</button>
+        <button class="btn btn-primary" id="modal-op-usuario-guardar">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal BULK: asigna tests a una oposición (con buscar + filtro etiqueta) -->
+<div id="modal-bulk-tests" class="modal hidden">
+  <div class="modal-card modal-bulk-card">
+    <header class="modal-header">
+      <h3 id="modal-bulk-titulo">Tests de la oposición</h3>
+      <button class="btn btn-ghost" id="modal-bulk-close" aria-label="Cerrar">✕</button>
+    </header>
+    <div class="modal-body bulk-body">
+      <div class="bulk-toolbar">
+        <input type="search" id="bulk-filter-nombre" placeholder="Buscar por título…" autocomplete="off">
+        <select id="bulk-filter-etiqueta" class="select-styled">
+          <option value="">Todas las etiquetas</option>
+        </select>
+      </div>
+      <div class="bulk-actions">
+        <span id="bulk-counter" class="muted small">0 / 0 seleccionados</span>
+        <span style="flex:1"></span>
+        <button class="btn btn-ghost btn-sm" id="bulk-select-visible">Seleccionar visibles</button>
+        <button class="btn btn-ghost btn-sm" id="bulk-clear-visible">Deseleccionar visibles</button>
+      </div>
+      <ul id="bulk-tests-list" class="check-list bulk-list"></ul>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="modal-bulk-cancelar">Cancelar</button>
+        <button class="btn btn-primary" id="modal-bulk-guardar">Guardar</button>
       </div>
     </div>
   </div>

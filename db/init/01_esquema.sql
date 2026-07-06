@@ -3522,26 +3522,11 @@ CREATE TABLE IF NOT EXISTS oposiciones (
 CREATE UNIQUE INDEX IF NOT EXISTS oposiciones_nombre_key
     ON oposiciones (lower(nombre));
 
-CREATE TABLE IF NOT EXISTS perfiles (
-    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    nombre      text NOT NULL,
-    descripcion text,
-    creado_en   timestamptz NOT NULL DEFAULT now()
-);
-CREATE UNIQUE INDEX IF NOT EXISTS perfiles_nombre_key
-    ON perfiles (lower(nombre));
-
-CREATE TABLE IF NOT EXISTS perfil_oposiciones (
-    perfil_id    uuid NOT NULL REFERENCES perfiles(id)    ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS usuario_oposiciones (
+    usuario_id   uuid NOT NULL REFERENCES usuarios(id)    ON DELETE CASCADE,
     oposicion_id uuid NOT NULL REFERENCES oposiciones(id) ON DELETE CASCADE,
-    PRIMARY KEY (perfil_id, oposicion_id)
-);
-
-CREATE TABLE IF NOT EXISTS usuario_perfiles (
-    usuario_id  uuid NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
-    perfil_id   uuid NOT NULL REFERENCES perfiles(id) ON DELETE CASCADE,
-    asignado_en timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (usuario_id, perfil_id)
+    asignado_en  timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (usuario_id, oposicion_id)
 );
 
 CREATE TABLE IF NOT EXISTS test_oposiciones (
@@ -3560,9 +3545,7 @@ CREATE INDEX IF NOT EXISTS carpeta_oposiciones_oposicion_idx
     ON carpeta_oposiciones (oposicion_id);
 
 ALTER TABLE oposiciones          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE perfiles             ENABLE ROW LEVEL SECURITY;
-ALTER TABLE perfil_oposiciones   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE usuario_perfiles     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE usuario_oposiciones  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE test_oposiciones     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE carpeta_oposiciones  ENABLE ROW LEVEL SECURITY;
 
@@ -3574,32 +3557,22 @@ DROP POLICY IF EXISTS oposiciones_lectura        ON oposiciones;
 CREATE POLICY oposiciones_lectura        ON oposiciones
     FOR SELECT TO web_user USING (true);
 
-DROP POLICY IF EXISTS perfiles_lectura           ON perfiles;
-CREATE POLICY perfiles_lectura           ON perfiles
-    FOR SELECT TO web_user USING (true);
-
-DROP POLICY IF EXISTS perfil_op_lectura          ON perfil_oposiciones;
-CREATE POLICY perfil_op_lectura          ON perfil_oposiciones
-    FOR SELECT TO web_user USING (true);
-
-DROP POLICY IF EXISTS usuario_perfiles_lectura   ON usuario_perfiles;
-CREATE POLICY usuario_perfiles_lectura   ON usuario_perfiles
+DROP POLICY IF EXISTS usuario_op_lectura         ON usuario_oposiciones;
+CREATE POLICY usuario_op_lectura         ON usuario_oposiciones
     FOR SELECT TO web_user USING (usuario_id = jwt_usuario_id() OR es_admin());
 
 DROP POLICY IF EXISTS test_oposiciones_lectura   ON test_oposiciones;
 CREATE POLICY test_oposiciones_lectura   ON test_oposiciones
     FOR SELECT TO web_user USING (true);
 
-GRANT SELECT ON oposiciones, perfiles, perfil_oposiciones, usuario_perfiles, test_oposiciones,
-                carpeta_oposiciones
+GRANT SELECT ON oposiciones, usuario_oposiciones, test_oposiciones, carpeta_oposiciones
     TO web_user;
 
 -- ── Helpers y RPCs de oposiciones/perfiles ────────────────────────────────
 
 CREATE OR REPLACE FUNCTION mis_oposiciones() RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
-DECLARE
-    v_admin boolean := es_admin() OR tiene_permiso('test.crear');
+DECLARE v_admin boolean := es_admin() OR tiene_permiso('test.crear');
 BEGIN
     IF v_admin THEN
         RETURN COALESCE((
@@ -3610,27 +3583,20 @@ BEGIN
         ), '[]'::jsonb);
     END IF;
     RETURN COALESCE((
-        SELECT jsonb_agg(DISTINCT jsonb_build_object(
+        SELECT jsonb_agg(jsonb_build_object(
             'id', o.id, 'nombre', o.nombre, 'descripcion', o.descripcion
-        ) ORDER BY jsonb_build_object(
-            'id', o.id, 'nombre', o.nombre, 'descripcion', o.descripcion
-        ))
-        FROM usuario_perfiles up
-        JOIN perfil_oposiciones po ON po.perfil_id = up.perfil_id
-        JOIN oposiciones o         ON o.id = po.oposicion_id
-        WHERE up.usuario_id = jwt_usuario_id()
-          AND o.activa
+        ) ORDER BY o.nombre)
+        FROM usuario_oposiciones uo
+        JOIN oposiciones o ON o.id = uo.oposicion_id
+        WHERE uo.usuario_id = jwt_usuario_id() AND o.activa
     ), '[]'::jsonb);
 END $$;
 
 CREATE OR REPLACE FUNCTION puedo_ver_oposicion(p_id uuid) RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER AS $$
     SELECT es_admin() OR tiene_permiso('test.crear') OR EXISTS (
-        SELECT 1
-        FROM usuario_perfiles up
-        JOIN perfil_oposiciones po ON po.perfil_id = up.perfil_id
-        WHERE up.usuario_id = jwt_usuario_id()
-          AND po.oposicion_id = p_id
+        SELECT 1 FROM usuario_oposiciones
+         WHERE usuario_id = jwt_usuario_id() AND oposicion_id = p_id
     );
 $$;
 
@@ -3666,61 +3632,65 @@ BEGIN
     DELETE FROM oposiciones WHERE id = p_id;
 END $$;
 
-CREATE OR REPLACE FUNCTION crear_perfil(p_nombre text, p_descripcion text DEFAULT NULL)
-RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER AS $$
-DECLARE v_id uuid;
-BEGIN
-    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
-    INSERT INTO perfiles(nombre, descripcion)
-    VALUES (trim(p_nombre), NULLIF(trim(p_descripcion), ''))
-    RETURNING id INTO v_id;
-    RETURN jsonb_build_object('id', v_id);
-END $$;
-
-CREATE OR REPLACE FUNCTION editar_perfil(
-    p_id uuid, p_nombre text, p_descripcion text DEFAULT NULL
+CREATE OR REPLACE FUNCTION set_usuario_oposiciones(
+    p_usuario_id uuid, p_oposicion_ids uuid[]
 ) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
     IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
-    UPDATE perfiles
-       SET nombre      = COALESCE(NULLIF(trim(p_nombre), ''), nombre),
-           descripcion = COALESCE(NULLIF(trim(p_descripcion), ''), descripcion)
-     WHERE id = p_id;
-END $$;
-
-CREATE OR REPLACE FUNCTION borrar_perfil(p_id uuid) RETURNS void
-LANGUAGE plpgsql SECURITY DEFINER AS $$
-BEGIN
-    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
-    DELETE FROM perfiles WHERE id = p_id;
-END $$;
-
-CREATE OR REPLACE FUNCTION set_perfil_oposiciones(
-    p_perfil_id uuid, p_oposicion_ids uuid[]
-) RETURNS void
-LANGUAGE plpgsql SECURITY DEFINER AS $$
-BEGIN
-    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
-    DELETE FROM perfil_oposiciones WHERE perfil_id = p_perfil_id;
-    INSERT INTO perfil_oposiciones(perfil_id, oposicion_id)
-    SELECT p_perfil_id, oid
+    DELETE FROM usuario_oposiciones WHERE usuario_id = p_usuario_id;
+    INSERT INTO usuario_oposiciones(usuario_id, oposicion_id)
+    SELECT p_usuario_id, oid
     FROM UNNEST(COALESCE(p_oposicion_ids, '{}'::uuid[])) oid
     ON CONFLICT DO NOTHING;
 END $$;
 
-CREATE OR REPLACE FUNCTION set_usuario_perfiles(
-    p_usuario_id uuid, p_perfil_ids uuid[]
+CREATE OR REPLACE FUNCTION oposiciones_de_usuario(p_usuario_id uuid) RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
+BEGIN
+    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
+    RETURN COALESCE((
+        SELECT jsonb_agg(jsonb_build_object('id', o.id, 'nombre', o.nombre) ORDER BY o.nombre)
+        FROM usuario_oposiciones uo
+        JOIN oposiciones o ON o.id = uo.oposicion_id
+        WHERE uo.usuario_id = p_usuario_id
+    ), '[]'::jsonb);
+END $$;
+
+-- Bulk: reemplaza el conjunto de tests que pertenecen a una oposición.
+CREATE OR REPLACE FUNCTION set_oposicion_tests(
+    p_oposicion_id uuid, p_test_ids uuid[]
 ) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
-    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
-    DELETE FROM usuario_perfiles WHERE usuario_id = p_usuario_id;
-    INSERT INTO usuario_perfiles(usuario_id, perfil_id)
-    SELECT p_usuario_id, pid
-    FROM UNNEST(COALESCE(p_perfil_ids, '{}'::uuid[])) pid
+    IF NOT (es_admin() OR tiene_permiso('test.crear')) THEN RAISE EXCEPTION 'no_autorizado'; END IF;
+    DELETE FROM test_oposiciones WHERE oposicion_id = p_oposicion_id;
+    INSERT INTO test_oposiciones(test_id, oposicion_id)
+    SELECT tid, p_oposicion_id
+    FROM UNNEST(COALESCE(p_test_ids, '{}'::uuid[])) tid
     ON CONFLICT DO NOTHING;
+END $$;
+
+CREATE OR REPLACE FUNCTION tests_de_oposicion(p_oposicion_id uuid) RETURNS jsonb
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+    SELECT COALESCE(jsonb_agg(test_id), '[]'::jsonb)
+    FROM test_oposiciones WHERE oposicion_id = p_oposicion_id;
+$$;
+
+-- Listado ligero de tests para el picker bulk: id + título + etiquetas.
+CREATE OR REPLACE FUNCTION listar_tests_min() RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
+BEGIN
+    IF NOT (es_admin() OR tiene_permiso('test.crear')) THEN RAISE EXCEPTION 'no_autorizado'; END IF;
+    RETURN COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+            'id',            t.id,
+            'titulo',        t.titulo,
+            'etiquetas',     t.etiquetas,
+            'num_preguntas', (SELECT count(*) FROM test_preguntas tp WHERE tp.test_id = t.id)
+        ) ORDER BY t.titulo)
+        FROM tests t
+    ), '[]'::jsonb);
 END $$;
 
 CREATE OR REPLACE FUNCTION set_test_oposiciones(
@@ -3736,26 +3706,6 @@ BEGIN
     ON CONFLICT DO NOTHING;
 END $$;
 
-CREATE OR REPLACE FUNCTION listar_perfiles_admin() RETURNS jsonb
-LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
-BEGIN
-    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
-    RETURN COALESCE((
-        SELECT jsonb_agg(jsonb_build_object(
-            'id',          p.id,
-            'nombre',      p.nombre,
-            'descripcion', p.descripcion,
-            'oposiciones', COALESCE((
-                SELECT jsonb_agg(jsonb_build_object('id', o.id, 'nombre', o.nombre) ORDER BY o.nombre)
-                FROM perfil_oposiciones po
-                JOIN oposiciones o ON o.id = po.oposicion_id
-                WHERE po.perfil_id = p.id
-            ), '[]'::jsonb)
-        ) ORDER BY p.nombre)
-        FROM perfiles p
-    ), '[]'::jsonb);
-END $$;
-
 CREATE OR REPLACE FUNCTION listar_oposiciones_admin() RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
 BEGIN
@@ -3766,22 +3716,10 @@ BEGIN
             'nombre',       o.nombre,
             'descripcion',  o.descripcion,
             'activa',       o.activa,
-            'num_tests',    (SELECT count(*) FROM test_oposiciones WHERE oposicion_id = o.id),
-            'num_perfiles', (SELECT count(*) FROM perfil_oposiciones WHERE oposicion_id = o.id)
+            'num_tests',    (SELECT count(*) FROM test_oposiciones     WHERE oposicion_id = o.id),
+            'num_usuarios', (SELECT count(*) FROM usuario_oposiciones  WHERE oposicion_id = o.id)
         ) ORDER BY o.nombre)
         FROM oposiciones o
-    ), '[]'::jsonb);
-END $$;
-
-CREATE OR REPLACE FUNCTION perfiles_de_usuario(p_usuario_id uuid) RETURNS jsonb
-LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
-BEGIN
-    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
-    RETURN COALESCE((
-        SELECT jsonb_agg(jsonb_build_object('id', p.id, 'nombre', p.nombre) ORDER BY p.nombre)
-        FROM usuario_perfiles up
-        JOIN perfiles p ON p.id = up.perfil_id
-        WHERE up.usuario_id = p_usuario_id
     ), '[]'::jsonb);
 END $$;
 
@@ -3850,15 +3788,13 @@ GRANT EXECUTE ON FUNCTION puedo_ver_oposicion(uuid)                      TO web_
 GRANT EXECUTE ON FUNCTION crear_oposicion(text, text)                    TO web_user;
 GRANT EXECUTE ON FUNCTION editar_oposicion(uuid, text, text, boolean)    TO web_user;
 GRANT EXECUTE ON FUNCTION borrar_oposicion(uuid)                         TO web_user;
-GRANT EXECUTE ON FUNCTION crear_perfil(text, text)                       TO web_user;
-GRANT EXECUTE ON FUNCTION editar_perfil(uuid, text, text)                TO web_user;
-GRANT EXECUTE ON FUNCTION borrar_perfil(uuid)                            TO web_user;
-GRANT EXECUTE ON FUNCTION set_perfil_oposiciones(uuid, uuid[])           TO web_user;
-GRANT EXECUTE ON FUNCTION set_usuario_perfiles(uuid, uuid[])             TO web_user;
+GRANT EXECUTE ON FUNCTION set_usuario_oposiciones(uuid, uuid[])          TO web_user;
+GRANT EXECUTE ON FUNCTION oposiciones_de_usuario(uuid)                   TO web_user;
 GRANT EXECUTE ON FUNCTION set_test_oposiciones(uuid, uuid[])             TO web_user;
-GRANT EXECUTE ON FUNCTION listar_perfiles_admin()                        TO web_user;
+GRANT EXECUTE ON FUNCTION set_oposicion_tests(uuid, uuid[])              TO web_user;
+GRANT EXECUTE ON FUNCTION tests_de_oposicion(uuid)                       TO web_user;
+GRANT EXECUTE ON FUNCTION listar_tests_min()                             TO web_user;
 GRANT EXECUTE ON FUNCTION listar_oposiciones_admin()                     TO web_user;
-GRANT EXECUTE ON FUNCTION perfiles_de_usuario(uuid)                      TO web_user;
 GRANT EXECUTE ON FUNCTION oposiciones_de_test(uuid)                      TO web_user;
 GRANT EXECUTE ON FUNCTION set_carpeta_oposicion(text, uuid)              TO web_user;
 GRANT EXECUTE ON FUNCTION listar_carpeta_oposiciones()                   TO web_user;
