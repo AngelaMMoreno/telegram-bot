@@ -61,6 +61,11 @@ const state = {
   filtroEtiquetaBuscar: null,          // legado (single-tag), no se usa ya
   filtroEtiquetasBuscar: [],            // multi-tag actual
   etiquetasCache: [],
+  // Fase 5: oposición seleccionada actualmente (uuid | null = todas).
+  // Se persiste por usuario en localStorage: aprentix.oposicion.<user_id>
+  currentOposicion: null,
+  currentOposicionNombre: null,
+  misOposicionesCache: [],
 };
 
 /* ── Helpers DOM ─────────────────────────────────────────────────────────── */
@@ -264,6 +269,11 @@ async function register(form) {
 function logout(navigateAway = true) {
   state.jwt = null; state.user = null;
   state.progresoCache = null;
+  // Reinicia la oposición seleccionada (nueva sesión, quizás otro usuario).
+  state.currentOposicion = null;
+  state.currentOposicionNombre = null;
+  state.misOposicionesCache = [];
+  document.body.classList.remove("has-oposiciones");
   persistSession(); applySession();
   if (navigateAway) {
     // La sesión es global; salir del stack manda a la landing para que la
@@ -544,6 +554,7 @@ async function loadTests() {
     p_size:            12,
     p_etiqueta:        state.filtroEtiquetaTests || null,
     p_orden:           state.ordenTests,
+    p_oposicion_id:    state.currentOposicion || null,
   });
   state.testsCache = r.tests;
   renderTests();
@@ -1004,8 +1015,10 @@ function iniciarQuizDesdeReanudacion(d) {
     tiempoPorPregunta: getTiempo(),
     totalEfectivo: d.total_efectivo,
     adelantada,
+    favoritas: new Set(),
   };
   state.qi = 0;
+  cargarFavoritasQuiz();  // no bloquea el render inicial
   navigate("quiz");
   $("#quiz-title").textContent = state.quiz.title +
     (adelantada ? "  ·  ⏩ adelantado" : "");
@@ -1085,12 +1098,27 @@ async function startQuiz(title, testId, questions, tipo = "quiz", opts = {}) {
     intentoId,
     tiempoPorPregunta: getTiempo(),
     adelantada: !!opts.adelantada,
+    favoritas: new Set(),
   };
   state.qi = 0;
+  await cargarFavoritasQuiz();
   navigate("quiz");
   $("#quiz-title").textContent = title +
     (opts.adelantada ? "  ·  ⏩ adelantado" : "");
   renderPregunta();
+}
+
+/* Trae el conjunto de preguntas favoritas del usuario al iniciar/reanudar
+ * un quiz. Se guarda en state.quiz.favoritas para poder pintar el estado
+ * del botón ⭐ en cada pregunta sin una RPC por render. */
+async function cargarFavoritasQuiz() {
+  if (!state.quiz) return;
+  try {
+    const r = await rpc("mis_favoritas_ids");
+    state.quiz.favoritas = new Set((r && r.question_ids) || []);
+  } catch {
+    state.quiz.favoritas = new Set();
+  }
 }
 
 function renderPregunta() {
@@ -1109,6 +1137,10 @@ function renderPregunta() {
   $("#quiz-options").innerHTML = q.options.map((o, i) => `
     <button class="option-btn" data-i="${i}">${esc(o.text)}</button>
   `).join("");
+
+  // Refresca el estado visual del botón ⭐ para esta pregunta.
+  const esFav = !!(state.quiz.favoritas && state.quiz.favoritas.has(q.id));
+  pintarBotonFavQ(esFav);
 
   // Temporizador configurable.  El id vive en una variable de módulo
   // (no en state.quiz) para evitar timers huérfanos cuando se reasigna
@@ -1143,11 +1175,28 @@ $("#btn-next").addEventListener("click", () => {
 
 $("#btn-fav-q").addEventListener("click", async () => {
   const q = state.quiz.questions[state.qi];
+  const btn = $("#btn-fav-q");
+  if (btn.disabled) return;
+  btn.disabled = true;
   try {
-    await rpc("toggle_favorita_pregunta", { p_pregunta_id: q.id });
-    toast("Favorita actualizada");
+    const r = await rpc("toggle_favorita_pregunta", { p_pregunta_id: q.id });
+    const ahora = !!(r && r.favorito);
+    if (!state.quiz.favoritas) state.quiz.favoritas = new Set();
+    if (ahora) state.quiz.favoritas.add(q.id);
+    else       state.quiz.favoritas.delete(q.id);
+    pintarBotonFavQ(ahora);
+    toast(ahora ? "Añadida a favoritas" : "Quitada de favoritas");
   } catch (e) { toast(e.message); }
+  finally { btn.disabled = false; }
 });
+
+function pintarBotonFavQ(activa) {
+  const btn = $("#btn-fav-q");
+  if (!btn) return;
+  btn.classList.toggle("fav-on", activa);
+  btn.setAttribute("aria-pressed", activa ? "true" : "false");
+  btn.textContent = activa ? "⭐ Favorita" : "☆ Favorita";
+}
 
 async function responder(idx, saltada = false) {
   if (state.quiz.answered) return;
@@ -1668,6 +1717,19 @@ function abrirModalUsuario(u) {
         </span>
       </div>
     </div>
+
+    <div>
+      <h4>Oposiciones (perfiles asignados)</h4>
+      <div class="input-row">
+        <button class="btn btn-sec btn-sm" data-action="perfiles-usuario"
+                data-usuario-id="${esc(u.user_id || u.id)}" data-usuario-nombre="${esc(u.username)}">
+          🎓 Gestionar perfiles
+        </button>
+        <span class="muted small" style="align-self:center">
+          Los perfiles agrupan oposiciones; asignando uno o varios se decide a qué tests puede acceder.
+        </span>
+      </div>
+    </div>
   `;
 
   $$(".role-toggle", $("#modal-usuario-body")).forEach(btn => {
@@ -2085,11 +2147,362 @@ inicializarInputsTiempo();
   const destino = atajoAVista(atajo);
   navigate(state.jwt && state.user ? (destino || "home") : "login");
 
+  // Fase 5: cargar oposiciones accesibles del usuario y decidir si hay
+  // que mostrar el selector inicial.
+  if (state.jwt && state.user) {
+    cargarMisOposiciones().catch(() => {});
+  }
+
   // Si ya hay permiso concedido, sincronizamos silenciosamente la
   // suscripción con el backend (por si se creó en otro dispositivo o
   // el navegador rotó las claves).
   if (state.jwt && state.user) sincronizarPushSilencioso();
 })();
+
+
+/* ═════════════════════════════════════════════════════════════════════════
+ *  Fase 5: oposiciones y perfiles
+ * ═════════════════════════════════════════════════════════════════════════ */
+
+function kOposicion() {
+  const uid = state.user && state.user.user_id;
+  return uid ? `aprentix.oposicion.${uid}` : null;
+}
+function leerOposicionPersistida() {
+  const k = kOposicion();
+  if (!k) return null;
+  try {
+    const raw = localStorage.getItem(k);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function guardarOposicionPersistida(op) {
+  const k = kOposicion();
+  if (!k) return;
+  try {
+    if (op) localStorage.setItem(k, JSON.stringify({ id: op.id, nombre: op.nombre }));
+    else    localStorage.removeItem(k);
+  } catch {}
+}
+
+async function cargarMisOposiciones() {
+  const ops = await rpc("mis_oposiciones");
+  state.misOposicionesCache = Array.isArray(ops) ? ops : [];
+  // Marca en el body si hay >1 para que <aprentix-header> muestre la
+  // fila "Cambiar oposición" en el sheet.
+  document.body.classList.toggle("has-oposiciones", state.misOposicionesCache.length > 1);
+
+  // Restaura la selección persistida si sigue accesible.
+  const guardada = leerOposicionPersistida();
+  if (guardada && state.misOposicionesCache.some(o => o.id === guardada.id)) {
+    state.currentOposicion = guardada.id;
+    state.currentOposicionNombre = guardada.nombre;
+  } else if (state.misOposicionesCache.length === 1) {
+    // Con una sola oposición accesible no hay decisión que tomar.
+    const o = state.misOposicionesCache[0];
+    state.currentOposicion = o.id;
+    state.currentOposicionNombre = o.nombre;
+    guardarOposicionPersistida(o);
+  } else if (state.misOposicionesCache.length > 1 && !state.currentOposicion) {
+    abrirSelectorOposicion();
+  }
+  refrescarHintOposicion();
+}
+
+function refrescarHintOposicion() {
+  const el = document.getElementById("sheet-oposicion-actual");
+  if (el) el.textContent = state.currentOposicionNombre || "Todas";
+}
+
+function abrirSelectorOposicion() {
+  const modal = $("#modal-elegir-oposicion");
+  const lista = $("#elegir-oposicion-list");
+  if (!modal || !lista) return;
+  const items = state.misOposicionesCache;
+  lista.innerHTML = [
+    // Solo dejamos la opción "Todas" a admins/gestores para no confundir
+    // al alumno. Para simplicidad, dejamos siempre "Todas" disponible.
+    `<li><button class="check-item" data-op-id=""><strong>Todas mis oposiciones</strong><span class="muted small">Ver todo lo global y de cualquier oposición asignada</span></button></li>`,
+    ...items.map(o => `
+      <li><button class="check-item" data-op-id="${o.id}">
+        <strong>${esc(o.nombre)}</strong>
+        ${o.descripcion ? `<span class="muted small">${esc(o.descripcion)}</span>` : ""}
+      </button></li>`),
+  ].join("");
+  modal.classList.remove("hidden");
+}
+$("#elegir-oposicion-list")?.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-op-id]");
+  if (!btn) return;
+  const id = btn.dataset.opId || null;
+  const op = id ? state.misOposicionesCache.find(o => o.id === id) : null;
+  state.currentOposicion = id;
+  state.currentOposicionNombre = op ? op.nombre : null;
+  guardarOposicionPersistida(op);
+  refrescarHintOposicion();
+  $("#modal-elegir-oposicion").classList.add("hidden");
+  // Recarga los tests con el nuevo filtro.
+  if ($("#view-tests")?.classList.contains("active")) {
+    state.testsPage = 1;
+    loadTests();
+  }
+});
+
+document.getElementById("btn-cambiar-oposicion")?.addEventListener("click", abrirSelectorOposicion);
+
+/* ── Vista Oposiciones (admin) ──────────────────────────────────────────── */
+loaders.oposiciones = loadOposicionesAdmin;
+
+async function loadOposicionesAdmin() {
+  try {
+    const [ops, perfs] = await Promise.all([
+      rpc("listar_oposiciones_admin").catch(() => []),
+      rpc("listar_perfiles_admin").catch(() => []),
+    ]);
+    state.oposAdminCache    = Array.isArray(ops)   ? ops   : [];
+    state.perfilesAdminCache = Array.isArray(perfs) ? perfs : [];
+    renderOposicionesAdmin();
+    renderPerfilesAdmin();
+  } catch (e) { toast(e.message); }
+}
+
+function renderOposicionesAdmin() {
+  $("#oposiciones-list").innerHTML = (state.oposAdminCache || []).map(o => `
+    <li class="opos-item" data-id="${o.id}">
+      <div class="opos-head">
+        <strong>${esc(o.nombre)}</strong>
+        ${o.activa ? "" : `<span class="tag">Inactiva</span>`}
+        <span class="muted small">${o.num_tests} tests · ${o.num_perfiles} perfiles</span>
+      </div>
+      ${o.descripcion ? `<div class="muted small">${esc(o.descripcion)}</div>` : ""}
+      <div class="opos-actions">
+        <button class="btn btn-ghost btn-sm" data-action="editar-op">✏️ Editar</button>
+        <button class="btn btn-ghost btn-sm" data-action="toggle-op">${o.activa ? "🚫 Desactivar" : "✅ Activar"}</button>
+        <button class="btn btn-ghost btn-sm" data-action="borrar-op">🗑️ Borrar</button>
+      </div>
+    </li>
+  `).join("") || "<p class='muted'>Sin oposiciones aún.</p>";
+}
+
+function renderPerfilesAdmin() {
+  $("#perfiles-list").innerHTML = (state.perfilesAdminCache || []).map(p => `
+    <li class="perf-item" data-id="${p.id}">
+      <div class="perf-head">
+        <strong>${esc(p.nombre)}</strong>
+        <span class="muted small">${(p.oposiciones || []).length} oposiciones</span>
+      </div>
+      ${p.descripcion ? `<div class="muted small">${esc(p.descripcion)}</div>` : ""}
+      <div class="tags">${(p.oposiciones || []).map(o => `<span class="tag">${esc(o.nombre)}</span>`).join("")}</div>
+      <div class="opos-actions">
+        <button class="btn btn-ghost btn-sm" data-action="editar-perf">✏️ Nombre</button>
+        <button class="btn btn-ghost btn-sm" data-action="oposiciones-perf">🎓 Oposiciones</button>
+        <button class="btn btn-ghost btn-sm" data-action="borrar-perf">🗑️ Borrar</button>
+      </div>
+    </li>
+  `).join("") || "<p class='muted'>Sin perfiles aún.</p>";
+}
+
+$$(".oposiciones-tab").forEach(tab => tab.addEventListener("click", () => {
+  const key = tab.dataset.otab;
+  $$(".oposiciones-tab").forEach(t => t.classList.toggle("active", t === tab));
+  $("#oposiciones-tab-oposiciones").classList.toggle("hidden", key !== "oposiciones");
+  $("#oposiciones-tab-perfiles").classList.toggle("hidden", key !== "perfiles");
+}));
+
+$("#form-oposicion")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const nombre = $("#op-nombre").value.trim();
+  const desc   = $("#op-desc").value.trim();
+  if (!nombre) return;
+  try {
+    await rpc("crear_oposicion", { p_nombre: nombre, p_descripcion: desc || null });
+    toast("Oposición creada");
+    $("#op-nombre").value = ""; $("#op-desc").value = "";
+    loadOposicionesAdmin();
+    cargarMisOposiciones();
+  } catch (err) { toast(err.message); }
+});
+
+$("#form-perfil")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const nombre = $("#pf-nombre").value.trim();
+  const desc   = $("#pf-desc").value.trim();
+  if (!nombre) return;
+  try {
+    await rpc("crear_perfil", { p_nombre: nombre, p_descripcion: desc || null });
+    toast("Perfil creado");
+    $("#pf-nombre").value = ""; $("#pf-desc").value = "";
+    loadOposicionesAdmin();
+  } catch (err) { toast(err.message); }
+});
+
+$("#oposiciones-list")?.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-action]");
+  if (!btn) return;
+  const li = btn.closest(".opos-item");
+  const id = li?.dataset.id;
+  const o = (state.oposAdminCache || []).find(x => x.id === id);
+  if (!o) return;
+  const action = btn.dataset.action;
+  if (action === "editar-op") {
+    const nombre = prompt("Nuevo nombre:", o.nombre);
+    if (nombre == null) return;
+    const desc = prompt("Descripción (vacío para no tocar):", o.descripcion || "");
+    try {
+      await rpc("editar_oposicion", {
+        p_id: id, p_nombre: nombre.trim(), p_descripcion: desc && desc.trim(),
+      });
+      loadOposicionesAdmin();
+    } catch (err) { toast(err.message); }
+  }
+  if (action === "toggle-op") {
+    try {
+      await rpc("editar_oposicion", { p_id: id, p_nombre: o.nombre, p_activa: !o.activa });
+      loadOposicionesAdmin();
+    } catch (err) { toast(err.message); }
+  }
+  if (action === "borrar-op") {
+    if (!confirm(`¿Borrar "${o.nombre}"? Se desasignará de sus tests y perfiles.`)) return;
+    try {
+      await rpc("borrar_oposicion", { p_id: id });
+      loadOposicionesAdmin();
+      cargarMisOposiciones();
+    } catch (err) { toast(err.message); }
+  }
+});
+
+$("#perfiles-list")?.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-action]");
+  if (!btn) return;
+  const li = btn.closest(".perf-item");
+  const id = li?.dataset.id;
+  const p = (state.perfilesAdminCache || []).find(x => x.id === id);
+  if (!p) return;
+  const action = btn.dataset.action;
+  if (action === "editar-perf") {
+    const nombre = prompt("Nuevo nombre:", p.nombre);
+    if (nombre == null) return;
+    const desc = prompt("Descripción (vacío para no tocar):", p.descripcion || "");
+    try {
+      await rpc("editar_perfil", { p_id: id, p_nombre: nombre.trim(), p_descripcion: desc && desc.trim() });
+      loadOposicionesAdmin();
+    } catch (err) { toast(err.message); }
+  }
+  if (action === "oposiciones-perf") {
+    abrirModalOposicionesDePerfil(p);
+  }
+  if (action === "borrar-perf") {
+    if (!confirm(`¿Borrar el perfil "${p.nombre}"? Los usuarios asignados perderán el acceso que daba.`)) return;
+    try {
+      await rpc("borrar_perfil", { p_id: id });
+      loadOposicionesAdmin();
+    } catch (err) { toast(err.message); }
+  }
+});
+
+// Reutilizamos #modal-test-oposiciones como picker genérico de oposiciones.
+// Marca el "modo" con un dataset para saber sobre qué guardar.
+async function abrirModalOposicionesDePerfil(perfil) {
+  const modal = $("#modal-test-oposiciones");
+  modal.dataset.mode = "perfil";
+  modal.dataset.perfilId = perfil.id;
+  await pintarPickerOposiciones((perfil.oposiciones || []).map(o => o.id));
+  modal.querySelector("h3").textContent = `Oposiciones del perfil "${perfil.nombre}"`;
+  modal.classList.remove("hidden");
+}
+
+async function pintarPickerOposiciones(seleccionadas) {
+  const ops = state.oposAdminCache && state.oposAdminCache.length
+    ? state.oposAdminCache
+    : await rpc("listar_oposiciones_admin").catch(() => []);
+  const sel = new Set(seleccionadas || []);
+  $("#modal-test-op-list").innerHTML = (ops || []).map(o => `
+    <li>
+      <label class="check-item">
+        <input type="checkbox" data-op-id="${o.id}" ${sel.has(o.id) ? "checked" : ""}>
+        <span><strong>${esc(o.nombre)}</strong>${o.descripcion ? `<br><span class="muted small">${esc(o.descripcion)}</span>` : ""}</span>
+      </label>
+    </li>
+  `).join("") || "<p class='muted'>Sin oposiciones creadas.</p>";
+}
+
+/* ── Detalle del test: asignar oposiciones ───────────────────────────── */
+$("#btn-test-oposiciones")?.addEventListener("click", async () => {
+  if (!state.currentTestId) return;
+  const modal = $("#modal-test-oposiciones");
+  modal.dataset.mode = "test";
+  modal.querySelector("h3").textContent = "Oposiciones del test";
+  try {
+    const asignadas = await rpc("oposiciones_de_test", { p_test_id: state.currentTestId });
+    await pintarPickerOposiciones((asignadas || []).map(o => o.id));
+    modal.classList.remove("hidden");
+  } catch (e) { toast(e.message); }
+});
+$("#modal-test-op-close")?.addEventListener("click", () => $("#modal-test-oposiciones").classList.add("hidden"));
+$("#modal-test-op-cancelar")?.addEventListener("click", () => $("#modal-test-oposiciones").classList.add("hidden"));
+$("#modal-test-op-guardar")?.addEventListener("click", async () => {
+  const modal = $("#modal-test-oposiciones");
+  const ids = $$("#modal-test-op-list input[type=checkbox]:checked").map(x => x.dataset.opId);
+  try {
+    if (modal.dataset.mode === "perfil") {
+      await rpc("set_perfil_oposiciones", { p_perfil_id: modal.dataset.perfilId, p_oposicion_ids: ids });
+      toast("Oposiciones del perfil actualizadas");
+      loadOposicionesAdmin();
+      cargarMisOposiciones();
+    } else {
+      await rpc("set_test_oposiciones", { p_test_id: state.currentTestId, p_oposicion_ids: ids });
+      toast("Oposiciones del test actualizadas");
+    }
+    modal.classList.add("hidden");
+  } catch (e) { toast(e.message); }
+});
+
+/* ── Modal usuario: asignar perfiles ─────────────────────────────────
+ * Se dispara desde el botón "Perfiles" que añadimos al modal-usuario. */
+async function abrirPerfilesDeUsuario(usuarioId, nombreUsuario) {
+  const modal = $("#modal-perfiles-usuario");
+  modal.dataset.usuarioId = usuarioId;
+  modal.querySelector("h3").textContent = `Perfiles de ${nombreUsuario || "usuario"}`;
+  try {
+    const [todos, asignados] = await Promise.all([
+      rpc("listar_perfiles_admin").catch(() => []),
+      rpc("perfiles_de_usuario", { p_usuario_id: usuarioId }).catch(() => []),
+    ]);
+    const sel = new Set((asignados || []).map(x => x.id));
+    $("#modal-perfiles-list").innerHTML = (todos || []).map(p => `
+      <li>
+        <label class="check-item">
+          <input type="checkbox" data-perfil-id="${p.id}" ${sel.has(p.id) ? "checked" : ""}>
+          <span>
+            <strong>${esc(p.nombre)}</strong>
+            <span class="muted small">${(p.oposiciones || []).map(o => esc(o.nombre)).join(", ") || "sin oposiciones"}</span>
+          </span>
+        </label>
+      </li>
+    `).join("") || "<p class='muted'>No hay perfiles creados. Crea uno primero.</p>";
+    modal.classList.remove("hidden");
+  } catch (e) { toast(e.message); }
+}
+$("#modal-perfiles-close")?.addEventListener("click", () => $("#modal-perfiles-usuario").classList.add("hidden"));
+$("#modal-perfiles-cancelar")?.addEventListener("click", () => $("#modal-perfiles-usuario").classList.add("hidden"));
+$("#modal-perfiles-guardar")?.addEventListener("click", async () => {
+  const modal = $("#modal-perfiles-usuario");
+  const ids = $$("#modal-perfiles-list input[type=checkbox]:checked").map(x => x.dataset.perfilId);
+  try {
+    await rpc("set_usuario_perfiles", { p_usuario_id: modal.dataset.usuarioId, p_perfil_ids: ids });
+    toast("Perfiles asignados");
+    modal.classList.add("hidden");
+  } catch (e) { toast(e.message); }
+});
+// Botón "Perfiles" dentro del modal usuario existente. Como el HTML del
+// modal se rellena dinámicamente en renderUsuarios(), delegamos.
+$("#modal-usuario-body")?.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-action=perfiles-usuario]");
+  if (!btn) return;
+  const uid = btn.dataset.usuarioId;
+  const nombre = btn.dataset.usuarioNombre || "";
+  abrirPerfilesDeUsuario(uid, nombre);
+});
 
 
 /* ─────────────────────────────────────────────────────────────────────────

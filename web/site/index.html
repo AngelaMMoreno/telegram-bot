@@ -101,6 +101,7 @@
   ]'
   admin-items='[
     {"id":"usuarios","label":"Usuarios","icon":"users","view":"usuarios","admin":true},
+    {"id":"oposiciones","label":"Oposiciones","icon":"folder","view":"oposiciones","gestion":true},
     {"id":"etiquetas","label":"Etiquetas","icon":"tag","view":"etiquetas","gestion":true},
     {"id":"upload","label":"Subir test","icon":"upload","view":"upload","gestion":true}
   ]'></aprentix-header>
@@ -253,6 +254,7 @@
         <button class="btn btn-primary" id="btn-repasar-test" title="Repaso espaciado de este test">
           🔁 Repasar <span id="repaso-test-badge" class="badge hidden"></span>
         </button>
+        <button class="btn btn-ghost gestion" id="btn-test-oposiciones" title="Asignar oposiciones a este test">🎓 Oposiciones</button>
         <button class="btn btn-ghost gestion" id="btn-delete-test">🗑️</button>
       </div>
     </header>
@@ -379,6 +381,41 @@
     <ul id="etiquetas-list" class="etiquetas-list"></ul>
   </section>
 
+  <!-- Oposiciones y perfiles (gestión) -->
+  <section id="view-oposiciones" class="view">
+    <header class="view-header">
+      <h2>Oposiciones y perfiles</h2>
+      <p class="muted small">
+        Una <strong>oposición</strong> agrupa tests y teoría del mismo tema. Un
+        <strong>perfil</strong> junta las oposiciones que quieres dar a un mismo
+        tipo de usuario. Un usuario puede tener uno o varios perfiles.
+      </p>
+    </header>
+
+    <div class="oposiciones-tabs" role="tablist">
+      <button class="oposiciones-tab active" data-otab="oposiciones" role="tab">Oposiciones</button>
+      <button class="oposiciones-tab" data-otab="perfiles" role="tab">Perfiles</button>
+    </div>
+
+    <div id="oposiciones-tab-oposiciones" class="oposiciones-panel">
+      <form id="form-oposicion" class="inline-form">
+        <input id="op-nombre" placeholder="Nombre (ej: Auxiliar administrativo Estado)" required>
+        <input id="op-desc"   placeholder="Descripción corta (opcional)">
+        <button class="btn btn-primary" type="submit">Crear oposición</button>
+      </form>
+      <ul id="oposiciones-list" class="oposiciones-list"></ul>
+    </div>
+
+    <div id="oposiciones-tab-perfiles" class="oposiciones-panel hidden">
+      <form id="form-perfil" class="inline-form">
+        <input id="pf-nombre" placeholder="Nombre (ej: Estado + AGE)" required>
+        <input id="pf-desc"   placeholder="Descripción corta (opcional)">
+        <button class="btn btn-primary" type="submit">Crear perfil</button>
+      </form>
+      <ul id="perfiles-list" class="perfiles-list"></ul>
+    </div>
+  </section>
+
   <!-- Usuarios (solo admin) -->
   <section id="view-usuarios" class="view">
     <header class="view-header">
@@ -418,6 +455,55 @@
   </section>
 
 </main>
+
+<!-- Modal para asignar oposiciones a un test -->
+<div id="modal-test-oposiciones" class="modal hidden">
+  <div class="modal-card">
+    <header class="modal-header">
+      <h3>Oposiciones del test</h3>
+      <button class="btn btn-ghost" id="modal-test-op-close" aria-label="Cerrar">✕</button>
+    </header>
+    <div class="modal-body">
+      <p class="muted small">Marca las oposiciones a las que pertenece este test. Si no marcas ninguna, será global (visible para todos).</p>
+      <ul id="modal-test-op-list" class="check-list"></ul>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="modal-test-op-cancelar">Cancelar</button>
+        <button class="btn btn-primary" id="modal-test-op-guardar">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal para asignar perfiles a un usuario -->
+<div id="modal-perfiles-usuario" class="modal hidden">
+  <div class="modal-card">
+    <header class="modal-header">
+      <h3>Perfiles del usuario</h3>
+      <button class="btn btn-ghost" id="modal-perfiles-close" aria-label="Cerrar">✕</button>
+    </header>
+    <div class="modal-body">
+      <p class="muted small">Marca los perfiles que dan acceso a este usuario. Las oposiciones accesibles serán la unión de las que traiga cada perfil.</p>
+      <ul id="modal-perfiles-list" class="check-list"></ul>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="modal-perfiles-cancelar">Cancelar</button>
+        <button class="btn btn-primary" id="modal-perfiles-guardar">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal selector de oposición (al arrancar si hay >1) -->
+<div id="modal-elegir-oposicion" class="modal hidden">
+  <div class="modal-card">
+    <header class="modal-header">
+      <h3>¿Con qué oposición trabajas hoy?</h3>
+    </header>
+    <div class="modal-body">
+      <p class="muted small">Puedes cambiar la oposición cuando quieras desde el círculo del avatar → Cambiar oposición.</p>
+      <ul id="elegir-oposicion-list" class="check-list"></ul>
+    </div>
+  </div>
+</div>
 
 <!-- Modal de estadísticas por test (sustituye a la vieja vista "Progreso") -->
 <div id="modal-stats-test" class="modal hidden">

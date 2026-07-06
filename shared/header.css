@@ -480,6 +480,18 @@ body:not(.puede-gestionar) .bnav-item.gestion { display: none; }
 body:not(.es-admin) .more-item.solo-admin,
 body:not(.es-admin) .bnav-item.solo-admin { display: none; }
 
+/* Fila "Cambiar oposición": solo cuando el usuario tiene más de una
+ * accesible (body.has-oposiciones). El hint muestra la actual a la derecha. */
+body:not(.has-oposiciones) .sheet-row.sheet-oposicion { display: none; }
+.sheet-row-hint {
+  margin-left: auto;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--txt-soft);
+  max-width: 140px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 /* Fila "Panel de admin" en el sheet del usuario: destacada con acento
  * cálido para diferenciarla del resto y aviso ADMIN a la derecha.
  * Se oculta si el usuario no es gestor ni admin. */
