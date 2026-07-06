@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2240 1912">
-  <g transform="translate(0.000000,1912.000000) scale(0.100000,-0.100000)"
+<!--
+  Badge monocromo para notificaciones (Android statusBar tinta a blanco todo lo
+  opaco). Añadimos un anillo circular alrededor del zorro para que el icono
+  tenga una silueta reconocible y se distinga en la barra superior, en lugar
+  de dejar sólo el contorno negro/tintado del zorro perdido en el fondo.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <circle cx="256" cy="256" r="236" fill="none" stroke="#4E6B1F" stroke-width="28"/>
+  <g transform="translate(97,124) scale(0.140179 0.140179)">
+  <g transform="translate(240.760000,1906.610000) scale(0.100000,-0.100000)"
 fill="#4E6B1F" stroke="none">
 <path d="M6543 18674 c-53 -31 -78 -74 -141 -239 -159 -420 -301 -1129 -342
 -1705 -13 -185 -13 -563 0 -750 53 -774 252 -1544 606 -2351 158 -359 376
@@ -142,4 +150,5 @@ m184 -213 c98 -89 259 -269 391 -439 104 -133 322 -455 432 -639 91 -152 259
 -73 98 -100 157 -92 83 11 131 71 125 154 -3 44 -11 62 -59 125 -142 188 -325
 311 -527 354 -107 22 -298 18 -406 -10z"/>
 </g>
+  </g>
 </svg>
