@@ -172,6 +172,12 @@ function rutaDeHash() {
 let ESTADO = {
   ruta: rutaDeHash(),
   puede_gestionar: false,
+  // Fase 5: oposición seleccionada actualmente (uuid | null = todas).
+  // Se persiste en la misma clave que la app de tests para que la
+  // decisión valga en ambas: aprentix.oposicion.<user_id>
+  currentOposicion: null,
+  currentOposicionNombre: null,
+  misOposicionesCache: [],
 };
 
 // ── Render ──────────────────────────────────────────────────────────────────
@@ -197,15 +203,22 @@ function tarjetaCarpeta(c) {
   card.className = 'card folder';
   card.dataset.ruta = c.ruta;
   card.dataset.tipo = 'carpeta';
+  card.dataset.oposicionId = c.oposicion_id || '';
+  card.dataset.oposicionNombre = c.oposicion_nombre || '';
+  const badge = c.oposicion_nombre
+    ? `<span class="card-op-badge" title="Oposición asignada">🎓 ${esc(c.oposicion_nombre)}</span>`
+    : '';
   card.innerHTML = `
     <div class="card-emoji">📁</div>
     <div class="card-name" title="${c.nombre}">${c.nombre}</div>
     <div class="card-meta">${c.num_elementos} elemento${c.num_elementos === 1 ? '' : 's'}</div>
+    ${badge}
   `;
   if (ESTADO.puede_gestionar) {
     const actions = document.createElement('div');
     actions.className = 'card-actions';
     actions.innerHTML = `
+      <button class="card-btn" data-accion="oposicion" title="Asignar oposición">🎓</button>
       <button class="card-btn" data-accion="renombrar" title="Renombrar">✏️</button>
       <button class="card-btn del" data-accion="borrar" title="Borrar">🗑️</button>
     `;
@@ -342,6 +355,7 @@ function onGridAction(e) {
   if (accion === 'renombrar') pedirRenombrar(item);
   else if (accion === 'borrar') pedirBorrar(item);
   else if (accion === 'toggle-visto') toggleVistoInline(item, btn, card);
+  else if (accion === 'oposicion') abrirCarpetaOposicionPicker(item, card);
 }
 
 async function toggleVistoInline(item, btn, card) {
@@ -373,7 +387,9 @@ async function toggleVistoInline(item, btn, card) {
 // ── Navegación ─────────────────────────────────────────────────────────────
 
 async function cargar(ruta) {
-  const data = await api('GET', 'api/listar?ruta=' + encodeURIComponent(ruta));
+  const params = new URLSearchParams({ ruta });
+  if (ESTADO.currentOposicion) params.set('oposicion_id', ESTADO.currentOposicion);
+  const data = await api('GET', 'api/listar?' + params.toString());
   ESTADO.ruta = data.ruta;
   ESTADO.puede_gestionar = !!data.puede_gestionar;
   document.getElementById('admin-bar').hidden = !ESTADO.puede_gestionar;
@@ -1153,7 +1169,9 @@ async function abrirBuscador() {
   results.innerHTML = '<li class="muted small" style="padding:.5rem 0">Cargando…</li>';
   let entries = [];
   try {
-    const data = await api('GET', 'api/listar?ruta=' + encodeURIComponent(ESTADO.ruta || ''));
+    const p = new URLSearchParams({ ruta: ESTADO.ruta || '' });
+    if (ESTADO.currentOposicion) p.set('oposicion_id', ESTADO.currentOposicion);
+    const data = await api('GET', 'api/listar?' + p.toString());
     entries = (data.entries || data.items || []).map(e => ({
       nombre: e.nombre || e.name || '',
       es_carpeta: !!(e.es_carpeta || e.type === 'folder'),
@@ -1287,3 +1305,166 @@ cargar(ESTADO.ruta).catch(err => {
   document.getElementById('grid').innerHTML =
     `<div class="empty" style="grid-column:1/-1"><div class="empty-ico">⚠️</div><div>${err.message}</div></div>`;
 });
+
+
+/* ═════════════════════════════════════════════════════════════════════════
+ *  Fase 5b: selector y asignación de oposiciones desde teoría
+ *
+ *  Comparte la clave de localStorage con tests (aprentix.oposicion.<user_id>)
+ *  para que la elección valga en ambas apps sin duplicar UI ni almacenamiento.
+ * ═════════════════════════════════════════════════════════════════════════ */
+
+const OP_USER_ID = USER_ID;  // ya definido para marcadores/subrayados
+const K_OP = OP_USER_ID ? `aprentix.oposicion.${OP_USER_ID}` : null;
+
+function leerOposicionPersistida() {
+  if (!K_OP) return null;
+  try { const raw = localStorage.getItem(K_OP); return raw ? JSON.parse(raw) : null; }
+  catch { return null; }
+}
+function guardarOposicionPersistida(op) {
+  if (!K_OP) return;
+  try {
+    if (op) localStorage.setItem(K_OP, JSON.stringify({ id: op.id, nombre: op.nombre }));
+    else    localStorage.removeItem(K_OP);
+  } catch {}
+}
+function refrescarHintOposicion() {
+  const el = document.getElementById('sheet-oposicion-actual');
+  if (el) el.textContent = ESTADO.currentOposicionNombre || 'Todas';
+}
+
+// PostgREST está expuesto en el mismo origen bajo /api/* (proxy del Caddy
+// de la landing). Aquí replicamos el helper rpc() de tests para poder
+// hablar con las RPCs de oposiciones desde teoría.
+async function rpcPostgrest(nombre, payload) {
+  const r = await fetch('/api/rpc/' + nombre, {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${TOKEN}`,
+    },
+    body: JSON.stringify(payload || {}),
+  });
+  if (!r.ok) {
+    let t = '';
+    try { const j = await r.json(); t = j.message || j.hint || j.details || ''; }
+    catch { try { t = await r.text(); } catch {} }
+    throw new Error(t || `HTTP ${r.status}`);
+  }
+  if (r.status === 204) return null;
+  const ct = r.headers.get('content-type') || '';
+  return ct.includes('application/json') ? r.json() : r.text();
+}
+
+async function refrescarMisOposiciones() {
+  try {
+    const ops = await rpcPostgrest('mis_oposiciones', {});
+    ESTADO.misOposicionesCache = Array.isArray(ops) ? ops : [];
+    document.body.classList.toggle('has-oposiciones', ESTADO.misOposicionesCache.length > 1);
+
+    const guardada = leerOposicionPersistida();
+    if (guardada && ESTADO.misOposicionesCache.some(o => o.id === guardada.id)) {
+      ESTADO.currentOposicion = guardada.id;
+      ESTADO.currentOposicionNombre = guardada.nombre;
+    } else if (ESTADO.misOposicionesCache.length === 1) {
+      const o = ESTADO.misOposicionesCache[0];
+      ESTADO.currentOposicion = o.id;
+      ESTADO.currentOposicionNombre = o.nombre;
+      guardarOposicionPersistida(o);
+    } else if (ESTADO.misOposicionesCache.length > 1 && !ESTADO.currentOposicion) {
+      abrirSelectorOposicion();
+    }
+    refrescarHintOposicion();
+    // Al arranque la primera carga puede haber ocurrido antes de saber la
+    // oposición: recargamos si la ruta actual es la raíz para aplicar el
+    // filtro correcto. Fuera de la raíz no filtramos, así que no hace falta.
+    if (ESTADO.ruta === '/' || !ESTADO.ruta) cargar('/').catch(() => {});
+  } catch (e) {
+    // Si el usuario aún no está en el sistema de oposiciones (BD vieja),
+    // no rompemos nada.
+    console.warn('[teoria] mis_oposiciones falló:', e.message);
+  }
+}
+
+function abrirSelectorOposicion() {
+  const modal = document.getElementById('teoria-elegir-oposicion');
+  const lista = document.getElementById('teoria-op-list');
+  if (!modal || !lista) return;
+  const items = ESTADO.misOposicionesCache;
+  lista.innerHTML = [
+    `<li><button class="check-item" data-op-id=""><strong>Todas mis oposiciones</strong><span class="muted small">Ver todo lo global y de cualquier oposición asignada</span></button></li>`,
+    ...items.map(o => `
+      <li><button class="check-item" data-op-id="${o.id}">
+        <strong>${esc(o.nombre)}</strong>
+        ${o.descripcion ? `<span class="muted small">${esc(o.descripcion)}</span>` : ''}
+      </button></li>`),
+  ].join('');
+  modal.classList.remove('hidden');
+}
+document.getElementById('teoria-op-cerrar')?.addEventListener('click', () => {
+  document.getElementById('teoria-elegir-oposicion').classList.add('hidden');
+});
+document.getElementById('teoria-op-list')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-op-id]');
+  if (!btn) return;
+  const id = btn.dataset.opId || null;
+  const op = id ? ESTADO.misOposicionesCache.find(o => o.id === id) : null;
+  ESTADO.currentOposicion = id;
+  ESTADO.currentOposicionNombre = op ? op.nombre : null;
+  guardarOposicionPersistida(op);
+  refrescarHintOposicion();
+  document.getElementById('teoria-elegir-oposicion').classList.add('hidden');
+  // Recarga la carpeta actual con el nuevo filtro.
+  cargar(ESTADO.ruta).catch(err => toast(err.message));
+});
+
+document.getElementById('btn-cambiar-oposicion')?.addEventListener('click', abrirSelectorOposicion);
+
+/* ── Picker de oposición para una carpeta (admin) ─────────────────── */
+async function abrirCarpetaOposicionPicker(item, card) {
+  const modal = document.getElementById('teoria-carpeta-oposicion');
+  const lista = document.getElementById('teoria-carpeta-op-list');
+  const tit   = document.getElementById('teoria-carpeta-op-titulo');
+  if (!modal || !lista) return;
+  const actualId = card?.dataset.oposicionId || '';
+  tit.textContent = `Oposición de ${item.nombre}`;
+  try {
+    // Los admins ven TODAS las oposiciones. mis_oposiciones() ya lo hace.
+    const ops = await rpcPostgrest('mis_oposiciones', {});
+    const items = Array.isArray(ops) ? ops : [];
+    lista.innerHTML = [
+      `<li><button class="check-item" data-op-id="" ${actualId ? '' : 'aria-current="true"'}>
+         <strong>Ninguna (global)</strong>
+         <span class="muted small">Visible para todos los usuarios con acceso a teoría</span>
+       </button></li>`,
+      ...items.map(o => `
+        <li><button class="check-item" data-op-id="${o.id}" ${o.id === actualId ? 'aria-current="true"' : ''}>
+          <strong>${esc(o.nombre)}</strong>
+          ${o.descripcion ? `<span class="muted small">${esc(o.descripcion)}</span>` : ''}
+        </button></li>`),
+    ].join('');
+    modal.classList.remove('hidden');
+    lista.onclick = async (ev) => {
+      const btn = ev.target.closest('[data-op-id]');
+      if (!btn) return;
+      const opId = btn.dataset.opId || null;
+      try {
+        await rpcPostgrest('set_carpeta_oposicion', {
+          p_ruta: item.ruta,
+          p_oposicion_id: opId,
+        });
+        modal.classList.add('hidden');
+        toast(opId ? 'Oposición asignada' : 'Carpeta puesta como global');
+        recargar();
+      } catch (e) { toast(e.message); }
+    };
+  } catch (e) { toast(e.message); }
+}
+document.getElementById('teoria-carpeta-op-cerrar')?.addEventListener('click', () => {
+  document.getElementById('teoria-carpeta-oposicion').classList.add('hidden');
+});
+
+// Arranque: intenta cargar oposiciones tras el primer render.
+refrescarMisOposiciones();

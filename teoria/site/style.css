@@ -525,3 +525,43 @@ button { font: inherit; cursor: pointer; }
 }
 .teoria-marc-quitar { color: var(--sub); }
 .teoria-marc-quitar:hover { color: var(--danger); background: var(--danger-light); }
+
+/* ── Fase 5b: badge y modal de oposición ─────────────────────────────── */
+.card-op-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  position: absolute; bottom: 8px; left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-d);
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.02em;
+  max-width: calc(100% - 16px);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+[data-theme="dark"] .card-op-badge { color: var(--accent); }
+
+.teoria-op-list {
+  list-style: none; padding: 0; margin: 0.75rem 0 0;
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 55vh; overflow-y: auto;
+}
+.teoria-op-list .check-item {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.teoria-op-list .check-item:hover { border-color: var(--pri); background: var(--pri-soft); }
+.teoria-op-list .check-item[aria-current="true"] {
+  border-color: var(--pri);
+  background: var(--pri-soft);
+}
+.teoria-op-list .check-item strong { font-size: 0.98rem; }

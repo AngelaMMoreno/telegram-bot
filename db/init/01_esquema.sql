@@ -3552,11 +3552,23 @@ CREATE TABLE IF NOT EXISTS test_oposiciones (
 CREATE INDEX IF NOT EXISTS test_oposiciones_oposicion_idx
     ON test_oposiciones (oposicion_id);
 
+CREATE TABLE IF NOT EXISTS carpeta_oposiciones (
+    ruta         text PRIMARY KEY,
+    oposicion_id uuid NOT NULL REFERENCES oposiciones(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS carpeta_oposiciones_oposicion_idx
+    ON carpeta_oposiciones (oposicion_id);
+
 ALTER TABLE oposiciones          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE perfiles             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE perfil_oposiciones   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE usuario_perfiles     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE test_oposiciones     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE carpeta_oposiciones  ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS carpeta_op_lectura         ON carpeta_oposiciones;
+CREATE POLICY carpeta_op_lectura         ON carpeta_oposiciones
+    FOR SELECT TO web_user USING (true);
 
 DROP POLICY IF EXISTS oposiciones_lectura        ON oposiciones;
 CREATE POLICY oposiciones_lectura        ON oposiciones
@@ -3578,7 +3590,8 @@ DROP POLICY IF EXISTS test_oposiciones_lectura   ON test_oposiciones;
 CREATE POLICY test_oposiciones_lectura   ON test_oposiciones
     FOR SELECT TO web_user USING (true);
 
-GRANT SELECT ON oposiciones, perfiles, perfil_oposiciones, usuario_perfiles, test_oposiciones
+GRANT SELECT ON oposiciones, perfiles, perfil_oposiciones, usuario_perfiles, test_oposiciones,
+                carpeta_oposiciones
     TO web_user;
 
 -- ── Helpers y RPCs de oposiciones/perfiles ────────────────────────────────
@@ -3781,6 +3794,57 @@ LANGUAGE sql STABLE SECURITY DEFINER AS $$
     WHERE tox.test_id = p_test_id;
 $$;
 
+CREATE OR REPLACE FUNCTION set_carpeta_oposicion(p_ruta text, p_oposicion_id uuid)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+    IF NOT (es_admin() OR tiene_permiso('test.crear')) THEN RAISE EXCEPTION 'no_autorizado'; END IF;
+    IF p_ruta IS NULL OR btrim(p_ruta) = '' OR p_ruta = '/' THEN RAISE EXCEPTION 'ruta_invalida'; END IF;
+    IF p_oposicion_id IS NULL THEN
+        DELETE FROM carpeta_oposiciones WHERE ruta = p_ruta;
+    ELSE
+        INSERT INTO carpeta_oposiciones(ruta, oposicion_id)
+        VALUES (p_ruta, p_oposicion_id)
+        ON CONFLICT (ruta) DO UPDATE SET oposicion_id = EXCLUDED.oposicion_id;
+    END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION listar_carpeta_oposiciones() RETURNS jsonb
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'ruta',            co.ruta,
+        'oposicion_id',    co.oposicion_id,
+        'oposicion_nombre',o.nombre
+    ) ORDER BY co.ruta), '[]'::jsonb)
+    FROM carpeta_oposiciones co
+    JOIN oposiciones o ON o.id = co.oposicion_id;
+$$;
+
+CREATE OR REPLACE FUNCTION oposicion_de_carpeta(p_ruta text) RETURNS jsonb
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+    SELECT COALESCE(jsonb_build_object('id', o.id, 'nombre', o.nombre), 'null'::jsonb)
+    FROM carpeta_oposiciones co
+    LEFT JOIN oposiciones o ON o.id = co.oposicion_id
+    WHERE co.ruta = p_ruta
+    LIMIT 1;
+$$;
+
+CREATE OR REPLACE FUNCTION mis_oposiciones_ids() RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
+DECLARE v_admin boolean := es_admin() OR tiene_permiso('test.crear');
+BEGIN
+    IF v_admin THEN
+        RETURN COALESCE((SELECT jsonb_agg(id) FROM oposiciones WHERE activa), '[]'::jsonb);
+    END IF;
+    RETURN COALESCE((
+        SELECT jsonb_agg(DISTINCT o.id)
+        FROM usuario_perfiles up
+        JOIN perfil_oposiciones po ON po.perfil_id = up.perfil_id
+        JOIN oposiciones o         ON o.id = po.oposicion_id
+        WHERE up.usuario_id = jwt_usuario_id() AND o.activa
+    ), '[]'::jsonb);
+END $$;
+
 GRANT EXECUTE ON FUNCTION mis_oposiciones()                              TO web_user;
 GRANT EXECUTE ON FUNCTION puedo_ver_oposicion(uuid)                      TO web_user;
 GRANT EXECUTE ON FUNCTION crear_oposicion(text, text)                    TO web_user;
@@ -3796,3 +3860,7 @@ GRANT EXECUTE ON FUNCTION listar_perfiles_admin()                        TO web_
 GRANT EXECUTE ON FUNCTION listar_oposiciones_admin()                     TO web_user;
 GRANT EXECUTE ON FUNCTION perfiles_de_usuario(uuid)                      TO web_user;
 GRANT EXECUTE ON FUNCTION oposiciones_de_test(uuid)                      TO web_user;
+GRANT EXECUTE ON FUNCTION set_carpeta_oposicion(text, uuid)              TO web_user;
+GRANT EXECUTE ON FUNCTION listar_carpeta_oposiciones()                   TO web_user;
+GRANT EXECUTE ON FUNCTION oposicion_de_carpeta(text)                     TO web_user;
+GRANT EXECUTE ON FUNCTION mis_oposiciones_ids()                          TO web_user;

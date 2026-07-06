@@ -86,6 +86,31 @@
   </div>
 </div>
 
+<!-- Selector de oposición: se abre al arrancar si el usuario tiene >1 y
+     desde el sheet del avatar con "Cambiar oposición". -->
+<div id="teoria-elegir-oposicion" class="overlay hidden" role="dialog" aria-label="Elegir oposición">
+  <div class="modal">
+    <div class="modal-config-header">
+      <h3>¿Con qué oposición trabajas hoy?</h3>
+      <button class="modal-close" id="teoria-op-cerrar" aria-label="Cerrar">✕</button>
+    </div>
+    <p class="muted small">Se aplica a tests y a teoría. Puedes cambiarla desde el avatar.</p>
+    <ul id="teoria-op-list" class="teoria-op-list"></ul>
+  </div>
+</div>
+
+<!-- Picker para asignar una oposición a una carpeta (admin). -->
+<div id="teoria-carpeta-oposicion" class="overlay hidden" role="dialog" aria-label="Asignar oposición a carpeta">
+  <div class="modal">
+    <div class="modal-config-header">
+      <h3 id="teoria-carpeta-op-titulo">Oposición de la carpeta</h3>
+      <button class="modal-close" id="teoria-carpeta-op-cerrar" aria-label="Cerrar">✕</button>
+    </div>
+    <p class="muted small">Elige una oposición o marca "Ninguna" para dejar la carpeta como global.</p>
+    <ul id="teoria-carpeta-op-list" class="teoria-op-list"></ul>
+  </div>
+</div>
+
 <!-- Marcadores: documentos favoritos del usuario. Fase 5 lo llevará a BD. -->
 <div id="teoria-marcadores" class="overlay hidden" role="dialog" aria-label="Marcadores">
   <div class="modal teoria-marcadores-modal">
