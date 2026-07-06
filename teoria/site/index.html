@@ -87,16 +87,16 @@
   </div>
 </div>
 
-<!-- Placeholder de marcadores (Fase 2 los persistirá en BBDD). -->
+<!-- Marcadores: documentos favoritos del usuario. Fase 5 lo llevará a BD. -->
 <div id="teoria-marcadores" class="overlay hidden" role="dialog" aria-label="Marcadores">
-  <div class="modal">
+  <div class="modal teoria-marcadores-modal">
     <div class="modal-config-header">
       <h3>Marcadores</h3>
       <button class="modal-close" id="teoria-marcadores-cerrar" aria-label="Cerrar">✕</button>
     </div>
-    <p class="muted">
-      Aquí verás los documentos que marques como favoritos y los subrayados que hagas.
-      Estará disponible en la próxima fase del rediseño.
+    <ul id="teoria-marcadores-lista" class="teoria-marcadores-lista"></ul>
+    <p class="muted small" id="teoria-marcadores-vacio" hidden>
+      Aún no tienes marcadores. Abre un documento y pulsa el icono 🔖 para guardarlo aquí.
     </p>
   </div>
 </div>
@@ -118,15 +118,61 @@
 <!-- Visor / editor de markdown -->
 <div id="md-view" class="md-view hidden" aria-hidden="true">
   <header class="md-view-header">
-    <button class="btn btn-cancel md-back" id="md-back" aria-label="Volver">← Volver</button>
+    <button class="md-icon md-back" id="md-back" aria-label="Volver" title="Volver">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
     <span class="md-title" id="md-title"></span>
     <span class="md-flex"></span>
     <span class="md-status" id="md-status" hidden></span>
-    <button class="btn btn-sec md-btn" id="md-editar" hidden>✏️ Editar</button>
+
+    <!-- Herramientas del lector: buscar, marcador y subrayado.
+         Sutiles (icon-only, 36px) para ganar espacio en móvil. -->
+    <button class="md-icon" id="md-buscar" aria-label="Buscar" title="Buscar en el documento">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    </button>
+    <button class="md-icon" id="md-marcador" aria-label="Marcar documento" title="Marcar como favorito" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12a1 1 0 0 1 1 1v18l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg>
+    </button>
+    <button class="md-icon" id="md-subrayar" aria-label="Modo subrayado" title="Subrayar (selecciona texto)" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3l6 6-9 9H6v-6z"/><line x1="4" y1="22" x2="20" y2="22"/></svg>
+    </button>
+    <div class="md-mas-wrap">
+      <button class="md-icon md-icon-more" id="md-mas" aria-label="Más acciones" title="Más" aria-haspopup="menu" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.6" fill="currentColor" stroke="none"/></svg>
+      </button>
+      <div class="md-mas-menu hidden" id="md-mas-menu" role="menu">
+        <button class="md-mas-item" id="md-editar" role="menuitem" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4z"/></svg>
+          <span>Editar</span>
+        </button>
+        <button class="md-mas-item" id="md-limpiar-subrayados" role="menuitem">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/></svg>
+          <span>Limpiar subrayados</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Acciones de edición: solo visibles cuando está editando -->
     <button class="btn btn-sec md-btn" id="md-preview-toggle" hidden>👁️ Vista previa</button>
     <button class="btn btn-pri md-btn" id="md-guardar" hidden>💾 Guardar</button>
     <button class="btn btn-cancel md-btn" id="md-cancelar" hidden>Cancelar</button>
   </header>
+
+  <!-- Barra de búsqueda in-page (aparece bajo el header al pulsar 🔍) -->
+  <div class="md-find hidden" id="md-find" role="search">
+    <input type="search" id="md-find-input" placeholder="Buscar en el documento…" autocomplete="off" spellcheck="false">
+    <span class="md-find-count" id="md-find-count">0/0</span>
+    <button class="md-icon" id="md-find-prev" aria-label="Anterior" title="Anterior (Shift+Enter)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+    </button>
+    <button class="md-icon" id="md-find-next" aria-label="Siguiente" title="Siguiente (Enter)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+    <button class="md-icon" id="md-find-cerrar" aria-label="Cerrar búsqueda" title="Cerrar (Esc)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+
   <div class="md-body" id="md-body">
     <textarea class="md-editor" id="md-editor" spellcheck="false" placeholder="# Escribe aquí…"></textarea>
     <article class="md-render" id="md-render"></article>

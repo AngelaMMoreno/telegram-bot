@@ -446,10 +446,20 @@ function mdEnEdicion() { return mdBody().classList.contains('editing'); }
 function mdMostrarBotones() {
   const editable = ESTADO.puede_gestionar;
   const editing = mdEnEdicion();
+  // Editar vive dentro del menú kebab "Más" — solo si puedes editar y
+  // no estás editando ya.
   document.getElementById('md-editar').hidden        = editing || !editable;
   document.getElementById('md-guardar').hidden       = !editing;
   document.getElementById('md-cancelar').hidden      = !editing;
   document.getElementById('md-preview-toggle').hidden = !editing;
+  // El modo subrayar no tiene sentido mientras editas: si entras a
+  // edición, lo apagamos.
+  if (editing && SUBR.activo) toggleModoSubrayar();
+  // El botón subrayar/marcador/buscar los ocultamos en edición: allí
+  // no aportan y saturan el header.
+  document.getElementById('md-subrayar').hidden = editing;
+  document.getElementById('md-marcador').hidden = editing;
+  document.getElementById('md-buscar').hidden   = editing;
 }
 
 function mdMarcarEstado() {
@@ -481,6 +491,11 @@ function mdAbrirVista(nombre, contenido) {
   document.body.style.overflow = 'hidden';
   mdMostrarBotones();
   mdMarcarEstado();
+  // Reengancha marcador y subrayados persistidos del usuario para este
+  // documento. Búsqueda arranca cerrada.
+  actualizarBotonMarcador();
+  reaplicarSubrayados();
+  cerrarBuscador();
 }
 
 function mdEntrarEdicion() {
@@ -495,6 +510,9 @@ function mdCerrar() {
   if (mdEnEdicion() && mdEd().value !== MD.original) {
     if (!confirm('Tienes cambios sin guardar. ¿Descartarlos?')) return;
   }
+  // Apaga modo subrayar y buscador al salir del documento.
+  if (SUBR.activo) toggleModoSubrayar();
+  cerrarBuscador();
   mdView().classList.add('hidden');
   mdView().setAttribute('aria-hidden', 'true');
   document.body.style.overflow = '';
@@ -583,12 +601,337 @@ document.getElementById('md-preview-toggle').addEventListener('click', () => {
 document.getElementById('md-editor').addEventListener('input', mdActualizarPreview);
 document.addEventListener('keydown', (e) => {
   if (mdView().classList.contains('hidden')) return;
-  if (e.key === 'Escape') { mdCerrar(); return; }
+  if (e.key === 'Escape') {
+    // Esc primero cierra buscador si está abierto; luego cierra el visor.
+    if (!document.getElementById('md-find').classList.contains('hidden')) {
+      cerrarBuscador();
+      return;
+    }
+    mdCerrar();
+    return;
+  }
+  // Ctrl/Cmd+F abre buscador.
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && !mdEnEdicion()) {
+    e.preventDefault();
+    abrirBuscadorDoc();
+    return;
+  }
   // Ctrl/Cmd+S guarda cuando estás editando.
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && mdEnEdicion()) {
     e.preventDefault();
     mdGuardar();
   }
+});
+
+/* ── Buscar / marcadores / subrayado ──────────────────────────────────
+ *
+ * Persistencia local (Fase 5 lo llevará a BBDD): claves de localStorage
+ *   aprentix.teoria.marcadores.<user_id>            → {ruta: {nombre, ts}}
+ *   aprentix.teoria.subrayados.<user_id>.<ruta>     → [{start, end, texto}]
+ *
+ * <user_id> viene del claim `sub` del JWT. Así al cambiar de cuenta no
+ * se cruzan marcadores/subrayados de usuarios distintos.
+ */
+const USER_ID = (CLAIMS && (CLAIMS.sub || CLAIMS.user_id)) || 'anon';
+const K_MARC = `aprentix.teoria.marcadores.${USER_ID}`;
+const K_SUBR = (ruta) => `aprentix.teoria.subrayados.${USER_ID}.${ruta}`;
+
+function getMarcadores() {
+  try { return JSON.parse(localStorage.getItem(K_MARC) || '{}') || {}; }
+  catch { return {}; }
+}
+function setMarcadores(m) {
+  try { localStorage.setItem(K_MARC, JSON.stringify(m)); } catch {}
+}
+function toggleMarcadorActual() {
+  if (!MD.ruta) return;
+  const m = getMarcadores();
+  if (m[MD.ruta]) delete m[MD.ruta];
+  else m[MD.ruta] = { nombre: MD.nombre || MD.ruta.split('/').pop(), ts: Date.now() };
+  setMarcadores(m);
+  actualizarBotonMarcador();
+  toast(m[MD.ruta] ? 'Marcador añadido' : 'Marcador quitado');
+}
+function actualizarBotonMarcador() {
+  const btn = document.getElementById('md-marcador');
+  if (!btn) return;
+  const m = getMarcadores();
+  const activo = !!(MD.ruta && m[MD.ruta]);
+  btn.classList.toggle('active', activo);
+  btn.setAttribute('aria-pressed', activo ? 'true' : 'false');
+  btn.title = activo ? 'Quitar marcador' : 'Marcar como favorito';
+}
+
+/* ── Búsqueda in-page ────────────────────────────────────────────────
+ * Envuelve las coincidencias en <mark class="md-hit"> caminando los
+ * text nodes de #md-render. No toca marcas del usuario (md-user-hl):
+ * al re-envolver borramos SOLO nuestros marcadores de búsqueda. */
+const BUSCA = { hits: [], idx: -1 };
+
+function limpiarBusqueda() {
+  const root = mdOut();
+  root.querySelectorAll('mark.md-hit').forEach(m => {
+    const parent = m.parentNode;
+    while (m.firstChild) parent.insertBefore(m.firstChild, m);
+    parent.removeChild(m);
+    parent.normalize();
+  });
+  BUSCA.hits = []; BUSCA.idx = -1;
+  document.getElementById('md-find-count').textContent = '0/0';
+}
+
+function aplicarBusqueda(q) {
+  limpiarBusqueda();
+  const query = (q || '').trim();
+  const countEl = document.getElementById('md-find-count');
+  if (!query) { countEl.textContent = '0/0'; return; }
+  const root = mdOut();
+  const qLow = query.toLowerCase();
+  // Recolecta text nodes (excepto los que ya están dentro de una .md-hit,
+  // aunque limpiarBusqueda las quita antes).
+  const nodes = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => n.nodeValue && n.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+  });
+  let n; while ((n = walker.nextNode())) nodes.push(n);
+  for (const tn of nodes) {
+    const txt = tn.nodeValue;
+    const low = txt.toLowerCase();
+    let i = 0, from = 0;
+    const frag = document.createDocumentFragment();
+    let hit = false;
+    while ((i = low.indexOf(qLow, from)) !== -1) {
+      hit = true;
+      if (i > from) frag.appendChild(document.createTextNode(txt.slice(from, i)));
+      const mark = document.createElement('mark');
+      mark.className = 'md-hit';
+      mark.textContent = txt.slice(i, i + query.length);
+      frag.appendChild(mark);
+      BUSCA.hits.push(mark);
+      from = i + query.length;
+    }
+    if (hit) {
+      if (from < txt.length) frag.appendChild(document.createTextNode(txt.slice(from)));
+      tn.parentNode.replaceChild(frag, tn);
+    }
+  }
+  if (BUSCA.hits.length) {
+    BUSCA.idx = 0;
+    subrayarActual();
+  }
+  countEl.textContent = `${BUSCA.hits.length ? BUSCA.idx + 1 : 0}/${BUSCA.hits.length}`;
+}
+
+function subrayarActual() {
+  BUSCA.hits.forEach((h, i) => h.classList.toggle('current', i === BUSCA.idx));
+  const el = BUSCA.hits[BUSCA.idx];
+  if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  document.getElementById('md-find-count').textContent =
+    `${BUSCA.hits.length ? BUSCA.idx + 1 : 0}/${BUSCA.hits.length}`;
+}
+
+function saltoBusqueda(delta) {
+  if (!BUSCA.hits.length) return;
+  BUSCA.idx = (BUSCA.idx + delta + BUSCA.hits.length) % BUSCA.hits.length;
+  subrayarActual();
+}
+
+function abrirBuscadorDoc() {
+  const bar = document.getElementById('md-find');
+  bar.classList.remove('hidden');
+  const inp = document.getElementById('md-find-input');
+  inp.focus();
+  inp.select();
+}
+function cerrarBuscador() {
+  document.getElementById('md-find').classList.add('hidden');
+  limpiarBusqueda();
+}
+
+document.getElementById('md-buscar').addEventListener('click', abrirBuscadorDoc);
+document.getElementById('md-find-cerrar').addEventListener('click', cerrarBuscador);
+document.getElementById('md-find-input').addEventListener('input', (e) => {
+  aplicarBusqueda(e.target.value);
+});
+document.getElementById('md-find-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    saltoBusqueda(e.shiftKey ? -1 : 1);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    cerrarBuscador();
+  }
+});
+document.getElementById('md-find-prev').addEventListener('click', () => saltoBusqueda(-1));
+document.getElementById('md-find-next').addEventListener('click', () => saltoBusqueda(1));
+
+/* ── Subrayado del usuario ───────────────────────────────────────────
+ * Guardamos offsets sobre el textContent completo del render. Al abrir
+ * el documento re-aplicamos los subrayados envolviendo esos rangos.
+ * Al pulsar sobre un subrayado existente, se elimina. */
+const SUBR = { activo: false };
+
+function getSubrayados(ruta) {
+  try { return JSON.parse(localStorage.getItem(K_SUBR(ruta)) || '[]') || []; }
+  catch { return []; }
+}
+function setSubrayados(ruta, arr) {
+  try {
+    if (arr.length) localStorage.setItem(K_SUBR(ruta), JSON.stringify(arr));
+    else localStorage.removeItem(K_SUBR(ruta));
+  } catch {}
+}
+
+function toggleModoSubrayar() {
+  SUBR.activo = !SUBR.activo;
+  const btn = document.getElementById('md-subrayar');
+  btn.classList.toggle('active', SUBR.activo);
+  btn.setAttribute('aria-pressed', SUBR.activo ? 'true' : 'false');
+  mdBody().classList.toggle('hl-mode', SUBR.activo);
+  toast(SUBR.activo
+    ? 'Modo subrayado ON: selecciona texto para marcarlo'
+    : 'Modo subrayado OFF');
+}
+
+// Mapa {textNode, offset} → offset absoluto dentro del textContent del render.
+function offsetAbsoluto(root, node, offset) {
+  let total = 0;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let n;
+  while ((n = walker.nextNode())) {
+    if (n === node) return total + offset;
+    total += n.nodeValue.length;
+  }
+  return -1;
+}
+
+// Al revés: dado un offset absoluto, devuelve {node, offset} local.
+function nodoEnOffset(root, target) {
+  let acumulado = 0;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let n;
+  while ((n = walker.nextNode())) {
+    const len = n.nodeValue.length;
+    if (acumulado + len >= target) {
+      return { node: n, offset: target - acumulado };
+    }
+    acumulado += len;
+  }
+  return null;
+}
+
+function envolverRango(root, start, end) {
+  const a = nodoEnOffset(root, start);
+  const b = nodoEnOffset(root, end);
+  if (!a || !b) return null;
+  try {
+    const range = document.createRange();
+    range.setStart(a.node, a.offset);
+    range.setEnd(b.node, b.offset);
+    const mark = document.createElement('mark');
+    mark.className = 'md-user-hl';
+    mark.dataset.start = String(start);
+    mark.dataset.end = String(end);
+    // surroundContents falla si el rango cruza límites; en ese caso
+    // extraemos contenido y lo insertamos dentro del mark.
+    try {
+      range.surroundContents(mark);
+    } catch {
+      const frag = range.extractContents();
+      mark.appendChild(frag);
+      range.insertNode(mark);
+    }
+    return mark;
+  } catch { return null; }
+}
+
+function reaplicarSubrayados() {
+  if (!MD.ruta) return;
+  const root = mdOut();
+  // Limpia los subrayados existentes en el DOM (los volvemos a envolver).
+  root.querySelectorAll('mark.md-user-hl').forEach(m => {
+    const parent = m.parentNode;
+    while (m.firstChild) parent.insertBefore(m.firstChild, m);
+    parent.removeChild(m);
+    parent.normalize();
+  });
+  const items = getSubrayados(MD.ruta);
+  // Aplica de mayor a menor offset para que los envoltorios anteriores
+  // no muevan los offsets siguientes.
+  [...items].sort((a, b) => b.start - a.start).forEach(it => {
+    envolverRango(root, it.start, it.end);
+  });
+}
+
+function guardarSeleccionActual() {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed) return;
+  const root = mdOut();
+  const range = sel.getRangeAt(0);
+  if (!root.contains(range.commonAncestorContainer)) return;
+  const start = offsetAbsoluto(root, range.startContainer, range.startOffset);
+  const end   = offsetAbsoluto(root, range.endContainer, range.endOffset);
+  if (start < 0 || end < 0 || start >= end) return;
+  const texto = range.toString();
+  if (!texto.trim()) return;
+  sel.removeAllRanges();
+  const arr = getSubrayados(MD.ruta);
+  arr.push({ start, end, texto });
+  setSubrayados(MD.ruta, arr);
+  reaplicarSubrayados();
+  toast('Subrayado guardado');
+}
+
+function borrarSubrayado(mark) {
+  const start = Number(mark.dataset.start);
+  const end   = Number(mark.dataset.end);
+  const arr = getSubrayados(MD.ruta)
+    .filter(it => !(it.start === start && it.end === end));
+  setSubrayados(MD.ruta, arr);
+  reaplicarSubrayados();
+  toast('Subrayado quitado');
+}
+
+document.getElementById('md-subrayar').addEventListener('click', toggleModoSubrayar);
+document.getElementById('md-marcador').addEventListener('click', toggleMarcadorActual);
+
+// Captura selección de texto en el render solo si el modo está activo.
+mdOut().addEventListener('mouseup', () => {
+  if (SUBR.activo && !mdEnEdicion()) guardarSeleccionActual();
+});
+mdOut().addEventListener('touchend', () => {
+  if (SUBR.activo && !mdEnEdicion()) setTimeout(guardarSeleccionActual, 10);
+});
+
+// Click sobre un subrayado existente → lo elimina.
+mdOut().addEventListener('click', (e) => {
+  const mark = e.target.closest('mark.md-user-hl');
+  if (mark && !SUBR.activo) borrarSubrayado(mark);
+});
+
+/* ── Kebab "Más" del header del visor ────────────────────────────── */
+document.getElementById('md-mas').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const menu = document.getElementById('md-mas-menu');
+  const btn = document.getElementById('md-mas');
+  const open = menu.classList.toggle('hidden');
+  btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+});
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('md-mas-menu');
+  if (!menu || menu.classList.contains('hidden')) return;
+  if (!e.target.closest('.md-mas-wrap')) {
+    menu.classList.add('hidden');
+    document.getElementById('md-mas').setAttribute('aria-expanded', 'false');
+  }
+});
+document.getElementById('md-limpiar-subrayados').addEventListener('click', () => {
+  if (!MD.ruta) return;
+  if (!confirm('¿Quitar todos los subrayados de este documento?')) return;
+  setSubrayados(MD.ruta, []);
+  reaplicarSubrayados();
+  document.getElementById('md-mas-menu').classList.add('hidden');
+  toast('Subrayados limpios');
 });
 
 // ── Acciones ───────────────────────────────────────────────────────────────
@@ -783,8 +1126,7 @@ document.addEventListener('aprentix:nav', (e) => {
       abrirBuscador();
       break;
     case 'marcadores':
-      // Placeholder Fase 2.
-      document.getElementById('teoria-marcadores')?.classList.remove('hidden');
+      abrirMarcadores();
       break;
     case 'subir':
       document.getElementById('file-input')?.click();
@@ -873,6 +1215,58 @@ document.getElementById('teoria-marcadores-cerrar')?.addEventListener('click', (
 document.getElementById('teoria-marcadores')?.addEventListener('click', (e) => {
   if (e.target.id === 'teoria-marcadores') e.currentTarget.classList.add('hidden');
 });
+
+function abrirMarcadores() {
+  const modal = document.getElementById('teoria-marcadores');
+  const lista = document.getElementById('teoria-marcadores-lista');
+  const vacio = document.getElementById('teoria-marcadores-vacio');
+  if (!modal || !lista) return;
+  const m = getMarcadores();
+  const entries = Object.entries(m)
+    .map(([ruta, meta]) => ({ ruta, nombre: meta.nombre || ruta.split('/').pop(), ts: meta.ts || 0 }))
+    .sort((a, b) => b.ts - a.ts);
+  if (!entries.length) {
+    lista.innerHTML = '';
+    if (vacio) vacio.hidden = false;
+  } else {
+    if (vacio) vacio.hidden = true;
+    lista.innerHTML = entries.map(e => `
+      <li>
+        <button class="teoria-marc-item" data-ruta="${e.ruta.replace(/"/g, '&quot;')}">
+          <span aria-hidden="true">${emojiParaFichero(e.nombre)}</span>
+          <span class="teoria-marc-nombre">${e.nombre}</span>
+          <span class="teoria-marc-ruta muted small">${e.ruta}</span>
+        </button>
+        <button class="md-icon teoria-marc-quitar" data-quitar="${e.ruta.replace(/"/g, '&quot;')}" aria-label="Quitar" title="Quitar marcador">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </li>
+    `).join('');
+  }
+  modal.classList.remove('hidden');
+  lista.onclick = async (ev) => {
+    const q = ev.target.closest('[data-quitar]');
+    if (q) {
+      ev.stopPropagation();
+      const ruta = q.dataset.quitar;
+      const cur = getMarcadores();
+      delete cur[ruta];
+      setMarcadores(cur);
+      abrirMarcadores();  // repinta
+      return;
+    }
+    const btn = ev.target.closest('[data-ruta]');
+    if (!btn) return;
+    const ruta = btn.dataset.ruta;
+    modal.classList.add('hidden');
+    // Abre el documento. Si falla (movido/borrado), avisamos.
+    try {
+      await abrirMarkdown(ruta, ruta.split('/').pop());
+    } catch (e) {
+      toast(`⚠️ ${e.message || 'No se pudo abrir'}`);
+    }
+  };
+}
 
 // Rellena el chip de usuario (avatar + nombre). El JWT sólo trae el
 // user_id en 'sub'; el username lo pide el backend a mi_sesion() y lo
