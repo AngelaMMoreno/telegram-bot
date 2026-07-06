@@ -195,23 +195,75 @@ button { font: inherit; cursor: pointer; }
 }
 .md-view.hidden { display: none; }
 .md-view-header {
-  display: flex; align-items: center; gap: 8px;
-  padding: 10px 24px;
+  display: flex; align-items: center; gap: 4px;
+  padding: 6px 12px;
+  padding-top: calc(6px + env(safe-area-inset-top, 0));
   background: var(--card);
   border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
-/* Botón "Volver" del visor: compacto para que no domine la cabecera. */
-.md-back {
-  min-height: 34px; padding: 0.3rem 0.7rem;
-  font-size: 0.85rem; font-weight: 500;
+@media (min-width: 720px) {
+  .md-view-header { gap: 6px; padding: 8px 18px; }
 }
+
+/* Botones icon-only del visor: sutiles, cuadrados y del mismo tamaño
+ * que las esquinas de un tap de dedo (36-40 px). Sin fondo por defecto. */
+.md-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px;
+  border: 0; background: transparent;
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+  padding: 0;
+}
+.md-icon svg { width: 20px; height: 20px; }
+.md-icon:hover { background: var(--bg-soft); }
+.md-icon:active { transform: scale(0.92); }
+.md-icon.active {
+  background: var(--pri-soft);
+  color: var(--pri-d);
+}
+[data-theme="dark"] .md-icon.active { color: var(--pri); }
+.md-icon.md-back { color: var(--sub); }
+.md-icon.md-back:hover { color: var(--text); }
+
+/* Wrapper del kebab "Más" con menú flotante. */
+.md-mas-wrap { position: relative; }
+.md-mas-menu {
+  position: absolute; top: calc(100% + 6px); right: 0;
+  z-index: 20;
+  min-width: 200px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.20);
+  display: flex; flex-direction: column;
+}
+.md-mas-menu.hidden { display: none; }
+.md-mas-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px;
+  border: 0; background: transparent;
+  border-radius: 8px;
+  color: var(--text); font-family: inherit;
+  font-size: 0.95rem; text-align: left;
+  cursor: pointer;
+}
+.md-mas-item svg { width: 18px; height: 18px; flex: 0 0 auto; }
+.md-mas-item:hover { background: var(--pri-soft); color: var(--pri-d); }
+[data-theme="dark"] .md-mas-item:hover { color: var(--pri); }
+
 .md-title {
   font-weight: 700; font-size: 15px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   min-width: 0; max-width: 100%;
+  margin-left: 2px;
 }
-.md-flex { flex: 1 1 auto; }
+.md-flex { flex: 1 1 auto; min-width: 0; }
 .md-status {
   font-size: 12px; color: var(--sub);
   padding: 4px 8px; border-radius: 8px;
@@ -221,6 +273,81 @@ button { font: inherit; cursor: pointer; }
 [data-theme="dark"] .md-status.dirty { color: var(--accent); }
 .md-status.saved { color: var(--ok); background: var(--ok-light); }
 .md-btn { padding: 8px 14px; }
+
+/* En móvil los botones textuales de edición (guardar/cancelar/vista
+ * previa) se hacen más compactos para no saturar el header. */
+@media (max-width: 720px) {
+  .md-btn {
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    min-height: 36px;
+  }
+}
+
+/* ── Barra de búsqueda in-page (aparece bajo el header al pulsar 🔍) ── */
+.md-find {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 12px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  animation: md-find-in 0.16s ease both;
+}
+.md-find.hidden { display: none; }
+.md-find input[type="search"] {
+  flex: 1; min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.95rem;
+  outline: none;
+}
+.md-find input[type="search"]:focus { border-color: var(--pri); }
+.md-find-count {
+  font-size: 12px; color: var(--sub);
+  padding: 4px 8px; border-radius: 8px;
+  background: var(--bg-soft);
+  min-width: 42px; text-align: center;
+  flex: 0 0 auto;
+}
+@keyframes md-find-in {
+  from { transform: translateY(-6px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* ── Coincidencias de búsqueda y subrayado del usuario ─────────────── */
+.md-render mark.md-hit {
+  background: var(--accent-soft);
+  color: var(--accent-d);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+[data-theme="dark"] .md-render mark.md-hit { color: var(--accent); }
+.md-render mark.md-hit.current {
+  background: var(--accent);
+  color: #3B2A0F;
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+[data-theme="dark"] .md-render mark.md-hit.current { color: #14241D; }
+.md-render mark.md-user-hl {
+  background: var(--accent-soft);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 2px;
+  cursor: pointer;
+  border-bottom: 2px solid var(--accent);
+}
+.md-render mark.md-user-hl:hover {
+  filter: brightness(0.94);
+}
+
+/* Cuando el modo subrayar está activo, cambia el cursor sobre el render. */
+.md-body.hl-mode .md-render {
+  cursor: text;
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+}
 
 .md-body {
   flex: 1; min-height: 0;
@@ -351,3 +478,50 @@ button { font: inherit; cursor: pointer; }
 }
 .teoria-buscar-res:hover { background: var(--pri-soft); }
 .teoria-buscar-nombre { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Lista de marcadores (favoritos por documento) ─────────────────── */
+.teoria-marcadores-modal {
+  width: min(560px, 100%);
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+}
+.teoria-marcadores-lista {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+.teoria-marcadores-lista li {
+  display: flex; align-items: center; gap: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.teoria-marcadores-lista li:last-child { border-bottom: 0; }
+.teoria-marc-item {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 4px;
+  background: transparent; border: 0;
+  border-radius: 8px;
+  color: var(--text);
+  font-family: inherit; font-size: 0.95rem;
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+}
+.teoria-marc-item:hover { background: var(--pri-soft); }
+.teoria-marc-nombre {
+  grid-column: 2; grid-row: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 600;
+}
+.teoria-marc-ruta {
+  grid-column: 2; grid-row: 2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.teoria-marc-quitar { color: var(--sub); }
+.teoria-marc-quitar:hover { color: var(--danger); background: var(--danger-light); }
