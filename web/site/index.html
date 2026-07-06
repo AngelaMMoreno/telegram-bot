@@ -41,6 +41,8 @@
   <link rel="stylesheet" href="style.css">
   <!-- Registra el custom element antes de que el parser llegue a él. -->
   <script src="shared/header.js"></script>
+  <!-- Configuración unificada (misma en landing/tests/teoría). -->
+  <script src="shared/config.js" defer></script>
   <script>
     (function () {
       var m = document.cookie.match(/(?:^|;\s*)aprentix_theme=(dark|light|auto)/);
@@ -182,8 +184,17 @@
 
   <!-- Home -->
   <section id="view-home" class="view">
-    <h2>Hola, <span id="hello-name"></span></h2>
-    <p class="tagline muted">Tu oposición, a tu ritmo.</p>
+    <div class="ap-user-header">
+      <h2>Hola, <span id="hello-name"></span></h2>
+      <button class="btn btn-ghost btn-sm ap-op-btn" id="btn-cambiar-oposicion-home"
+              type="button" title="Cambiar de oposición">
+        <span class="ap-op-ico" aria-hidden="true">🎓</span>
+        <span class="ap-op-txt">
+          <span class="ap-op-label">Oposición</span>
+          <strong id="ap-op-actual">Todas</strong>
+        </span>
+      </button>
+    </div>
     <div id="home-gamif" class="gamif-card"></div>
     <div class="stats-grid" id="stats-grid"></div>
     <div class="actions-grid">
@@ -607,102 +618,9 @@
   </div>
 </div>
 
-<!-- Modal de configuración (apariencia + ritmo + reset) -->
-<div id="modal-config" class="modal hidden">
-  <div class="modal-card">
-    <header class="modal-header">
-      <h3>Configuración</h3>
-      <button class="btn btn-ghost" id="modal-config-close" aria-label="Cerrar">✕</button>
-    </header>
-    <div class="modal-body">
+<!-- El modal de configuración (apariencia + notificaciones + ritmo + reset)
+     lo inyecta shared/config.js — es el mismo en landing, tests y teoría. -->
 
-      <section class="config-group">
-        <h4 class="config-group-title">Sistema</h4>
-        <div class="config-section">
-          <h5>Apariencia</h5>
-          <div class="theme-toggle">
-            <label class="theme-option"><input type="radio" name="theme" value="light"><span>☀️ Claro</span></label>
-            <label class="theme-option"><input type="radio" name="theme" value="dark"><span>🌙 Oscuro</span></label>
-            <label class="theme-option"><input type="radio" name="theme" value="auto"><span>🖥️ Sistema</span></label>
-          </div>
-        </div>
-
-        <div class="config-section" id="config-push-wrap">
-          <h5>Notificaciones</h5>
-          <p class="muted small" id="push-help">
-            Recibe un aviso cuando tengas preguntas de repaso vencidas
-            (como máximo uno cada pocas horas, en horario razonable) o
-            si llevas varios días sin entrar.
-          </p>
-          <div class="push-actions">
-            <button class="btn btn-primary" id="btn-activar-push">🔔 Activar notificaciones</button>
-            <button class="btn btn-ghost hidden" id="btn-desactivar-push">🔕 Desactivar</button>
-          </div>
-          <p class="muted small hidden" id="push-status"></p>
-          <div class="push-diagnose">
-            <button class="btn btn-ghost btn-sm" id="btn-diagnostico-push" type="button">🩺 Ver por qué no llegan</button>
-            <button class="btn btn-ghost btn-sm" id="btn-probar-logro" type="button">✨ Probar tarjeta de logro</button>
-          </div>
-          <pre class="push-diag-out hidden" id="push-diag-out"></pre>
-        </div>
-      </section>
-
-      <section class="config-group">
-        <h4 class="config-group-title">Tests</h4>
-        <div class="config-section">
-          <h5>Ritmo de repaso</h5>
-          <p class="muted small">
-            Elige la cadencia con la que quieres que se te repitan las preguntas.
-            Solo afecta a los intervalos futuros; las fechas ya programadas no cambian.
-          </p>
-          <div id="ritmo-opciones" class="ritmo-opciones"></div>
-        </div>
-
-        <div class="config-section danger-section">
-          <h5>Resetear repaso</h5>
-          <div class="reset-repasos">
-            <div class="reset-repasos-copy">
-              <strong>Empezar el repaso de cero</strong>
-              <span class="muted small">
-                Borra las cajas Leitner de todas tus preguntas. No toca tus respuestas ni tus intentos:
-                solo se olvida en qué fase de repaso está cada pregunta.
-              </span>
-            </div>
-            <button class="btn btn-danger-outline" id="btn-resetear-repasos">
-              Resetear mi repaso
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <div class="modal-actions">
-        <button class="btn btn-ghost" id="btn-config-cerrar">Cerrar</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Modal de confirmación de reset -->
-<div id="modal-reset-repasos" class="modal hidden">
-  <div class="modal-card">
-    <header class="modal-header">
-      <h3>¿Resetear tu repaso?</h3>
-    </header>
-    <div class="modal-body">
-      <p>
-        Se borrarán todas las cajas Leitner (aciertos, fallos y programación de repasos).
-        Volverás a empezar como si nunca hubieras repasado nada.
-      </p>
-      <p class="muted small">
-        Tus respuestas históricas, intentos y estadísticas se conservan intactos.
-      </p>
-      <div class="modal-actions">
-        <button class="btn btn-ghost" id="btn-reset-cancelar">Cancelar</button>
-        <button class="btn btn-danger" id="btn-reset-confirmar">Sí, resetear</button>
-      </div>
-    </div>
-  </div>
-</div>
 
 <!-- Modal de reanudación de intento -->
 <div id="modal-reanudar" class="modal hidden">

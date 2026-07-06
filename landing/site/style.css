@@ -349,3 +349,32 @@ input:focus, select:focus {
 .muted { color: var(--sub); }
 .small { font-size: 12.5px; }
 
+
+/* ── Onboarding: primer login (elegir oposiciones) ─────────────────────── */
+.onboarding-list {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 10px;
+  display: flex; flex-direction: column;
+  gap: 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.onboarding-list .check-item {
+  display: flex; align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-soft, var(--card));
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.onboarding-list .check-item:hover { border-color: var(--pri); }
+.onboarding-list .check-item:has(input:checked) {
+  border-color: var(--pri);
+  background: var(--pri-soft);
+}
+.onboarding-list .check-item input { margin: 0; }
+.onboarding-list strong { display: block; }
+.onboarding-list .muted { display: block; margin-top: 2px; }

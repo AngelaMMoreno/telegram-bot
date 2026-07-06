@@ -33,6 +33,7 @@
       if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
     })();
   </script>
+  <script src="/shared/config.js" defer></script>
 </head>
 <body>
   <div class="wrap">
@@ -76,15 +77,18 @@
       </details>
     </section>
 
-    <!-- Selector (una vez logueado) -->
+    <!-- Selector (una vez logueado). Sólo se muestra si el usuario NO
+         tiene un último modo elegido o no ha hecho onboarding — en el
+         caso normal, tras el login la landing redirige directamente al
+         último modo (tests o teoría). -->
     <section id="chooser" class="chooser" hidden>
       <div class="welcome">
-        <button id="btn-user-menu" class="user-menu-btn" title="Configuración">
+        <button id="btn-user-menu" class="user-menu-btn" title="Configuración" data-open-config>
           <span class="avatar" id="user-avatar"></span>
           <span>Hola, <strong id="who"></strong></span>
         </button>
         <div class="welcome-actions">
-          <button id="btn-config" class="btn btn-ghost-dark" title="Configuración">⚙️ Configuración</button>
+          <button id="btn-config" class="btn btn-ghost-dark" title="Configuración" data-open-config>⚙️ Configuración</button>
           <button id="btn-logout" class="btn btn-ghost-dark">Salir</button>
         </div>
       </div>
@@ -109,84 +113,35 @@
       </div>
     </section>
 
+    <!-- Onboarding: selección de oposiciones (primer login).
+         El usuario ve la lista de oposiciones activas y elige hasta 3
+         (o todas si es administrador). -->
+    <section id="onboarding" class="card-panel" hidden>
+      <div class="welcome">
+        <button class="user-menu-btn" title="Cuenta">
+          <span class="avatar" id="onboarding-avatar"></span>
+          <span>Hola, <strong id="onboarding-who"></strong></span>
+        </button>
+        <div class="welcome-actions">
+          <button id="onboarding-salir" class="btn btn-ghost-dark">Salir</button>
+        </div>
+      </div>
+      <h2 style="margin-bottom:.2rem">Bienvenida a Aprentix</h2>
+      <p class="muted">
+        Elige <strong>hasta 3 oposiciones</strong> para empezar a estudiar.
+        Podrás cambiarlas en cualquier momento desde el menú del avatar.
+      </p>
+      <ul id="onboarding-lista" class="onboarding-list"></ul>
+      <div class="modal-actions">
+        <span id="onboarding-contador" class="muted small">0 / 3 seleccionadas</span>
+        <span style="flex:1"></span>
+        <button id="onboarding-guardar" class="btn btn-pri" disabled>Continuar</button>
+      </div>
+    </section>
+
     <footer class="foot">
       <span>© Aprentix · Tu oposición, a tu ritmo.</span>
     </footer>
-  </div>
-
-  <!-- Modal de configuración -->
-  <div id="modal-config" class="modal hidden">
-    <div class="modal-card">
-      <header class="modal-header">
-        <h3>Configuración</h3>
-        <button class="btn btn-ghost-dark btn-sm" id="modal-config-close" aria-label="Cerrar">✕</button>
-      </header>
-      <div class="modal-body">
-
-        <section class="config-group">
-          <h4 class="config-group-title">Sistema</h4>
-          <div class="config-section">
-            <h5>Apariencia</h5>
-            <div class="theme-toggle">
-              <label class="theme-option"><input type="radio" name="theme" value="light"><span>☀️ Claro</span></label>
-              <label class="theme-option"><input type="radio" name="theme" value="dark"><span>🌙 Oscuro</span></label>
-              <label class="theme-option"><input type="radio" name="theme" value="auto"><span>🖥️ Sistema</span></label>
-            </div>
-          </div>
-        </section>
-
-        <section class="config-group">
-          <h4 class="config-group-title">Tests</h4>
-          <div class="config-section">
-            <h5>Ritmo de repaso</h5>
-            <p class="muted small">
-              Elige la cadencia con la que quieres que se te repitan las preguntas.
-              Solo afecta a los intervalos futuros; las fechas ya programadas no cambian.
-            </p>
-            <div id="ritmo-opciones" class="ritmo-opciones"></div>
-          </div>
-
-          <div class="config-section danger-section">
-            <h5>Resetear repaso</h5>
-            <div class="reset-repasos">
-              <div class="reset-repasos-copy">
-                <strong>Empezar el repaso de cero</strong>
-                <span class="muted small">
-                  Borra las cajas Leitner de todas tus preguntas. No toca tus respuestas ni tus intentos:
-                  solo se olvida en qué fase de repaso está cada pregunta.
-                </span>
-              </div>
-              <button class="btn btn-danger-outline" id="btn-resetear-repasos">
-                Resetear mi repaso
-              </button>
-            </div>
-          </div>
-        </section>
-
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal de confirmación de reset -->
-  <div id="modal-reset-repasos" class="modal hidden">
-    <div class="modal-card">
-      <header class="modal-header">
-        <h3>¿Resetear tu repaso?</h3>
-      </header>
-      <div class="modal-body">
-        <p>
-          Se borrarán todas las cajas Leitner (aciertos, fallos y programación de repasos).
-          Volverás a empezar como si nunca hubieras repasado nada.
-        </p>
-        <p class="muted small">
-          Tus respuestas históricas, intentos y estadísticas se conservan intactos.
-        </p>
-        <div class="modal-actions">
-          <button class="btn btn-ghost-dark" id="btn-reset-cancelar">Cancelar</button>
-          <button class="btn btn-danger" id="btn-reset-confirmar">Sí, resetear</button>
-        </div>
-      </div>
-    </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>

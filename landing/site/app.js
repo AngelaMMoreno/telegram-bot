@@ -3,28 +3,29 @@
  *
  * Login / registro contra PostgREST y, tras autenticarse, escritura de la
  * cookie 'aprentix_token' en dominio .aprentix.es para que test.* y
- * teoria.* la lean sin volver a pedir credenciales. Tras el login se
- * muestra un chooser con dos tarjetas (tests y teoría), donde la de
- * teoría solo aparece si el usuario tiene el permiso 'teoria.acceder'.
+ * teoria.* la lean sin volver a pedir credenciales.
  *
- * También ofrece un panel de configuración (apariencia, ritmo de repaso,
- * reset) accesible desde el avatar/nombre o el botón de configuración.
+ * Después del login la landing NO muestra un chooser: redirige
+ * automáticamente al último modo elegido por el usuario (cookie
+ * `aprentix_ultimo_modo`). Solo si es el primer inicio de sesión (sin
+ * oposiciones asignadas todavía) se lanza el onboarding en el que el
+ * usuario elige hasta 3 oposiciones; después se le lleva directamente a
+ * la app de tests. El chooser explícito solo aparece si no se puede
+ * decidir el modo (por ejemplo si el usuario aún no tiene ninguna
+ * preferencia y accede desde una URL con `?next=/`).
+ *
+ * La configuración (tema, notificaciones, ritmo, reset) la gestiona
+ * `shared/config.js` (window.AprentixConfig).
  */
 'use strict';
 
-const COOKIE_NAME = 'aprentix_token';
-const COOKIE_DAYS = 12 / 24; // 12 horas — coincide con la expiración del JWT.
-const THEME_COOKIE = 'aprentix_theme';
-const API = '/api';
-
-const RITMO_LABELS = {
-  intensivo: { emoji: '🔥', nombre: 'Intensivo',
-               desc: 'Para semanas previas a examen. Verás preguntas nuevas varias veces el mismo día.' },
-  normal:    { emoji: '🎯', nombre: 'Normal',
-               desc: 'Leitner clásico. Para aprendizaje continuo.' },
-  relajado:  { emoji: '🌱', nombre: 'Relajado',
-               desc: 'Mantenimiento. Para no oxidarte cuando ya te sabes el temario.' },
-};
+const COOKIE_NAME  = 'aprentix_token';
+const COOKIE_DAYS  = 12 / 24;              // 12 h — coincide con el JWT.
+const MODE_COOKIE  = 'aprentix_ultimo_modo';
+const MODE_DAYS    = 365;
+const API          = '/api';
+const TESTS_URL    = '/tests/';
+const TEORIA_URL   = '/teoria/';
 
 // ── Cookie helpers ─────────────────────────────────────────────────────────
 
@@ -68,36 +69,6 @@ function parseJwt(tok) {
   } catch { return null; }
 }
 
-// ── Theme (compartido en .aprentix.es via cookie de 365 días) ──────────────
-
-function currentTheme() {
-  const c = getCookie(THEME_COOKIE);
-  if (c === 'dark' || c === 'light' || c === 'auto') return c;
-  return 'auto';
-}
-
-function effectiveTheme(t) {
-  if (t === 'auto') {
-    return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  }
-  return t;
-}
-
-function applyTheme(t) {
-  const eff = effectiveTheme(t);
-  document.documentElement.setAttribute('data-theme', eff);
-}
-
-function setTheme(t) {
-  setCookie(THEME_COOKIE, t, 365);
-  applyTheme(t);
-}
-
-// Reacciona al cambio del sistema cuando el modo es "auto".
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-  if (currentTheme() === 'auto') applyTheme('auto');
-});
-
 // ── PostgREST calls ────────────────────────────────────────────────────────
 
 async function rpc(fn, body, token) {
@@ -117,25 +88,42 @@ async function rpc(fn, body, token) {
   return data;
 }
 
-// ── UI ─────────────────────────────────────────────────────────────────────
+// ── UI helpers ─────────────────────────────────────────────────────────────
 
-function showLogin() {
-  document.getElementById('login').hidden = false;
-  document.getElementById('chooser').hidden = true;
+function mostrar(seccionId) {
+  ['login', 'chooser', 'onboarding'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.hidden = id !== seccionId;
+  });
 }
 
-function showChooser(sesion, verTeoria) {
-  document.getElementById('login').hidden = true;
-  const chooser = document.getElementById('chooser');
-  chooser.hidden = false;
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = msg;
+  el.hidden = false;
+  setTimeout(() => { el.hidden = true; }, 4500);
+}
+
+function toast(msg, ms = 2600) {
+  const t = document.getElementById('toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.remove('hidden');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.add('hidden'), ms);
+}
+
+// ── Chooser (fallback) ─────────────────────────────────────────────────────
+
+function pintarChooser(sesion, verTeoria) {
+  mostrar('chooser');
   const uname = sesion.username || '(sin nombre)';
   document.getElementById('who').textContent = uname;
   document.getElementById('user-avatar').textContent = (uname.trim()[0] || '?').toUpperCase();
 
   const tarjeta = document.getElementById('tarjeta-teoria');
   const bloq    = document.getElementById('tarjeta-teoria-bloqueada');
-  // Usamos display para no depender del atributo `hidden`, que puede quedar
-  // enmascarado por reglas CSS con display: flex/grid.
   if (verTeoria) {
     tarjeta.hidden = false; bloq.hidden = true;
     tarjeta.style.display = ''; bloq.style.display = 'none';
@@ -145,20 +133,105 @@ function showChooser(sesion, verTeoria) {
   }
 }
 
-function showError(id, msg) {
-  const el = document.getElementById(id);
-  el.textContent = msg;
-  el.hidden = false;
-  setTimeout(() => { el.hidden = true; }, 4500);
+// ── Onboarding: primer login (elige hasta 3 oposiciones) ───────────────────
+
+const ONBOARDING = { seleccion: new Set(), max: 3, esAdmin: false, todas: [] };
+
+async function iniciarOnboarding(sesion, token) {
+  mostrar('onboarding');
+  const uname = sesion.username || '(sin nombre)';
+  document.getElementById('onboarding-who').textContent = uname;
+  document.getElementById('onboarding-avatar').textContent = (uname.trim()[0] || '?').toUpperCase();
+
+  const lista = document.getElementById('onboarding-lista');
+  lista.innerHTML = '<li class="muted">Cargando oposiciones…</li>';
+
+  let ops = [];
+  try { ops = await rpc('oposiciones_publicas', {}, token); }
+  catch (e) {
+    lista.innerHTML = `<li class="muted">No se pudieron cargar las oposiciones: ${e.message}</li>`;
+    return;
+  }
+  ONBOARDING.todas = Array.isArray(ops) ? ops : [];
+  ONBOARDING.seleccion = new Set();
+  ONBOARDING.esAdmin = false;
+  ONBOARDING.max = 3;
+
+  if (!ONBOARDING.todas.length) {
+    lista.innerHTML = `
+      <li class="muted">
+        Aún no hay oposiciones disponibles. Contacta con el administrador.
+      </li>`;
+    return;
+  }
+  lista.innerHTML = ONBOARDING.todas.map(o => `
+    <li>
+      <label class="check-item">
+        <input type="checkbox" data-op-id="${o.id}">
+        <span>
+          <strong>${escapeHtml(o.nombre)}</strong>
+          ${o.descripcion ? `<span class="muted small">${escapeHtml(o.descripcion)}</span>` : ''}
+        </span>
+      </label>
+    </li>
+  `).join('');
+  actualizarContadorOnboarding();
 }
 
-function toast(msg, ms = 2600) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.remove('hidden');
-  clearTimeout(t._t);
-  t._t = setTimeout(() => t.classList.add('hidden'), ms);
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
 }
+
+function actualizarContadorOnboarding() {
+  const cont = document.getElementById('onboarding-contador');
+  const btn  = document.getElementById('onboarding-guardar');
+  const n = ONBOARDING.seleccion.size;
+  const max = ONBOARDING.esAdmin ? '∞' : String(ONBOARDING.max);
+  cont.textContent = `${n} / ${max} seleccionada${n === 1 ? '' : 's'}`;
+  btn.disabled = n === 0;
+}
+
+document.getElementById('onboarding-lista')?.addEventListener('change', (e) => {
+  const cb = e.target.closest('input[type=checkbox][data-op-id]');
+  if (!cb) return;
+  const id = cb.dataset.opId;
+  if (cb.checked) {
+    if (!ONBOARDING.esAdmin && ONBOARDING.seleccion.size >= ONBOARDING.max) {
+      cb.checked = false;
+      toast(`Máximo ${ONBOARDING.max} oposiciones`);
+      return;
+    }
+    ONBOARDING.seleccion.add(id);
+  } else {
+    ONBOARDING.seleccion.delete(id);
+  }
+  actualizarContadorOnboarding();
+});
+
+document.getElementById('onboarding-guardar')?.addEventListener('click', async () => {
+  const btn = document.getElementById('onboarding-guardar');
+  const tok = getCookie(COOKIE_NAME);
+  if (!tok) return;
+  btn.disabled = true;
+  try {
+    await rpc('elegir_mis_oposiciones', {
+      p_oposicion_ids: [...ONBOARDING.seleccion],
+    }, tok);
+    toast('¡Listo! Empezamos con tus tests.');
+    setCookie(MODE_COOKIE, 'tests', MODE_DAYS);
+    location.href = TESTS_URL;
+  } catch (e) {
+    toast(e.message);
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('onboarding-salir')?.addEventListener('click', () => {
+  deleteCookie(COOKIE_NAME);
+  mostrar('login');
+});
 
 // ── Session lookup on load ─────────────────────────────────────────────────
 
@@ -170,21 +243,60 @@ async function comprobarSesion() {
     deleteCookie(COOKIE_NAME);
     return false;
   }
+
+  // Espera al parámetro ?next=<url> — si viene, respetamos el destino.
+  const params = new URLSearchParams(location.search);
+  const next = params.get('next');
+
+  let sesion, verTeoria = false, misOps = [];
   try {
-    const sesion = await rpc('mi_sesion', {}, tok);
-    let verTeoria = false;
-    try {
-      verTeoria = await rpc('puede_ver_teoria', {}, tok);
-    } catch { /* ignora, defaults false */ }
-    showChooser({ username: sesion?.username || claims.sub }, !!verTeoria);
-    return true;
+    sesion = await rpc('mi_sesion', {}, tok);
+    try { verTeoria = await rpc('puede_ver_teoria', {}, tok); } catch {}
+    try { misOps = await rpc('mis_oposiciones', {}, tok); } catch {}
   } catch {
     deleteCookie(COOKIE_NAME);
     return false;
   }
+
+  const roles = (sesion?.roles || claims.roles || []);
+  const esAdmin = roles.includes('admin');
+
+  // Onboarding: primer login sin oposiciones (excepto admin).
+  if (!esAdmin && Array.isArray(misOps) && misOps.length === 0) {
+    await iniciarOnboarding({ username: sesion?.username || claims.sub }, tok);
+    return true;
+  }
+
+  // Si viene un ?next= explícito, respétalo.
+  if (next && (next.startsWith('/tests') || next.startsWith('/teoria'))) {
+    setCookie(MODE_COOKIE, next.startsWith('/teoria') ? 'teoria' : 'tests', MODE_DAYS);
+    location.href = next;
+    return true;
+  }
+
+  // Redirige al último modo elegido si existe y es accesible.
+  const ultimo = getCookie(MODE_COOKIE);
+  if (ultimo === 'teoria' && verTeoria) {
+    location.href = TEORIA_URL;
+    return true;
+  }
+  if (ultimo === 'tests') {
+    location.href = TESTS_URL;
+    return true;
+  }
+  // Sin modo previo → tests por defecto (la app principal).
+  if (!ultimo) {
+    setCookie(MODE_COOKIE, 'tests', MODE_DAYS);
+    location.href = TESTS_URL;
+    return true;
+  }
+
+  // Fallback: chooser explícito.
+  pintarChooser({ username: sesion?.username || claims.sub }, !!verTeoria);
+  return true;
 }
 
-// ── Handlers ───────────────────────────────────────────────────────────────
+// ── Handlers de login/registro ─────────────────────────────────────────────
 
 document.getElementById('form-login').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -196,9 +308,6 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
     });
     if (!r || !r.token) throw new Error('Respuesta sin token');
     setCookie(COOKIE_NAME, r.token, COOKIE_DAYS);
-    const params = new URLSearchParams(location.search);
-    const next = params.get('next');
-    if (next) { location.href = next; return; }
     await comprobarSesion();
   } catch (err) {
     const raw = String(err.message || err);
@@ -220,6 +329,9 @@ document.getElementById('form-registro').addEventListener('submit', async (e) =>
     });
     if (!r || !r.token) throw new Error('Respuesta sin token');
     setCookie(COOKIE_NAME, r.token, COOKIE_DAYS);
+    // Registro nuevo → borra la cookie de "último modo" para forzar el
+    // onboarding aunque venga de otro navegador con la cookie puesta.
+    deleteCookie(MODE_COOKIE);
     await comprobarSesion();
   } catch (err) {
     showError('reg-error', String(err.message || err));
@@ -228,119 +340,20 @@ document.getElementById('form-registro').addEventListener('submit', async (e) =>
 
 document.getElementById('btn-logout').addEventListener('click', () => {
   deleteCookie(COOKIE_NAME);
-  showLogin();
-});
-
-// ── Config modal ───────────────────────────────────────────────────────────
-
-const modalConfig = document.getElementById('modal-config');
-const modalReset  = document.getElementById('modal-reset-repasos');
-
-function abrirModalConfig() {
-  // Marca el radio del tema actual.
-  const t = currentTheme();
-  document.querySelectorAll('input[name="theme"]').forEach(r => {
-    r.checked = (r.value === t);
-  });
-  // Carga el ritmo actual si hay sesión.
-  cargarRitmoOpciones();
-  modalConfig.classList.remove('hidden');
-}
-function cerrarModalConfig() { modalConfig.classList.add('hidden'); }
-
-document.getElementById('btn-config')?.addEventListener('click', abrirModalConfig);
-document.getElementById('btn-user-menu')?.addEventListener('click', abrirModalConfig);
-document.getElementById('modal-config-close')?.addEventListener('click', cerrarModalConfig);
-modalConfig?.addEventListener('click', (e) => {
-  if (e.target === modalConfig) cerrarModalConfig();
-});
-
-// Tema
-document.querySelectorAll('input[name="theme"]').forEach(r => {
-  r.addEventListener('change', () => {
-    setTheme(r.value);
-    toast(`Modo ${r.value === 'dark' ? 'oscuro' : r.value === 'light' ? 'claro' : 'automático'} activado`);
-  });
-});
-
-// Ritmo
-async function cargarRitmoOpciones() {
-  const cont = document.getElementById('ritmo-opciones');
-  const tok = getCookie(COOKIE_NAME);
-  if (!tok) {
-    cont.innerHTML = '<p class="muted small">Inicia sesión para configurar tu ritmo.</p>';
-    return;
-  }
-  cont.innerHTML = '<p class="muted small">Cargando…</p>';
-  try {
-    const d = await rpc('mi_ritmo_repaso', {}, tok);
-    const actual = d.ritmo || 'normal';
-    const curvas = d.curvas || {};
-    cont.innerHTML = ['intensivo', 'normal', 'relajado'].map(k => {
-      const meta = RITMO_LABELS[k];
-      const horas = curvas[k] || [];
-      const preview = horas.map(fmtHoras).join(' → ');
-      return `
-        <div class="ritmo-card ${k===actual?'active':''}" data-ritmo="${k}">
-          <div class="titulo">${meta.emoji} ${meta.nombre} ${k===actual?"<span class='muted small'>(actual)</span>":''}</div>
-          <div class="muted small">${meta.desc}</div>
-          <div class="curva">${preview}</div>
-        </div>`;
-    }).join('');
-  } catch (e) {
-    cont.innerHTML = `<p class="muted small">No se pudo cargar el ritmo: ${e.message}</p>`;
-  }
-}
-
-function fmtHoras(h) {
-  if (h < 24) return h + ' h';
-  const d = Math.round(h / 24);
-  if (d < 30) return d + ' d';
-  const m = Math.round(d / 30);
-  return m + ' mes' + (m > 1 ? 'es' : '');
-}
-
-document.getElementById('ritmo-opciones')?.addEventListener('click', async (e) => {
-  const card = e.target.closest('[data-ritmo]');
-  if (!card) return;
-  const tok = getCookie(COOKIE_NAME);
-  if (!tok) return;
-  try {
-    await rpc('set_ritmo_repaso', { p_ritmo: card.dataset.ritmo }, tok);
-    toast(`Ritmo cambiado a ${RITMO_LABELS[card.dataset.ritmo].nombre}`);
-    cargarRitmoOpciones();
-  } catch (err) { toast(err.message); }
-});
-
-// Reset repasos
-document.getElementById('btn-resetear-repasos')?.addEventListener('click', () => {
-  const tok = getCookie(COOKIE_NAME);
-  if (!tok) { toast('Inicia sesión primero'); return; }
-  modalReset.classList.remove('hidden');
-});
-document.getElementById('btn-reset-cancelar')?.addEventListener('click', () => {
-  modalReset.classList.add('hidden');
-});
-document.getElementById('btn-reset-confirmar')?.addEventListener('click', async (e) => {
-  const btn = e.currentTarget;
-  const tok = getCookie(COOKIE_NAME);
-  if (!tok) return;
-  btn.disabled = true;
-  try {
-    const r = await rpc('resetear_mis_repasos', { p_test_id: null }, tok);
-    const n = r && typeof r.borradas === 'number' ? r.borradas : 0;
-    toast(n === 0
-      ? 'No había repasos que borrar'
-      : `Repaso reseteado (${n} pregunta${n === 1 ? '' : 's'})`);
-    modalReset.classList.add('hidden');
-  } catch (err) {
-    toast(err.message);
-  } finally {
-    btn.disabled = false;
-  }
+  deleteCookie(MODE_COOKIE);
+  mostrar('login');
 });
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 
-applyTheme(currentTheme());
-comprobarSesion().then(ok => { if (!ok) showLogin(); });
+// Inicializa el módulo de configuración compartido (usable desde el
+// chooser mientras siga visible).
+if (window.AprentixConfig) {
+  window.AprentixConfig.init({ token: () => getCookie(COOKIE_NAME), api: API });
+} else {
+  window.addEventListener('load', () => {
+    window.AprentixConfig?.init({ token: () => getCookie(COOKIE_NAME), api: API });
+  });
+}
+
+comprobarSesion().then(ok => { if (!ok) mostrar('login'); });

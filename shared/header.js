@@ -273,6 +273,37 @@
       `;
 
       this._wire();
+      this._hideEmptyMore();
+    }
+
+    /*
+     * Oculta el botón "Más" del bottom-nav si, con los permisos actuales,
+     * no hay ninguna acción disponible detrás. Se ejecuta al montar y en
+     * cada mutación de las clases del <body> (puede-gestionar, es-admin).
+     */
+    _hideEmptyMore() {
+      const btn = this.querySelector('.bnav-item[data-more="1"], .bnav-item[data-nav-id="more"]');
+      const sheet = this.querySelector('#more-sheet .more-list');
+      if (!btn || !sheet) return;
+      const evalMore = () => {
+        const puedeGestionar = document.body.classList.contains('puede-gestionar');
+        const esAdmin = document.body.classList.contains('es-admin');
+        const items = Array.from(sheet.querySelectorAll('.more-item'));
+        const visibles = items.filter(el => {
+          if (el.classList.contains('gestion')   && !(puedeGestionar || esAdmin)) return false;
+          if (el.classList.contains('solo-admin') && !esAdmin) return false;
+          return true;
+        });
+        const hasItems = visibles.length > 0;
+        btn.hidden = !hasItems;
+        btn.classList.toggle('hidden', !hasItems);
+      };
+      evalMore();
+      if ('MutationObserver' in window) {
+        const mo = new MutationObserver(evalMore);
+        mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+        this._moreObserver = mo;
+      }
     }
 
     _wire() {
