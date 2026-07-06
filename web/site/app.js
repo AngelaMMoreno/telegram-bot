@@ -293,15 +293,18 @@ document.addEventListener("click", e => {
   }
 });
 
-$("#btn-logout").addEventListener("click", () => logout());
+$("#btn-logout")?.addEventListener("click", () => logout());
 
-/* ── Sidebar drawer (móvil) ── */
+/* ── Sidebar (solo desktop; en móvil manda la bottom-nav) ── */
 function setSidebar(open) {
-  $("#sidebar").classList.toggle("open", open);
-  $("#sidebar-backdrop").classList.toggle("hidden", !open);
+  $("#sidebar")?.classList.toggle("open", open);
+  $("#sidebar-backdrop")?.classList.toggle("hidden", !open);
 }
-$("#btn-menu").addEventListener("click", () => setSidebar(!$("#sidebar").classList.contains("open")));
-$("#sidebar-backdrop").addEventListener("click", () => setSidebar(false));
+// El botón hamburguesa ha desaparecido con el rediseño móvil. Si algún
+// atajo antiguo (URL con estado, teclado…) lo dispara, seguirá funcionando
+// via optional chaining.
+$("#btn-menu")?.addEventListener("click", () => setSidebar(!$("#sidebar")?.classList.contains("open")));
+$("#sidebar-backdrop")?.addEventListener("click", () => setSidebar(false));
 
 /* ── Tiempo por pregunta (sincronizado entre vistas vía localStorage) ── */
 function getTiempo() {
@@ -1937,9 +1940,10 @@ async function cargarRitmoOpcionesConfig() {
   }
 }
 
-$("#btn-abrir-config")?.addEventListener("click", abrirModalConfig);
+// El botón de configuración vive dentro del sheet del usuario que renderiza
+// <aprentix-header>. El avatar (#btn-user-menu) NO abre config directamente:
+// abre el sheet, y desde ahí el usuario elige Configuración.
 $("#btn-config")?.addEventListener("click", abrirModalConfig);
-$("#btn-user-menu")?.addEventListener("click", abrirModalConfig);
 $("#modal-config-close")?.addEventListener("click", cerrarModalConfig);
 $("#btn-config-cerrar")?.addEventListener("click", cerrarModalConfig);
 $("#modal-config")?.addEventListener("click", e => {
@@ -2053,6 +2057,14 @@ function atajoAVista(a) {
     tests:     "tests",
     home:      "home",
     retos:     "retos",
+    // Panel admin (accesible desde teoría vía /tests/?atajo=…): abrimos
+    // la vista correspondiente y confiamos en que el guardia de rol de
+    // cada vista bloquee al usuario que no le corresponda.
+    usuarios:  "usuarios",
+    etiquetas: "etiquetas",
+    upload:    "upload",
+    buscar:    "buscar",
+    favoritas: "favoritas",
   })[a] || null;
 }
 

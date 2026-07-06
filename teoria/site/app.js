@@ -128,6 +128,14 @@ const CLAIMS = TOKEN ? parseJwt(TOKEN) : null;
 if (CLAIMS && (!CLAIMS.roles || (!CLAIMS.roles.includes('teoria') && !CLAIMS.roles.includes('admin')))) {
   location.href = LANDING_URL;
 }
+// Marca desde el arranque si el usuario es admin, para que el sheet del
+// avatar muestre "Panel de admin" sin esperar al primer listar(). El bit
+// "puede-gestionar" seguirá refrescándose por ruta cuando llega listar().
+if (CLAIMS && Array.isArray(CLAIMS.roles)) {
+  const esAdmin = CLAIMS.roles.includes('admin');
+  document.body.classList.toggle('es-admin', esAdmin);
+  if (esAdmin) document.body.classList.add('puede-gestionar');
+}
 
 async function api(method, url, body, isForm = false) {
   const opts = {
@@ -369,6 +377,9 @@ async function cargar(ruta) {
   ESTADO.ruta = data.ruta;
   ESTADO.puede_gestionar = !!data.puede_gestionar;
   document.getElementById('admin-bar').hidden = !ESTADO.puede_gestionar;
+  // Le decimos al chasis compartido si mostrar los slots "gestión" en el
+  // sheet "Más". La regla en shared/header.css se apoya en estas clases.
+  document.body.classList.toggle('puede-gestionar', ESTADO.puede_gestionar);
   document.title = `Aprentix — Teoría — ${data.ruta}`;
   renderBreadcrumb(data.breadcrumb, data.ruta);
   renderGrid(data);
@@ -719,7 +730,8 @@ function abrirModalConfig() {
 }
 function cerrarModalConfig() { modalConfig.classList.add('hidden'); }
 document.getElementById('btn-config')?.addEventListener('click', abrirModalConfig);
-document.getElementById('btn-user-menu')?.addEventListener('click', abrirModalConfig);
+// El botón del avatar (#btn-user-menu) abre el sheet que renderiza
+// <aprentix-header>; NO abre config directamente.
 document.getElementById('btn-config-cerrar')?.addEventListener('click', cerrarModalConfig);
 document.getElementById('btn-config-cerrar-x')?.addEventListener('click', cerrarModalConfig);
 modalConfig?.addEventListener('click', (e) => {
@@ -756,6 +768,111 @@ document.getElementById('file-input').addEventListener('change', (e) => {
   e.target.value = '';
 });
 document.getElementById('grid').addEventListener('click', onGridAction);
+
+/* ── Bottom-nav / sheet "Más" (aprentix:nav) ────────────────────────
+ * <aprentix-header> emite CustomEvents con detail.id cuando el usuario
+ * toca un item con "event":"…". Los mapeamos a acciones del app. */
+document.addEventListener('aprentix:nav', (e) => {
+  const id = e.detail && e.detail.id;
+  switch (id) {
+    case 'home':
+      // Vuelve a la raíz de teoría.
+      navegar('');
+      break;
+    case 'buscar':
+      abrirBuscador();
+      break;
+    case 'marcadores':
+      // Placeholder Fase 2.
+      document.getElementById('teoria-marcadores')?.classList.remove('hidden');
+      break;
+    case 'subir':
+      document.getElementById('file-input')?.click();
+      break;
+    case 'nueva-carpeta':
+      pedirNuevaCarpeta();
+      break;
+    case 'nuevo-md':
+      pedirNuevoMarkdown();
+      break;
+  }
+});
+
+/* ── Buscador cliente-side sobre listar() de la ruta actual ─────────
+ * En Fase 2 se sustituirá por un buscador global backed by API. Por
+ * ahora, cargamos la ruta actual y filtramos por substring del nombre. */
+async function abrirBuscador() {
+  const modal = document.getElementById('teoria-buscar');
+  const input = document.getElementById('teoria-buscar-input');
+  const results = document.getElementById('teoria-buscar-results');
+  if (!modal || !input || !results) return;
+  modal.classList.remove('hidden');
+  input.value = '';
+  results.innerHTML = '<li class="muted small" style="padding:.5rem 0">Cargando…</li>';
+  let entries = [];
+  try {
+    const data = await api('GET', 'api/listar?ruta=' + encodeURIComponent(ESTADO.ruta || ''));
+    entries = (data.entries || data.items || []).map(e => ({
+      nombre: e.nombre || e.name || '',
+      es_carpeta: !!(e.es_carpeta || e.type === 'folder'),
+      ruta: e.ruta || e.path || '',
+    }));
+  } catch (err) {
+    results.innerHTML = `<li class="muted small">Error: ${err.message}</li>`;
+    return;
+  }
+  const pintar = (q) => {
+    const qq = (q || '').trim().toLowerCase();
+    const filtered = qq
+      ? entries.filter(e => e.nombre.toLowerCase().includes(qq))
+      : entries;
+    if (!filtered.length) {
+      results.innerHTML = '<li class="muted small">Sin resultados</li>';
+      return;
+    }
+    results.innerHTML = filtered.slice(0, 60).map(e => `
+      <li>
+        <button class="teoria-buscar-res" data-nombre="${e.nombre.replace(/"/g, '&quot;')}">
+          <span aria-hidden="true">${e.es_carpeta ? '📁' : emojiParaFichero(e.nombre)}</span>
+          <span class="teoria-buscar-nombre">${e.nombre}</span>
+        </button>
+      </li>
+    `).join('');
+  };
+  pintar('');
+  input.oninput = () => pintar(input.value);
+  input.focus();
+  results.onclick = (ev) => {
+    const btn = ev.target.closest('.teoria-buscar-res');
+    if (!btn) return;
+    const nombre = btn.dataset.nombre;
+    const entry = entries.find(e => e.nombre === nombre);
+    if (!entry) return;
+    modal.classList.add('hidden');
+    // Navegar: si es carpeta, entra; si es fichero, abre.
+    if (entry.es_carpeta) {
+      const base = ESTADO.ruta ? ESTADO.ruta.replace(/\/$/, '') + '/' : '';
+      navegar(base + entry.nombre);
+    } else {
+      // Los ficheros los abre el grid mediante onGridAction — dejamos que
+      // el usuario los pulse allí tras navegar. Cerramos el buscador.
+      const base = ESTADO.ruta ? ESTADO.ruta.replace(/\/$/, '') + '/' : '';
+      navegar(base);
+    }
+  };
+}
+document.getElementById('teoria-buscar-cerrar')?.addEventListener('click', () => {
+  document.getElementById('teoria-buscar')?.classList.add('hidden');
+});
+document.getElementById('teoria-buscar')?.addEventListener('click', (e) => {
+  if (e.target.id === 'teoria-buscar') e.currentTarget.classList.add('hidden');
+});
+document.getElementById('teoria-marcadores-cerrar')?.addEventListener('click', () => {
+  document.getElementById('teoria-marcadores')?.classList.add('hidden');
+});
+document.getElementById('teoria-marcadores')?.addEventListener('click', (e) => {
+  if (e.target.id === 'teoria-marcadores') e.currentTarget.classList.add('hidden');
+});
 
 // Rellena el chip de usuario (avatar + nombre). El JWT sólo trae el
 // user_id en 'sub'; el username lo pide el backend a mi_sesion() y lo

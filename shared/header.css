@@ -3,6 +3,12 @@
  *
  * Estilo compartido entre la app de tests y la de teoría. La landing usa
  * un layout distinto (hero + apps grid) y no incluye esta hoja.
+ *
+ * Móvil (< 900 px): topbar reducida con avatar a la derecha + bottom-nav
+ * fijado en la parte inferior. Sheets deslizantes para el usuario y para
+ * las opciones "Más".
+ * Desktop (>= 900 px): topbar completa + navegación por pestañas; el
+ * bottom-nav se oculta.
  */
 
 aprentix-header { display: contents; }
@@ -32,15 +38,6 @@ aprentix-header { display: contents; }
 @media (min-width: 900px) {
   .topbar { padding: 0 1.75rem; gap: 1.35rem; }
 }
-.hamburger {
-  background: var(--pri-soft); border: 0; color: var(--pri-d);
-  font-size: 1.5rem; cursor: pointer;
-  padding: 0.5rem 0.65rem; line-height: 0;
-  display: inline-flex; align-items: center;
-  border-radius: 14px;
-  transition: background 0.15s;
-}
-.hamburger:hover { background: var(--pri-glow); }
 
 /* Marca destacada: chip con toque solar + logo grande. */
 .brand {
@@ -72,12 +69,18 @@ aprentix-header { display: contents; }
 .brand-name {
   letter-spacing: 0.4px;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* En móvil solo pintamos el logo para ganar espacio; el texto asoma
+     a partir de 640 px. */
+  display: none;
 }
 @media (min-width: 640px) {
   .brand { font-size: 1.25rem; padding: 6px 16px 6px 10px; }
   .brand .brand-logo { width: 34px; height: 34px; }
+  .brand-name { display: inline; }
 }
 
+/* Navegación de pestañas (Tests | Teoría) — solo desktop; en móvil vive
+ * dentro del sheet del avatar como switch. */
 .hdr-nav {
   display: none; align-items: center; gap: 4px;
   background: var(--bg-soft);
@@ -104,13 +107,15 @@ aprentix-header { display: contents; }
   color: #14241D;
   box-shadow: 0 2px 12px rgba(92, 229, 213, 0.35);
 }
-@media (min-width: 640px) { .hdr-nav { display: inline-flex; } }
+@media (min-width: 900px) { .hdr-nav { display: inline-flex; } }
 
 .hdr-spacer { flex: 1; min-width: 0; }
 
+/* Chip del usuario — en móvil solo es el círculo con la inicial. */
 .user-chip {
   display: flex; align-items: center; gap: 0.45rem;
   min-width: 0;
+  margin-left: auto;
 }
 .user-btn {
   display: inline-flex; align-items: center; gap: 0.55rem;
@@ -121,17 +126,19 @@ aprentix-header { display: contents; }
 }
 .user-btn:hover { background: var(--pri-soft); }
 .user-chip .avatar {
-  width: 32px; height: 32px;
+  width: 36px; height: 36px;
   display: inline-flex; align-items: center; justify-content: center;
   background: linear-gradient(135deg, var(--grad-a), var(--grad-b));
-  color: #fff; font-weight: 700;
-  border-radius: 50%; font-size: 1rem;
+  color: #fff; font-weight: 800;
+  border-radius: 50%; font-size: 1.05rem;
   user-select: none; flex: 0 0 auto;
   box-shadow: 0 2px 6px rgba(107, 142, 35, 0.22);
+  border: 2px solid rgba(255, 255, 255, 0.4);
 }
 [data-theme="dark"] .user-chip .avatar {
   color: #14241D;
   box-shadow: 0 2px 10px rgba(92, 229, 213, 0.30);
+  border-color: rgba(0, 0, 0, 0.25);
 }
 .user-chip .user-name {
   font-weight: 600; max-width: 90px;
@@ -139,6 +146,12 @@ aprentix-header { display: contents; }
   display: none;
   font-size: 0.95rem;
 }
+@media (min-width: 900px) {
+  .user-chip .user-name { display: inline; max-width: 180px; }
+}
+
+/* Botones legados (sidebar antiguo). Se dejan aquí para compatibilidad
+ * con estilos internos; ya no viven en la cabecera. */
 .btn-icon {
   display: inline-flex; align-items: center; justify-content: center;
   width: 36px; height: 36px;
@@ -151,6 +164,376 @@ aprentix-header { display: contents; }
 .btn-icon.danger-icon:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
 .btn-icon:active { transform: scale(0.92); }
 
-@media (min-width: 600px) {
-  .user-chip .user-name { display: inline; max-width: 180px; }
+/* Hamburguesa antigua: por compatibilidad, si algún app la sigue
+ * inyectando, la ocultamos. */
+.hamburger { display: none !important; }
+
+
+/* ═════════════════════════════════════════════════════════════════════
+ * Bottom navigation (móvil)
+ * Fijada abajo con backdrop translúcido y safe-area para gestos iOS.
+ * Se oculta a partir de 900 px (desktop usa la topbar completa).
+ * ═════════════════════════════════════════════════════════════════════ */
+.bottom-nav {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 40;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  align-items: stretch;
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0));
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  border-top: 1px solid var(--glass-border);
+  box-shadow: 0 -6px 22px rgba(0, 0, 0, 0.08);
 }
+[data-theme="dark"] .bottom-nav {
+  box-shadow: 0 -6px 22px rgba(0, 0, 0, 0.35);
+}
+.bnav-item {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px;
+  background: transparent; border: 0;
+  color: var(--txt-soft);
+  padding: 6px 4px;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 11px; font-weight: 600;
+  text-decoration: none;
+  min-height: 52px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, transform 0.1s;
+}
+.bnav-item:active { transform: scale(0.94); }
+.bnav-ico {
+  width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.bnav-ico svg { width: 100%; height: 100%; }
+.bnav-label {
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+.bnav-item:hover { color: var(--txt); background: var(--pri-soft); }
+.bnav-item.active {
+  color: var(--pri-d);
+  background: var(--pri-soft);
+}
+[data-theme="dark"] .bnav-item.active { color: var(--pri); }
+.bnav-item.active .bnav-ico {
+  transform: translateY(-1px);
+  filter: drop-shadow(0 2px 4px rgba(107, 142, 35, 0.35));
+}
+
+/* Item especial (para admin/gestión con estilo llamativo). */
+.bnav-item.special {
+  color: var(--accent-d);
+}
+.bnav-item.special::before {
+  content: ""; position: absolute; top: 4px; right: calc(50% - 14px);
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+.bnav-item { position: relative; }
+
+/* En desktop la bottom-nav no aporta nada nuevo. */
+@media (min-width: 900px) {
+  .bottom-nav { display: none; }
+}
+/* Deja hueco al contenido para que la bottom-nav no tape lo último.
+ * Los apps pueden anular con --bottom-nav-h si lo necesitan. */
+:root {
+  --bottom-nav-h: calc(58px + env(safe-area-inset-bottom, 0));
+}
+@media (max-width: 899.98px) {
+  body {
+    padding-bottom: var(--bottom-nav-h);
+  }
+}
+
+
+/* ═════════════════════════════════════════════════════════════════════
+ * Aprentix Sheet — panel deslizante que aloja el menú del usuario y
+ * el sheet secundario "Más". En móvil sube desde abajo; en desktop
+ * aparece como popover ancorado.
+ * ═════════════════════════════════════════════════════════════════════ */
+.aprentix-sheet {
+  position: fixed; inset: 0;
+  z-index: 60;
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.aprentix-sheet.hidden { display: none; }
+.aprentix-sheet-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0, 0, 0, 0.42);
+  animation: sheet-fade 0.18s ease both;
+}
+.aprentix-sheet-card {
+  position: relative;
+  width: min(560px, 100%);
+  background: var(--bg-panel);
+  color: var(--txt);
+  border-radius: 22px 22px 0 0;
+  padding: 8px 16px calc(20px + env(safe-area-inset-bottom, 0));
+  box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.35);
+  animation: sheet-up 0.24s cubic-bezier(0.2, 0.85, 0.35, 1.05) both;
+  max-height: 80vh; overflow-y: auto;
+}
+.aprentix-sheet-card::before {
+  content: "";
+  display: block;
+  width: 44px; height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+  margin: 6px auto 12px;
+}
+@keyframes sheet-up {
+  from { transform: translateY(24px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+@keyframes sheet-fade {
+  from { opacity: 0; } to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .aprentix-sheet-card, .aprentix-sheet-backdrop { animation: none; }
+}
+
+/* En desktop el sheet aparece como popover a la derecha del avatar. */
+@media (min-width: 900px) {
+  .aprentix-sheet { align-items: flex-start; justify-content: flex-end; }
+  .aprentix-sheet-backdrop { background: transparent; }
+  .aprentix-sheet-card {
+    width: 360px;
+    margin: calc(var(--topbar-h) + 8px) 16px 0 0;
+    border-radius: 16px;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.22);
+    max-height: 80vh;
+    animation: sheet-pop 0.18s ease both;
+  }
+  .aprentix-sheet-card::before { display: none; }
+}
+@keyframes sheet-pop {
+  from { transform: translateY(-6px) scale(0.98); opacity: 0; }
+  to   { transform: translateY(0)    scale(1);    opacity: 1; }
+}
+
+.sheet-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 4px 4px 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+.sheet-avatar {
+  width: 44px; height: 44px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--grad-a), var(--grad-b));
+  color: #fff; font-weight: 800;
+  border-radius: 50%; font-size: 1.15rem;
+  flex: 0 0 auto;
+}
+[data-theme="dark"] .sheet-avatar { color: #14241D; }
+.sheet-head-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sheet-head-txt strong {
+  font-size: 1.05rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sheet-mode-label {
+  font-size: 0.82rem;
+  color: var(--txt-soft);
+}
+.sheet-close {
+  background: transparent; border: 0;
+  font-size: 1.2rem; color: var(--txt-soft);
+  padding: 6px 10px; border-radius: 10px;
+  cursor: pointer;
+}
+.sheet-close:hover { background: var(--bg-soft); color: var(--txt); }
+
+.sheet-section { margin-top: 6px; padding: 4px 0; }
+.sheet-section + .sheet-section {
+  border-top: 1px solid var(--border);
+  margin-top: 12px; padding-top: 12px;
+}
+.sheet-section-title {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--txt-soft);
+  margin: 0 4px 8px;
+}
+
+/* Switch de "Modo" (Tests / Teoría) */
+.mode-switch {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  background: var(--bg-soft);
+  padding: 5px;
+  border-radius: 14px;
+}
+.mode-opt {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: var(--txt-soft);
+  text-decoration: none;
+  font-weight: 600; font-size: 0.95rem;
+  transition: background 0.15s, color 0.15s;
+  min-height: 42px;
+}
+.mode-opt:hover:not(.active) { color: var(--txt); background: var(--pri-soft); }
+.mode-opt .mode-ico {
+  width: 20px; height: 20px;
+  display: inline-flex; align-items: center;
+}
+.mode-opt .mode-ico svg { width: 100%; height: 100%; }
+.mode-opt.active {
+  background: var(--pri); color: #fff;
+  box-shadow: 0 2px 8px rgba(107, 142, 35, 0.25);
+  cursor: default; pointer-events: none;
+}
+[data-theme="dark"] .mode-opt.active { color: #14241D; }
+
+/* Filas del sheet: config, logout. */
+.sheet-row {
+  width: 100%;
+  display: flex; align-items: center; gap: 12px;
+  background: transparent; border: 0;
+  color: var(--txt);
+  padding: 12px 8px;
+  border-radius: 12px;
+  font-family: inherit; font-size: 0.98rem; font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+.sheet-row:hover { background: var(--pri-soft); color: var(--pri-d); }
+.sheet-row.danger { color: var(--danger); }
+.sheet-row.danger:hover { background: var(--danger-soft); }
+.sheet-row-ico {
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: currentColor;
+}
+.sheet-row-ico svg { width: 100%; height: 100%; }
+[data-theme="dark"] .sheet-row:hover { color: var(--pri); }
+
+/* Lista de opciones "Más" */
+.more-list {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.more-item {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 8px;
+  color: var(--txt);
+  text-decoration: none;
+  font-family: inherit; font-size: 0.82rem; font-weight: 600;
+  cursor: pointer;
+  min-height: 78px;
+  text-align: center;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.more-item:active { transform: scale(0.96); }
+.more-item:hover { background: var(--pri-soft); border-color: var(--pri); color: var(--pri-d); }
+.more-ico {
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--pri);
+}
+.more-ico svg { width: 100%; height: 100%; }
+[data-theme="dark"] .more-ico { color: var(--pri); }
+
+/* Items de gestión / admin: destacados con acento coral y ámbar. */
+.more-item.gestion {
+  background: linear-gradient(135deg, var(--accent-soft), var(--pri-soft));
+  border-color: var(--accent);
+  color: var(--accent-d);
+}
+.more-item.gestion .more-ico { color: var(--accent-d); }
+.more-item.solo-admin {
+  background: linear-gradient(135deg, var(--coral-soft, #ffe0dc), var(--accent-soft));
+  border-color: var(--coral, #ea7a63);
+  color: var(--coral-d, #b0432b);
+  position: relative;
+}
+.more-item.solo-admin::after {
+  content: "ADMIN";
+  position: absolute; top: 6px; right: 6px;
+  font-size: 8px; font-weight: 900; letter-spacing: 0.12em;
+  padding: 2px 5px;
+  background: var(--coral, #ea7a63);
+  color: #fff;
+  border-radius: 999px;
+}
+.more-item.solo-admin .more-ico { color: var(--coral-d, #b0432b); }
+
+/* Oculta más-items para los que no tienen permiso. Los apps pintan
+ * body.puede-gestionar / body.es-admin al aplicar la sesión. */
+body:not(.puede-gestionar) .more-item.gestion,
+body:not(.puede-gestionar) .bnav-item.gestion { display: none; }
+body:not(.es-admin) .more-item.solo-admin,
+body:not(.es-admin) .bnav-item.solo-admin { display: none; }
+
+/* Fila "Panel de admin" en el sheet del usuario: destacada con acento
+ * cálido para diferenciarla del resto y aviso ADMIN a la derecha.
+ * Se oculta si el usuario no es gestor ni admin. */
+body:not(.puede-gestionar):not(.es-admin) .sheet-row.admin-row {
+  display: none;
+}
+.sheet-row.admin-row {
+  background: linear-gradient(90deg, var(--accent-soft), var(--pri-soft));
+  border: 1.5px dashed var(--accent);
+  color: var(--accent-d);
+  margin: 4px 0;
+  font-weight: 700;
+}
+.sheet-row.admin-row:hover {
+  background: linear-gradient(90deg, var(--accent-soft), var(--coral-soft, #ffe0dc));
+  color: var(--accent-d);
+  border-color: var(--coral, #ea7a63);
+}
+.sheet-row.admin-row .sheet-row-ico { color: var(--accent-d); }
+.sheet-row-badge {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--coral, #ea7a63);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+/* Sheet de admin: mantiene la grid de items, con un aire más "serio". */
+.admin-card { border-top: 4px solid var(--coral, #ea7a63); }
+.admin-list .more-item {
+  /* Todos los items del panel admin salen ya destacados: no hace falta
+   * marcar "gestion" o "solo-admin" para diferenciar del resto. */
+  background: linear-gradient(135deg, var(--accent-soft), var(--pri-soft));
+  border-color: var(--accent);
+  color: var(--accent-d);
+}
+.admin-list .more-item:hover {
+  background: linear-gradient(135deg, var(--accent-soft), var(--coral-soft, #ffe0dc));
+  border-color: var(--coral, #ea7a63);
+  color: var(--coral-d, #b0432b);
+}
+.admin-list .more-item.solo-admin::after { content: "ADMIN"; }
+.admin-list .more-item.gestion::after {
+  content: "GESTIÓN";
+  position: absolute; top: 6px; right: 6px;
+  font-size: 8px; font-weight: 900; letter-spacing: 0.12em;
+  padding: 2px 5px;
+  background: var(--pri);
+  color: #fff;
+  border-radius: 999px;
+}
+
+/* Cuando hay un sheet abierto, congela el scroll del body. */
+body.sheet-open { overflow: hidden; }
