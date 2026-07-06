@@ -140,6 +140,28 @@ def vistos_prefijo(token: str, prefijo: str) -> set[str]:
         return set()
 
 
+def _asignaciones_carpetas(token: str) -> dict[str, dict]:
+    """Mapa ruta → {oposicion_id, oposicion_nombre} tomado de la BD."""
+    r = _pg(token, "listar_carpeta_oposiciones", {})
+    if r is None or r.status_code != 200:
+        return {}
+    try:
+        rows = r.json() or []
+        return {row["ruta"]: row for row in rows}
+    except Exception:
+        return {}
+
+
+def _mis_oposiciones_ids(token: str) -> set[str]:
+    r = _pg(token, "mis_oposiciones_ids", {})
+    if r is None or r.status_code != 200:
+        return set()
+    try:
+        return {str(x) for x in (r.json() or [])}
+    except Exception:
+        return set()
+
+
 # ── Endpoints API ───────────────────────────────────────────────────────────
 
 @app.get("/api/sesion")
@@ -164,7 +186,16 @@ def api_sesion(request: Request):
 
 
 @app.get("/api/listar")
-def api_listar(request: Request, ruta: str = "/"):
+def api_listar(request: Request, ruta: str = "/", oposicion_id: str | None = None):
+    """
+    Lista una carpeta. Si se pasa `oposicion_id`, filtra la raíz para
+    mostrar solo carpetas asignadas a esa oposición (más las globales
+    sin asignación). Sin oposicion_id, el alumno ve global + las de
+    todas sus oposiciones; el admin ve todas.
+
+    Una vez dentro de una carpeta asignada, no se vuelve a filtrar:
+    el árbol interno pertenece a la misma oposición.
+    """
     claims = require_teoria(request)
     url_path = normalize_url_path(ruta)
     fs = resolve_fs(url_path)
@@ -186,18 +217,52 @@ def api_listar(request: Request, ruta: str = "/"):
     )
 
     vistos = vistos_prefijo(claims["_token"], url_path)
+    roles = claims.get("roles") or []
+    es_admin = "admin" in roles
+
+    # Cargamos asignaciones solo si estamos en la raíz (donde tiene sentido
+    # filtrar) o si somos admin (para poder etiquetar cada carpeta con su
+    # oposición). Fuera de la raíz no filtramos ni etiquetamos: no aporta.
+    asignaciones = _asignaciones_carpetas(claims["_token"]) if url_path == "/" or es_admin else {}
+    mis_ids = _mis_oposiciones_ids(claims["_token"]) if url_path == "/" and not es_admin else set()
 
     carpetas = []
     for d in dirs:
+        ruta_d = join_url(url_path, d.name)
         try:
             n = sum(1 for _ in d.iterdir() if not _.name.startswith("."))
         except Exception:
             n = 0
-        carpetas.append({
+        entry = {
             "nombre": d.name,
-            "ruta": join_url(url_path, d.name),
+            "ruta": ruta_d,
             "num_elementos": n,
-        })
+        }
+        # Adjuntamos la oposición si la carpeta está asignada. El frontend
+        # la pinta como badge para dar contexto (útil sobre todo al admin).
+        if ruta_d in asignaciones:
+            a = asignaciones[ruta_d]
+            entry["oposicion_id"]     = a.get("oposicion_id")
+            entry["oposicion_nombre"] = a.get("oposicion_nombre")
+
+        # Filtrado de raíz para no-admin: aplicamos las reglas.
+        if url_path == "/" and not es_admin:
+            asig = asignaciones.get(ruta_d)
+            if asig is not None:
+                op_id = str(asig.get("oposicion_id"))
+                if oposicion_id:
+                    # Modo focalizado en una oposición: solo la seleccionada
+                    # más las globales.
+                    if op_id != str(oposicion_id):
+                        continue
+                else:
+                    # Vista "todas mis oposiciones": exclui las que no me
+                    # pertenecen (pero el resto queda visible).
+                    if op_id not in mis_ids:
+                        continue
+            # Si no está asignada (global) siempre entra.
+
+        carpetas.append(entry)
 
     ficheros = []
     for f in files:
@@ -230,7 +295,8 @@ def api_listar(request: Request, ruta: str = "/"):
         "breadcrumb": breadcrumb,
         "carpetas": carpetas,
         "ficheros": ficheros,
-        "puede_gestionar": "admin" in (claims.get("roles") or []),
+        "puede_gestionar": es_admin,
+        "oposicion_id": oposicion_id,
     }
 
 

@@ -208,6 +208,14 @@
                      <span class="sheet-row-ico">${icon('trophy')}</span>
                      <span class="sheet-row-label">Retos y logros</span>
                    </a>`}
+              <!-- Cambiar oposición: opcional, cada app lo activa levantando
+                   la clase .has-oposiciones en el body cuando el usuario
+                   tiene más de una accesible. Fila oculta por defecto. -->
+              <button class="sheet-row sheet-oposicion" id="btn-cambiar-oposicion" type="button">
+                <span class="sheet-row-ico">${icon('folder')}</span>
+                <span class="sheet-row-label">Cambiar oposición</span>
+                <span class="sheet-row-hint" id="sheet-oposicion-actual"></span>
+              </button>
               <button class="sheet-row" id="btn-config" type="button">
                 <span class="sheet-row-ico">${icon('gear')}</span>
                 <span class="sheet-row-label">Configuración</span>
