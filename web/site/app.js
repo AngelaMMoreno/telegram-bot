@@ -803,10 +803,18 @@ $("#tests-list").addEventListener("click", e => {
 async function loadTestDetail(testId) {
   navigate("test-detail");
   $("#test-detail-questions").innerHTML = "<p class='muted'>Cargando…</p>";
-  const d = await rpc("obtener_preguntas_test", { p_test_id: testId });
+  const [d, tRow] = await Promise.all([
+    rpc("obtener_preguntas_test", { p_test_id: testId }),
+    pg(`/tests?id=eq.${testId}&select=etiquetas`).then(r => r[0] || {}),
+  ]);
   state.currentTestId = testId;
+  state.currentTestTags = Array.isArray(tRow.etiquetas) ? [...tRow.etiquetas] : [];
   $("#test-detail-title").textContent = d.quiz.title;
   $("#test-detail-meta").textContent = `${d.questions.length} preguntas`;
+  await ensureEtiquetasCache();
+  $("#td-tag-datalist").innerHTML = state.etiquetasCache
+    .map(t => `<option value="${esc(t.nombre)}">`).join("");
+  pintarEtiquetasTest();
   $("#test-detail-questions").innerHTML = d.questions.map(q => `
     <li class="q-row" data-pid="${q.id}">
       <div class="q-text">${esc(q.text)}</div>
@@ -819,12 +827,66 @@ async function loadTestDetail(testId) {
   state.currentTest = d;
 }
 
+function pintarEtiquetasTest() {
+  const tags = state.currentTestTags || [];
+  const chipsDiv = $("#td-tags-chips");
+  if (!chipsDiv) return;
+  if (!tags.length) {
+    chipsDiv.innerHTML = `<span class="muted small">— sin etiquetas —</span>`;
+  } else {
+    chipsDiv.innerHTML = tags.map(t => `
+      <span class="tag removable" data-tag="${esc(t)}">
+        ${esc(t)}<span class="x" data-rm="${esc(t)}" title="Quitar">×</span>
+      </span>
+    `).join("");
+  }
+}
+
+async function guardarEtiquetasTest() {
+  if (!state.currentTestId) return;
+  try {
+    await rpc("set_etiquetas_test", {
+      p_test_id:   state.currentTestId,
+      p_etiquetas: state.currentTestTags || [],
+    });
+  } catch (e) { toast(e.message); }
+}
+
 $("#test-detail-questions").addEventListener("click", e => {
   const btn = e.target.closest("[data-action=edit-q]");
   if (!btn) return;
   const li = e.target.closest("[data-pid]");
   const q = state.currentTest.questions.find(x => x.id === li.dataset.pid);
   if (q) abrirEditorPregunta(q);
+});
+
+/* ── Etiquetas del test (admin/editor/autor) ── */
+$("#td-tags-chips")?.addEventListener("click", async e => {
+  const rm = e.target.closest("[data-rm]");
+  if (!rm) return;
+  state.currentTestTags = (state.currentTestTags || []).filter(t => t !== rm.dataset.rm);
+  pintarEtiquetasTest();
+  await guardarEtiquetasTest();
+});
+
+$("#td-tag-add")?.addEventListener("keydown", async e => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  const inp = e.target;
+  const tag = inp.value.trim().toLowerCase();
+  if (!tag) return;
+  if ((state.currentTestTags || []).includes(tag)) {
+    toast("El test ya tiene esa etiqueta");
+    inp.value = "";
+    return;
+  }
+  if (!state.etiquetasCache.some(t => t.nombre === tag)) {
+    if (!confirm(`"${tag}" no existe en el catálogo. ¿Añadirla igualmente?`)) return;
+  }
+  state.currentTestTags = [...(state.currentTestTags || []), tag];
+  inp.value = "";
+  pintarEtiquetasTest();
+  await guardarEtiquetasTest();
 });
 
 /* ── Editor de pregunta (modal) ──
@@ -935,6 +997,10 @@ $("#form-pregunta").addEventListener("submit", async e => {
   const etiquetas = state.editingQ.etiquetas || [];
 
   try {
+    // Enunciado/opciones/explicación se guardan por PATCH normal, pero
+    // las etiquetas van por RPC dedicada que calcula el diff y actualiza
+    // 'etiquetas_manuales' / 'etiquetas_bloqueadas' (la corrección humana
+    // debe pesar más que el auto-tagger).
     await pg("/preguntas?id=eq." + state.editingQ.id, {
       method: "PATCH",
       headers: { "Prefer": "return=minimal" },
@@ -942,8 +1008,11 @@ $("#form-pregunta").addEventListener("submit", async e => {
         enunciado:   $("#pq-enunciado").value.trim(),
         opciones,
         explicacion: $("#pq-explicacion").value.trim() || null,
-        etiquetas,
       },
+    });
+    await rpc("set_etiquetas_pregunta", {
+      p_id:        state.editingQ.id,
+      p_etiquetas: etiquetas,
     });
     toast("Pregunta actualizada");
     const cb = state.editingQ.refrescar;
@@ -1644,11 +1713,10 @@ function pintarQuizTagChips(q) {
 }
 
 async function actualizarEtiquetasPregunta(qId, nuevas) {
-  await pg(`/preguntas?id=eq.${qId}`, {
-    method: "PATCH",
-    headers: { "Prefer": "return=minimal" },
-    body: { etiquetas: nuevas },
-  });
+  // Vía RPC para que las etiquetas quitadas queden como 'bloqueadas' y el
+  // auto-tagger no vuelva a ponerlas; las añadidas quedan como 'manuales'
+  // y educan al kNN.
+  await rpc("set_etiquetas_pregunta", { p_id: qId, p_etiquetas: nuevas });
 }
 
 $("#quiz-tags-chips").addEventListener("click", async e => {
