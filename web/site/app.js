@@ -805,10 +805,13 @@ async function loadTestDetail(testId) {
   $("#test-detail-questions").innerHTML = "<p class='muted'>Cargando…</p>";
   const [d, tRow] = await Promise.all([
     rpc("obtener_preguntas_test", { p_test_id: testId }),
-    pg(`/tests?id=eq.${testId}&select=etiquetas`).then(r => r[0] || {}),
+    pg(`/tests?id=eq.${testId}&select=etiquetas,etiquetas_bloqueadas`)
+      .then(r => r[0] || {})
+      .catch(() => ({})),   // columnas nuevas: si aún no está migrada la BBDD, no rompas
   ]);
   state.currentTestId = testId;
   state.currentTestTags = Array.isArray(tRow.etiquetas) ? [...tRow.etiquetas] : [];
+  state.currentTestBloq = Array.isArray(tRow.etiquetas_bloqueadas) ? [...tRow.etiquetas_bloqueadas] : [];
   $("#test-detail-title").textContent = d.quiz.title;
   $("#test-detail-meta").textContent = `${d.questions.length} preguntas`;
   await ensureEtiquetasCache();
@@ -840,6 +843,34 @@ function pintarEtiquetasTest() {
       </span>
     `).join("");
   }
+  pintarSugerenciasTest();
+}
+
+// Sugerencias: etiquetas que llevan las PREGUNTAS del test pero que aún no
+// están asignadas al test. Con un clic se promocionan al nivel test.
+function pintarSugerenciasTest() {
+  const box = $("#td-tags-sugeridas");
+  if (!box) return;
+  const enTest = new Set(state.currentTestTags || []);
+  const bloqueadas = new Set(state.currentTestBloq || []);
+  const acumulado = new Map();          // nombre -> nº preguntas
+  for (const q of (state.currentTest?.questions || [])) {
+    for (const t of (q.etiquetas || [])) {
+      if (enTest.has(t) || bloqueadas.has(t)) continue;
+      acumulado.set(t, (acumulado.get(t) || 0) + 1);
+    }
+  }
+  const sug = [...acumulado.entries()]
+    .sort((a,b) => b[1] - a[1]);
+  if (!sug.length) { box.innerHTML = ""; return; }
+  box.innerHTML = `
+    <span class="muted small">Sugeridas de las preguntas:</span>
+    ${sug.map(([t,n]) => `
+      <span class="tag chip" data-add="${esc(t)}" title="Añadir al test (aparece en ${n} pregunta${n===1?"":"s"})">
+        + ${esc(t)} <span class="muted small">·${n}</span>
+      </span>
+    `).join("")}
+  `;
 }
 
 async function guardarEtiquetasTest() {
@@ -865,6 +896,16 @@ $("#td-tags-chips")?.addEventListener("click", async e => {
   const rm = e.target.closest("[data-rm]");
   if (!rm) return;
   state.currentTestTags = (state.currentTestTags || []).filter(t => t !== rm.dataset.rm);
+  pintarEtiquetasTest();
+  await guardarEtiquetasTest();
+});
+
+$("#td-tags-sugeridas")?.addEventListener("click", async e => {
+  const add = e.target.closest("[data-add]");
+  if (!add) return;
+  const t = add.dataset.add;
+  if ((state.currentTestTags || []).includes(t)) return;
+  state.currentTestTags = [...(state.currentTestTags || []), t];
   pintarEtiquetasTest();
   await guardarEtiquetasTest();
 });
