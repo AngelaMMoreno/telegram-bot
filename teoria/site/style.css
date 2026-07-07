@@ -35,6 +35,9 @@ button { font: inherit; cursor: pointer; }
   padding: 10px 24px;
   background: var(--card);
   border-bottom: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.admin-bar-row {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
 }
 .admin-hint { color: var(--sub); font-size: 12px; margin-left: auto; }
@@ -43,6 +46,15 @@ button { font: inherit; cursor: pointer; }
   min-height: 34px; padding: 0.35rem 0.75rem;
   font-size: 0.85rem; font-weight: 500;
 }
+/* Fila de selección: sale bajo la fila de subir/carpeta/markdown cuando se
+ * entra en modo selección. La contra-visual es una línea sutil para
+ * separarla de la fila principal sin peso. */
+.seleccion-bar {
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}
+.seleccion-bar[hidden] { display: none; }
+.seleccion-count { font-weight: 700; font-size: 13px; margin-right: 4px; }
 
 /* ── Grid ────────────────────────────────────────────────────────────── */
 .grid {
@@ -110,23 +122,6 @@ button { font: inherit; cursor: pointer; }
 .visto-tick.on { background: var(--ok); border-color: var(--ok); color: #fff; }
 .visto-tick.on:hover { background: var(--pri-d); border-color: var(--pri-d); }
 .visto-tick-check { display: block; line-height: 22px; }
-.card-actions {
-  position: absolute; top: 6px; left: 6px;
-  display: flex; gap: 4px;
-  opacity: 0; transition: opacity .12s;
-}
-.card:hover .card-actions { opacity: 1; }
-.card-btn {
-  background: var(--card);
-  border: 1px solid var(--border);
-  width: 24px; height: 24px; padding: 0;
-  font-size: 12px; line-height: 22px;
-  border-radius: 6px;
-  color: var(--text);
-}
-.card-btn:hover { background: var(--bg-soft); border-color: var(--pri); }
-.card-btn.del:hover { background: var(--danger-light); border-color: var(--danger); }
-
 .empty {
   padding: 60px 20px;
   text-align: center;
@@ -526,21 +521,7 @@ button { font: inherit; cursor: pointer; }
 .teoria-marc-quitar { color: var(--sub); }
 .teoria-marc-quitar:hover { color: var(--danger); background: var(--danger-light); }
 
-/* ── Fase 5b: badge y modal de oposición ─────────────────────────────── */
-.card-op-badge {
-  display: inline-flex; align-items: center; gap: 4px;
-  position: absolute; bottom: 8px; left: 8px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent-d);
-  font-size: 10.5px; font-weight: 700;
-  letter-spacing: 0.02em;
-  max-width: calc(100% - 16px);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-[data-theme="dark"] .card-op-badge { color: var(--accent); }
-
+/* ── Fase 5b: modal de oposición ─────────────────────────────── */
 .teoria-op-list {
   list-style: none; padding: 0; margin: 0.75rem 0 0;
   display: flex; flex-direction: column; gap: 6px;
@@ -578,13 +559,6 @@ button { font: inherit; cursor: pointer; }
   display: flex; flex-direction: column; gap: 3px; min-width: 0;
 }
 
-/* Badge multi-oposición (más de una). */
-.card-op-badge-multi {
-  background: var(--pri-soft);
-  color: var(--pri-d);
-}
-[data-theme="dark"] .card-op-badge-multi { color: var(--pri); }
-
 /* ── Modo selección múltiple ─────────────────────────────────────────── */
 .card-check {
   position: absolute; top: 8px; left: 8px;
@@ -597,7 +571,6 @@ button { font: inherit; cursor: pointer; }
 }
 body.en-seleccion .card-check { display: block; }
 body.en-seleccion .card { cursor: pointer; }
-body.en-seleccion .card-actions { display: none !important; }
 body.en-seleccion .visto-tick { pointer-events: none; opacity: .5; }
 .card.seleccionada {
   outline: 2px solid var(--pri);
@@ -605,26 +578,6 @@ body.en-seleccion .visto-tick { pointer-events: none; opacity: .5; }
   background: var(--pri-soft);
 }
 
-/* Barra flotante de acciones cuando hay selección. */
-.seleccion-bar {
-  position: fixed;
-  left: 50%; transform: translateX(-50%);
-  bottom: calc(72px + env(safe-area-inset-bottom, 0));
-  display: flex; gap: 10px; align-items: center;
-  padding: 10px 14px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  box-shadow: var(--shadow-lg);
-  z-index: 800;
-  max-width: calc(100vw - 24px);
-  flex-wrap: wrap; justify-content: center;
-}
-.seleccion-bar[hidden] { display: none; }
-.seleccion-count { font-weight: 700; font-size: 14px; margin-right: 4px; }
-@media (max-width: 480px) {
-  .seleccion-bar { bottom: calc(72px + env(safe-area-inset-bottom, 0)); font-size: 13px; }
-}
 
 /* ── Cabecera "Home" (raíz) ────────────────────────────────────────────── */
 .teoria-home-header {
@@ -656,33 +609,68 @@ body.en-seleccion .visto-tick { pointer-events: none; opacity: .5; }
 .ap-op-label { font-size: 11px; color: var(--txt-soft); text-transform: uppercase; letter-spacing: 0.03em; }
 .ap-op-txt strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
 
-/* Gamif card mínima (misma que en tests, versión simplificada). */
+/* Gamif card: mismo diseño que en tests (nivel + racha). */
 .gamif-card {
-  background: var(--card, var(--bg-panel));
+  background: linear-gradient(135deg,
+    var(--pri-soft) 0%,
+    var(--accent-soft) 100%);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 12px 14px;
-  display: flex; flex-direction: column; gap: 8px;
+  padding: 1rem 1.1rem;
+  margin: 0.5rem 0 1.2rem;
+  box-shadow: var(--shadow);
 }
 .gamif-card:empty { display: none; }
-.gamif-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.gamif-level { display: flex; align-items: center; gap: 10px; }
-.gamif-nivel-num {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px;
-  border-radius: 50%;
-  background: var(--pri-soft);
-  color: var(--pri-d);
-  font-weight: 700;
+
+.gamif-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
 }
-.gamif-racha { font-size: 13px; color: var(--txt-soft); }
+.gamif-level {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+.gamif-nivel-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 50%;
+  background: var(--pri);
+  color: var(--bg-panel);
+  font-weight: 800;
+  font-size: 1.05rem;
+  box-shadow: 0 0 0 3px var(--pri-soft);
+}
+[data-theme="dark"] .gamif-nivel-num { color: var(--bg); }
+
+.gamif-level > div { display: flex; flex-direction: column; }
+.gamif-level strong { font-size: 1.05rem; }
+.gamif-level .small { font-size: 0.85rem; }
+
+.gamif-racha { font-size: 0.98rem; }
+.gamif-racha strong { color: var(--coral-d); }
+[data-theme="dark"] .gamif-racha strong { color: var(--coral); }
+
 .progress-bar {
-  position: relative; width: 100%; height: 6px;
-  border-radius: 999px; background: var(--border);
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.06);
   overflow: hidden;
 }
+[data-theme="dark"] .progress-bar { background: rgba(255, 255, 255, 0.08); }
 .progress-bar > span {
-  display: block; height: 100%;
-  background: linear-gradient(90deg, var(--pri), var(--pri-d));
-  transition: width .3s;
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--grad-a), var(--grad-b));
+  transition: width .3s ease;
 }
+.progress-bar.level { height: 10px; }

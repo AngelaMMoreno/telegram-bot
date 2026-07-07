@@ -3,7 +3,9 @@
      Sin contenedor. La silueta ES el icono. Máxima legibilidad a 24-48 px.
      fill-rule=evenodd conserva los detalles internos (ojos, patas) como huecos. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <g fill="#4E6B1F" fill-rule="evenodd">
+  <!-- fill + stroke con el mismo color para engordar las líneas y hacer
+       que el zorro sea legible en tamaños de badge de notificación (24 px). -->
+  <g fill="#4E6B1F" stroke="#4E6B1F" stroke-width="220" stroke-linejoin="round" stroke-linecap="round" fill-rule="evenodd" paint-order="stroke fill">
     <g transform="translate(40,52) scale(0.180)">
       <g transform="translate(240.760000,1906.610000) scale(0.100000,-0.100000)">
 <path d="M6543 18674 c-53 -31 -78 -74 -141 -239 -159 -420 -301 -1129 -342

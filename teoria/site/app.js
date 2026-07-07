@@ -214,38 +214,26 @@ function tarjetaCarpeta(c) {
   card.dataset.oposicionIds = opIds.join(',');
   card.dataset.oposicionNombres = opNombres.join('|');
 
-  let badgesHTML = '';
-  if (opNombres.length) {
-    const titulo = opNombres.join(', ');
-    if (opNombres.length === 1) {
-      badgesHTML = `<span class="card-op-badge" title="Oposición asignada">🎓 ${esc(opNombres[0])}</span>`;
-    } else {
-      badgesHTML = `<span class="card-op-badge card-op-badge-multi" title="${esc(titulo)}">🎓 ${opNombres.length} oposiciones</span>`;
-    }
-  }
-
   card.innerHTML = `
     <div class="card-check" hidden><input type="checkbox" data-accion="toggle-select" aria-label="Seleccionar carpeta"></div>
     <div class="card-emoji">📁</div>
     <div class="card-name" title="${esc(c.nombre)}">${esc(c.nombre)}</div>
     <div class="card-meta">${c.num_elementos} elemento${c.num_elementos === 1 ? '' : 's'}</div>
-    ${badgesHTML}
   `;
-  if (ESTADO.puede_gestionar) {
-    const actions = document.createElement('div');
-    actions.className = 'card-actions';
-    actions.innerHTML = `
-      <button class="card-btn" data-accion="oposicion" title="Asignar oposiciones">🎓</button>
-      <button class="card-btn" data-accion="mover" title="Mover">📂</button>
-      <button class="card-btn" data-accion="renombrar" title="Renombrar">✏️</button>
-      <button class="card-btn del" data-accion="borrar" title="Borrar">🗑️</button>
-    `;
-    card.appendChild(actions);
-  }
   card.addEventListener('click', (e) => {
     if (e.target.closest('[data-accion]')) return;
     if (SELECCION.activo) { toggleSeleccion(c.ruta, card); return; }
     navegar(c.ruta);
+  });
+  const itemCarpeta = { ruta: c.ruta, nombre: c.nombre, es_carpeta: true };
+  card.addEventListener('contextmenu', (e) => {
+    if (!ESTADO.puede_gestionar) return;
+    e.preventDefault();
+    menuContextualCarpeta(e, itemCarpeta, card);
+  });
+  attachLongPress(card, (ev) => {
+    if (!ESTADO.puede_gestionar) return;
+    menuContextualCarpeta(ev, itemCarpeta, card);
   });
   return card;
 }
@@ -271,16 +259,6 @@ function tarjetaFichero(f) {
     <div class="card-name" title="${esc(f.nombre)}">${esc(f.nombre)}</div>
     <div class="card-meta">${fmtSize(f.size)} · ${fmtDate(f.modificado)}</div>
   `;
-  if (ESTADO.puede_gestionar) {
-    const actions = document.createElement('div');
-    actions.className = 'card-actions';
-    actions.innerHTML = `
-      <button class="card-btn" data-accion="mover" title="Mover">📂</button>
-      <button class="card-btn" data-accion="renombrar" title="Renombrar">✏️</button>
-      <button class="card-btn del" data-accion="borrar" title="Borrar">🗑️</button>
-    `;
-    card.appendChild(actions);
-  }
   card.addEventListener('click', (e) => {
     if (e.target.closest('[data-accion]')) return;
     if (SELECCION.activo) { toggleSeleccion(f.ruta, card); return; }
@@ -288,33 +266,75 @@ function tarjetaFichero(f) {
   });
   card.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    menuContextualFichero(e, f);
+    menuContextualFichero(e, f, card);
+  });
+  attachLongPress(card, (ev) => {
+    menuContextualFichero(ev, f, card);
   });
   return card;
 }
 
-function menuContextualFichero(evt, f) {
+/*
+ * Long-press → menú contextual. En táctil no hay botón derecho; disparamos
+ * el mismo menú cuando el usuario mantiene el dedo 500 ms sobre la tarjeta.
+ * Se cancela si el dedo se mueve más de 10 px o se levanta antes.
+ */
+function attachLongPress(el, cb) {
+  let timer = null;
+  let startX = 0, startY = 0;
+  let firedLong = false;
+  const cancelar = () => {
+    if (timer) { clearTimeout(timer); timer = null; }
+  };
+  el.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    firedLong = false;
+    const t = e.touches[0];
+    startX = t.clientX; startY = t.clientY;
+    cancelar();
+    timer = setTimeout(() => {
+      firedLong = true;
+      cb({ clientX: startX, clientY: startY, preventDefault: () => {} });
+    }, 500);
+  }, { passive: true });
+  el.addEventListener('touchmove', (e) => {
+    if (!timer) return;
+    const t = e.touches[0];
+    if (Math.hypot(t.clientX - startX, t.clientY - startY) > 10) cancelar();
+  }, { passive: true });
+  el.addEventListener('touchend', cancelar, { passive: true });
+  el.addEventListener('touchcancel', cancelar, { passive: true });
+  // Si el long-press disparó, cancelamos el "click" fantasma posterior.
+  el.addEventListener('click', (e) => {
+    if (firedLong) { e.stopPropagation(); e.preventDefault(); firedLong = false; }
+  }, true);
+}
+
+function menuContextualFichero(evt, f, card) {
   cerrarMenu();
   const m = document.createElement('div');
   m.className = 'ctx-menu';
-  m.style.left = evt.clientX + 'px';
-  m.style.top = evt.clientY + 'px';
-  const puedeEditar = ESTADO.puede_gestionar && esMarkdown(f.nombre);
+  posicionarMenu(m, evt);
+  const admin = ESTADO.puede_gestionar;
+  const puedeEditar = admin && esMarkdown(f.nombre);
   m.innerHTML = `
     <div class="ctx-item" data-a="ver">📖 Abrir</div>
-    ${puedeEditar ? `<div class="ctx-item" data-a="editar">✏️ Editar</div>` : ''}
     <div class="ctx-item" data-a="descargar">⬇️ Descargar</div>
     <div class="ctx-sep"></div>
     <div class="ctx-item" data-a="${f.visto ? 'no-visto' : 'visto'}">
       ${f.visto ? '↩️ Marcar como no visto' : '✓ Marcar como visto'}
     </div>
-    ${ESTADO.puede_gestionar ? `
+    ${admin ? `
       <div class="ctx-sep"></div>
-      <div class="ctx-item" data-a="renombrar">✏️ Renombrar</div>
-      <div class="ctx-item danger" data-a="borrar">🗑️ Borrar</div>
+      <div class="ctx-item" data-a="seleccionar">☑️ Seleccionar</div>
+      <div class="ctx-item" data-a="renombrar">✏️ Cambiar nombre</div>
+      ${puedeEditar ? `<div class="ctx-item" data-a="editar">📝 Editar</div>` : ''}
+      <div class="ctx-item" data-a="mover">📂 Mover</div>
+      <div class="ctx-item danger" data-a="borrar">🗑️ Eliminar</div>
     ` : ''}
   `;
   document.body.appendChild(m);
+  const item = { ruta: f.ruta, nombre: f.nombre, es_carpeta: false };
   m.addEventListener('click', async (e) => {
     const a = e.target.closest('.ctx-item')?.dataset.a;
     cerrarMenu();
@@ -327,10 +347,64 @@ function menuContextualFichero(evt, f) {
       recargar();
     }
     else if (a === 'no-visto') { await api('POST', 'api/marcar_no_visto', { ruta: f.ruta }); recargar(); }
-    else if (a === 'renombrar') pedirRenombrar(f);
-    else if (a === 'borrar') pedirBorrar(f);
+    else if (a === 'seleccionar') { activarSeleccionDesdeMenu(f.ruta, card); }
+    else if (a === 'renombrar') pedirRenombrar(item);
+    else if (a === 'mover') abrirMoverDialogo([f.ruta]);
+    else if (a === 'borrar') pedirBorrar(item);
   });
   setTimeout(() => document.addEventListener('click', cerrarMenu, { once: true }), 0);
+}
+
+function menuContextualCarpeta(evt, c, card) {
+  cerrarMenu();
+  if (!ESTADO.puede_gestionar) return;
+  const m = document.createElement('div');
+  m.className = 'ctx-menu';
+  posicionarMenu(m, evt);
+  m.innerHTML = `
+    <div class="ctx-item" data-a="abrir">📁 Abrir</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item" data-a="seleccionar">☑️ Seleccionar</div>
+    <div class="ctx-item" data-a="renombrar">✏️ Cambiar nombre</div>
+    <div class="ctx-item" data-a="mover">📂 Mover</div>
+    <div class="ctx-item" data-a="oposicion">🎓 Asignar a oposición</div>
+    <div class="ctx-item danger" data-a="borrar">🗑️ Eliminar</div>
+  `;
+  document.body.appendChild(m);
+  m.addEventListener('click', async (e) => {
+    const a = e.target.closest('.ctx-item')?.dataset.a;
+    cerrarMenu();
+    if (a === 'abrir') navegar(c.ruta);
+    else if (a === 'seleccionar') activarSeleccionDesdeMenu(c.ruta, card);
+    else if (a === 'renombrar') pedirRenombrar(c);
+    else if (a === 'mover') abrirMoverDialogo([c.ruta]);
+    else if (a === 'oposicion') abrirCarpetaOposicionPicker(c, card);
+    else if (a === 'borrar') pedirBorrar(c);
+  });
+  setTimeout(() => document.addEventListener('click', cerrarMenu, { once: true }), 0);
+}
+
+/* Coloca el menú evitando salir del viewport. Se llama antes de append. */
+function posicionarMenu(m, evt) {
+  const x = evt.clientX ?? 0;
+  const y = evt.clientY ?? 0;
+  m.style.left = x + 'px';
+  m.style.top = y + 'px';
+  m.style.visibility = 'hidden';
+  requestAnimationFrame(() => {
+    const rect = m.getBoundingClientRect();
+    const dx = Math.max(0, rect.right - window.innerWidth + 8);
+    const dy = Math.max(0, rect.bottom - window.innerHeight + 8);
+    if (dx) m.style.left = (x - dx) + 'px';
+    if (dy) m.style.top = (y - dy) + 'px';
+    m.style.visibility = '';
+  });
+}
+
+/* Activa el modo selección y marca el elemento sobre el que se pulsó. */
+function activarSeleccionDesdeMenu(ruta, card) {
+  if (!SELECCION.activo) toggleModoSeleccion(true);
+  toggleSeleccion(ruta, card, true);
 }
 
 function cerrarMenu() {
@@ -378,17 +452,14 @@ function onGridAction(e) {
     toggleSeleccion(card.dataset.ruta, card, btn.checked);
     return;
   }
-  e.stopPropagation();
-  e.preventDefault();
-  const card = btn.closest('.card');
-  const ruta = card.dataset.ruta;
-  const tipo = card.dataset.tipo;
-  const item = { ruta, nombre: card.dataset.nombre || ruta.split('/').pop(), es_carpeta: tipo === 'carpeta' };
-  if (accion === 'renombrar') pedirRenombrar(item);
-  else if (accion === 'borrar') pedirBorrar(item);
-  else if (accion === 'toggle-visto') toggleVistoInline(item, btn, card);
-  else if (accion === 'oposicion') abrirCarpetaOposicionPicker(item, card);
-  else if (accion === 'mover') abrirMoverDialogo([item.ruta]);
+  if (accion === 'toggle-visto') {
+    e.stopPropagation();
+    e.preventDefault();
+    const card = btn.closest('.card');
+    const ruta = card.dataset.ruta;
+    const item = { ruta, nombre: card.dataset.nombre || ruta.split('/').pop(), es_carpeta: false };
+    toggleVistoInline(item, btn, card);
+  }
 }
 
 async function toggleVistoInline(item, btn, card) {
@@ -1547,8 +1618,9 @@ refrescarMisOposiciones();
 /* ═════════════════════════════════════════════════════════════════════════
  *  Modo selección múltiple + acciones por lote (Mover / Borrar)
  *
- *  Se activa desde el admin-bar (#btn-modo-seleccion). Al entrar, aparecen
- *  checkboxes en cada tarjeta y la barra flotante #seleccion-bar. Los
+ *  Se activa desde el menú contextual "Seleccionar" sobre una tarjeta.
+ *  Al entrar, aparecen checkboxes en cada tarjeta y la fila #seleccion-bar
+ *  bajo la de subir/nueva carpeta/nuevo markdown. Los
  *  clics en tarjetas alternan la selección en vez de navegar/abrir.
  *  Solo disponible para gestores (admin).
  * ═════════════════════════════════════════════════════════════════════════ */
@@ -1559,8 +1631,6 @@ function toggleModoSeleccion(forzar) {
   const nuevo = typeof forzar === 'boolean' ? forzar : !SELECCION.activo;
   SELECCION.activo = nuevo;
   document.body.classList.toggle('en-seleccion', nuevo);
-  const btn = document.getElementById('btn-modo-seleccion');
-  if (btn) btn.setAttribute('aria-pressed', String(nuevo));
   if (!nuevo) {
     // Limpiamos selección al salir.
     SELECCION.rutas.clear();
@@ -1588,12 +1658,12 @@ function actualizarBarraSeleccion() {
   const cnt = document.getElementById('seleccion-count');
   if (!bar) return;
   const n = SELECCION.rutas.size;
-  const visible = SELECCION.activo && n > 0;
-  bar.hidden = !visible;
+  // La fila de selección aparece en cuanto se entra al modo, aunque haya
+  // 0 elementos. Así el usuario ve inmediatamente las acciones disponibles.
+  bar.hidden = !SELECCION.activo;
   if (cnt) cnt.textContent = `${n} seleccionado${n === 1 ? '' : 's'}`;
 }
 
-document.getElementById('btn-modo-seleccion')?.addEventListener('click', () => toggleModoSeleccion());
 document.getElementById('seleccion-cancelar')?.addEventListener('click', () => toggleModoSeleccion(false));
 document.getElementById('seleccion-borrar')?.addEventListener('click', () => pedirBorrarLote());
 document.getElementById('seleccion-mover')?.addEventListener('click', () => {
