@@ -147,6 +147,8 @@ preguntas.
 | `opciones` | `jsonb` NOT NULL | `[{texto: text, correcta: boolean}, ...]`. Los tests importados desde el formato viejo tienen la convención "primera = correcta"; se detecta en `importar_test_normalizado`. |
 | `explicacion` | `text` | Justificación mostrada tras responder. |
 | `etiquetas` | `text[]` DEFAULT `{}` | Tags libres. El auto-tagger las añade; nunca sobrescribe. |
+| `etiquetas_manuales` | `text[]` DEFAULT `{}` | Tags que un usuario ha añadido a mano. Cuentan como doble voto en el kNN del auto-tagger. Subconjunto de `etiquetas`. |
+| `etiquetas_bloqueadas` | `text[]` DEFAULT `{}` | Tags que un usuario ha quitado a mano. El auto-tagger NUNCA vuelve a ponerlas (la corrección humana pesa más). |
 | `embedding` | `vector(1024)` | Generado por el worker de embeddings sobre `enunciado + opción correcta`. |
 | `autor_id` | `uuid` FK → usuarios | ON DELETE SET NULL. DEFAULT: `jwt_usuario_id()`. |
 | `creado_en` / `actualizado_en` | `timestamptz` | `actualizado_en` se compara con `respuestas.respondida_en` para invalidar respuestas cuando la pregunta cambia. |
@@ -192,6 +194,8 @@ RLS: lectura pública; escritura requiere `etiqueta.gestionar`.
 | `descripcion` | `text` | |
 | `tipo` | `text` CHECK IN (`manual`, `simulacro`, `errores`, `mega`, `favoritos`, `tematico`) | |
 | `etiquetas` | `text[]` DEFAULT `{}` | Propagadas por `clasificar_test()`. |
+| `etiquetas_manuales` | `text[]` DEFAULT `{}` | Tags que un admin/editor ha añadido a mano al test. |
+| `etiquetas_bloqueadas` | `text[]` DEFAULT `{}` | Tags que un admin/editor ha quitado del test. `clasificar_test()` no las reintroduce y se propagan a las preguntas (excepto si en la pregunta están como manuales). |
 | `autor_id` | `uuid` FK → usuarios | DEFAULT `jwt_usuario_id()`. |
 | `publico` | `boolean` DEFAULT false | Los tests migrados sin autor se marcan públicos. |
 | `nota_corte`, `escala_maxima` | `numeric` | Solo `tipo='simulacro'`. |
@@ -479,6 +483,13 @@ Auxiliares invisibles al cliente pero clave para el resto del sistema.
 - **`crear_etiqueta(nombre, descripcion, palabras_clave=[], padre?) → jsonb`** —
   normaliza nombre a `lower(btrim)`. Valida ciclos y existencia del
   padre.
+- **`importar_etiquetas(json) → jsonb`** — importa un array JSON de
+  objetos `{nombre, descripcion?, palabras_clave?, padre?}` en lote. Es
+  un upsert: las etiquetas existentes se actualizan. Reordena por
+  jerarquía (múltiples pasadas hasta 20 niveles) para poder crear
+  padres e hijas en la misma llamada. Devuelve
+  `{procesadas, items:[{nombre, estado, motivo?}]}` con `estado ∈
+  {creada, actualizada, error}`. Requiere `etiqueta.gestionar` o admin.
 - **`borrar_etiqueta(nombre) → void`** — la elimina y la quita del
   array `etiquetas` de todas las preguntas.
 - **`clasificar_test(test_id) → text[]`** — mira título y descripción
@@ -493,9 +504,23 @@ Auxiliares invisibles al cliente pero clave para el resto del sistema.
     asociado (etiqueta transitiva).
   - **(e)** etiquetas de las `knn_k` preguntas más parecidas por
     embedding (**bucle de mejora**: lo que etiquetas a mano educa
-    al clasificador).
+    al clasificador). Las etiquetas de `etiquetas_manuales` de las
+    vecinas cuentan como doble voto; las `etiquetas_bloqueadas` de
+    las vecinas restan votos, para que las correcciones humanas se
+    propaguen a preguntas parecidas.
 
-  Conservador: **solo añade**, nunca elimina.
+  Conservador: **solo añade**, nunca elimina. Además **nunca reintroduce**
+  una etiqueta presente en `etiquetas_bloqueadas` (ni de la pregunta ni
+  del test asociado).
+- **`set_etiquetas_pregunta(id, etiquetas[]) → jsonb`** — reemplaza la
+  lista completa de etiquetas de una pregunta. Calcula el diff contra el
+  estado anterior y actualiza `etiquetas_manuales` (las añadidas) y
+  `etiquetas_bloqueadas` (las quitadas). Requiere `pregunta.editar` o
+  admin. Devuelve `{etiquetas, etiquetas_anadidas, etiquetas_quitadas}`.
+- **`set_etiquetas_test(test_id, etiquetas[]) → jsonb`** — igual para
+  tests; requiere `test.editar`, admin o ser autor. Propaga las añadidas
+  a todas las preguntas del test (respetando sus bloqueadas) y quita las
+  retiradas (respetando las que están como manuales en la pregunta).
 - **`reclasificar_todas() → int`** — recorre todas las preguntas con
   embedding.
 - **`reclasificar_todo() → jsonb`** — clasifica primero todos los

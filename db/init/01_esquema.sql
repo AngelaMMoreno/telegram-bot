@@ -74,6 +74,14 @@ CREATE TABLE preguntas (
     -- Etiquetas = tags = temas. El auto-tagger las añade por similitud pero
     -- nunca las sobreescribe: las que edites a mano sobreviven.
     etiquetas       text[] NOT NULL DEFAULT '{}',
+    -- Etiquetas que un usuario ha añadido a mano. Se usan como señal fuerte
+    -- de refuerzo en el clasificador (kNN mira a vecinas con esta etiqueta
+    -- manual como voto de peso). Subconjunto de 'etiquetas' mientras existan.
+    etiquetas_manuales   text[] NOT NULL DEFAULT '{}',
+    -- Etiquetas que un usuario ha quitado a mano. El auto-tagger NUNCA
+    -- volverá a añadirlas por vectorización/kNN/palabras clave: la
+    -- corrección humana pesa más que la vectorial.
+    etiquetas_bloqueadas text[] NOT NULL DEFAULT '{}',
     embedding       vector(1024),                -- BAAI/bge-m3
     autor_id        uuid REFERENCES usuarios(id) ON DELETE SET NULL,
     creado_en       timestamptz NOT NULL DEFAULT now(),
@@ -116,6 +124,10 @@ CREATE TABLE tests (
                     CHECK (tipo IN ('manual','simulacro','errores','mega',
                                     'favoritos','tematico')),
     etiquetas       text[] NOT NULL DEFAULT '{}',
+    -- Igual que en 'preguntas': manuales suman como refuerzo humano;
+    -- bloqueadas veta al auto-tagger para no reintroducirlas nunca.
+    etiquetas_manuales   text[] NOT NULL DEFAULT '{}',
+    etiquetas_bloqueadas text[] NOT NULL DEFAULT '{}',
     autor_id        uuid REFERENCES usuarios(id) ON DELETE SET NULL,
     publico         boolean NOT NULL DEFAULT false,
     nota_corte      numeric,                     -- solo tipo='simulacro'
@@ -1854,6 +1866,141 @@ BEGIN
     RETURN v;
 END $$;
 
+-- Importa un lote de etiquetas desde JSON: un array de objetos con las
+-- claves {nombre, descripcion?, palabras_clave?, padre?}. Reordena por
+-- padres para permitir crear el padre y las hijas en la misma llamada.
+-- Upsert: si la etiqueta ya existe se actualizan descripción, palabras
+-- clave y padre. Cada fila resultante lleva un 'estado': 'creada',
+-- 'actualizada' o 'error' con su motivo.
+CREATE OR REPLACE FUNCTION importar_etiquetas(p_json jsonb) RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_item      jsonb;
+    v_pendientes jsonb[];
+    v_next_pend jsonb[];
+    v_nombre    text;
+    v_descr     text;
+    v_padre     text;
+    v_pcs       text[];
+    v_result    jsonb := '[]'::jsonb;
+    v_existia   boolean;
+    v_pass      int := 0;
+    v_max_pass  int := 20;   -- profundidad razonable de jerarquía
+BEGIN
+    IF NOT (tiene_permiso('etiqueta.gestionar') OR es_admin()) THEN
+        RAISE EXCEPTION 'permiso_denegado';
+    END IF;
+
+    IF p_json IS NULL OR jsonb_typeof(p_json) <> 'array' THEN
+        RAISE EXCEPTION 'json_debe_ser_array';
+    END IF;
+
+    -- Estado inicial: todos los items a procesar.
+    SELECT array_agg(x) INTO v_pendientes
+      FROM jsonb_array_elements(p_json) x;
+    IF v_pendientes IS NULL THEN
+        RETURN jsonb_build_object('procesadas', 0, 'items', '[]'::jsonb);
+    END IF;
+
+    -- Cada pasada procesa lo que se pueda (padre nulo o ya presente en la
+    -- BBDD). Lo que queda se reintenta en la siguiente pasada. Se corta
+    -- cuando no se hace progreso: los que sobran son errores (padre
+    -- inexistente, ciclo, etc.) y se anotan como 'error'.
+    LOOP
+        v_pass := v_pass + 1;
+        EXIT WHEN v_pass > v_max_pass;
+        v_next_pend := '{}'::jsonb[];
+
+        FOREACH v_item IN ARRAY v_pendientes LOOP
+            v_nombre := lower(btrim(COALESCE(v_item->>'nombre', '')));
+            v_descr  := NULLIF(btrim(COALESCE(v_item->>'descripcion','')), '');
+            v_padre  := NULLIF(lower(btrim(COALESCE(v_item->>'padre',''))), '');
+            v_pcs    := COALESCE(
+                ARRAY(SELECT lower(btrim(x))
+                        FROM jsonb_array_elements_text(
+                              COALESCE(v_item->'palabras_clave', '[]'::jsonb)
+                        ) x
+                       WHERE btrim(x) <> ''),
+                '{}'::text[]
+            );
+
+            IF v_nombre = '' THEN
+                v_result := v_result || jsonb_build_object(
+                    'nombre', v_item->>'nombre',
+                    'estado', 'error',
+                    'motivo', 'nombre_vacio'
+                );
+                CONTINUE;
+            END IF;
+
+            -- Si el padre está en la lista pendiente aún, defer a otra pasada.
+            IF v_padre IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM catalogo_etiquetas WHERE nombre = v_padre)
+            THEN
+                v_next_pend := array_append(v_next_pend, v_item);
+                CONTINUE;
+            END IF;
+
+            IF v_padre IS NOT NULL AND v_padre = v_nombre THEN
+                v_result := v_result || jsonb_build_object(
+                    'nombre', v_nombre,
+                    'estado', 'error',
+                    'motivo', 'padre_no_puede_ser_misma_etiqueta'
+                );
+                CONTINUE;
+            END IF;
+
+            IF v_padre IS NOT NULL
+               AND v_padre = ANY(etiqueta_y_descendientes(v_nombre))
+            THEN
+                v_result := v_result || jsonb_build_object(
+                    'nombre', v_nombre,
+                    'estado', 'error',
+                    'motivo', 'ciclo_jerarquia'
+                );
+                CONTINUE;
+            END IF;
+
+            SELECT EXISTS(SELECT 1 FROM catalogo_etiquetas WHERE nombre = v_nombre)
+              INTO v_existia;
+
+            INSERT INTO catalogo_etiquetas(nombre, descripcion, palabras_clave, padre)
+            VALUES (v_nombre, v_descr, v_pcs, v_padre)
+            ON CONFLICT (nombre) DO UPDATE
+                SET descripcion    = EXCLUDED.descripcion,
+                    palabras_clave = EXCLUDED.palabras_clave,
+                    padre          = EXCLUDED.padre;
+
+            v_result := v_result || jsonb_build_object(
+                'nombre', v_nombre,
+                'estado', CASE WHEN v_existia THEN 'actualizada' ELSE 'creada' END
+            );
+        END LOOP;
+
+        -- Si no hemos hecho progreso en esta pasada, los que quedan tienen
+        -- padre inexistente y no van a entrar nunca: los marcamos error.
+        EXIT WHEN cardinality(v_next_pend) = 0
+               OR cardinality(v_next_pend) = cardinality(v_pendientes);
+        v_pendientes := v_next_pend;
+    END LOOP;
+
+    -- Cualquier item que quedase pendiente = padre no existe.
+    IF v_next_pend IS NOT NULL AND cardinality(v_next_pend) > 0 THEN
+        FOREACH v_item IN ARRAY v_next_pend LOOP
+            v_result := v_result || jsonb_build_object(
+                'nombre', lower(btrim(COALESCE(v_item->>'nombre',''))),
+                'estado', 'error',
+                'motivo', 'padre_no_existe: ' || COALESCE(v_item->>'padre','')
+            );
+        END LOOP;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'procesadas', jsonb_array_length(v_result),
+        'items',      v_result
+    );
+END $$;
+
 CREATE OR REPLACE FUNCTION borrar_etiqueta(p_nombre text) RETURNS void
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -1862,9 +2009,20 @@ BEGIN
     END IF;
     DELETE FROM catalogo_etiquetas WHERE nombre = p_nombre;
     UPDATE preguntas
-       SET etiquetas = array_remove(etiquetas, p_nombre),
-           actualizado_en = now()
-     WHERE p_nombre = ANY(etiquetas);
+       SET etiquetas            = array_remove(etiquetas, p_nombre),
+           etiquetas_manuales   = array_remove(etiquetas_manuales, p_nombre),
+           etiquetas_bloqueadas = array_remove(etiquetas_bloqueadas, p_nombre),
+           actualizado_en       = now()
+     WHERE p_nombre = ANY(etiquetas)
+        OR p_nombre = ANY(etiquetas_manuales)
+        OR p_nombre = ANY(etiquetas_bloqueadas);
+    UPDATE tests
+       SET etiquetas            = array_remove(etiquetas, p_nombre),
+           etiquetas_manuales   = array_remove(etiquetas_manuales, p_nombre),
+           etiquetas_bloqueadas = array_remove(etiquetas_bloqueadas, p_nombre)
+     WHERE p_nombre = ANY(etiquetas)
+        OR p_nombre = ANY(etiquetas_manuales)
+        OR p_nombre = ANY(etiquetas_bloqueadas);
 END $$;
 
 
@@ -1876,9 +2034,14 @@ END $$;
 --   (b) palabras_clave del catálogo dentro del enunciado (recall)
 --   (c) nombre de la etiqueta dentro del enunciado
 --   (d) nombre/palabras_clave del TÍTULO del test asociado (transitivo)
---   (e) etiquetas de las k preguntas vecinas más parecidas por embedding
---       (bucle de mejora: lo que etiquetas a mano educa al clasificador).
--- Nunca elimina etiquetas: las manuales sobreviven.
+--   (e) etiquetas de las k preguntas vecinas más parecidas por embedding.
+--       Las etiquetas MANUALES de las vecinas (puestas a mano) cuentan como
+--       varios votos: el modelo aprende de la corrección humana.
+--
+-- Reglas:
+--   • Nunca elimina etiquetas: las manuales sobreviven.
+--   • Nunca añade una etiqueta que esté en 'etiquetas_bloqueadas': si un
+--     usuario la ha quitado, la corrección humana pesa más que el clasificador.
 
 CREATE OR REPLACE FUNCTION reclasificar_pregunta(
     p_id          uuid,
@@ -1890,20 +2053,33 @@ CREATE OR REPLACE FUNCTION reclasificar_pregunta(
 ) RETURNS int
 LANGUAGE plpgsql AS $$
 DECLARE
-    v_emun     text;
-    v_emb      vector(1024);
-    v_test_tit text;
-    v_n        int;
+    v_emun       text;
+    v_emb        vector(1024);
+    v_test_tit   text;
+    v_bloqueadas text[];
+    v_n          int;
 BEGIN
-    SELECT p.enunciado, p.embedding,
+    SELECT p.enunciado, p.embedding, p.etiquetas_bloqueadas,
            (SELECT t.titulo FROM test_preguntas tp
               JOIN tests t ON t.id = tp.test_id
              WHERE tp.pregunta_id = p.id
              ORDER BY t.creado_en LIMIT 1)
-      INTO v_emun, v_emb, v_test_tit
+      INTO v_emun, v_emb, v_bloqueadas, v_test_tit
       FROM preguntas p WHERE p.id = p_id;
 
     IF v_emun IS NULL THEN RETURN 0; END IF;
+
+    -- La lista efectiva de tags a "no reintroducir": las que el usuario
+    -- ha bloqueado en la pregunta MÁS las que ha bloqueado en el test
+    -- asociado (para que corregir a nivel test se propague).
+    SELECT array_agg(DISTINCT b) INTO v_bloqueadas FROM (
+        SELECT unnest(COALESCE(v_bloqueadas, '{}'::text[])) AS b
+        UNION
+        SELECT unnest(COALESCE(t.etiquetas_bloqueadas, '{}'::text[])) AS b
+          FROM test_preguntas tp JOIN tests t ON t.id = tp.test_id
+         WHERE tp.pregunta_id = p_id
+    ) x WHERE b IS NOT NULL;
+    v_bloqueadas := COALESCE(v_bloqueadas, '{}'::text[]);
 
     WITH
     cat AS (
@@ -1927,7 +2103,8 @@ BEGIN
             )
     ),
     vecinas AS (
-        SELECT id, etiquetas, 1 - (embedding <=> v_emb) AS sim
+        SELECT id, etiquetas, etiquetas_manuales, etiquetas_bloqueadas,
+               1 - (embedding <=> v_emb) AS sim
           FROM preguntas
          WHERE v_emb IS NOT NULL
            AND embedding IS NOT NULL
@@ -1936,12 +2113,25 @@ BEGIN
          ORDER BY embedding <=> v_emb
          LIMIT GREATEST(p_knn_k, 1)
     ),
+    -- Cada etiqueta vota; las etiquetas MANUALES cuentan como 2 votos porque
+    -- vienen de una corrección humana explícita. Las etiquetas que la vecina
+    -- ha bloqueado cuentan negativo, para que "un usuario ya dijo que no"
+    -- también reste al proponerla a otra pregunta parecida.
+    votos_knn AS (
+        SELECT v.e AS nombre,
+               SUM(v.peso) AS peso
+          FROM (
+            SELECT unnest(etiquetas)          AS e,  1 AS peso FROM vecinas WHERE sim >= p_knn_umbral
+            UNION ALL
+            SELECT unnest(etiquetas_manuales) AS e,  2 AS peso FROM vecinas WHERE sim >= p_knn_umbral
+            UNION ALL
+            SELECT unnest(etiquetas_bloqueadas) AS e, -3 AS peso FROM vecinas WHERE sim >= p_knn_umbral
+          ) v
+         GROUP BY v.e
+    ),
     knn AS (
-        SELECT e AS nombre
-          FROM vecinas v, unnest(v.etiquetas) AS e
-         WHERE v.sim >= p_knn_umbral
-         GROUP BY e
-        HAVING count(*) >= GREATEST(p_knn_min, 1)
+        SELECT nombre FROM votos_knn
+         WHERE peso >= GREATEST(p_knn_min, 1)
     ),
     candidatas AS (
         SELECT nombre FROM cat
@@ -1952,6 +2142,7 @@ BEGIN
        SET etiquetas = ARRAY(
                SELECT DISTINCT e
                  FROM unnest(etiquetas || ARRAY(SELECT nombre FROM candidatas)) AS e
+                WHERE e <> ALL(v_bloqueadas)
            ),
            actualizado_en = now()
      WHERE id = p_id;
@@ -1967,21 +2158,24 @@ LANGUAGE plpgsql AS $$
 DECLARE
     v_titulo      text;
     v_descr       text;
+    v_bloq_test   text[];
     v_etiq_nuevas text[];
 BEGIN
-    SELECT titulo, descripcion INTO v_titulo, v_descr
+    SELECT titulo, descripcion, etiquetas_bloqueadas
+      INTO v_titulo, v_descr, v_bloq_test
       FROM tests WHERE id = p_test_id;
     IF v_titulo IS NULL THEN RETURN '{}'::text[]; END IF;
 
     SELECT array_agg(DISTINCT c.nombre) INTO v_etiq_nuevas
       FROM catalogo_etiquetas c
-     WHERE v_titulo ILIKE '%' || c.nombre || '%'
+     WHERE (v_titulo ILIKE '%' || c.nombre || '%'
         OR (v_descr IS NOT NULL AND v_descr ILIKE '%' || c.nombre || '%')
         OR EXISTS (
             SELECT 1 FROM unnest(c.palabras_clave) kw
             WHERE v_titulo ILIKE '%' || kw || '%'
                OR (v_descr IS NOT NULL AND v_descr ILIKE '%' || kw || '%')
-        );
+        ))
+       AND c.nombre <> ALL(COALESCE(v_bloq_test, '{}'::text[]));
 
     IF v_etiq_nuevas IS NULL OR cardinality(v_etiq_nuevas) = 0 THEN
         RETURN '{}'::text[];
@@ -1989,16 +2183,192 @@ BEGIN
 
     UPDATE tests SET etiquetas = ARRAY(
         SELECT DISTINCT e FROM unnest(etiquetas || v_etiq_nuevas) AS e
+        WHERE e <> ALL(COALESCE(v_bloq_test, '{}'::text[]))
     ) WHERE id = p_test_id;
 
+    -- Al propagar a las preguntas del test respetamos las bloqueadas
+    -- individuales de cada pregunta: si una pregunta ha rechazado la
+    -- etiqueta a mano, no se la volvemos a poner por vía transitiva.
     UPDATE preguntas
        SET etiquetas = ARRAY(
-               SELECT DISTINCT e FROM unnest(preguntas.etiquetas || v_etiq_nuevas) AS e
+               SELECT DISTINCT e
+                 FROM unnest(preguntas.etiquetas || v_etiq_nuevas) AS e
+                WHERE e <> ALL(COALESCE(preguntas.etiquetas_bloqueadas, '{}'::text[]))
+                  AND e <> ALL(COALESCE(v_bloq_test, '{}'::text[]))
            ),
            actualizado_en = now()
      WHERE id IN (SELECT pregunta_id FROM test_preguntas WHERE test_id = p_test_id);
 
     RETURN v_etiq_nuevas;
+END $$;
+
+-- Sincroniza las etiquetas de una pregunta al valor final que el usuario
+-- ha dejado en pantalla y actualiza los conjuntos de "manuales" y
+-- "bloqueadas" para que la corrección humana persista:
+--   • Toda etiqueta añadida respecto al estado previo se marca como
+--     manual y se desbloquea si estaba bloqueada.
+--   • Toda etiqueta quitada respecto al estado previo se bloquea
+--     (para que el auto-tagger no vuelva a ponerla) y desaparece de
+--     manuales.
+-- Requiere permiso pregunta.editar (o admin). Es SECURITY DEFINER para no
+-- depender de los GRANTS finos: la comprobación de permiso se hace dentro.
+CREATE OR REPLACE FUNCTION set_etiquetas_pregunta(
+    p_id        uuid,
+    p_etiquetas text[]
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+    v_prev      text[];
+    v_manuales  text[];
+    v_bloq      text[];
+    v_nuevas    text[];
+    v_anadidas  text[];
+    v_quitadas  text[];
+BEGIN
+    IF NOT (tiene_permiso('pregunta.editar') OR es_admin()) THEN
+        RAISE EXCEPTION 'permiso_denegado';
+    END IF;
+
+    SELECT etiquetas, etiquetas_manuales, etiquetas_bloqueadas
+      INTO v_prev, v_manuales, v_bloq
+      FROM preguntas WHERE id = p_id;
+    IF v_prev IS NULL THEN RAISE EXCEPTION 'pregunta_no_existe'; END IF;
+
+    v_nuevas := ARRAY(
+        SELECT DISTINCT lower(btrim(e))
+          FROM unnest(COALESCE(p_etiquetas, '{}'::text[])) e
+         WHERE btrim(e) <> ''
+    );
+
+    v_anadidas := ARRAY(
+        SELECT e FROM unnest(v_nuevas) e
+         WHERE e <> ALL(COALESCE(v_prev, '{}'::text[]))
+    );
+    v_quitadas := ARRAY(
+        SELECT e FROM unnest(COALESCE(v_prev, '{}'::text[])) e
+         WHERE e <> ALL(v_nuevas)
+    );
+
+    UPDATE preguntas
+       SET etiquetas            = v_nuevas,
+           etiquetas_manuales   = ARRAY(
+               SELECT DISTINCT e
+                 FROM unnest(COALESCE(v_manuales, '{}'::text[]) || v_anadidas) e
+                WHERE e = ANY(v_nuevas)
+           ),
+           etiquetas_bloqueadas = ARRAY(
+               SELECT DISTINCT e
+                 FROM unnest(COALESCE(v_bloq, '{}'::text[]) || v_quitadas) e
+                WHERE e <> ALL(v_nuevas)
+           ),
+           actualizado_en       = now()
+     WHERE id = p_id;
+
+    RETURN jsonb_build_object(
+        'id',                   p_id,
+        'etiquetas',            v_nuevas,
+        'etiquetas_anadidas',   v_anadidas,
+        'etiquetas_quitadas',   v_quitadas
+    );
+END $$;
+
+-- Igual que set_etiquetas_pregunta pero para tests. Un admin (o quien tenga
+-- 'test.editar' o sea autor del test) puede añadir/quitar etiquetas
+-- directamente sobre un test entero.
+CREATE OR REPLACE FUNCTION set_etiquetas_test(
+    p_test_id   uuid,
+    p_etiquetas text[]
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+    v_prev      text[];
+    v_manuales  text[];
+    v_bloq      text[];
+    v_autor     uuid;
+    v_nuevas    text[];
+    v_anadidas  text[];
+    v_quitadas  text[];
+BEGIN
+    SELECT etiquetas, etiquetas_manuales, etiquetas_bloqueadas, autor_id
+      INTO v_prev, v_manuales, v_bloq, v_autor
+      FROM tests WHERE id = p_test_id;
+    IF v_prev IS NULL THEN RAISE EXCEPTION 'test_no_existe'; END IF;
+
+    IF NOT (tiene_permiso('test.editar')
+            OR es_admin()
+            OR v_autor = jwt_usuario_id()) THEN
+        RAISE EXCEPTION 'permiso_denegado';
+    END IF;
+
+    v_nuevas := ARRAY(
+        SELECT DISTINCT lower(btrim(e))
+          FROM unnest(COALESCE(p_etiquetas, '{}'::text[])) e
+         WHERE btrim(e) <> ''
+    );
+
+    v_anadidas := ARRAY(
+        SELECT e FROM unnest(v_nuevas) e
+         WHERE e <> ALL(COALESCE(v_prev, '{}'::text[]))
+    );
+    v_quitadas := ARRAY(
+        SELECT e FROM unnest(COALESCE(v_prev, '{}'::text[])) e
+         WHERE e <> ALL(v_nuevas)
+    );
+
+    UPDATE tests
+       SET etiquetas            = v_nuevas,
+           etiquetas_manuales   = ARRAY(
+               SELECT DISTINCT e
+                 FROM unnest(COALESCE(v_manuales, '{}'::text[]) || v_anadidas) e
+                WHERE e = ANY(v_nuevas)
+           ),
+           etiquetas_bloqueadas = ARRAY(
+               SELECT DISTINCT e
+                 FROM unnest(COALESCE(v_bloq, '{}'::text[]) || v_quitadas) e
+                WHERE e <> ALL(v_nuevas)
+           )
+     WHERE id = p_test_id;
+
+    -- Propaga las etiquetas añadidas a las preguntas del test respetando
+    -- las bloqueadas de cada pregunta; y quita las etiquetas retiradas
+    -- del array de las preguntas (bloqueándolas para que el auto-tagger
+    -- no las reintroduzca) sólo si esas preguntas NO tienen esa etiqueta
+    -- como manual (una etiqueta manual de la pregunta gana al test).
+    IF cardinality(v_anadidas) > 0 THEN
+        UPDATE preguntas
+           SET etiquetas = ARRAY(
+                   SELECT DISTINCT e
+                     FROM unnest(etiquetas || v_anadidas) e
+                    WHERE e <> ALL(COALESCE(etiquetas_bloqueadas, '{}'::text[]))
+               ),
+               actualizado_en = now()
+         WHERE id IN (SELECT pregunta_id FROM test_preguntas WHERE test_id = p_test_id);
+    END IF;
+
+    IF cardinality(v_quitadas) > 0 THEN
+        UPDATE preguntas
+           SET etiquetas = ARRAY(
+                   SELECT e FROM unnest(etiquetas) e
+                    WHERE e <> ALL(v_quitadas)
+                       OR e = ANY(COALESCE(etiquetas_manuales, '{}'::text[]))
+               ),
+               etiquetas_bloqueadas = ARRAY(
+                   SELECT DISTINCT e
+                     FROM unnest(
+                         COALESCE(etiquetas_bloqueadas, '{}'::text[]) || v_quitadas
+                     ) e
+                    WHERE e <> ALL(COALESCE(etiquetas_manuales, '{}'::text[]))
+               ),
+               actualizado_en = now()
+         WHERE id IN (SELECT pregunta_id FROM test_preguntas WHERE test_id = p_test_id);
+    END IF;
+
+    RETURN jsonb_build_object(
+        'test_id',              p_test_id,
+        'etiquetas',            v_nuevas,
+        'etiquetas_anadidas',   v_anadidas,
+        'etiquetas_quitadas',   v_quitadas
+    );
 END $$;
 
 CREATE OR REPLACE FUNCTION reclasificar_todas() RETURNS int
@@ -3310,9 +3680,12 @@ GRANT EXECUTE ON FUNCTION crear_simulacro(text,uuid,numeric,numeric)  TO web_use
 GRANT EXECUTE ON FUNCTION etiqueta_y_descendientes(text)              TO web_user, web_anon;
 GRANT EXECUTE ON FUNCTION listar_etiquetas(uuid)                      TO web_user;
 GRANT EXECUTE ON FUNCTION crear_etiqueta(text,text,text[],text)       TO web_user;
+GRANT EXECUTE ON FUNCTION importar_etiquetas(jsonb)                   TO web_user;
 GRANT EXECUTE ON FUNCTION borrar_etiqueta(text)                       TO web_user;
 GRANT EXECUTE ON FUNCTION clasificar_test(uuid)                       TO web_user;
 GRANT EXECUTE ON FUNCTION reclasificar_pregunta(uuid,int,real,int,real,int) TO web_user;
+GRANT EXECUTE ON FUNCTION set_etiquetas_pregunta(uuid, text[])        TO web_user;
+GRANT EXECUTE ON FUNCTION set_etiquetas_test(uuid, text[])            TO web_user;
 GRANT EXECUTE ON FUNCTION reclasificar_todas()                        TO web_user;
 GRANT EXECUTE ON FUNCTION reclasificar_todo()                         TO web_user;
 GRANT EXECUTE ON FUNCTION buscar_preguntas(text,int,text)             TO web_user;
