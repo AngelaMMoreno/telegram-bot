@@ -1779,7 +1779,10 @@ LANGUAGE sql STABLE AS $$
       FROM arbol;
 $$;
 
-CREATE OR REPLACE FUNCTION listar_etiquetas() RETURNS jsonb
+-- Con p_oposicion_id != NULL, filtra a las etiquetas que aparecen en
+-- algún test asignado a esa oposición. Sirve para no ofrecer al usuario
+-- filtros que no van a devolver nada dentro de su oposición actual.
+CREATE OR REPLACE FUNCTION listar_etiquetas(p_oposicion_id uuid DEFAULT NULL) RETURNS jsonb
 LANGUAGE sql STABLE AS $$
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
         'nombre',         c.nombre,
@@ -1792,7 +1795,15 @@ LANGUAGE sql STABLE AS $$
         'num_preguntas',  (SELECT count(*) FROM preguntas WHERE c.nombre = ANY(etiquetas)),
         'num_tests',      (SELECT count(*) FROM tests     WHERE c.nombre = ANY(etiquetas))
     ) ORDER BY c.nombre), '[]'::jsonb)
-    FROM catalogo_etiquetas c;
+    FROM catalogo_etiquetas c
+    WHERE p_oposicion_id IS NULL
+       OR EXISTS (
+              SELECT 1
+                FROM tests t
+                JOIN test_oposiciones tox ON tox.test_id = t.id
+               WHERE tox.oposicion_id = p_oposicion_id
+                 AND c.nombre = ANY(t.etiquetas)
+          );
 $$;
 
 CREATE OR REPLACE FUNCTION crear_etiqueta(
@@ -3297,7 +3308,7 @@ GRANT EXECUTE ON FUNCTION listar_simulacros()                         TO web_use
 GRANT EXECUTE ON FUNCTION crear_simulacro(text,uuid,numeric,numeric)  TO web_user;
 
 GRANT EXECUTE ON FUNCTION etiqueta_y_descendientes(text)              TO web_user, web_anon;
-GRANT EXECUTE ON FUNCTION listar_etiquetas()                          TO web_user;
+GRANT EXECUTE ON FUNCTION listar_etiquetas(uuid)                      TO web_user;
 GRANT EXECUTE ON FUNCTION crear_etiqueta(text,text,text[],text)       TO web_user;
 GRANT EXECUTE ON FUNCTION borrar_etiqueta(text)                       TO web_user;
 GRANT EXECUTE ON FUNCTION clasificar_test(uuid)                       TO web_user;

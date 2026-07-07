@@ -584,12 +584,24 @@ document.addEventListener("click", e => {
 /* ── Tests ── */
 async function loadTests() {
   $("#tests-list").innerHTML = "<p class='muted'>Cargando…</p>";
+  // ensureEtiquetasCache alimenta el editor/quiz con TODAS las etiquetas.
   await ensureEtiquetasCache();
+  // Para el filtro del listado, sólo mostramos las etiquetas presentes
+  // en tests de la oposición seleccionada. Así si el usuario no tiene
+  // ningún test con "java" en su oposición, tampoco puede filtrar por
+  // "java". Con oposición = null (Todas) se muestran todas.
+  const etsTests = await rpc("listar_etiquetas", {
+    p_oposicion_id: state.currentOposicion || null,
+  });
+  const etsList = Array.isArray(etsTests) ? etsTests : [];
+  if (state.filtroEtiquetaTests && !etsList.some(e => e.nombre === state.filtroEtiquetaTests)) {
+    state.filtroEtiquetaTests = null;
+  }
   renderTagChips("#tests-tag-chips", state.filtroEtiquetaTests, et => {
     state.filtroEtiquetaTests = et;
     state.testsPage = 1;
     loadTests();
-  });
+  }, etsList);
   const r = await rpc("listar_tests", {
     p_solo_favoritos:  state.filtroVisTests === "favoritos",
     p_solo_pendientes: state.filtroVisTests === "pendientes",
@@ -715,10 +727,11 @@ async function ensureEtiquetasCache(force = false) {
   state.etiquetasCache = await rpc("listar_etiquetas");
 }
 
-function renderTagChips(selector, valorActual, onClick) {
+function renderTagChips(selector, valorActual, onClick, lista) {
   const wrap = $(selector);
   if (!wrap) return;
-  const opciones = [{ nombre: "Todas", _all: true }, ...state.etiquetasCache];
+  const src = Array.isArray(lista) ? lista : state.etiquetasCache;
+  const opciones = [{ nombre: "Todas", _all: true }, ...src];
   wrap.innerHTML = opciones.map(e => {
     const isActive = e._all ? !valorActual : (valorActual === e.nombre);
     return `<span class="chip ${isActive ? "active" : ""}" data-tag="${e._all ? "" : esc(e.nombre)}">${esc(e.nombre)}</span>`;
