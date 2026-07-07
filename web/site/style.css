@@ -634,33 +634,11 @@ textarea:focus { outline: none; border-color: var(--pri); box-shadow: 0 0 0 4px 
 .muted { color: var(--txt-soft); font-size: 0.9rem; }
 .actions { display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap; margin-top: 0.5rem; }
 
-/* ─── Modal (cristal esmerilado) ─── */
-.modal {
-  position: fixed; inset: 0;
-  background: rgba(46, 59, 44, 0.55);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  display: flex; z-index: 200;
-  padding: 0.5rem;
-}
-[data-theme="dark"] .modal { background: rgba(20, 36, 29, 0.65); }
-.modal-card {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  color: var(--txt);
-  width: 100%; max-width: 560px;
-  margin: auto;
-  border-radius: var(--radius-lg);
-  max-height: 95vh; overflow-y: auto;
-  box-shadow: var(--shadow-lg);
-  border: 1px solid var(--glass-border);
-}
-.modal-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0.9rem 1rem; border-bottom: 1px solid var(--border);
-}
-.modal-header h3 { margin: 0; }
+/* ─── Modal (cristal esmerilado) ───
+ * Base compartida (.modal como overlay, .modal-card como caja,
+ * .modal-header / .modal-body / .modal-actions) vive en
+ * shared/modal.css. Aquí solo quedan los estilos específicos
+ * de los formularios de tests dentro de .modal-card. */
 .modal form { padding: 0.9rem 1rem; display: flex; flex-direction: column; gap: 0.7rem; }
 .modal label { display: block; font-weight: 600; }
 .modal input, .modal textarea, .modal select {
@@ -675,9 +653,6 @@ textarea:focus { outline: none; border-color: var(--pri); box-shadow: 0 0 0 4px 
   outline: none; border-color: var(--pri); box-shadow: 0 0 0 4px var(--pri-glow);
 }
 .modal textarea { font-family: monospace; font-size: 0.85rem; }
-.modal-actions {
-  display: flex; gap: 0.5rem; margin-top: 0.4rem; flex-wrap: wrap;
-}
 
 /* Gestión solo a quien tenga permisos */
 body:not(.puede-gestionar) .gestion { display: none !important; }
@@ -721,7 +696,6 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
 [data-theme="dark"] .usuarios-list .role-chip.admin { background: rgba(244, 208, 63, 0.20); color: var(--accent); }
 .usuarios-list .inactivo { opacity: 0.55; }
 
-.modal-body { padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: 0.9rem; }
 .modal-body h4 { margin: 0; font-size: 0.85rem; color: var(--txt-soft); text-transform: uppercase; letter-spacing: 0.05em; }
 .modal-body .roles-grid {
   display: flex; flex-wrap: wrap; gap: 0.4rem;
@@ -830,83 +804,8 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
 
 
 /* ─────────────────────────── Gamificación ───────────────────────────────── */
-
-.gamif-card {
-  background: linear-gradient(135deg,
-    var(--pri-soft) 0%,
-    var(--accent-soft) 100%);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1rem 1.1rem;
-  margin: 0.5rem 0 1.2rem;
-  box-shadow: var(--shadow);
-}
-.gamif-card:empty { display: none; }
-
-.gamif-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.6rem;
-}
-.gamif-level {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-}
-.gamif-nivel-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.3rem;
-  height: 2.3rem;
-  border-radius: 50%;
-  background: var(--pri);
-  color: var(--bg-panel);
-  font-weight: 800;
-  font-size: 1.05rem;
-  box-shadow: 0 0 0 3px var(--pri-soft);
-}
-[data-theme="dark"] .gamif-nivel-num { color: var(--bg); }
-
-.gamif-level > div { display: flex; flex-direction: column; }
-.gamif-level strong { font-size: 1.05rem; }
-.gamif-level .small { font-size: 0.85rem; }
-
-.gamif-racha { font-size: 0.98rem; }
-.gamif-racha strong { color: var(--coral-d); }
-[data-theme="dark"] .gamif-racha strong { color: var(--coral); }
-
-.gamif-reto {
-  display: flex;
-  gap: 0.8rem;
-  align-items: center;
-  margin-top: 0.9rem;
-  padding-top: 0.9rem;
-  border-top: 1px dashed var(--border);
-}
-.gamif-reto-icono { font-size: 1.6rem; line-height: 1; }
-.gamif-reto-body { flex: 1; display: flex; flex-direction: column; gap: 0.3rem; }
-.gamif-reto-body strong { font-size: 1rem; }
-
-.progress-bar {
-  position: relative;
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.06);
-  overflow: hidden;
-}
-[data-theme="dark"] .progress-bar { background: rgba(255, 255, 255, 0.08); }
-.progress-bar > span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--grad-a), var(--grad-b));
-  transition: width .3s ease;
-}
-.progress-bar.level { height: 10px; }
+/* Tarjeta de gamificación (nivel, racha, reto en curso) y .progress-bar
+ * viven en shared/gamif.css: se usan iguales en tests y teoría. */
 
 /* Vista completa de retos */
 .retos-tabs {
@@ -1108,31 +1007,5 @@ button.check-item { background: transparent; }
 }
 .bulk-list .check-item strong { display: block; }
 
-/* ── Cabecera unificada de Home (Tests) ────────────────────────────────── */
-.ap-user-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 0.6rem;
-}
-.ap-user-header h2 { margin: 0; }
-.ap-op-btn {
-  display: inline-flex; align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--bg-soft, transparent);
-  color: var(--txt);
-  cursor: pointer;
-  font-weight: 500;
-  max-width: 100%;
-  min-width: 0;
-}
-.ap-op-btn:hover { border-color: var(--pri); background: var(--pri-soft); }
-.ap-op-ico { font-size: 1.1em; }
-.ap-op-txt { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.1; min-width: 0; }
-.ap-op-label { font-size: 11px; color: var(--txt-soft); text-transform: uppercase; letter-spacing: 0.03em; }
-.ap-op-txt strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
+/* ── Cabecera unificada de Home (saludo + selector de oposición) ─────────
+ * Vive en shared/user-header.css: la comparten tests y teoría. */

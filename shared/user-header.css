@@ -1,0 +1,45 @@
+/*
+ * Aprentix · cabecera de "Home" (saludo + selector de oposición).
+ *
+ * Compartida entre tests y teoría. Antes vivía duplicada en
+ * web/site/style.css y teoria/site/style.css; ahora es la única fuente.
+ */
+
+.ap-user-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+.ap-user-header h2 { margin: 0; }
+
+.ap-op-btn {
+  display: inline-flex; align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft, transparent);
+  color: var(--txt);
+  cursor: pointer;
+  font-weight: 500;
+  max-width: 100%;
+  min-width: 0;
+}
+.ap-op-btn:hover { border-color: var(--pri); background: var(--pri-soft); }
+.ap-op-ico { font-size: 1.1em; }
+.ap-op-txt {
+  display: flex; flex-direction: column; align-items: flex-start;
+  line-height: 1.1; min-width: 0;
+}
+.ap-op-label {
+  font-size: 11px; color: var(--txt-soft);
+  text-transform: uppercase; letter-spacing: 0.03em;
+}
+.ap-op-txt strong {
+  font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 40vw;
+}
