@@ -1065,8 +1065,8 @@ function modal({ titulo, texto, campo, aceptar = 'Aceptar', cancelar = 'Cancelar
   host.id = 'modal-host';
   old.parentNode.replaceChild(host, old);
   host.innerHTML = `
-    <div class="overlay">
-      <div class="modal">
+    <div class="modal">
+      <div class="modal-card">
         <h3>${titulo}</h3>
         ${texto ? `<p>${texto}</p>` : ''}
         ${campo !== undefined ? `<input id="modal-input" type="text" value="${campo || ''}">` : ''}
@@ -1079,7 +1079,7 @@ function modal({ titulo, texto, campo, aceptar = 'Aceptar', cancelar = 'Cancelar
   const input = host.querySelector('#modal-input');
   if (input) { input.focus(); input.select(); }
   host.addEventListener('click', async (e) => {
-    if (e.target.dataset.a === 'cancel' || e.target.classList.contains('overlay')) { host.innerHTML = ''; return; }
+    if (e.target.dataset.a === 'cancel' || e.target.classList.contains('modal')) { host.innerHTML = ''; return; }
     if (e.target.dataset.a === 'ok') {
       try { await onOk(input ? input.value.trim() : null); host.innerHTML = ''; }
       catch (err) { toast(`⚠️ ${err.message}`); }

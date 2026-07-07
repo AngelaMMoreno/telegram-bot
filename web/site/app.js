@@ -1204,7 +1204,8 @@ function cerrarModalBorrarTest() {
   $("#modal-borrar-test").classList.add("hidden");
 }
 
-$("#modal-borrar-test-close").addEventListener("click", cerrarModalBorrarTest);
+// La X del header y el cierre con Esc / click en el backdrop los pinta y
+// gestiona <ap-modal closable>; aquí solo el botón textual "Cancelar".
 $("#btn-borrar-test-cancelar").addEventListener("click", cerrarModalBorrarTest);
 
 $("#btn-borrar-solo-test").addEventListener("click", async () => {

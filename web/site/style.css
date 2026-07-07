@@ -376,26 +376,8 @@ body {
   justify-content: flex-end;
 }
 
-/* ─── Tags (contenedor y chip) ── */
-.tags {
-  display: flex; flex-wrap: wrap; gap: 0.3rem;
-  min-width: 0; max-width: 100%;
-}
+/* .tags y .tag (contenedor + chip semántico) viven en shared/components.css. */
 .q-row .tags { margin-top: 0.4rem; }
-.tag {
-  background: var(--pri-soft); color: var(--pri-d);
-  padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.75rem;
-  max-width: 100%;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  line-height: 1.35;
-}
-.tag.removable { cursor: default; display: inline-flex; align-items: center; gap: 0.25rem; }
-.tag.removable .x {
-  cursor: pointer; opacity: 0.55; font-weight: 700; line-height: 1;
-  padding: 0 0.15rem;
-}
-.tag.removable .x:hover { opacity: 1; color: var(--danger); }
 
 .quiz-tags-inline {
   display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem;
@@ -576,24 +558,7 @@ body {
   font-size: 0.85rem; color: var(--txt-soft);
 }
 
-/* ─── Tag chips ─── */
-.tag-chips {
-  display: flex; flex-wrap: wrap; gap: 0.35rem;
-  margin: 0 0 0.8rem;
-}
-.tag-chips .chip {
-  background: var(--bg-panel); border: 1px solid var(--border);
-  padding: 0.35rem 0.85rem; border-radius: 999px;
-  font-size: 0.85rem; cursor: pointer; color: var(--txt);
-  min-height: 34px; display: inline-flex; align-items: center;
-  transition: background 0.15s, border-color 0.15s;
-}
-.tag-chips .chip:hover:not(.active) { border-color: var(--pri); background: var(--pri-soft); }
-.tag-chips .chip:active { transform: scale(0.95); }
-.tag-chips .chip.active {
-  background: var(--pri); color: #fff; border-color: var(--pri);
-}
-[data-theme="dark"] .tag-chips .chip.active { color: #14241D; }
+/* .tag-chips y .tag-chips .chip viven en shared/components.css. */
 
 /* ─── Progreso ─── */
 .por-test { list-style: none; padding: 0; }
@@ -784,23 +749,7 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
   .auth-card { margin-top: 3rem; padding: 2rem; }
 }
 
-/* ── Repaso espaciado ────────────────────────────────────────────── */
-.badge {
-  display: inline-block;
-  min-width: 1.4em;
-  padding: 0.1em 0.5em;
-  margin-left: 0.35em;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #3B2A0F;
-  font-size: 0.75em;
-  line-height: 1.3;
-  font-weight: 700;
-  text-align: center;
-  vertical-align: middle;
-}
-[data-theme="dark"] .badge { color: #14241D; }
-.badge.calma { background: var(--txt-soft); color: var(--bg); }
+/* .badge vive en shared/components.css. */
 
 
 /* ─────────────────────────── Gamificación ───────────────────────────────── */
@@ -954,33 +903,7 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
   margin-top: 0.5rem;
 }
 
-/* Lista de checkboxes usada en los pickers de oposiciones/perfiles. */
-.check-list {
-  list-style: none; padding: 0; margin: 0.5rem 0 0;
-  display: flex; flex-direction: column; gap: 0.35rem;
-  max-height: 55vh; overflow-y: auto;
-}
-.check-item {
-  display: flex; align-items: center; gap: 0.6rem;
-  padding: 0.65rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-panel);
-  cursor: pointer;
-  color: var(--txt);
-  font-family: inherit;
-  text-align: left;
-  width: 100%;
-}
-button.check-item { background: transparent; }
-.check-item:hover { border-color: var(--pri); background: var(--pri-soft); }
-.check-item input[type=checkbox] {
-  width: 18px; height: 18px;
-  accent-color: var(--pri);
-  margin: 0;
-  flex: 0 0 auto;
-}
-.check-item span { min-width: 0; }
+/* .check-list y .check-item viven en shared/components.css. */
 
 /* ── Modal BULK: picker de tests con filtros ─────────────────────────── */
 .modal-bulk-card { width: min(720px, 96vw); }

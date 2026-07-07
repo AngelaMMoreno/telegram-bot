@@ -130,20 +130,20 @@ button { font: inherit; cursor: pointer; }
 .empty-ico { font-size: 48px; margin-bottom: 10px; }
 
 /* ── Modales locales (renombrar / borrar) ─────────────────────────────
- * .overlay (fondo), .modal (caja glassmorph) y .modal-actions viven
- * en shared/modal.css: iguales que en landing y tests.
+ * .modal (overlay), .modal-card (caja glassmorph) y .modal-actions
+ * viven en shared/modal.css: iguales que en landing y tests.
  * Aquí solo quedan reglas específicas del markup de teoría dentro
  * de la caja. */
 
-.overlay .modal h3 { font-size: 17px; margin-bottom: 12px; }
-.overlay .modal p { font-size: 14px; color: var(--sub); margin-bottom: 16px; word-break: break-word; }
-.overlay .modal input, .overlay .modal select {
+.modal .modal-card h3 { font-size: 17px; margin-bottom: 12px; }
+.modal .modal-card p { font-size: 14px; color: var(--sub); margin-bottom: 16px; word-break: break-word; }
+.modal .modal-card input, .modal .modal-card select {
   width: 100%; padding: 10px 12px;
   border: 1px solid var(--border); border-radius: 8px;
   font-size: 14px; margin-bottom: 16px;
   background: var(--card); color: var(--text);
 }
-.overlay .modal input:focus, .overlay .modal select:focus {
+.modal .modal-card input:focus, .modal .modal-card select:focus {
   outline: 2px solid var(--pri); border-color: var(--pri);
 }
 

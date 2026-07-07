@@ -37,6 +37,7 @@
   <link rel="stylesheet" href="shared/tokens.css">
   <link rel="stylesheet" href="shared/base.css">
   <link rel="stylesheet" href="shared/header.css">
+  <link rel="stylesheet" href="shared/components.css">
   <link rel="stylesheet" href="shared/modal.css">
   <link rel="stylesheet" href="shared/user-header.css">
   <link rel="stylesheet" href="shared/gamif.css">
@@ -44,6 +45,7 @@
   <link rel="stylesheet" href="style.css">
   <!-- Registra el custom element antes de que el parser llegue a él. -->
   <script src="shared/header.js"></script>
+  <script src="shared/components/ap-modal.js" defer></script>
   <!-- Configuración unificada (misma en landing/tests/teoría). -->
   <script src="shared/config.js" defer></script>
   <script>
@@ -562,26 +564,18 @@
 </div>
 
 <!-- Modal de borrado de test -->
-<div id="modal-borrar-test" class="modal hidden">
-  <div class="modal-card">
-    <header class="modal-header">
-      <h3>¿Cómo quieres borrar este test?</h3>
-      <button class="btn btn-ghost" id="modal-borrar-test-close">✕</button>
-    </header>
-    <div class="modal-body">
-      <p class="muted" id="modal-borrar-test-info">
-        Puedes borrar solo el test (conservando sus preguntas, útiles si
-        están en otros tests) o borrar también las preguntas que sean
-        exclusivas de este test.
-      </p>
-      <div class="modal-actions" style="flex-direction:column; align-items:stretch; gap:0.5rem">
-        <button class="btn btn-primary" id="btn-borrar-solo-test">🗑️ Borrar solo el test (conservar preguntas)</button>
-        <button class="btn btn-danger" id="btn-borrar-test-y-preguntas">💥 Borrar test y preguntas exclusivas</button>
-        <button class="btn btn-ghost" id="btn-borrar-test-cancelar">Cancelar</button>
-      </div>
-    </div>
+<ap-modal id="modal-borrar-test" title="¿Cómo quieres borrar este test?" closable hidden>
+  <p class="muted" id="modal-borrar-test-info">
+    Puedes borrar solo el test (conservando sus preguntas, útiles si
+    están en otros tests) o borrar también las preguntas que sean
+    exclusivas de este test.
+  </p>
+  <div class="modal-actions" style="flex-direction:column; align-items:stretch; gap:0.5rem">
+    <button class="btn btn-primary" id="btn-borrar-solo-test">🗑️ Borrar solo el test (conservar preguntas)</button>
+    <button class="btn btn-danger" id="btn-borrar-test-y-preguntas">💥 Borrar test y preguntas exclusivas</button>
+    <button class="btn btn-ghost" id="btn-borrar-test-cancelar">Cancelar</button>
   </div>
-</div>
+</ap-modal>
 
 <!-- Modal "Sin vencidas ahora mismo" (repaso) -->
 <div id="modal-repaso-sin-vencidas" class="modal hidden">

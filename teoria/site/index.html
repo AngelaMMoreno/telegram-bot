@@ -28,6 +28,7 @@
   <link rel="stylesheet" href="shared/tokens.css">
   <link rel="stylesheet" href="shared/base.css">
   <link rel="stylesheet" href="shared/header.css">
+  <link rel="stylesheet" href="shared/components.css">
   <link rel="stylesheet" href="shared/modal.css">
   <link rel="stylesheet" href="shared/user-header.css">
   <link rel="stylesheet" href="shared/gamif.css">
@@ -47,6 +48,7 @@
   </script>
   <!-- Registra el custom element antes de que el parser llegue a él. -->
   <script src="shared/header.js"></script>
+  <script src="shared/components/ap-modal.js" defer></script>
   <!-- Configuración unificada (misma en landing/tests/teoría). -->
   <script src="shared/config.js" defer></script>
   <!-- Markdown: parser + saneador (se inyecta HTML de terceros). -->
@@ -76,8 +78,8 @@
   ]'></aprentix-header>
 
 <!-- Buscador de teoría (modal simple, cliente-side sobre lo listado). -->
-<div id="teoria-buscar" class="overlay hidden" role="dialog" aria-label="Buscar en teoría">
-  <div class="modal teoria-buscar-modal">
+<div id="teoria-buscar" class="modal hidden" role="dialog" aria-label="Buscar en teoría">
+  <div class="modal-card teoria-buscar-modal">
     <div class="modal-config-header">
       <h3>Buscar en teoría</h3>
       <button class="modal-close" id="teoria-buscar-cerrar" aria-label="Cerrar">✕</button>
@@ -94,8 +96,8 @@
 
 <!-- Selector de oposición: se abre al arrancar si el usuario tiene >1 y
      desde el sheet del avatar con "Cambiar oposición". -->
-<div id="teoria-elegir-oposicion" class="overlay hidden" role="dialog" aria-label="Elegir oposición">
-  <div class="modal">
+<div id="teoria-elegir-oposicion" class="modal hidden" role="dialog" aria-label="Elegir oposición">
+  <div class="modal-card">
     <div class="modal-config-header">
       <h3>¿Con qué oposición trabajas hoy?</h3>
       <button class="modal-close" id="teoria-op-cerrar" aria-label="Cerrar">✕</button>
@@ -106,8 +108,8 @@
 </div>
 
 <!-- Picker para asignar oposiciones a una carpeta (admin). Multi-select. -->
-<div id="teoria-carpeta-oposicion" class="overlay hidden" role="dialog" aria-label="Asignar oposiciones a carpeta">
-  <div class="modal">
+<div id="teoria-carpeta-oposicion" class="modal hidden" role="dialog" aria-label="Asignar oposiciones a carpeta">
+  <div class="modal-card">
     <div class="modal-config-header">
       <h3 id="teoria-carpeta-op-titulo">Oposiciones de la carpeta</h3>
       <button class="modal-close" id="teoria-carpeta-op-cerrar" aria-label="Cerrar">✕</button>
@@ -122,8 +124,8 @@
 </div>
 
 <!-- Selector de carpeta destino para "Mover a…". -->
-<div id="teoria-mover-modal" class="overlay hidden" role="dialog" aria-label="Mover a carpeta">
-  <div class="modal">
+<div id="teoria-mover-modal" class="modal hidden" role="dialog" aria-label="Mover a carpeta">
+  <div class="modal-card">
     <div class="modal-config-header">
       <h3 id="teoria-mover-titulo">Mover a…</h3>
       <button class="modal-close" id="teoria-mover-cerrar" aria-label="Cerrar">✕</button>
@@ -138,8 +140,8 @@
 </div>
 
 <!-- Marcadores: documentos favoritos del usuario. Fase 5 lo llevará a BD. -->
-<div id="teoria-marcadores" class="overlay hidden" role="dialog" aria-label="Marcadores">
-  <div class="modal teoria-marcadores-modal">
+<div id="teoria-marcadores" class="modal hidden" role="dialog" aria-label="Marcadores">
+  <div class="modal-card teoria-marcadores-modal">
     <div class="modal-config-header">
       <h3>Marcadores</h3>
       <button class="modal-close" id="teoria-marcadores-cerrar" aria-label="Cerrar">✕</button>

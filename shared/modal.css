@@ -1,31 +1,21 @@
 /*
  * Aprentix · modales unificados (landing, tests y teoría).
  *
- * Antes cada app definía su propio ".modal" en su style.css con pequeñas
- * variaciones. Ahora la única fuente son estos estilos.
+ * API única:
  *
- * Coexisten dos APIs históricas para no forzar cambios de HTML:
- *
- *   - Landing / tests:
- *       <div class="modal">                    ← OVERLAY (fondo esmerilado)
- *         <div class="modal-card"> …           ← CAJA (glassmorph)
- *
- *   - Teoría:
- *       <div class="overlay">                  ← OVERLAY
- *         <div class="modal"> …                ← CAJA
- *
- * En un futuro conviene alinear todo al primer patrón; mientras tanto,
- * los selectores compuestos (`.overlay .modal`) mantienen la teoría con
- * el mismo look sin tocar su markup.
+ *   <div class="modal">                   ← OVERLAY (fondo esmerilado)
+ *     <div class="modal-card">            ← CAJA (glassmorph)
+ *       <header class="modal-header">…    ← opcional (título + X)
+ *       <div class="modal-body">…         ← opcional (contenido)
+ *       <div class="modal-actions">…      ← opcional (botones)
  *
  * El modal de configuración (shared/config.js → #aprentix-config-modal)
- * tiene sus propios estilos calificados en shared/config.css.
+ * usa selectores calificados en shared/config.css para no colisionar.
  */
 
 
-/* ─── Overlay (fondo semitransparente + centrado) ─────────────────────── */
-.modal,
-.overlay {
+/* ─── Overlay ─────────────────────────────────────────────────────────── */
+.modal {
   position: fixed; inset: 0;
   background: rgba(46, 59, 44, 0.55);
   backdrop-filter: blur(4px);
@@ -34,16 +24,13 @@
   padding: 16px;
   z-index: 200;
 }
-[data-theme="dark"] .modal,
-[data-theme="dark"] .overlay { background: rgba(20, 36, 29, 0.65); }
+[data-theme="dark"] .modal { background: rgba(20, 36, 29, 0.65); }
 
-.modal.hidden,
-.overlay.hidden { display: none; }
+.modal.hidden { display: none; }
 
 
-/* ─── Caja (glassmorph). Ambas APIs. ──────────────────────────────────── */
-.modal-card,
-.overlay .modal {
+/* ─── Caja glassmorph ─────────────────────────────────────────────────── */
+.modal-card {
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur)) saturate(140%);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
@@ -56,12 +43,6 @@
   border: 1px solid var(--glass-border);
 }
 
-/* En teoría la caja lleva su propio padding porque el modal-header/body
- * no están todavía siempre presentes. */
-.overlay .modal {
-  padding: 22px 24px;
-  max-width: 460px;
-}
 
 /* ─── Header / body / actions ─────────────────────────────────────────── */
 .modal-header {
@@ -82,7 +63,7 @@
   margin-top: 0.4rem;
 }
 
-/* Botón "cerrar" (X) del modal-config-header de teoría. */
+/* Botón "cerrar" (X) al estilo de la cabecera de teoría. */
 .modal-close {
   background: transparent; border: 0;
   color: var(--txt-soft);
