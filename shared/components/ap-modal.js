@@ -26,6 +26,7 @@
  *
  * API:
  *   - title="…"      opcional; si está, pinta la cabecera con <h3>
+ *   - title-id="…"   opcional; da un id al <h3> para poder cambiarlo desde JS
  *   - closable       si está, añade la X y permite cerrar con Esc o click backdrop
  *   - hidden         convención estándar de HTML para que arranque oculto
  *   - .open() / .close() / .toggle(bool)
@@ -42,11 +43,13 @@ class ApModal extends HTMLElement {
     const hasCard = !!this.querySelector(':scope > .modal-card');
     if (!hasCard) {
       const title = this.getAttribute('title') || '';
+      const titleId = this.getAttribute('title-id') || '';
       const closable = this.hasAttribute('closable');
       const inner = this.innerHTML;
-      const header = (title || closable)
+      const idAttr = titleId ? ` id="${titleId}"` : '';
+      const header = (title || titleId || closable)
         ? `<header class="modal-header">
-             <h3>${title}</h3>
+             <h3${idAttr}>${title}</h3>
              ${closable ? '<button class="modal-close" data-ap-close aria-label="Cerrar">✕</button>' : ''}
            </header>`
         : '';

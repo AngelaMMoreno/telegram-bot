@@ -46,6 +46,7 @@
   <!-- Registra el custom element antes de que el parser llegue a él. -->
   <script src="shared/header.js"></script>
   <script src="shared/components/ap-modal.js" defer></script>
+  <script src="shared/components/ap-op-selector.js" defer></script>
   <!-- Configuración unificada (misma en landing/tests/teoría). -->
   <script src="shared/config.js" defer></script>
   <script>
@@ -444,15 +445,9 @@
   </section>
 
   <!-- Modal de gestión de un usuario -->
-  <div id="modal-usuario" class="modal hidden">
-    <div class="modal-card">
-      <header class="modal-header">
-        <h3 id="modal-usuario-titulo">Gestionar usuario</h3>
-        <button class="btn btn-ghost" id="modal-usuario-close">✕</button>
-      </header>
-      <div class="modal-body" id="modal-usuario-body"></div>
-    </div>
-  </div>
+  <ap-modal id="modal-usuario" title="Gestionar usuario" title-id="modal-usuario-titulo" closable hidden>
+    <div id="modal-usuario-body"></div>
+  </ap-modal>
 
   <!-- Retos y logros -->
   <section id="view-retos" class="view">
@@ -475,93 +470,59 @@
 </main>
 
 <!-- Modal para asignar oposiciones a un test -->
-<div id="modal-test-oposiciones" class="modal hidden">
-  <div class="modal-card">
-    <header class="modal-header">
-      <h3>Oposiciones del test</h3>
-      <button class="btn btn-ghost" id="modal-test-op-close" aria-label="Cerrar">✕</button>
-    </header>
-    <div class="modal-body">
-      <p class="muted small">Marca las oposiciones a las que pertenece este test. Si no marcas ninguna, será global (visible para todos).</p>
-      <ul id="modal-test-op-list" class="check-list"></ul>
-      <div class="modal-actions">
-        <button class="btn btn-ghost" id="modal-test-op-cancelar">Cancelar</button>
-        <button class="btn btn-primary" id="modal-test-op-guardar">Guardar</button>
-      </div>
-    </div>
+<ap-modal id="modal-test-oposiciones" title="Oposiciones del test" closable hidden>
+  <p class="muted small">Marca las oposiciones a las que pertenece este test. Si no marcas ninguna, será global (visible para todos).</p>
+  <ul id="modal-test-op-list" class="check-list"></ul>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" id="modal-test-op-cancelar">Cancelar</button>
+    <button class="btn btn-primary" id="modal-test-op-guardar">Guardar</button>
   </div>
-</div>
+</ap-modal>
 
 <!-- Modal para asignar oposiciones directamente a un usuario -->
-<div id="modal-oposiciones-usuario" class="modal hidden">
-  <div class="modal-card">
-    <header class="modal-header">
-      <h3 id="modal-op-usuario-titulo">Oposiciones del usuario</h3>
-      <button class="btn btn-ghost" id="modal-op-usuario-close" aria-label="Cerrar">✕</button>
-    </header>
-    <div class="modal-body">
-      <p class="muted small">Marca todas las oposiciones a las que este usuario debe tener acceso.</p>
-      <ul id="modal-op-usuario-list" class="check-list"></ul>
-      <div class="modal-actions">
-        <button class="btn btn-ghost" id="modal-op-usuario-cancelar">Cancelar</button>
-        <button class="btn btn-primary" id="modal-op-usuario-guardar">Guardar</button>
-      </div>
-    </div>
+<ap-modal id="modal-oposiciones-usuario" title="Oposiciones del usuario"
+          title-id="modal-op-usuario-titulo" closable hidden>
+  <p class="muted small">Marca todas las oposiciones a las que este usuario debe tener acceso.</p>
+  <ul id="modal-op-usuario-list" class="check-list"></ul>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" id="modal-op-usuario-cancelar">Cancelar</button>
+    <button class="btn btn-primary" id="modal-op-usuario-guardar">Guardar</button>
   </div>
-</div>
+</ap-modal>
 
 <!-- Modal BULK: asigna tests a una oposición (con buscar + filtro etiqueta) -->
-<div id="modal-bulk-tests" class="modal hidden">
-  <div class="modal-card modal-bulk-card">
-    <header class="modal-header">
-      <h3 id="modal-bulk-titulo">Tests de la oposición</h3>
-      <button class="btn btn-ghost" id="modal-bulk-close" aria-label="Cerrar">✕</button>
-    </header>
-    <div class="modal-body bulk-body">
-      <div class="bulk-toolbar">
-        <input type="search" id="bulk-filter-nombre" placeholder="Buscar por título…" autocomplete="off">
-        <select id="bulk-filter-etiqueta" class="select-styled">
-          <option value="">Todas las etiquetas</option>
-        </select>
-      </div>
-      <div class="bulk-actions">
-        <span id="bulk-counter" class="muted small">0 / 0 seleccionados</span>
-        <span style="flex:1"></span>
-        <button class="btn btn-ghost btn-sm" id="bulk-select-visible">Seleccionar visibles</button>
-        <button class="btn btn-ghost btn-sm" id="bulk-clear-visible">Deseleccionar visibles</button>
-      </div>
-      <ul id="bulk-tests-list" class="check-list bulk-list"></ul>
-      <div class="modal-actions">
-        <button class="btn btn-ghost" id="modal-bulk-cancelar">Cancelar</button>
-        <button class="btn btn-primary" id="modal-bulk-guardar">Guardar</button>
-      </div>
-    </div>
+<ap-modal id="modal-bulk-tests" title="Tests de la oposición"
+          title-id="modal-bulk-titulo" data-wide closable hidden>
+  <div class="bulk-toolbar">
+    <input type="search" id="bulk-filter-nombre" placeholder="Buscar por título…" autocomplete="off">
+    <select id="bulk-filter-etiqueta" class="select-styled">
+      <option value="">Todas las etiquetas</option>
+    </select>
   </div>
-</div>
+  <div class="bulk-actions">
+    <span id="bulk-counter" class="muted small">0 / 0 seleccionados</span>
+    <span style="flex:1"></span>
+    <button class="btn btn-ghost btn-sm" id="bulk-select-visible">Seleccionar visibles</button>
+    <button class="btn btn-ghost btn-sm" id="bulk-clear-visible">Deseleccionar visibles</button>
+  </div>
+  <ul id="bulk-tests-list" class="check-list bulk-list"></ul>
+  <div class="modal-actions">
+    <button class="btn btn-ghost" id="modal-bulk-cancelar">Cancelar</button>
+    <button class="btn btn-primary" id="modal-bulk-guardar">Guardar</button>
+  </div>
+</ap-modal>
 
-<!-- Modal selector de oposición (al arrancar si hay >1) -->
-<div id="modal-elegir-oposicion" class="modal hidden">
-  <div class="modal-card">
-    <header class="modal-header">
-      <h3>¿Con qué oposición trabajas hoy?</h3>
-    </header>
-    <div class="modal-body">
-      <p class="muted small">Puedes cambiar la oposición cuando quieras desde el círculo del avatar → Cambiar oposición.</p>
-      <ul id="elegir-oposicion-list" class="check-list"></ul>
-    </div>
-  </div>
-</div>
+<!-- Selector de oposición (al arrancar si hay >1 y al pulsar el chip
+     de la cabecera). Componente reutilizable definido en
+     shared/components/ap-op-selector.js. -->
+<ap-op-selector id="modal-elegir-oposicion"
+                subtitle="Puedes cambiar la oposición cuando quieras desde el círculo del avatar → Cambiar oposición."></ap-op-selector>
 
 <!-- Modal de estadísticas por test (sustituye a la vieja vista "Progreso") -->
-<div id="modal-stats-test" class="modal hidden">
-  <div class="modal-card">
-    <header class="modal-header">
-      <h3 id="modal-stats-test-titulo">Estadísticas</h3>
-      <button class="btn btn-ghost" id="modal-stats-test-close" aria-label="Cerrar">✕</button>
-    </header>
-    <div class="modal-body" id="modal-stats-test-body"></div>
-  </div>
-</div>
+<ap-modal id="modal-stats-test" title="Estadísticas"
+          title-id="modal-stats-test-titulo" closable hidden>
+  <div id="modal-stats-test-body"></div>
+</ap-modal>
 
 <!-- Modal de borrado de test -->
 <ap-modal id="modal-borrar-test" title="¿Cómo quieres borrar este test?" closable hidden>
@@ -578,90 +539,64 @@
 </ap-modal>
 
 <!-- Modal "Sin vencidas ahora mismo" (repaso) -->
-<div id="modal-repaso-sin-vencidas" class="modal hidden">
-  <div class="modal-card">
-    <header class="modal-header">
-      <h3 id="repaso-sv-titulo">Sin vencidas ahora mismo</h3>
-      <button class="btn btn-ghost" id="repaso-sv-close">✕</button>
-    </header>
-    <div class="modal-body">
-      <p id="repaso-sv-msg" class="muted"></p>
-      <label class="muted small" style="display:block; margin-top:0.5rem">
-        Número de preguntas a adelantar
-        <input id="repaso-sv-n" type="number" min="1" max="500" value="20" style="width:6rem">
-      </label>
-      <label class="tiempo-input-wrap" title="Segundos por pregunta"
-             style="display:block; margin-top:0.5rem">
-        ⏱ <input type="number" class="tiempo-input" min="3" max="3600">
-        <span class="muted">segundos por pregunta</span>
-      </label>
-      <div class="modal-actions" style="flex-direction:column; align-items:stretch; gap:0.5rem; margin-top:1rem">
-        <button class="btn btn-primary" id="btn-repaso-sv-adelantar">⏩ Adelantar repaso</button>
-        <button class="btn btn-ghost" id="btn-repaso-sv-cancelar">Cancelar</button>
-      </div>
-      <p class="muted small" style="margin-top:0.5rem">
-        En sesiones adelantadas, los aciertos no cambian la caja de las preguntas
-        (para no romper la curva de olvido); los fallos sí penalizan.
-      </p>
-    </div>
+<ap-modal id="modal-repaso-sin-vencidas" title="Sin vencidas ahora mismo"
+          title-id="repaso-sv-titulo" closable hidden>
+  <p id="repaso-sv-msg" class="muted"></p>
+  <label class="muted small" style="display:block; margin-top:0.5rem">
+    Número de preguntas a adelantar
+    <input id="repaso-sv-n" type="number" min="1" max="500" value="20" style="width:6rem">
+  </label>
+  <label class="tiempo-input-wrap" title="Segundos por pregunta"
+         style="display:block; margin-top:0.5rem">
+    ⏱ <input type="number" class="tiempo-input" min="3" max="3600">
+    <span class="muted">segundos por pregunta</span>
+  </label>
+  <div class="modal-actions" style="flex-direction:column; align-items:stretch; gap:0.5rem; margin-top:1rem">
+    <button class="btn btn-primary" id="btn-repaso-sv-adelantar">⏩ Adelantar repaso</button>
+    <button class="btn btn-ghost" id="btn-repaso-sv-cancelar">Cancelar</button>
   </div>
-</div>
+  <p class="muted small" style="margin-top:0.5rem">
+    En sesiones adelantadas, los aciertos no cambian la caja de las preguntas
+    (para no romper la curva de olvido); los fallos sí penalizan.
+  </p>
+</ap-modal>
 
 <!-- Modal para elegir el número de preguntas en "Repasar" y "Repasar todo" -->
-<div id="modal-repaso-n" class="modal hidden">
-  <div class="modal-card">
-    <header class="modal-header">
-      <h3 id="repaso-n-titulo">Empezar repaso</h3>
-      <button class="btn btn-ghost" id="repaso-n-close">✕</button>
-    </header>
-    <div class="modal-body">
-      <p id="repaso-n-info" class="muted"></p>
-      <label class="muted small" style="display:block; margin-top:0.5rem">
-        Nº de preguntas
-        <input id="repaso-n-n" type="number" min="1" max="500" value="20" style="width:6rem">
-      </label>
-      <label class="tiempo-input-wrap" title="Segundos por pregunta"
-             style="display:block; margin-top:0.5rem">
-        ⏱ <input type="number" class="tiempo-input" min="3" max="3600">
-        <span class="muted">segundos por pregunta</span>
-      </label>
-      <div class="modal-actions" style="flex-direction:column; align-items:stretch; gap:0.5rem; margin-top:1rem">
-        <button class="btn btn-primary" id="btn-repaso-n-empezar">▶️ Empezar</button>
-        <button class="btn btn-ghost" id="btn-repaso-n-cancelar">Cancelar</button>
-      </div>
-    </div>
+<ap-modal id="modal-repaso-n" title="Empezar repaso"
+          title-id="repaso-n-titulo" closable hidden>
+  <p id="repaso-n-info" class="muted"></p>
+  <label class="muted small" style="display:block; margin-top:0.5rem">
+    Nº de preguntas
+    <input id="repaso-n-n" type="number" min="1" max="500" value="20" style="width:6rem">
+  </label>
+  <label class="tiempo-input-wrap" title="Segundos por pregunta"
+         style="display:block; margin-top:0.5rem">
+    ⏱ <input type="number" class="tiempo-input" min="3" max="3600">
+    <span class="muted">segundos por pregunta</span>
+  </label>
+  <div class="modal-actions" style="flex-direction:column; align-items:stretch; gap:0.5rem; margin-top:1rem">
+    <button class="btn btn-primary" id="btn-repaso-n-empezar">▶️ Empezar</button>
+    <button class="btn btn-ghost" id="btn-repaso-n-cancelar">Cancelar</button>
   </div>
-</div>
+</ap-modal>
 
 <!-- El modal de configuración (apariencia + notificaciones + ritmo + reset)
      lo inyecta shared/config.js — es el mismo en landing, tests y teoría. -->
 
 
 <!-- Modal de reanudación de intento -->
-<div id="modal-reanudar" class="modal hidden">
-  <div class="modal-card">
-    <header class="modal-header">
-      <h3>Tienes un test a medias</h3>
-    </header>
-    <div class="modal-body">
-      <p id="reanudar-resumen" class="muted"></p>
-      <div class="modal-actions" style="flex-direction:column; align-items:stretch">
-        <button class="btn btn-primary" id="btn-reanudar">▶️ Reanudar donde lo dejé</button>
-        <button class="btn btn-ghost" id="btn-reiniciar">🔁 Empezar de nuevo</button>
-        <button class="btn btn-ghost" id="btn-cancelar-reanudar">Cancelar</button>
-      </div>
-    </div>
+<ap-modal id="modal-reanudar" title="Tienes un test a medias" hidden>
+  <p id="reanudar-resumen" class="muted"></p>
+  <div class="modal-actions" style="flex-direction:column; align-items:stretch">
+    <button class="btn btn-primary" id="btn-reanudar">▶️ Reanudar donde lo dejé</button>
+    <button class="btn btn-ghost" id="btn-reiniciar">🔁 Empezar de nuevo</button>
+    <button class="btn btn-ghost" id="btn-cancelar-reanudar">Cancelar</button>
   </div>
-</div>
+</ap-modal>
 
 <!-- Modal de edición de pregunta -->
-<div id="modal-pregunta" class="modal hidden">
-  <div class="modal-card">
-    <header class="modal-header">
-      <h3>Editar pregunta</h3>
-      <button class="btn btn-ghost" id="modal-close">✕</button>
-    </header>
-    <form id="form-pregunta">
+<ap-modal id="modal-pregunta" title="Editar pregunta" closable hidden>
+  <form id="form-pregunta">
       <label>Enunciado
         <textarea id="pq-enunciado" rows="3" required></textarea>
       </label>
@@ -687,8 +622,7 @@
         <button type="submit" class="btn btn-primary">Guardar</button>
       </div>
     </form>
-  </div>
-</div>
+</ap-modal>
 
 <div id="toast" class="toast hidden"></div>
 

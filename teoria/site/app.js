@@ -1291,18 +1291,7 @@ async function abrirBuscador() {
     }
   };
 }
-document.getElementById('teoria-buscar-cerrar')?.addEventListener('click', () => {
-  document.getElementById('teoria-buscar')?.classList.add('hidden');
-});
-document.getElementById('teoria-buscar')?.addEventListener('click', (e) => {
-  if (e.target.id === 'teoria-buscar') e.currentTarget.classList.add('hidden');
-});
-document.getElementById('teoria-marcadores-cerrar')?.addEventListener('click', () => {
-  document.getElementById('teoria-marcadores')?.classList.add('hidden');
-});
-document.getElementById('teoria-marcadores')?.addEventListener('click', (e) => {
-  if (e.target.id === 'teoria-marcadores') e.currentTarget.classList.add('hidden');
-});
+// La X y el cierre por Esc/click-backdrop los gestiona <ap-modal closable>.
 
 function abrirMarcadores() {
   const modal = document.getElementById('teoria-marcadores');
@@ -1536,9 +1525,7 @@ function abrirSelectorOposicion() {
   ].join('');
   modal.classList.remove('hidden');
 }
-document.getElementById('teoria-op-cerrar')?.addEventListener('click', () => {
-  document.getElementById('teoria-elegir-oposicion').classList.add('hidden');
-});
+// La X y el cierre por Esc/click-backdrop los gestiona <ap-modal closable>.
 document.getElementById('teoria-op-list')?.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-op-id]');
   if (!btn) return;
@@ -1607,9 +1594,7 @@ async function abrirCarpetaOposicionPicker(item, card) {
     };
   } catch (e) { toast(e.message); }
 }
-document.getElementById('teoria-carpeta-op-cerrar')?.addEventListener('click', () => {
-  document.getElementById('teoria-carpeta-oposicion').classList.add('hidden');
-});
+// La X y el cierre por Esc/click-backdrop los gestiona <ap-modal closable>.
 
 // Arranque: intenta cargar oposiciones tras el primer render.
 refrescarMisOposiciones();
@@ -1760,7 +1745,7 @@ async function abrirMoverDialogo(rutas) {
 
   const cerrar = () => modalEl.classList.add('hidden');
   cancelar.onclick = cerrar;
-  document.getElementById('teoria-mover-cerrar').onclick = cerrar;
+  // La X y el cierre por Esc/click-backdrop los gestiona <ap-modal closable>.
 
   lista.onclick = async (ev) => {
     const btn = ev.target.closest('[data-destino]');

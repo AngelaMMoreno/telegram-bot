@@ -604,7 +604,8 @@ textarea:focus { outline: none; border-color: var(--pri); box-shadow: 0 0 0 4px 
  * .modal-header / .modal-body / .modal-actions) vive en
  * shared/modal.css. Aquí solo quedan los estilos específicos
  * de los formularios de tests dentro de .modal-card. */
-.modal form { padding: 0.9rem 1rem; display: flex; flex-direction: column; gap: 0.7rem; }
+/* El padding lo pone .modal-body; aquí solo el layout del form. */
+.modal form { display: flex; flex-direction: column; gap: 0.7rem; }
 .modal label { display: block; font-weight: 600; }
 .modal input, .modal textarea, .modal select {
   display: block; width: 100%;
@@ -906,7 +907,8 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
 /* .check-list y .check-item viven en shared/components.css. */
 
 /* ── Modal BULK: picker de tests con filtros ─────────────────────────── */
-.modal-bulk-card { width: min(720px, 96vw); }
+.modal-bulk-card,
+ap-modal[data-wide] .modal-card { width: min(720px, 96vw); max-width: none; }
 .bulk-body { display: flex; flex-direction: column; gap: 0.6rem; }
 .bulk-toolbar {
   display: grid; grid-template-columns: 1fr auto; gap: 0.5rem;

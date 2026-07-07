@@ -700,10 +700,7 @@ $("#tests-list")?.addEventListener("click", (e) => {
   e.stopPropagation();  // que no dispare la navegación al detalle
   abrirStatsTest(btn.dataset.stats, btn.dataset.titulo);
 });
-$("#modal-stats-test-close")?.addEventListener("click", cerrarStatsTest);
-$("#modal-stats-test")?.addEventListener("click", (e) => {
-  if (e.target.id === "modal-stats-test") cerrarStatsTest();
-});
+// La X y el cierre por Esc/click-backdrop los gestiona <ap-modal closable>.
 
 /* Listeners de los nuevos controles */
 $("#tests-vis-chips").addEventListener("click", e => {
@@ -1020,7 +1017,7 @@ function cerrarModal() {
   state.editingQ = null;
 }
 
-$("#modal-close").addEventListener("click", cerrarModal);
+// La X del modal-pregunta la pinta y gestiona <ap-modal closable>.
 $("#pq-cancelar").addEventListener("click", cerrarModal);
 
 $("#form-pregunta").addEventListener("submit", async e => {
@@ -1981,7 +1978,10 @@ function cerrarModalUsuario() {
   renderUsuarios();
 }
 
-$("#modal-usuario-close").addEventListener("click", cerrarModalUsuario);
+// La X la pinta y gestiona <ap-modal closable>.
+// El listener de "ap-close" recarga la lista de usuarios al cerrar el modal
+// desde el propio componente (Esc, X o click en backdrop).
+$("#modal-usuario").addEventListener("ap-close", renderUsuarios);
 
 
 /* ── Repaso espaciado ────────────────────────────────────────────────────
@@ -2056,7 +2056,6 @@ function abrirModalRepasoN({ titulo, info, onEmpezar, sinVencidas, siguiente, on
     modal.classList.add("hidden");
     $("#btn-repaso-n-empezar").onclick   = null;
     $("#btn-repaso-n-cancelar").onclick  = null;
-    $("#repaso-n-close").onclick         = null;
   };
   $("#btn-repaso-n-empezar").onclick = async () => {
     const n = Math.max(1, parseInt($("#repaso-n-n").value, 10) || 20);
@@ -2064,7 +2063,7 @@ function abrirModalRepasoN({ titulo, info, onEmpezar, sinVencidas, siguiente, on
     await onEmpezar(n);
   };
   $("#btn-repaso-n-cancelar").onclick = cerrar;
-  $("#repaso-n-close").onclick        = cerrar;
+  // La X y el cierre por Esc/backdrop los gestiona <ap-modal closable>.
 }
 
 function abrirModalSinVencidas({ titulo, siguiente, onAdelantar }) {
@@ -2078,7 +2077,6 @@ function abrirModalSinVencidas({ titulo, siguiente, onAdelantar }) {
     modal.classList.add("hidden");
     $("#btn-repaso-sv-adelantar").onclick = null;
     $("#btn-repaso-sv-cancelar").onclick  = null;
-    $("#repaso-sv-close").onclick         = null;
   };
   $("#btn-repaso-sv-adelantar").onclick = async () => {
     const n = Math.max(1, parseInt($("#repaso-sv-n").value, 10) || 20);
@@ -2086,7 +2084,7 @@ function abrirModalSinVencidas({ titulo, siguiente, onAdelantar }) {
     await onAdelantar(n);
   };
   $("#btn-repaso-sv-cancelar").onclick = cerrar;
-  $("#repaso-sv-close").onclick        = cerrar;
+  // La X y el cierre por Esc/backdrop los gestiona <ap-modal closable>.
 }
 
 async function arrancarRepasoTest(testId, n, adelantar) {
@@ -2304,32 +2302,21 @@ function refrescarHintOposicion() {
 }
 
 function abrirSelectorOposicion() {
-  const modal = $("#modal-elegir-oposicion");
-  const lista = $("#elegir-oposicion-list");
-  if (!modal || !lista) return;
-  const items = state.misOposicionesCache;
-  lista.innerHTML = [
-    // Solo dejamos la opción "Todas" a admins/gestores para no confundir
-    // al alumno. Para simplicidad, dejamos siempre "Todas" disponible.
-    `<li><button class="check-item" data-op-id=""><strong>Todas mis oposiciones</strong><span class="muted small">Ver todo lo global y de cualquier oposición asignada</span></button></li>`,
-    ...items.map(o => `
-      <li><button class="check-item" data-op-id="${o.id}">
-        <strong>${esc(o.nombre)}</strong>
-        ${o.descripcion ? `<span class="muted small">${esc(o.descripcion)}</span>` : ""}
-      </button></li>`),
-  ].join("");
-  modal.classList.remove("hidden");
+  const selector = $("#modal-elegir-oposicion");
+  if (!selector) return;
+  selector.setOptions(state.misOposicionesCache, state.currentOposicion);
+  selector.open();
 }
-$("#elegir-oposicion-list")?.addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-op-id]");
-  if (!btn) return;
-  const id = btn.dataset.opId || null;
+
+// La lista, el modal y el cierre los pinta y gestiona <ap-op-selector>;
+// aquí sólo reaccionamos al evento de elección.
+$("#modal-elegir-oposicion")?.addEventListener("ap-op-select", (e) => {
+  const { id, nombre } = e.detail;
   const op = id ? state.misOposicionesCache.find(o => o.id === id) : null;
   state.currentOposicion = id;
-  state.currentOposicionNombre = op ? op.nombre : null;
+  state.currentOposicionNombre = op ? op.nombre : (id ? nombre : null);
   guardarOposicionPersistida(op);
   refrescarHintOposicion();
-  $("#modal-elegir-oposicion").classList.add("hidden");
   // Recarga los tests con el nuevo filtro.
   if ($("#view-tests")?.classList.contains("active")) {
     state.testsPage = 1;
@@ -2503,7 +2490,7 @@ $("#bulk-clear-visible")?.addEventListener("click", () => {
   bulkFiltrar().forEach(t => BULK.seleccion.delete(t.id));
   pintarBulkTests();
 });
-$("#modal-bulk-close")?.addEventListener("click", () => $("#modal-bulk-tests").classList.add("hidden"));
+// La X y el cierre por Esc/backdrop los gestiona <ap-modal closable>.
 $("#modal-bulk-cancelar")?.addEventListener("click", () => $("#modal-bulk-tests").classList.add("hidden"));
 $("#modal-bulk-guardar")?.addEventListener("click", async () => {
   if (!BULK.oposicion) return;
@@ -2544,7 +2531,7 @@ $("#btn-test-oposiciones")?.addEventListener("click", async () => {
     modal.classList.remove("hidden");
   } catch (e) { toast(e.message); }
 });
-$("#modal-test-op-close")?.addEventListener("click", () => $("#modal-test-oposiciones").classList.add("hidden"));
+// La X y el cierre por Esc/backdrop los gestiona <ap-modal closable>.
 $("#modal-test-op-cancelar")?.addEventListener("click", () => $("#modal-test-oposiciones").classList.add("hidden"));
 $("#modal-test-op-guardar")?.addEventListener("click", async () => {
   const modal = $("#modal-test-oposiciones");
@@ -2583,7 +2570,7 @@ async function abrirOposicionesDeUsuario(usuarioId, nombreUsuario) {
     modal.classList.remove("hidden");
   } catch (e) { toast(e.message); }
 }
-$("#modal-op-usuario-close")?.addEventListener("click", () => $("#modal-oposiciones-usuario").classList.add("hidden"));
+// La X y el cierre por Esc/backdrop los gestiona <ap-modal closable>.
 $("#modal-op-usuario-cancelar")?.addEventListener("click", () => $("#modal-oposiciones-usuario").classList.add("hidden"));
 $("#modal-op-usuario-guardar")?.addEventListener("click", async () => {
   const modal = $("#modal-oposiciones-usuario");

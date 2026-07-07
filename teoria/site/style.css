@@ -147,13 +147,7 @@ button { font: inherit; cursor: pointer; }
   outline: 2px solid var(--pri); border-color: var(--pri);
 }
 
-/* Modal de configuración: cabecera con X de cierre. */
-.modal-config { max-width: 480px; }
-.modal-config-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 4px;
-}
-.modal-config-header h3 { margin: 0; }
+/* La cabecera del modal la pinta <ap-modal> con .modal-header. */
 
 .small { font-size: 12.5px; }
 .muted { color: var(--sub); }
@@ -423,15 +417,14 @@ button { font: inherit; cursor: pointer; }
 .ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }
 
 /* ── Buscador de teoría (modal cliente-side) ─────────────────────────── */
-.teoria-buscar-modal {
+#teoria-buscar .modal-card {
   width: min(560px, 100%);
   display: flex;
   flex-direction: column;
   max-height: 80vh;
 }
-.teoria-buscar-modal input[type="search"] {
-  margin-top: 4px;
-}
+#teoria-buscar .modal-body { flex: 1; min-height: 0; overflow: hidden; }
+#teoria-buscar input[type="search"] { margin-top: 4px; }
 .teoria-buscar-results {
   list-style: none;
   margin: 12px 0 0;
@@ -453,12 +446,13 @@ button { font: inherit; cursor: pointer; }
 .teoria-buscar-nombre { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Lista de marcadores (favoritos por documento) ─────────────────── */
-.teoria-marcadores-modal {
+#teoria-marcadores .modal-card {
   width: min(560px, 100%);
   display: flex;
   flex-direction: column;
   max-height: 80vh;
 }
+#teoria-marcadores .modal-body { flex: 1; min-height: 0; overflow: hidden; }
 .teoria-marcadores-lista {
   list-style: none;
   margin: 8px 0 0;

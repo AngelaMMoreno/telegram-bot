@@ -49,6 +49,7 @@
   <!-- Registra el custom element antes de que el parser llegue a él. -->
   <script src="shared/header.js"></script>
   <script src="shared/components/ap-modal.js" defer></script>
+  <script src="shared/components/ap-op-selector.js" defer></script>
   <!-- Configuración unificada (misma en landing/tests/teoría). -->
   <script src="shared/config.js" defer></script>
   <!-- Markdown: parser + saneador (se inyecta HTML de terceros). -->
@@ -78,80 +79,57 @@
   ]'></aprentix-header>
 
 <!-- Buscador de teoría (modal simple, cliente-side sobre lo listado). -->
-<div id="teoria-buscar" class="modal hidden" role="dialog" aria-label="Buscar en teoría">
-  <div class="modal-card teoria-buscar-modal">
-    <div class="modal-config-header">
-      <h3>Buscar en teoría</h3>
-      <button class="modal-close" id="teoria-buscar-cerrar" aria-label="Cerrar">✕</button>
-    </div>
-    <input type="search" id="teoria-buscar-input"
-           placeholder="Nombre de fichero o carpeta…"
-           autocomplete="off" spellcheck="false">
-    <ul id="teoria-buscar-results" class="teoria-buscar-results"></ul>
-    <p class="muted small" id="teoria-buscar-hint">
-      Busca por nombre en la ruta actual y subcarpetas ya vistas.
-    </p>
-  </div>
-</div>
+<ap-modal id="teoria-buscar" title="Buscar en teoría"
+          closable hidden role="dialog" aria-label="Buscar en teoría">
+  <input type="search" id="teoria-buscar-input"
+         placeholder="Nombre de fichero o carpeta…"
+         autocomplete="off" spellcheck="false">
+  <ul id="teoria-buscar-results" class="teoria-buscar-results"></ul>
+  <p class="muted small" id="teoria-buscar-hint">
+    Busca por nombre en la ruta actual y subcarpetas ya vistas.
+  </p>
+</ap-modal>
 
 <!-- Selector de oposición: se abre al arrancar si el usuario tiene >1 y
      desde el sheet del avatar con "Cambiar oposición". -->
-<div id="teoria-elegir-oposicion" class="modal hidden" role="dialog" aria-label="Elegir oposición">
-  <div class="modal-card">
-    <div class="modal-config-header">
-      <h3>¿Con qué oposición trabajas hoy?</h3>
-      <button class="modal-close" id="teoria-op-cerrar" aria-label="Cerrar">✕</button>
-    </div>
-    <p class="muted small">Se aplica a tests y a teoría. Puedes cambiarla desde el avatar.</p>
-    <ul id="teoria-op-list" class="teoria-op-list"></ul>
-  </div>
-</div>
+<ap-modal id="teoria-elegir-oposicion" title="¿Con qué oposición trabajas hoy?"
+          closable hidden role="dialog" aria-label="Elegir oposición">
+  <p class="muted small">Se aplica a tests y a teoría. Puedes cambiarla desde el avatar.</p>
+  <ul id="teoria-op-list" class="teoria-op-list"></ul>
+</ap-modal>
 
 <!-- Picker para asignar oposiciones a una carpeta (admin). Multi-select. -->
-<div id="teoria-carpeta-oposicion" class="modal hidden" role="dialog" aria-label="Asignar oposiciones a carpeta">
-  <div class="modal-card">
-    <div class="modal-config-header">
-      <h3 id="teoria-carpeta-op-titulo">Oposiciones de la carpeta</h3>
-      <button class="modal-close" id="teoria-carpeta-op-cerrar" aria-label="Cerrar">✕</button>
-    </div>
-    <p class="muted small">Marca todas las oposiciones a las que pertenece esta carpeta. Si no marcas ninguna, la carpeta queda como global (visible para todos con acceso a teoría).</p>
-    <ul id="teoria-carpeta-op-list" class="teoria-op-list check-list"></ul>
-    <div class="modal-actions">
-      <button class="btn btn-cancel" id="teoria-carpeta-op-cancelar">Cancelar</button>
-      <button class="btn btn-pri" id="teoria-carpeta-op-guardar">Guardar</button>
-    </div>
+<ap-modal id="teoria-carpeta-oposicion" title="Oposiciones de la carpeta"
+          title-id="teoria-carpeta-op-titulo" closable hidden
+          role="dialog" aria-label="Asignar oposiciones a carpeta">
+  <p class="muted small">Marca todas las oposiciones a las que pertenece esta carpeta. Si no marcas ninguna, la carpeta queda como global (visible para todos con acceso a teoría).</p>
+  <ul id="teoria-carpeta-op-list" class="teoria-op-list check-list"></ul>
+  <div class="modal-actions">
+    <button class="btn btn-cancel" id="teoria-carpeta-op-cancelar">Cancelar</button>
+    <button class="btn btn-pri" id="teoria-carpeta-op-guardar">Guardar</button>
   </div>
-</div>
+</ap-modal>
 
 <!-- Selector de carpeta destino para "Mover a…". -->
-<div id="teoria-mover-modal" class="modal hidden" role="dialog" aria-label="Mover a carpeta">
-  <div class="modal-card">
-    <div class="modal-config-header">
-      <h3 id="teoria-mover-titulo">Mover a…</h3>
-      <button class="modal-close" id="teoria-mover-cerrar" aria-label="Cerrar">✕</button>
-    </div>
-    <p class="muted small">Elige la carpeta destino. Se conservará el nombre de cada elemento.</p>
-    <input type="search" id="teoria-mover-filtro" placeholder="Filtrar carpetas…" autocomplete="off" spellcheck="false">
-    <ul id="teoria-mover-list" class="teoria-op-list"></ul>
-    <div class="modal-actions">
-      <button class="btn btn-cancel" id="teoria-mover-cancelar">Cancelar</button>
-    </div>
+<ap-modal id="teoria-mover-modal" title="Mover a…"
+          title-id="teoria-mover-titulo" closable hidden
+          role="dialog" aria-label="Mover a carpeta">
+  <p class="muted small">Elige la carpeta destino. Se conservará el nombre de cada elemento.</p>
+  <input type="search" id="teoria-mover-filtro" placeholder="Filtrar carpetas…" autocomplete="off" spellcheck="false">
+  <ul id="teoria-mover-list" class="teoria-op-list"></ul>
+  <div class="modal-actions">
+    <button class="btn btn-cancel" id="teoria-mover-cancelar">Cancelar</button>
   </div>
-</div>
+</ap-modal>
 
 <!-- Marcadores: documentos favoritos del usuario. Fase 5 lo llevará a BD. -->
-<div id="teoria-marcadores" class="modal hidden" role="dialog" aria-label="Marcadores">
-  <div class="modal-card teoria-marcadores-modal">
-    <div class="modal-config-header">
-      <h3>Marcadores</h3>
-      <button class="modal-close" id="teoria-marcadores-cerrar" aria-label="Cerrar">✕</button>
-    </div>
-    <ul id="teoria-marcadores-lista" class="teoria-marcadores-lista"></ul>
-    <p class="muted small" id="teoria-marcadores-vacio" hidden>
-      Aún no tienes marcadores. Abre un documento y pulsa el icono 🔖 para guardarlo aquí.
-    </p>
-  </div>
-</div>
+<ap-modal id="teoria-marcadores" title="Marcadores"
+          closable hidden role="dialog" aria-label="Marcadores">
+  <ul id="teoria-marcadores-lista" class="teoria-marcadores-lista"></ul>
+  <p class="muted small" id="teoria-marcadores-vacio" hidden>
+    Aún no tienes marcadores. Abre un documento y pulsa el icono 🔖 para guardarlo aquí.
+  </p>
+</ap-modal>
 
 <!-- Cabecera común: saludo, oposición actual y tarjeta de gamificación.
      Igual que la de Tests, pero servida en la raíz de teoría. -->
