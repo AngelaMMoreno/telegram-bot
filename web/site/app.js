@@ -1660,6 +1660,37 @@ $("#etiquetas-list").addEventListener("click", async e => {
   }
 });
 
+/* Importación masiva de etiquetas: JSON array con {nombre, descripcion?,
+   palabras_clave?, padre?}. La RPC ordena por padres, así que se puede
+   subir el árbol entero en un solo fichero. */
+$("#btn-et-import").addEventListener("click", () => $("#et-import-file").click());
+$("#et-import-file").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const texto = await file.text();
+    let json;
+    try { json = JSON.parse(texto); }
+    catch { toast("JSON inválido"); return; }
+    if (!Array.isArray(json)) { toast("Debe ser un array JSON"); return; }
+    if (!confirm(`Importar ${json.length} etiquetas? Las existentes se actualizarán.`)) return;
+    const r = await rpc("importar_etiquetas", { p_json: json });
+    const items = r.items || [];
+    const nuevas = items.filter(x => x.estado === "creada").length;
+    const upd    = items.filter(x => x.estado === "actualizada").length;
+    const errs   = items.filter(x => x.estado === "error");
+    let msg = `${nuevas} creadas · ${upd} actualizadas`;
+    if (errs.length) {
+      msg += ` · ${errs.length} error${errs.length === 1 ? "" : "es"}`;
+      console.warn("Errores importando etiquetas:", errs);
+    }
+    toast(msg);
+    state.etiquetasCache = [];
+    loadEtiquetas();
+  } catch (err) { toast(err.message); }
+  finally { e.target.value = ""; }
+});
+
 $("#btn-reclasificar").addEventListener("click", async () => {
   if (!confirm("Esto recorrerá TODOS los tests y preguntas, etiquetándolos por nombre, palabras clave y similitud vectorial. ¿Seguir?")) return;
   try {

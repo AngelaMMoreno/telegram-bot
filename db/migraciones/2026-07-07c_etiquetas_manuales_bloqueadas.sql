@@ -367,10 +367,134 @@ BEGIN
 END $$;
 
 
--- ────────── 5. GRANTS ──────────
+-- ────────── 5. Importación masiva de etiquetas desde JSON ──────────
+
+CREATE OR REPLACE FUNCTION importar_etiquetas(p_json jsonb) RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_item      jsonb;
+    v_pendientes jsonb[];
+    v_next_pend jsonb[];
+    v_nombre    text;
+    v_descr     text;
+    v_padre     text;
+    v_pcs       text[];
+    v_result    jsonb := '[]'::jsonb;
+    v_existia   boolean;
+    v_pass      int := 0;
+    v_max_pass  int := 20;
+BEGIN
+    IF NOT (tiene_permiso('etiqueta.gestionar') OR es_admin()) THEN
+        RAISE EXCEPTION 'permiso_denegado';
+    END IF;
+
+    IF p_json IS NULL OR jsonb_typeof(p_json) <> 'array' THEN
+        RAISE EXCEPTION 'json_debe_ser_array';
+    END IF;
+
+    SELECT array_agg(x) INTO v_pendientes
+      FROM jsonb_array_elements(p_json) x;
+    IF v_pendientes IS NULL THEN
+        RETURN jsonb_build_object('procesadas', 0, 'items', '[]'::jsonb);
+    END IF;
+
+    LOOP
+        v_pass := v_pass + 1;
+        EXIT WHEN v_pass > v_max_pass;
+        v_next_pend := '{}'::jsonb[];
+
+        FOREACH v_item IN ARRAY v_pendientes LOOP
+            v_nombre := lower(btrim(COALESCE(v_item->>'nombre', '')));
+            v_descr  := NULLIF(btrim(COALESCE(v_item->>'descripcion','')), '');
+            v_padre  := NULLIF(lower(btrim(COALESCE(v_item->>'padre',''))), '');
+            v_pcs    := COALESCE(
+                ARRAY(SELECT lower(btrim(x))
+                        FROM jsonb_array_elements_text(
+                              COALESCE(v_item->'palabras_clave', '[]'::jsonb)
+                        ) x
+                       WHERE btrim(x) <> ''),
+                '{}'::text[]
+            );
+
+            IF v_nombre = '' THEN
+                v_result := v_result || jsonb_build_object(
+                    'nombre', v_item->>'nombre',
+                    'estado', 'error',
+                    'motivo', 'nombre_vacio'
+                );
+                CONTINUE;
+            END IF;
+
+            IF v_padre IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM catalogo_etiquetas WHERE nombre = v_padre)
+            THEN
+                v_next_pend := array_append(v_next_pend, v_item);
+                CONTINUE;
+            END IF;
+
+            IF v_padre IS NOT NULL AND v_padre = v_nombre THEN
+                v_result := v_result || jsonb_build_object(
+                    'nombre', v_nombre,
+                    'estado', 'error',
+                    'motivo', 'padre_no_puede_ser_misma_etiqueta'
+                );
+                CONTINUE;
+            END IF;
+
+            IF v_padre IS NOT NULL
+               AND v_padre = ANY(etiqueta_y_descendientes(v_nombre))
+            THEN
+                v_result := v_result || jsonb_build_object(
+                    'nombre', v_nombre,
+                    'estado', 'error',
+                    'motivo', 'ciclo_jerarquia'
+                );
+                CONTINUE;
+            END IF;
+
+            SELECT EXISTS(SELECT 1 FROM catalogo_etiquetas WHERE nombre = v_nombre)
+              INTO v_existia;
+
+            INSERT INTO catalogo_etiquetas(nombre, descripcion, palabras_clave, padre)
+            VALUES (v_nombre, v_descr, v_pcs, v_padre)
+            ON CONFLICT (nombre) DO UPDATE
+                SET descripcion    = EXCLUDED.descripcion,
+                    palabras_clave = EXCLUDED.palabras_clave,
+                    padre          = EXCLUDED.padre;
+
+            v_result := v_result || jsonb_build_object(
+                'nombre', v_nombre,
+                'estado', CASE WHEN v_existia THEN 'actualizada' ELSE 'creada' END
+            );
+        END LOOP;
+
+        EXIT WHEN cardinality(v_next_pend) = 0
+               OR cardinality(v_next_pend) = cardinality(v_pendientes);
+        v_pendientes := v_next_pend;
+    END LOOP;
+
+    IF v_next_pend IS NOT NULL AND cardinality(v_next_pend) > 0 THEN
+        FOREACH v_item IN ARRAY v_next_pend LOOP
+            v_result := v_result || jsonb_build_object(
+                'nombre', lower(btrim(COALESCE(v_item->>'nombre',''))),
+                'estado', 'error',
+                'motivo', 'padre_no_existe: ' || COALESCE(v_item->>'padre','')
+            );
+        END LOOP;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'procesadas', jsonb_array_length(v_result),
+        'items',      v_result
+    );
+END $$;
+
+
+-- ────────── 6. GRANTS ──────────
 
 GRANT EXECUTE ON FUNCTION set_etiquetas_pregunta(uuid, text[]) TO web_user;
 GRANT EXECUTE ON FUNCTION set_etiquetas_test(uuid, text[])     TO web_user;
+GRANT EXECUTE ON FUNCTION importar_etiquetas(jsonb)            TO web_user;
 
 
 NOTIFY pgrst, 'reload schema';

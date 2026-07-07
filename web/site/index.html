@@ -372,7 +372,14 @@
   <section id="view-etiquetas" class="view">
     <header class="view-header">
       <h2>Etiquetas</h2>
-      <button class="btn btn-primary" id="btn-reclasificar">⚙️ Reclasificar todas las preguntas</button>
+      <div class="actions">
+        <input type="file" id="et-import-file" accept=".json,application/json" hidden>
+        <button class="btn btn-ghost" id="btn-et-import"
+                title="Importar un array JSON con {nombre, descripcion, palabras_clave, padre}">
+          📥 Importar JSON
+        </button>
+        <button class="btn btn-primary" id="btn-reclasificar">⚙️ Reclasificar todas las preguntas</button>
+      </div>
     </header>
 
     <form id="form-etiqueta" class="inline-form">
@@ -384,6 +391,17 @@
       </select>
       <button class="btn btn-primary" type="submit">Crear / actualizar</button>
     </form>
+
+    <details class="muted small" style="margin:0.4rem 0">
+      <summary>Formato JSON del importador</summary>
+      <pre style="white-space:pre-wrap;font-size:0.85em">[
+  { "nombre": "programación", "descripcion": "…", "palabras_clave": ["código","dev"] },
+  { "nombre": "java", "descripcion": "…", "palabras_clave": ["jdk","jvm"], "padre": "programación" },
+  { "nombre": "spring", "padre": "java" }
+]</pre>
+      Padre e hijas pueden ir en el mismo fichero: se ordena solo por jerarquía.
+      Si la etiqueta ya existe se actualizan sus campos (upsert).
+    </details>
 
     <div id="etiquetas-status" class="muted"></div>
     <ul id="etiquetas-list" class="etiquetas-list"></ul>

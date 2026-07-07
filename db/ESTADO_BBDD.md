@@ -483,6 +483,13 @@ Auxiliares invisibles al cliente pero clave para el resto del sistema.
 - **`crear_etiqueta(nombre, descripcion, palabras_clave=[], padre?) → jsonb`** —
   normaliza nombre a `lower(btrim)`. Valida ciclos y existencia del
   padre.
+- **`importar_etiquetas(json) → jsonb`** — importa un array JSON de
+  objetos `{nombre, descripcion?, palabras_clave?, padre?}` en lote. Es
+  un upsert: las etiquetas existentes se actualizan. Reordena por
+  jerarquía (múltiples pasadas hasta 20 niveles) para poder crear
+  padres e hijas en la misma llamada. Devuelve
+  `{procesadas, items:[{nombre, estado, motivo?}]}` con `estado ∈
+  {creada, actualizada, error}`. Requiere `etiqueta.gestionar` o admin.
 - **`borrar_etiqueta(nombre) → void`** — la elimina y la quita del
   array `etiquetas` de todas las preguntas.
 - **`clasificar_test(test_id) → text[]`** — mira título y descripción

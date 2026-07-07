@@ -1866,6 +1866,141 @@ BEGIN
     RETURN v;
 END $$;
 
+-- Importa un lote de etiquetas desde JSON: un array de objetos con las
+-- claves {nombre, descripcion?, palabras_clave?, padre?}. Reordena por
+-- padres para permitir crear el padre y las hijas en la misma llamada.
+-- Upsert: si la etiqueta ya existe se actualizan descripción, palabras
+-- clave y padre. Cada fila resultante lleva un 'estado': 'creada',
+-- 'actualizada' o 'error' con su motivo.
+CREATE OR REPLACE FUNCTION importar_etiquetas(p_json jsonb) RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_item      jsonb;
+    v_pendientes jsonb[];
+    v_next_pend jsonb[];
+    v_nombre    text;
+    v_descr     text;
+    v_padre     text;
+    v_pcs       text[];
+    v_result    jsonb := '[]'::jsonb;
+    v_existia   boolean;
+    v_pass      int := 0;
+    v_max_pass  int := 20;   -- profundidad razonable de jerarquía
+BEGIN
+    IF NOT (tiene_permiso('etiqueta.gestionar') OR es_admin()) THEN
+        RAISE EXCEPTION 'permiso_denegado';
+    END IF;
+
+    IF p_json IS NULL OR jsonb_typeof(p_json) <> 'array' THEN
+        RAISE EXCEPTION 'json_debe_ser_array';
+    END IF;
+
+    -- Estado inicial: todos los items a procesar.
+    SELECT array_agg(x) INTO v_pendientes
+      FROM jsonb_array_elements(p_json) x;
+    IF v_pendientes IS NULL THEN
+        RETURN jsonb_build_object('procesadas', 0, 'items', '[]'::jsonb);
+    END IF;
+
+    -- Cada pasada procesa lo que se pueda (padre nulo o ya presente en la
+    -- BBDD). Lo que queda se reintenta en la siguiente pasada. Se corta
+    -- cuando no se hace progreso: los que sobran son errores (padre
+    -- inexistente, ciclo, etc.) y se anotan como 'error'.
+    LOOP
+        v_pass := v_pass + 1;
+        EXIT WHEN v_pass > v_max_pass;
+        v_next_pend := '{}'::jsonb[];
+
+        FOREACH v_item IN ARRAY v_pendientes LOOP
+            v_nombre := lower(btrim(COALESCE(v_item->>'nombre', '')));
+            v_descr  := NULLIF(btrim(COALESCE(v_item->>'descripcion','')), '');
+            v_padre  := NULLIF(lower(btrim(COALESCE(v_item->>'padre',''))), '');
+            v_pcs    := COALESCE(
+                ARRAY(SELECT lower(btrim(x))
+                        FROM jsonb_array_elements_text(
+                              COALESCE(v_item->'palabras_clave', '[]'::jsonb)
+                        ) x
+                       WHERE btrim(x) <> ''),
+                '{}'::text[]
+            );
+
+            IF v_nombre = '' THEN
+                v_result := v_result || jsonb_build_object(
+                    'nombre', v_item->>'nombre',
+                    'estado', 'error',
+                    'motivo', 'nombre_vacio'
+                );
+                CONTINUE;
+            END IF;
+
+            -- Si el padre está en la lista pendiente aún, defer a otra pasada.
+            IF v_padre IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM catalogo_etiquetas WHERE nombre = v_padre)
+            THEN
+                v_next_pend := array_append(v_next_pend, v_item);
+                CONTINUE;
+            END IF;
+
+            IF v_padre IS NOT NULL AND v_padre = v_nombre THEN
+                v_result := v_result || jsonb_build_object(
+                    'nombre', v_nombre,
+                    'estado', 'error',
+                    'motivo', 'padre_no_puede_ser_misma_etiqueta'
+                );
+                CONTINUE;
+            END IF;
+
+            IF v_padre IS NOT NULL
+               AND v_padre = ANY(etiqueta_y_descendientes(v_nombre))
+            THEN
+                v_result := v_result || jsonb_build_object(
+                    'nombre', v_nombre,
+                    'estado', 'error',
+                    'motivo', 'ciclo_jerarquia'
+                );
+                CONTINUE;
+            END IF;
+
+            SELECT EXISTS(SELECT 1 FROM catalogo_etiquetas WHERE nombre = v_nombre)
+              INTO v_existia;
+
+            INSERT INTO catalogo_etiquetas(nombre, descripcion, palabras_clave, padre)
+            VALUES (v_nombre, v_descr, v_pcs, v_padre)
+            ON CONFLICT (nombre) DO UPDATE
+                SET descripcion    = EXCLUDED.descripcion,
+                    palabras_clave = EXCLUDED.palabras_clave,
+                    padre          = EXCLUDED.padre;
+
+            v_result := v_result || jsonb_build_object(
+                'nombre', v_nombre,
+                'estado', CASE WHEN v_existia THEN 'actualizada' ELSE 'creada' END
+            );
+        END LOOP;
+
+        -- Si no hemos hecho progreso en esta pasada, los que quedan tienen
+        -- padre inexistente y no van a entrar nunca: los marcamos error.
+        EXIT WHEN cardinality(v_next_pend) = 0
+               OR cardinality(v_next_pend) = cardinality(v_pendientes);
+        v_pendientes := v_next_pend;
+    END LOOP;
+
+    -- Cualquier item que quedase pendiente = padre no existe.
+    IF v_next_pend IS NOT NULL AND cardinality(v_next_pend) > 0 THEN
+        FOREACH v_item IN ARRAY v_next_pend LOOP
+            v_result := v_result || jsonb_build_object(
+                'nombre', lower(btrim(COALESCE(v_item->>'nombre',''))),
+                'estado', 'error',
+                'motivo', 'padre_no_existe: ' || COALESCE(v_item->>'padre','')
+            );
+        END LOOP;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'procesadas', jsonb_array_length(v_result),
+        'items',      v_result
+    );
+END $$;
+
 CREATE OR REPLACE FUNCTION borrar_etiqueta(p_nombre text) RETURNS void
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -3545,6 +3680,7 @@ GRANT EXECUTE ON FUNCTION crear_simulacro(text,uuid,numeric,numeric)  TO web_use
 GRANT EXECUTE ON FUNCTION etiqueta_y_descendientes(text)              TO web_user, web_anon;
 GRANT EXECUTE ON FUNCTION listar_etiquetas(uuid)                      TO web_user;
 GRANT EXECUTE ON FUNCTION crear_etiqueta(text,text,text[],text)       TO web_user;
+GRANT EXECUTE ON FUNCTION importar_etiquetas(jsonb)                   TO web_user;
 GRANT EXECUTE ON FUNCTION borrar_etiqueta(text)                       TO web_user;
 GRANT EXECUTE ON FUNCTION clasificar_test(uuid)                       TO web_user;
 GRANT EXECUTE ON FUNCTION reclasificar_pregunta(uuid,int,real,int,real,int) TO web_user;
