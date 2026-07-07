@@ -135,6 +135,47 @@ function notificarDesdeRPC(res) {
   if (Array.isArray(l) && l.length) notificarLogros(l);
 }
 
+/* Desglose de XP del test recién terminado: base + volumen + nota + racha.
+ * Se pinta como una tarjeta más en el stack, con el icono grande del zorro
+ * y el detalle en el cuerpo. Si xp === 0 (intento ya finalizado o test
+ * vacío), no molestamos. */
+function notificarXpTest(res) {
+  if (!res || typeof res !== "object") return;
+  const xp = Number(res.xp) || 0;
+  if (xp <= 0 || res.ya_finalizado) return;
+  const stack = document.getElementById("logros-notif-stack");
+  if (!stack) return;
+  const partes = [];
+  if (res.base)    partes.push(`Base ${res.base}`);
+  if (res.volumen) partes.push(`Volumen ${res.volumen}`);
+  if (res.nota)    partes.push(`Nota ${res.nota}`);
+  if (res.racha)   partes.push(`Racha ${res.racha}`);
+  const card = document.createElement("article");
+  card.className = "logro-notif";
+  card.setAttribute("role", "status");
+  card.innerHTML = `
+    <div class="logro-notif-icono" aria-hidden="true">🦊</div>
+    <div class="logro-notif-body">
+      <div class="logro-notif-head">
+        <strong>¡Test terminado!</strong>
+        <span class="logro-notif-xp">+${xp} XP</span>
+      </div>
+      <div class="logro-notif-desc">${partes.join(" · ") || "Sigue así"}</div>
+      <div class="logro-notif-bar" role="progressbar"
+           aria-valuenow="${xp}" aria-valuemin="0" aria-valuemax="${xp}"><span></span></div>
+    </div>`;
+  stack.appendChild(card);
+  setTimeout(() => card.classList.add("done"), 60);
+  const cerrar = () => {
+    if (card._closed) return;
+    card._closed = true;
+    card.classList.add("out");
+    setTimeout(() => card.remove(), 350);
+  };
+  card.addEventListener("click", cerrar);
+  setTimeout(cerrar, 6000);
+}
+
 /* ── Llamada HTTP a PostgREST ────────────────────────────────────────────── */
 async function pg(path, opts = {}) {
   const headers = { "Accept": "application/json" };
@@ -396,7 +437,7 @@ async function loadHome() {
     rpc("mis_retos_activos").catch(() => []),
   ]);
 
-  renderGamifCard("#home-gamif", g, pickHomeReto(retos));
+  renderGamifCard("#home-gamif", g, null);
 
   $("#stats-grid").innerHTML = `
     <div class="stat-card"><div class="v">${p.respondidas_hoy}</div><div class="l">Hoy</div></div>
@@ -1252,6 +1293,7 @@ async function finalizarQuiz() {
     try {
       const res = await rpc("finalizar_intento", { p_intento_id: state.quiz.intentoId });
       notificarDesdeRPC(res);
+      notificarXpTest(res);
     } catch (_) {}
   }
   // Nota sobre 10 con penalización 1/3.  Si veníamos de una reanudación,

@@ -168,22 +168,24 @@
 <nav id="bc" class="bc" aria-label="Ruta"></nav>
 
 <div id="admin-bar" class="admin-bar" hidden>
-  <label class="btn btn-sec">
-    📤 Subir ficheros
-    <input id="file-input" type="file" multiple hidden>
-  </label>
-  <button id="btn-nueva-carpeta" class="btn btn-sec">📁 Nueva carpeta</button>
-  <button id="btn-nuevo-md" class="btn btn-sec">📝 Nuevo markdown</button>
-  <button id="btn-modo-seleccion" class="btn btn-sec" aria-pressed="false">☑️ Seleccionar</button>
-  <span class="admin-hint">Botón derecho sobre un fichero para más opciones · Seleccionar para acciones por lote</span>
-</div>
-
-<!-- Barra flotante con acciones cuando hay elementos seleccionados. -->
-<div id="seleccion-bar" class="seleccion-bar" hidden role="region" aria-label="Acciones sobre selección">
-  <span class="seleccion-count" id="seleccion-count">0 seleccionados</span>
-  <button class="btn btn-sec" id="seleccion-mover">📂 Mover</button>
-  <button class="btn btn-danger" id="seleccion-borrar">🗑️ Borrar</button>
-  <button class="btn btn-cancel" id="seleccion-cancelar">Cancelar</button>
+  <div class="admin-bar-row">
+    <label class="btn btn-sec">
+      📤 Subir ficheros
+      <input id="file-input" type="file" multiple hidden>
+    </label>
+    <button id="btn-nueva-carpeta" class="btn btn-sec">📁 Nueva carpeta</button>
+    <button id="btn-nuevo-md" class="btn btn-sec">📝 Nuevo markdown</button>
+    <span class="admin-hint">Mantén pulsado sobre un fichero o carpeta para más opciones</span>
+  </div>
+  <!-- Fila de acciones sobre selección múltiple: aparece cuando el modo
+       selección está activo. La clave de UX es que quede pegada bajo la
+       fila de "Subir/Nueva carpeta/Nuevo markdown", no como barra flotante. -->
+  <div id="seleccion-bar" class="admin-bar-row seleccion-bar" hidden role="region" aria-label="Acciones sobre selección">
+    <span class="seleccion-count" id="seleccion-count">0 seleccionados</span>
+    <button class="btn btn-sec" id="seleccion-mover">📂 Mover</button>
+    <button class="btn btn-danger" id="seleccion-borrar">🗑️ Eliminar</button>
+    <button class="btn btn-cancel" id="seleccion-cancelar">Cancelar</button>
+  </div>
 </div>
 
 <main id="grid" class="grid" aria-live="polite"></main>
