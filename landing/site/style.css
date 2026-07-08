@@ -312,39 +312,9 @@ input:focus, select:focus {
   margin-top: 20px;
 }
 
-/* ── Modales (con cristal esmerilado) ──────────────────────────────── */
-.modal {
-  position: fixed; inset: 0;
-  background: rgba(46, 59, 44, 0.55);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  display: flex; align-items: center; justify-content: center;
-  padding: 16px;
-  z-index: 200;
-}
-[data-theme="dark"] .modal { background: rgba(20, 36, 29, 0.65); }
-.modal-card {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-xl);
-  width: 100%; max-width: 540px;
-  max-height: 92vh; overflow-y: auto;
-  box-shadow: var(--shadow-lg);
-  color: var(--text);
-}
-.modal-header {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-}
-.modal-header h3 { font-size: 17px; }
-.modal-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 18px; }
-.modal-actions {
-  display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;
-  margin-top: 6px;
-}
+/* Los estilos de .modal / .modal-card / .modal-header / .modal-body /
+ * .modal-actions viven en shared/modal.css: son iguales en landing,
+ * tests y teoría. */
 
 .muted { color: var(--sub); }
 .small { font-size: 12.5px; }

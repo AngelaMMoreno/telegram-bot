@@ -1065,8 +1065,8 @@ function modal({ titulo, texto, campo, aceptar = 'Aceptar', cancelar = 'Cancelar
   host.id = 'modal-host';
   old.parentNode.replaceChild(host, old);
   host.innerHTML = `
-    <div class="overlay">
-      <div class="modal">
+    <div class="modal">
+      <div class="modal-card">
         <h3>${titulo}</h3>
         ${texto ? `<p>${texto}</p>` : ''}
         ${campo !== undefined ? `<input id="modal-input" type="text" value="${campo || ''}">` : ''}
@@ -1079,7 +1079,7 @@ function modal({ titulo, texto, campo, aceptar = 'Aceptar', cancelar = 'Cancelar
   const input = host.querySelector('#modal-input');
   if (input) { input.focus(); input.select(); }
   host.addEventListener('click', async (e) => {
-    if (e.target.dataset.a === 'cancel' || e.target.classList.contains('overlay')) { host.innerHTML = ''; return; }
+    if (e.target.dataset.a === 'cancel' || e.target.classList.contains('modal')) { host.innerHTML = ''; return; }
     if (e.target.dataset.a === 'ok') {
       try { await onOk(input ? input.value.trim() : null); host.innerHTML = ''; }
       catch (err) { toast(`⚠️ ${err.message}`); }
@@ -1291,18 +1291,7 @@ async function abrirBuscador() {
     }
   };
 }
-document.getElementById('teoria-buscar-cerrar')?.addEventListener('click', () => {
-  document.getElementById('teoria-buscar')?.classList.add('hidden');
-});
-document.getElementById('teoria-buscar')?.addEventListener('click', (e) => {
-  if (e.target.id === 'teoria-buscar') e.currentTarget.classList.add('hidden');
-});
-document.getElementById('teoria-marcadores-cerrar')?.addEventListener('click', () => {
-  document.getElementById('teoria-marcadores')?.classList.add('hidden');
-});
-document.getElementById('teoria-marcadores')?.addEventListener('click', (e) => {
-  if (e.target.id === 'teoria-marcadores') e.currentTarget.classList.add('hidden');
-});
+// La X y el cierre por Esc/click-backdrop los gestiona <ap-modal closable>.
 
 function abrirMarcadores() {
   const modal = document.getElementById('teoria-marcadores');
@@ -1522,33 +1511,21 @@ async function refrescarMisOposiciones() {
 }
 
 function abrirSelectorOposicion() {
-  const modal = document.getElementById('teoria-elegir-oposicion');
-  const lista = document.getElementById('teoria-op-list');
-  if (!modal || !lista) return;
-  const items = ESTADO.misOposicionesCache;
-  lista.innerHTML = [
-    `<li><button class="check-item" data-op-id=""><strong>Todas mis oposiciones</strong><span class="muted small">Ver todo lo global y de cualquier oposición asignada</span></button></li>`,
-    ...items.map(o => `
-      <li><button class="check-item" data-op-id="${o.id}">
-        <strong>${esc(o.nombre)}</strong>
-        ${o.descripcion ? `<span class="muted small">${esc(o.descripcion)}</span>` : ''}
-      </button></li>`),
-  ].join('');
-  modal.classList.remove('hidden');
+  const selector = document.getElementById('teoria-elegir-oposicion');
+  if (!selector) return;
+  selector.setOptions(ESTADO.misOposicionesCache, ESTADO.currentOposicion);
+  selector.open();
 }
-document.getElementById('teoria-op-cerrar')?.addEventListener('click', () => {
-  document.getElementById('teoria-elegir-oposicion').classList.add('hidden');
-});
-document.getElementById('teoria-op-list')?.addEventListener('click', (e) => {
-  const btn = e.target.closest('[data-op-id]');
-  if (!btn) return;
-  const id = btn.dataset.opId || null;
+
+// La lista, el modal y el cierre los pinta y gestiona <ap-op-selector>;
+// aquí sólo reaccionamos al evento de elección.
+document.getElementById('teoria-elegir-oposicion')?.addEventListener('ap-op-select', (e) => {
+  const { id, nombre } = e.detail;
   const op = id ? ESTADO.misOposicionesCache.find(o => o.id === id) : null;
   ESTADO.currentOposicion = id;
-  ESTADO.currentOposicionNombre = op ? op.nombre : null;
+  ESTADO.currentOposicionNombre = op ? op.nombre : (id ? nombre : null);
   guardarOposicionPersistida(op);
   refrescarHintOposicion();
-  document.getElementById('teoria-elegir-oposicion').classList.add('hidden');
   // Recarga la carpeta actual con el nuevo filtro.
   cargar(ESTADO.ruta).catch(err => toast(err.message));
 });
@@ -1607,9 +1584,7 @@ async function abrirCarpetaOposicionPicker(item, card) {
     };
   } catch (e) { toast(e.message); }
 }
-document.getElementById('teoria-carpeta-op-cerrar')?.addEventListener('click', () => {
-  document.getElementById('teoria-carpeta-oposicion').classList.add('hidden');
-});
+// La X y el cierre por Esc/click-backdrop los gestiona <ap-modal closable>.
 
 // Arranque: intenta cargar oposiciones tras el primer render.
 refrescarMisOposiciones();
@@ -1760,7 +1735,14 @@ async function abrirMoverDialogo(rutas) {
 
   const cerrar = () => modalEl.classList.add('hidden');
   cancelar.onclick = cerrar;
-  document.getElementById('teoria-mover-cerrar').onclick = cerrar;
+  // Cierre por Esc/X/backdrop: <ap-modal closable> ya oculta el modal;
+  // aquí desenganchamos los handlers para no dejarlos vivos entre aperturas
+  // sucesivas del picker con rutas distintas.
+  modalEl.addEventListener('ap-close', () => {
+    filtro.oninput = null;
+    lista.onclick = null;
+    cancelar.onclick = null;
+  }, { once: true });
 
   lista.onclick = async (ev) => {
     const btn = ev.target.closest('[data-destino]');
