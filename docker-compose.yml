@@ -1,15 +1,36 @@
 # Compose maestro SOLO para desarrollo local.
 #
 # En producción (Dokploy) NO se usa: cada carpeta bajo deploy/ es una
-# Compose Application independiente para poder redesplegar por partes.
-# Aquí incluimos los cuatro composes para que `docker compose up` levante
-# todo el stack de una tacada.
+# Compose Application independiente que se puede redesplegar por
+# separado. Aquí incluimos los composes que interesen para poder
+# levantar todo el stack de una tacada.
+#
+# ── Dos modos ────────────────────────────────────────────────────────
+#
+# 1. UNIFICADO (por defecto). Un único contenedor con Caddy + uvicorn
+#    sirve landing + tests + teoría. Se despliega desde deploy/app/.
+#    Es más simple: menos partes móviles y un solo redeploy tras
+#    cualquier cambio de frontend.
+#
+# 2. SEGMENTADO (legacy). Un stack por pieza:
+#    deploy/landing/, deploy/web/, deploy/teoria/, deploy/notificador/.
+#    Redespliega solo lo que toques. Se sigue soportando y sus composes
+#    viven en el repo; para usarlos comenta el bloque `include:` de
+#    abajo y descomenta el bloque legacy.
 #
 # Requiere Docker Compose 2.20 o superior (por `include:`).
 
 include:
   - deploy/core/docker-compose.yml
-  - deploy/landing/docker-compose.yml
-  - deploy/web/docker-compose.yml
-  - deploy/teoria/docker-compose.yml
+  - deploy/app/docker-compose.yml
   - deploy/notificador/docker-compose.yml
+
+# Modo segmentado (legacy): descomenta para volver a los 3 contenedores
+# frontend independientes.
+#
+# include:
+#   - deploy/core/docker-compose.yml
+#   - deploy/landing/docker-compose.yml
+#   - deploy/web/docker-compose.yml
+#   - deploy/teoria/docker-compose.yml
+#   - deploy/notificador/docker-compose.yml

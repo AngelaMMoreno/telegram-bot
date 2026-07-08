@@ -129,53 +129,25 @@ button { font: inherit; cursor: pointer; }
 }
 .empty-ico { font-size: 48px; margin-bottom: 10px; }
 
-/* ── Modales locales (renombrar / borrar) ─────────────────────────────── */
-.overlay {
-  position: fixed; inset: 0;
-  background: rgba(46, 59, 44, 0.55);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 9999; padding: 20px;
-}
-[data-theme="dark"] .overlay { background: rgba(20, 36, 29, 0.65); }
-.overlay.hidden { display: none; }
-.modal {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
-  color: var(--text);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--glass-border);
-  padding: 26px 28px; width: 100%; max-width: 460px;
-  box-shadow: var(--shadow-lg);
-}
-.modal h3 { font-size: 17px; margin-bottom: 12px; }
-.modal p { font-size: 14px; color: var(--sub); margin-bottom: 16px; word-break: break-word; }
-.modal input, .modal select {
+/* ── Modales locales (renombrar / borrar) ─────────────────────────────
+ * .modal (overlay), .modal-card (caja glassmorph) y .modal-actions
+ * viven en shared/modal.css: iguales que en landing y tests.
+ * Aquí solo quedan reglas específicas del markup de teoría dentro
+ * de la caja. */
+
+.modal .modal-card h3 { font-size: 17px; margin-bottom: 12px; }
+.modal .modal-card p { font-size: 14px; color: var(--sub); margin-bottom: 16px; word-break: break-word; }
+.modal .modal-card input, .modal .modal-card select {
   width: 100%; padding: 10px 12px;
   border: 1px solid var(--border); border-radius: 8px;
   font-size: 14px; margin-bottom: 16px;
   background: var(--card); color: var(--text);
 }
-.modal input:focus, .modal select:focus {
+.modal .modal-card input:focus, .modal .modal-card select:focus {
   outline: 2px solid var(--pri); border-color: var(--pri);
 }
-.modal-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
 
-/* Modal de configuración: cabecera con X de cierre. */
-.modal-config { max-width: 480px; }
-.modal-config-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 4px;
-}
-.modal-config-header h3 { margin: 0; }
-.modal-close {
-  background: transparent; border: 0;
-  color: var(--sub); font-size: 18px; line-height: 1;
-  padding: 6px 10px; border-radius: 8px; cursor: pointer;
-}
-.modal-close:hover { background: var(--bg-soft); color: var(--text); }
+/* La cabecera del modal la pinta <ap-modal> con .modal-header. */
 
 .small { font-size: 12.5px; }
 .muted { color: var(--sub); }
@@ -445,15 +417,14 @@ button { font: inherit; cursor: pointer; }
 .ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }
 
 /* ── Buscador de teoría (modal cliente-side) ─────────────────────────── */
-.teoria-buscar-modal {
+#teoria-buscar .modal-card {
   width: min(560px, 100%);
   display: flex;
   flex-direction: column;
   max-height: 80vh;
 }
-.teoria-buscar-modal input[type="search"] {
-  margin-top: 4px;
-}
+#teoria-buscar .modal-body { flex: 1; min-height: 0; overflow: hidden; }
+#teoria-buscar input[type="search"] { margin-top: 4px; }
 .teoria-buscar-results {
   list-style: none;
   margin: 12px 0 0;
@@ -475,12 +446,13 @@ button { font: inherit; cursor: pointer; }
 .teoria-buscar-nombre { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Lista de marcadores (favoritos por documento) ─────────────────── */
-.teoria-marcadores-modal {
+#teoria-marcadores .modal-card {
   width: min(560px, 100%);
   display: flex;
   flex-direction: column;
   max-height: 80vh;
 }
+#teoria-marcadores .modal-body { flex: 1; min-height: 0; overflow: hidden; }
 .teoria-marcadores-lista {
   list-style: none;
   margin: 8px 0 0;
@@ -585,92 +557,5 @@ body.en-seleccion .visto-tick { pointer-events: none; opacity: .5; }
   margin: 0 auto 0.6rem;
   padding: 0 1rem;
 }
-.ap-user-header {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; flex-wrap: wrap;
-  margin-bottom: 0.4rem;
-}
-.ap-user-header h2 { margin: 0; }
-.ap-op-btn {
-  display: inline-flex; align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--txt);
-  cursor: pointer;
-  font-weight: 500;
-  min-width: 0;
-}
-.ap-op-btn:hover { border-color: var(--pri); background: var(--pri-soft); }
-.ap-op-ico { font-size: 1.1em; }
-.ap-op-txt { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.1; min-width: 0; }
-.ap-op-label { font-size: 11px; color: var(--txt-soft); text-transform: uppercase; letter-spacing: 0.03em; }
-.ap-op-txt strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
-
-/* Gamif card: mismo diseño que en tests (nivel + racha). */
-.gamif-card {
-  background: linear-gradient(135deg,
-    var(--pri-soft) 0%,
-    var(--accent-soft) 100%);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1rem 1.1rem;
-  margin: 0.5rem 0 1.2rem;
-  box-shadow: var(--shadow);
-}
-.gamif-card:empty { display: none; }
-
-.gamif-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.6rem;
-}
-.gamif-level {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-}
-.gamif-nivel-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.3rem;
-  height: 2.3rem;
-  border-radius: 50%;
-  background: var(--pri);
-  color: var(--bg-panel);
-  font-weight: 800;
-  font-size: 1.05rem;
-  box-shadow: 0 0 0 3px var(--pri-soft);
-}
-[data-theme="dark"] .gamif-nivel-num { color: var(--bg); }
-
-.gamif-level > div { display: flex; flex-direction: column; }
-.gamif-level strong { font-size: 1.05rem; }
-.gamif-level .small { font-size: 0.85rem; }
-
-.gamif-racha { font-size: 0.98rem; }
-.gamif-racha strong { color: var(--coral-d); }
-[data-theme="dark"] .gamif-racha strong { color: var(--coral); }
-
-.progress-bar {
-  position: relative;
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.06);
-  overflow: hidden;
-}
-[data-theme="dark"] .progress-bar { background: rgba(255, 255, 255, 0.08); }
-.progress-bar > span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--grad-a), var(--grad-b));
-  transition: width .3s ease;
-}
-.progress-bar.level { height: 10px; }
+/* Cabecera de Home (.ap-user-header) y gamif-card viven en
+ * shared/user-header.css y shared/gamif.css: mismos estilos que en tests. */
