@@ -92,11 +92,10 @@
 
 <!-- Selector de oposición: se abre al arrancar si el usuario tiene >1 y
      desde el sheet del avatar con "Cambiar oposición". -->
-<ap-modal id="teoria-elegir-oposicion" title="¿Con qué oposición trabajas hoy?"
-          closable hidden role="dialog" aria-label="Elegir oposición">
-  <p class="muted small">Se aplica a tests y a teoría. Puedes cambiarla desde el avatar.</p>
-  <ul id="teoria-op-list" class="teoria-op-list"></ul>
-</ap-modal>
+<!-- Selector de oposición (mismo componente que en tests). -->
+<ap-op-selector id="teoria-elegir-oposicion"
+                subtitle="Se aplica a tests y a teoría. Puedes cambiarla desde el avatar."
+                closable></ap-op-selector>
 
 <!-- Picker para asignar oposiciones a una carpeta (admin). Multi-select. -->
 <ap-modal id="teoria-carpeta-oposicion" title="Oposiciones de la carpeta"

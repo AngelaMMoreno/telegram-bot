@@ -1,0 +1,65 @@
+# Gateway público de aprentix.es cuando se despliega en modo monolítico
+# (contenedor único, deploy/app/). Sirve la landing en /, la SPA de
+# tests bajo /tests/*, y reenvía /teoria/* al uvicorn local que tiene
+# la SPA + la API + los ficheros de teoría.
+#
+# Traefik termina TLS y nos pasa HTTP por :80.
+
+:80 {
+    encode zstd gzip
+
+    # Sin barra final los prefijos no matchean; redirigimos para que el
+    # <base href> de cada SPA resuelva correctamente los assets.
+    @tests_no_slash path /tests
+    redir @tests_no_slash /tests/ 301
+    @teoria_no_slash path /teoria
+    redir @teoria_no_slash /teoria/ 301
+
+    # ── App de teoría (uvicorn interno, :8000) ────────────────────────
+    # Sirve la SPA (StaticFiles) y todos sus endpoints /api/*. handle_path
+    # descarta /teoria del path antes de proxyar, así el backend sigue
+    # viendo /api/*, /index.html, /shared/*, etc. tal cual.
+    handle_path /teoria/* {
+        reverse_proxy 127.0.0.1:8000
+    }
+
+    # ── API de la SPA de tests ────────────────────────────────────────
+    # Tests usa rutas relativas (fetch("api" + path)) con <base
+    # href="/tests/">, así que el navegador pega /tests/api/rpc/... y
+    # PostgREST espera /rpc/... — hay que quitar /tests/api completo.
+    # Este handle es más específico que /tests/* y Caddy lo elige antes.
+    handle_path /tests/api/* {
+        reverse_proxy postgrest:3000
+    }
+
+    # ── App de tests (SPA estática) ───────────────────────────────────
+    handle_path /tests/* {
+        root * /srv/tests
+        try_files {path} /index.html
+        file_server
+    }
+
+    # ── API de landing (login, mi_sesion, puede_ver_teoria, etc.) ─────
+    # La landing usa rutas absolutas (/api/rpc/...), así que llega aquí.
+    handle /api/* {
+        uri strip_prefix /api
+        reverse_proxy postgrest:3000
+    }
+
+    # MIME correcto para el manifest PWA.
+    @manifest path *.webmanifest
+    header @manifest Content-Type application/manifest+json
+
+    # WAOA: legacy, servido con Content-Type JSON por si algún cliente
+    # instalado antiguo lo pide.
+    @waoa path /.well-known/web-app-origin-association
+    header @waoa Content-Type application/json
+    header @waoa Access-Control-Allow-Origin *
+
+    # ── Landing SPA (root, /shared/, /app.js, /style.css, iconos…) ────
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+}

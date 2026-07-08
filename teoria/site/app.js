@@ -1511,31 +1511,21 @@ async function refrescarMisOposiciones() {
 }
 
 function abrirSelectorOposicion() {
-  const modal = document.getElementById('teoria-elegir-oposicion');
-  const lista = document.getElementById('teoria-op-list');
-  if (!modal || !lista) return;
-  const items = ESTADO.misOposicionesCache;
-  lista.innerHTML = [
-    `<li><button class="check-item" data-op-id=""><strong>Todas mis oposiciones</strong><span class="muted small">Ver todo lo global y de cualquier oposición asignada</span></button></li>`,
-    ...items.map(o => `
-      <li><button class="check-item" data-op-id="${o.id}">
-        <strong>${esc(o.nombre)}</strong>
-        ${o.descripcion ? `<span class="muted small">${esc(o.descripcion)}</span>` : ''}
-      </button></li>`),
-  ].join('');
-  modal.classList.remove('hidden');
+  const selector = document.getElementById('teoria-elegir-oposicion');
+  if (!selector) return;
+  selector.setOptions(ESTADO.misOposicionesCache, ESTADO.currentOposicion);
+  selector.open();
 }
-// La X y el cierre por Esc/click-backdrop los gestiona <ap-modal closable>.
-document.getElementById('teoria-op-list')?.addEventListener('click', (e) => {
-  const btn = e.target.closest('[data-op-id]');
-  if (!btn) return;
-  const id = btn.dataset.opId || null;
+
+// La lista, el modal y el cierre los pinta y gestiona <ap-op-selector>;
+// aquí sólo reaccionamos al evento de elección.
+document.getElementById('teoria-elegir-oposicion')?.addEventListener('ap-op-select', (e) => {
+  const { id, nombre } = e.detail;
   const op = id ? ESTADO.misOposicionesCache.find(o => o.id === id) : null;
   ESTADO.currentOposicion = id;
-  ESTADO.currentOposicionNombre = op ? op.nombre : null;
+  ESTADO.currentOposicionNombre = op ? op.nombre : (id ? nombre : null);
   guardarOposicionPersistida(op);
   refrescarHintOposicion();
-  document.getElementById('teoria-elegir-oposicion').classList.add('hidden');
   // Recarga la carpeta actual con el nuevo filtro.
   cargar(ESTADO.ruta).catch(err => toast(err.message));
 });
@@ -1745,7 +1735,14 @@ async function abrirMoverDialogo(rutas) {
 
   const cerrar = () => modalEl.classList.add('hidden');
   cancelar.onclick = cerrar;
-  // La X y el cierre por Esc/click-backdrop los gestiona <ap-modal closable>.
+  // Cierre por Esc/X/backdrop: <ap-modal closable> ya oculta el modal;
+  // aquí desenganchamos los handlers para no dejarlos vivos entre aperturas
+  // sucesivas del picker con rutas distintas.
+  modalEl.addEventListener('ap-close', () => {
+    filtro.oninput = null;
+    lista.onclick = null;
+    cancelar.onclick = null;
+  }, { once: true });
 
   lista.onclick = async (ev) => {
     const btn = ev.target.closest('[data-destino]');

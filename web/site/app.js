@@ -1019,6 +1019,9 @@ function cerrarModal() {
 
 // La X del modal-pregunta la pinta y gestiona <ap-modal closable>.
 $("#pq-cancelar").addEventListener("click", cerrarModal);
+// Si el usuario cierra por Esc, X o backdrop en vez de por "Cancelar",
+// también hay que resetear el estado de edición.
+$("#modal-pregunta").addEventListener("ap-close", () => { state.editingQ = null; });
 
 $("#form-pregunta").addEventListener("submit", async e => {
   e.preventDefault();
@@ -2063,7 +2066,13 @@ function abrirModalRepasoN({ titulo, info, onEmpezar, sinVencidas, siguiente, on
     await onEmpezar(n);
   };
   $("#btn-repaso-n-cancelar").onclick = cerrar;
-  // La X y el cierre por Esc/backdrop los gestiona <ap-modal closable>.
+  // Cierre por Esc/X/backdrop: <ap-modal closable> ya oculta el modal;
+  // aquí sólo desenganchamos los onclick para no dejarlos disparándose
+  // con estado obsoleto la próxima vez que se abra.
+  modal.addEventListener("ap-close", () => {
+    $("#btn-repaso-n-empezar").onclick  = null;
+    $("#btn-repaso-n-cancelar").onclick = null;
+  }, { once: true });
 }
 
 function abrirModalSinVencidas({ titulo, siguiente, onAdelantar }) {
@@ -2084,7 +2093,13 @@ function abrirModalSinVencidas({ titulo, siguiente, onAdelantar }) {
     await onAdelantar(n);
   };
   $("#btn-repaso-sv-cancelar").onclick = cerrar;
-  // La X y el cierre por Esc/backdrop los gestiona <ap-modal closable>.
+  // Cierre por Esc/X/backdrop: <ap-modal closable> ya oculta el modal;
+  // aquí sólo desenganchamos los onclick para no dejarlos disparándose
+  // con estado obsoleto la próxima vez que se abra.
+  modal.addEventListener("ap-close", () => {
+    $("#btn-repaso-sv-adelantar").onclick = null;
+    $("#btn-repaso-sv-cancelar").onclick  = null;
+  }, { once: true });
 }
 
 async function arrancarRepasoTest(testId, n, adelantar) {
