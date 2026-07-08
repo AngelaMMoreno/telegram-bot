@@ -24,6 +24,12 @@
  * Depende de shared/components/ap-modal.js (debe cargarse antes).
  */
 
+function escHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
 class ApOpSelector extends HTMLElement {
   connectedCallback() {
     if (this._modal) return;
@@ -38,20 +44,22 @@ class ApOpSelector extends HTMLElement {
     this._modal.setAttribute('hidden', '');
     this._modal.classList.add('hidden');
 
-    if (subtitle) {
-      const p = document.createElement('p');
-      p.className = 'muted small';
-      p.textContent = subtitle;
-      this._modal.appendChild(p);
-    }
-
-    this._list = document.createElement('ul');
-    this._list.className = 'check-list';
-    this._modal.appendChild(this._list);
+    // OJO: no podemos crear <ul> y appendChild-ear al modal antes de
+    // insertarlo, porque <ap-modal>.connectedCallback() reescribe su
+    // innerHTML al conectarse y destruye cualquier hijo previo, dejando
+    // referencias fantasma. En su lugar pasamos el contenido como
+    // innerHTML (string) y buscamos la <ul> DESPUÉS de conectar.
+    this._modal.innerHTML = `
+      ${subtitle ? `<p class="muted small">${escHtml(subtitle)}</p>` : ''}
+      <ul class="check-list ap-op-list"></ul>`;
 
     this.appendChild(this._modal);
 
-    this._list.addEventListener('click', (e) => {
+    // Ahora que el modal se ha "wrappeado" en .modal-card > .modal-body,
+    // localizamos la <ul> re-creada. Es la fuente de la verdad.
+    this._list = this._modal.querySelector('.ap-op-list');
+
+    this._modal.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-op-id]');
       if (!btn) return;
       const raw = btn.dataset.opId;
@@ -66,18 +74,27 @@ class ApOpSelector extends HTMLElement {
   }
 
   setOptions(oposiciones, currentId) {
+    // Si por algún motivo la ul se ha perdido, la re-buscamos.
+    if (!this._list || !this._list.isConnected) {
+      this._list = this._modal && this._modal.querySelector('.ap-op-list');
+    }
     if (!this._list) return;
-    const items = [{ id: null, nombre: 'Todas' }, ...(oposiciones || [])];
+    const items = [{ id: null, nombre: 'Todas mis oposiciones' }, ...(oposiciones || [])];
     this._list.innerHTML = items.map(op => {
       const idAttr = op.id == null ? '' : op.id;
       const activa = String(op.id ?? '') === String(currentId ?? '');
+      const desc = op.descripcion
+        ? `<span class="muted small">${escHtml(op.descripcion)}</span>` : '';
       return `
         <li>
           <button class="check-item" type="button"
-                  data-op-id="${idAttr}"
-                  data-op-nombre="${(op.nombre || '').replace(/"/g, '&quot;')}"
+                  data-op-id="${escHtml(idAttr)}"
+                  data-op-nombre="${escHtml(op.nombre || '')}"
                   aria-current="${activa ? 'true' : 'false'}">
-            <strong>${op.nombre || ''}</strong>
+            <span>
+              <strong>${escHtml(op.nombre || '')}</strong>
+              ${desc}
+            </span>
           </button>
         </li>`;
     }).join('');
