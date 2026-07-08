@@ -62,6 +62,16 @@ class ApModal extends HTMLElement {
 
     this.classList.add('modal');
 
+    // Normaliza el estado inicial: el atributo HTML `hidden` fuerza
+    // display:none por defecto del navegador, y muchos sitios del código
+    // legacy abren el modal con classList.remove("hidden") (solo la clase).
+    // Convertimos aquí el atributo en la clase para que ambas APIs sean
+    // equivalentes y `.classList.remove("hidden")` baste para abrir.
+    if (this.hasAttribute('hidden')) {
+      this.removeAttribute('hidden');
+      this.classList.add('hidden');
+    }
+
     this.addEventListener('click', (e) => {
       if (!this.hasAttribute('closable')) return;
       if (e.target === this) { this.close(); return; }
@@ -71,7 +81,7 @@ class ApModal extends HTMLElement {
     this._onKey = (e) => {
       if (e.key !== 'Escape') return;
       if (!this.hasAttribute('closable')) return;
-      if (this.hasAttribute('hidden') || this.classList.contains('hidden')) return;
+      if (this.classList.contains('hidden')) return;
       this.close();
     };
     document.addEventListener('keydown', this._onKey);
@@ -82,7 +92,7 @@ class ApModal extends HTMLElement {
   }
 
   open() {
-    this.hidden = false;
+    this.removeAttribute('hidden');
     this.classList.remove('hidden');
     this.dispatchEvent(new CustomEvent('ap-open', { bubbles: true }));
   }
