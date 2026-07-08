@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Arranca los dos procesos del contenedor unificado y termina el
 # contenedor si cualquiera de los dos se cae (Docker lo reiniciará
 # gracias a restart: unless-stopped).
