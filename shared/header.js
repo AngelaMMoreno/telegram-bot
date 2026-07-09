@@ -278,14 +278,20 @@
     }
 
     /*
-     * Prefetch de la otra app (tests si estamos en teoría y viceversa).
-     * Con esto, al pulsar el switch de modo el navegador ya tiene el
-     * HTML + CSS + JS de la otra app en caché y la transición se percibe
-     * casi instantánea. Sin este truco, la cabecera se queda unos ms
-     * "en negro" mientras se resuelve la petición. Combinado con la
-     * regla @view-transition { navigation: auto } de header.css, el
-     * cambio de modo se ve como un cross-fade en lugar de una recarga.
-     * Sólo prefetch en conexiones que no sean data-saving.
+     * Prepara la navegación a la OTRA app para que se sienta como una
+     * SPA sin tener que fusionar los dos app.js. Tres capas de menor a
+     * mayor agresividad, todas se dejan de forma acumulativa (si el
+     * navegador ignora la fuerte, cae a la siguiente):
+     *
+     *  1) Speculation Rules → prerender de /tests/ o /teoria/. Chrome
+     *     (y otros basados en Chromium) cargan el destino en una vista
+     *     oculta y al pulsar el switch simplemente lo "activan"; la
+     *     transición es 0 ms, sin flash de recarga.
+     *  2) <link rel="prefetch"> como plan B para Firefox/Safari.
+     *  3) Combinado con @view-transition { navigation: auto } de
+     *     header.css, en Chrome el cambio se ve como un cross-fade.
+     *
+     * Skip en conexiones data-saver o 2g para no gastar datos del móvil.
      */
     _prefetchOtherMode(active) {
       try {
@@ -293,6 +299,25 @@
         if (conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))) return;
       } catch (_) { /* no soportado, adelante */ }
       const otro = active === 'tests' ? TEORIA_URL : TESTS_URL;
+
+      // (1) Speculation Rules API — Chromium 121+.
+      if (HTMLScriptElement.supports && HTMLScriptElement.supports('speculationrules')) {
+        const s = document.createElement('script');
+        s.type = 'speculationrules';
+        s.textContent = JSON.stringify({
+          prerender: [{
+            source: 'list',
+            urls: [otro],
+            // "moderate" solo prerenderiza si hay indicios de que el
+            // usuario va a navegar; en nuestra app SIEMPRE queremos que
+            // esté listo, así que "eager".
+            eagerness: 'eager',
+          }],
+        });
+        document.head.appendChild(s);
+      }
+
+      // (2) Prefetch clásico como fallback.
       const link = document.createElement('link');
       link.rel = 'prefetch';
       link.as = 'document';

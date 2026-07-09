@@ -1,67 +1,13 @@
 /*
  * Estilos propios de la app de tests. Los tokens de diseño, botones,
- * cabecera y modal de configuración vienen de /shared/*.css.
+ * cabecera, modal de configuración y el shell (body + sidebar + grid
+ * desktop) viven en /shared/*.css.  Aquí solo van reglas específicas
+ * de las vistas de tests.
  */
 
-*, *::before, *::after { box-sizing: border-box; }
-html { font-size: 16px; }
-html, body { margin: 0; }
-body {
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  background: var(--bg);
-  background-image: var(--bg-ambient);
-  background-attachment: fixed;
-  color: var(--txt);
-  min-height: 100vh;
-  display: flex; flex-direction: column;
-  -webkit-text-size-adjust: 100%;
-  overflow-x: hidden;
-  transition: background-color 0.2s, color 0.2s;
-}
-
-/* ─── Sidebar (solo desktop) ───
- * En móvil la navegación vive en la bottom-nav de <aprentix-header>,
- * así que ocultamos el sidebar completo (y su backdrop legado).
- * En desktop se muestra como panel fijo lateral (ver bloque @media >=900). */
-.sidebar { display: none; }
+/* Backdrop legado del sidebar antiguo: sigue oculto por si algún atajo
+ * lo dispara. El sidebar real está en shared/app-shell.css. */
 .sidebar-backdrop { display: none !important; }
-.nav-item {
-  display: inline-flex; align-items: center; gap: 0.75rem;
-  background: none; border: 0; color: var(--nav-side-text);
-  padding: 0.85rem 1rem; border-radius: var(--radius);
-  text-align: left;
-  cursor: pointer;
-  font-size: 1rem;
-  font-weight: 500;
-  font-family: inherit;
-  width: 100%;
-  transition: background 0.18s, color 0.18s;
-}
-.nav-item:hover, .nav-item:active { background: rgba(255, 255, 255, 0.10); color: #fff; }
-.nav-item .nav-ico { color: var(--pri); transition: color 0.15s; }
-/* Pinta cada icono del sidebar con un acento diferente para dar vida. */
-.nav-item:nth-child(1) .nav-ico { color: var(--accent); }
-.nav-item:nth-child(2) .nav-ico { color: var(--pri); }
-.nav-item:nth-child(3) .nav-ico { color: var(--coral); }
-.nav-item:nth-child(4) .nav-ico { color: var(--lavender); }
-.nav-item:nth-child(5) .nav-ico { color: var(--sky); }
-.nav-item:nth-child(6) .nav-ico { color: var(--leaf); }
-.nav-item.active {
-  background: linear-gradient(135deg, var(--grad-a), var(--grad-b));
-  color: #14241D;
-  font-weight: 700;
-  pointer-events: none;
-  cursor: default;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.30);
-}
-.nav-item.active .nav-ico { color: #14241D; }
-.nav-ico {
-  width: 18px; height: 18px; flex: 0 0 auto;
-}
-.nav-sep {
-  height: 1px; background: rgba(255, 255, 255, 0.08);
-  margin: 0.5rem 0.4rem;
-}
 
 /* ─── Main ─── */
 .content { padding: 0.75rem 0.85rem; flex: 1; min-width: 0; }
@@ -722,18 +668,11 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
 }
 
 
-/* ════════════════ DESKTOP (>= 900 px) ════════════════ */
+/* ════════════════ DESKTOP (>= 900 px) ════════════════
+ * El grid body + sidebar + topbar lo pinta shared/app-shell.css. Aquí
+ * solo van las particularidades de tests: tamaño del brand, colocación
+ * del contenido en la columna "main" y ajustes de tarjetas. */
 @media (min-width: 900px) {
-  body {
-    display: grid;
-    grid-template:
-      "header header" var(--topbar-h)
-      "side main" 1fr
-      / var(--sidebar-w) 1fr;
-    /* En desktop no hay bottom-nav, así que no reservamos hueco abajo. */
-    padding-bottom: 0;
-  }
-  .topbar { grid-area: header; }
   .brand-name { font-size: 1.05rem; }
   .user-chip {
     margin-left: auto;
@@ -741,23 +680,6 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
   }
   .user-chip .user-name { max-width: 180px; }
   .hamburger { display: none; }
-  .sidebar {
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-    padding: 0.75rem 0.5rem;
-    grid-area: side;
-    position: static;
-    transform: none;
-    height: auto;
-    background: var(--nav-side-bg);
-    background-image:
-      radial-gradient(80% 40% at 100% 0%, rgba(244, 208, 63, 0.10) 0%, transparent 60%),
-      radial-gradient(70% 40% at 0% 100%, rgba(176, 132, 245, 0.10) 0%, transparent 60%);
-    color: #fff;
-    overflow-y: auto;
-    z-index: 25;
-  }
   .content { grid-area: main; padding: 1.5rem; max-width: none; overflow-x: hidden; }
   .quiz-actions > span { display: block; flex: 1; }
   .auth-card { margin-top: 3rem; padding: 2rem; }
