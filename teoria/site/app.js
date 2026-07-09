@@ -641,6 +641,10 @@ function mdAbrirVista(nombre, contenido) {
   mdView().classList.remove('hidden');
   mdView().setAttribute('aria-hidden', 'false');
   document.body.style.overflow = 'hidden';
+  // Empezar siempre por el principio del documento (tanto en lectura como
+  // en edición): el visor es fixed y no reinicia scroll solo.
+  mdOut().scrollTop = 0;
+  mdEd().scrollTop = 0;
   mdMostrarBotones();
   mdMarcarEstado();
   // Reengancha marcador y subrayados persistidos del usuario para este
@@ -655,7 +659,17 @@ function mdEntrarEdicion() {
   mdBody().classList.remove('show-preview');
   mdMostrarBotones();
   mdActualizarPreview();
-  mdEd().focus();
+  const ed = mdEd();
+  // El textarea recuerda su scroll y su caret entre entradas. Al abrir un
+  // documento largo el caret queda al final del texto y el navegador
+  // desplaza el editor hasta esa línea, dejando al usuario perdido; forzamos
+  // caret + scroll al principio para que la edición empiece siempre por la
+  // primera línea. Igual con el preview render.
+  ed.focus({ preventScroll: true });
+  ed.setSelectionRange(0, 0);
+  ed.scrollTop = 0;
+  const out = mdOut();
+  if (out) out.scrollTop = 0;
 }
 
 function mdCerrar() {

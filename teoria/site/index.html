@@ -162,6 +162,13 @@
   </p>
 </ap-modal>
 
+<!-- Wrapper canónico de la columna "main" en desktop: engloba la cabecera
+     de inicio, el breadcrumb, la barra de admin y el grid para que el
+     shell CSS (shared/app-shell.css) los coloque juntos a la derecha del
+     sidebar. Sin este wrapper, cada sección iba a un implicit-row distinto
+     y el contenido quedaba empujado por debajo de la sidebar. -->
+<div id="app-content">
+
 <!-- Cabecera común: saludo, oposición actual y tarjeta de gamificación.
      Igual que la de Tests, pero servida en la raíz de teoría. -->
 <section class="teoria-home-header" id="teoria-home-header" hidden>
@@ -204,6 +211,8 @@
 
 <main id="grid" class="grid" aria-live="polite"></main>
 
+</div><!-- /#app-content -->
+
 <!-- Visor / editor de markdown -->
 <div id="md-view" class="md-view hidden" aria-hidden="true">
   <header class="md-view-header">
@@ -241,10 +250,19 @@
       </div>
     </div>
 
-    <!-- Acciones de edición: solo visibles cuando está editando -->
-    <button class="btn btn-sec md-btn" id="md-preview-toggle" hidden>👁️ Vista previa</button>
-    <button class="btn btn-pri md-btn" id="md-guardar" hidden>💾 Guardar</button>
-    <button class="btn btn-cancel md-btn" id="md-cancelar" hidden>Cancelar</button>
+    <!-- Acciones de edición: iconos sutiles alineados con el resto del
+         header (buscar, marcador, subrayar). Sin fondo verde llamativo:
+         el "modo edición" ya lo señala el badge md-status ("Sin guardar"),
+         y estos botones se mimetizan con los del lector. -->
+    <button class="md-icon md-edit-action" id="md-preview-toggle" hidden aria-label="Alternar vista previa" title="Alternar vista previa">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+    </button>
+    <button class="md-icon md-edit-action md-save" id="md-guardar" hidden aria-label="Guardar" title="Guardar (Ctrl+S)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+    </button>
+    <button class="md-icon md-edit-action" id="md-cancelar" hidden aria-label="Cancelar edición" title="Cancelar edición">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
   </header>
 
   <!-- Barra de búsqueda in-page (aparece bajo el header al pulsar 🔍) -->
