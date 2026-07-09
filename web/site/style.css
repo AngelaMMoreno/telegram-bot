@@ -68,6 +68,19 @@ body {
 .view { display: none; }
 .view.active { display: block; }
 
+/* Estado de arranque síncrono (lo pinta el inline script del <head>):
+ *  - data-boot="session" → hay cookie, el usuario probablemente está
+ *    logueado; ocultamos el login por defecto y dejamos que app.js
+ *    decida qué vista mostrar. Así no se ve el parpadeo del login al
+ *    volver desde /teoria/.
+ *  - data-boot="anon" → sin cookie, mostramos el login inmediatamente.
+ * Cuando app.js confirma la sesión, cambia data-boot="ready" y las
+ * reglas normales de .view.active toman el control. */
+:root[data-boot="anon"] #view-login { display: block; }
+:root[data-boot="anon"] .topbar,
+:root[data-boot="anon"] .bottom-nav { display: none; }
+:root[data-boot="session"] #view-login { display: none; }
+
 .view-header {
   display: flex; flex-direction: column;
   align-items: stretch; gap: 0.5rem; margin-bottom: 0.65rem;

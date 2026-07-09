@@ -78,6 +78,37 @@
     {"id":"upload","label":"Subir test","icon":"upload","href":"/tests/?atajo=upload","gestion":true}
   ]'></aprentix-header>
 
+<!-- Sidebar de escritorio: refleja las opciones del bottom-nav móvil.
+     Se oculta en móvil (< 900 px). Los IDs de las opciones (data-tnav)
+     coinciden con los del menú móvil, así compartimos el mismo handler. -->
+<nav class="sidebar" id="sidebar" aria-label="Navegación">
+  <button class="nav-item" data-tnav="home">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-9 9 9"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>
+    <span>Inicio</span>
+  </button>
+  <button class="nav-item" data-tnav="buscar">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <span>Buscar</span>
+  </button>
+  <button class="nav-item" data-tnav="marcadores">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12a1 1 0 0 1 1 1v18l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg>
+    <span>Marcadores</span>
+  </button>
+  <div class="nav-sep"></div>
+  <button class="nav-item gestion" data-tnav="subir">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    <span>Subir ficheros</span>
+  </button>
+  <button class="nav-item gestion" data-tnav="nueva-carpeta">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+    <span>Nueva carpeta</span>
+  </button>
+  <button class="nav-item gestion" data-tnav="nuevo-md">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16a2 2 0 0 0 2 2h14V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2z"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="16" y2="10"/></svg>
+    <span>Nuevo markdown</span>
+  </button>
+</nav>
+
 <!-- Buscador de teoría (modal simple, cliente-side sobre lo listado). -->
 <ap-modal id="teoria-buscar" title="Buscar en teoría"
           closable hidden role="dialog" aria-label="Buscar en teoría">

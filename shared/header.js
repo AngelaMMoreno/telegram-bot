@@ -274,6 +274,30 @@
 
       this._wire();
       this._hideEmptyMore();
+      this._prefetchOtherMode(active);
+    }
+
+    /*
+     * Prefetch de la otra app (tests si estamos en teoría y viceversa).
+     * Con esto, al pulsar el switch de modo el navegador ya tiene el
+     * HTML + CSS + JS de la otra app en caché y la transición se percibe
+     * casi instantánea. Sin este truco, la cabecera se queda unos ms
+     * "en negro" mientras se resuelve la petición. Combinado con la
+     * regla @view-transition { navigation: auto } de header.css, el
+     * cambio de modo se ve como un cross-fade en lugar de una recarga.
+     * Sólo prefetch en conexiones que no sean data-saving.
+     */
+    _prefetchOtherMode(active) {
+      try {
+        const conn = navigator.connection;
+        if (conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))) return;
+      } catch (_) { /* no soportado, adelante */ }
+      const otro = active === 'tests' ? TEORIA_URL : TESTS_URL;
+      const link = document.createElement('link');
+      link.rel = 'prefetch';
+      link.as = 'document';
+      link.href = otro;
+      document.head.appendChild(link);
     }
 
     /*

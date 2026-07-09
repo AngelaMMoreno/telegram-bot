@@ -1226,6 +1226,19 @@ document.addEventListener('aprentix:nav', (e) => {
   }
 });
 
+/* Sidebar de escritorio (visible >= 900 px): reusa exactamente los mismos
+ * ids que el bottom-nav móvil (data-tnav="home|buscar|marcadores|…") y
+ * republica el CustomEvent para que el handler de arriba lo maneje.
+ * Así no duplicamos la lógica y añadir un item futuro es cambio en un
+ * solo sitio. */
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-tnav]');
+  if (!btn) return;
+  e.preventDefault();
+  const id = btn.dataset.tnav;
+  document.dispatchEvent(new CustomEvent('aprentix:nav', { detail: { id } }));
+});
+
 /* ── Buscador cliente-side sobre listar() de la ruta actual ─────────
  * En Fase 2 se sustituirá por un buscador global backed by API. Por
  * ahora, cargamos la ruta actual y filtramos por substring del nombre. */

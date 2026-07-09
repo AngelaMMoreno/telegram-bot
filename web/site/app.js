@@ -2241,6 +2241,11 @@ inicializarInputsTiempo();
   const atajo = new URLSearchParams(location.search).get("atajo");
   const destino = atajoAVista(atajo);
   navigate(state.jwt && state.user ? (destino || "home") : "login");
+  // Liberamos el data-boot del <head>: a partir de aquí la visibilidad
+  // de topbar/bottom-nav/login la controla la clase .active de la vista
+  // y applySession(). Se hace tras navigate() para que el primer frame
+  // ya muestre la vista definitiva sin parpadeos.
+  document.documentElement.setAttribute("data-boot", "ready");
 
   // Fase 5: cargar oposiciones accesibles del usuario y decidir si hay
   // que mostrar el selector inicial.
