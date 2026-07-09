@@ -407,8 +407,15 @@
   line-height: 1.55;
 }
 [data-theme="dark"] .explanation { background: rgba(244, 208, 63, 0.10); border-color: rgba(244, 208, 63, 0.45); }
-.quiz-actions { margin-top: 1.3rem; display: flex; gap: 0.45rem; flex-wrap: wrap; }
+.quiz-actions { margin-top: 1.3rem; display: flex; gap: 0.45rem; flex-wrap: wrap; align-items: center; }
 .quiz-actions > span { display: none; } /* spacer solo en desktop */
+.quiz-actions .btn-icon {
+  padding: 0.5rem 0.75rem;
+  min-width: 46px;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+.quiz-actions .btn-icon.fav-on { color: var(--accent, #f4d03f); }
 
 /* En móvil, con enunciados largos o explicaciones extensas, el botón
  * "Siguiente" quedaba fuera del viewport y había que hacer scroll cada
@@ -429,18 +436,17 @@
     bottom: calc(var(--bottom-nav-h, 58px) + 0.4rem);
     z-index: 10;
     margin-top: 1rem;
-    padding: 0.55rem 0.7rem;
+    padding: 0.5rem 0.7rem;
     background: var(--glass-bg);
     backdrop-filter: blur(var(--glass-blur)) saturate(160%);
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
     border: 1px solid var(--glass-border);
     border-radius: 999px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    flex-wrap: nowrap;
   }
-  /* Mientras no aparezca el "Siguiente" (respuesta aún no revelada) la
-   * barra sticky se ve un poco vacía. La dejamos igual porque los
-   * botones "Saltar / Favorita / Editar" también deben estar al alcance
-   * del pulgar. */
+  #view-quiz .quiz-actions .btn { min-height: 42px; }
+  #view-quiz .quiz-actions #btn-next { padding: 0.55rem 1.1rem; }
 }
 
 /* ─── Tiempo per-pregunta input ─── */

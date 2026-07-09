@@ -1295,6 +1295,7 @@ function renderPregunta() {
   $("#quiz-explanation").classList.add("hidden");
   $("#btn-next").classList.add("hidden");
   $("#btn-edit-q").classList.add("hidden");
+  $("#btn-skip").classList.remove("hidden");
   $("#quiz-tags-inline").classList.add("hidden");
   $("#quiz-options").innerHTML = q.options.map((o, i) => `
     <button class="option-btn" data-i="${i}">${esc(o.text)}</button>
@@ -1357,7 +1358,7 @@ function pintarBotonFavQ(activa) {
   if (!btn) return;
   btn.classList.toggle("fav-on", activa);
   btn.setAttribute("aria-pressed", activa ? "true" : "false");
-  btn.textContent = activa ? "⭐ Favorita" : "☆ Favorita";
+  btn.textContent = activa ? "⭐" : "☆";
 }
 
 async function responder(idx, saltada = false) {
@@ -1387,6 +1388,7 @@ async function responder(idx, saltada = false) {
   }
   $("#btn-next").classList.remove("hidden");
   $("#btn-edit-q").classList.remove("hidden");
+  $("#btn-skip").classList.add("hidden");
   renderQuizTagsInline(q);
 
   if (state.quiz.intentoId) {
