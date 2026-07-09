@@ -232,17 +232,17 @@ button { font: inherit; cursor: pointer; }
 .md-status.dirty { color: var(--accent-d); background: var(--accent-soft); }
 [data-theme="dark"] .md-status.dirty { color: var(--accent); }
 .md-status.saved { color: var(--ok); background: var(--ok-light); }
-.md-btn { padding: 8px 14px; }
-
-/* En móvil los botones textuales de edición (guardar/cancelar/vista
- * previa) se hacen más compactos para no saturar el header. */
-@media (max-width: 720px) {
-  .md-btn {
-    padding: 6px 10px;
-    font-size: 0.85rem;
-    min-height: 36px;
-  }
+/* Botones de edición (guardar, cancelar, vista previa): son iconos con
+ * el mismo tamaño que los del lector para no romper la línea del header.
+ * Solo el guardar recibe un tinte suave para que sea el foco visual
+ * (equivalente al viejo botón verde, pero contenido). */
+.md-icon.md-save {
+  background: var(--pri-soft);
+  color: var(--pri-d);
 }
+.md-icon.md-save:hover { background: var(--pri); color: #fff; }
+[data-theme="dark"] .md-icon.md-save { color: var(--pri); }
+[data-theme="dark"] .md-icon.md-save:hover { color: #14241D; }
 
 /* ── Barra de búsqueda in-page (aparece bajo el header al pulsar 🔍) ── */
 .md-find {
@@ -567,15 +567,23 @@ body.en-seleccion .visto-tick { pointer-events: none; opacity: .5; }
 
 
 /* ════════════════ DESKTOP (>= 900 px) ════════════════
- * El grid body + topbar + sidebar lo pinta shared/app-shell.css. Aquí
- * solo colocamos las secciones específicas de teoría (home-header,
- * breadcrumb, admin-bar, grid) en la columna "main" y ajustamos su
- * padding para que cuadre con la maquetación de /tests/. */
+ * El grid body + topbar + sidebar lo pinta shared/app-shell.css: coloca
+ * #app-content en grid-area: main. Aquí solo ajustamos el padding
+ * horizontal para que cuadre con /tests/ y damos un ancho legible al
+ * contenido de teoría en pantallas muy anchas. */
 @media (min-width: 900px) {
-  .teoria-home-header,
-  #bc,
-  #admin-bar,
-  #grid { grid-column: main; }
+  #app-content {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - var(--topbar-h));
+  }
   .grid { padding: 1.5rem; }
   .bc, .admin-bar { padding-left: 1.5rem; padding-right: 1.5rem; }
+  /* Ancla el contenido a la izquierda del área principal, sin centrar,
+   * para que la home-header, la ruta y el grid queden a la misma cota
+   * horizontal — el look "todo pegado al top-left" que espera el usuario. */
+  .teoria-home-header {
+    max-width: none;
+    margin: 0;
+  }
 }

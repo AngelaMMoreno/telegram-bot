@@ -410,6 +410,39 @@
 .quiz-actions { margin-top: 1.3rem; display: flex; gap: 0.45rem; flex-wrap: wrap; }
 .quiz-actions > span { display: none; } /* spacer solo en desktop */
 
+/* En móvil, con enunciados largos o explicaciones extensas, el botón
+ * "Siguiente" quedaba fuera del viewport y había que hacer scroll cada
+ * vez. Lo dejamos pegado al borde inferior (justo encima de la
+ * bottom-nav) mientras se está respondiendo un test. Solo aplica al
+ * quiz activo — el resumen y las demás vistas no lo necesitan. */
+@media (max-width: 899.98px) {
+  #view-quiz.active {
+    /* Deja hueco extra para que las opciones nunca queden tapadas por
+     * la barra sticky. Usa la altura real medida por el flex a través
+     * de un padding-bottom generoso. */
+    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0));
+  }
+  #view-quiz .quiz-actions {
+    position: sticky;
+    /* Encima de la bottom-nav de la app (--bottom-nav-h la define
+     * shared/header.css). */
+    bottom: calc(var(--bottom-nav-h, 58px) + 0.4rem);
+    z-index: 10;
+    margin-top: 1rem;
+    padding: 0.55rem 0.7rem;
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+    border: 1px solid var(--glass-border);
+    border-radius: 999px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  }
+  /* Mientras no aparezca el "Siguiente" (respuesta aún no revelada) la
+   * barra sticky se ve un poco vacía. La dejamos igual porque los
+   * botones "Saltar / Favorita / Editar" también deben estar al alcance
+   * del pulgar. */
+}
+
 /* ─── Tiempo per-pregunta input ─── */
 .tiempo-input-wrap {
   display: inline-flex; align-items: center; gap: 0.3rem;
