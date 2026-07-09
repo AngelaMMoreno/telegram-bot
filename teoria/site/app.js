@@ -3,13 +3,28 @@
  *
  * Lee el JWT de la cookie compartida `aprentix_token` (.aprentix.es).
  * Si no hay sesión, manda al usuario a la landing.
+ *
+ * ── Ciclo de vida (SPA merge) ────────────────────────────────────────────
+ * Envuelto en IIFE para no colisionar con las consts de la app de tests
+ * cuando el router SPA carga ambos scripts en la misma página. Expone
+ * `window.APRENTIX_TEORIA = { mount, unmount, name: 'teoria' }`. El
+ * `mount()` es idempotente y auto-se-ejecuta al cargar directamente
+ * /teoria/; el router (shared/spa-router.js) lo llama tras el swap.
+ *
+ * Todas las llamadas al backend usan ruta ABSOLUTA `/teoria/api/...`
+ * para seguir apuntando al contenedor de teoría aunque el router
+ * haya cambiado la URL a /tests/ temporalmente durante una transición.
  */
+(() => {
 'use strict';
+
+if (window.APRENTIX_TEORIA) { return; }
 
 // La landing vive en el mismo origen (aprentix.es/) ahora que todo está
 // unificado. Usar una ruta relativa evita romper el scope de la PWA.
 const LANDING_URL = '/';
 const COOKIE_NAME = 'aprentix_token';
+const API_BASE = '/teoria/';
 
 // ── Utilidades ──────────────────────────────────────────────────────────────
 
@@ -121,11 +136,16 @@ function notificarLogros(logros) {
 // ── Auth ────────────────────────────────────────────────────────────────────
 
 const TOKEN = getCookie(COOKIE_NAME);
-if (!TOKEN) {
+// El script se precarga también desde /tests/ para que el router SPA
+// pueda montar teoría sin ir a la red. En ese caso NO forzamos el
+// redirect por falta de sesión o de permiso: sólo bloqueamos cuando el
+// usuario está realmente en /teoria/. El mount() hace el chequeo final.
+const enTeoria = /^\/teoria(\/|$)/.test(location.pathname);
+if (!TOKEN && enTeoria) {
   location.href = LANDING_URL + '?next=' + encodeURIComponent(location.href);
 }
 const CLAIMS = TOKEN ? parseJwt(TOKEN) : null;
-if (CLAIMS && (!CLAIMS.roles || (!CLAIMS.roles.includes('teoria') && !CLAIMS.roles.includes('admin')))) {
+if (enTeoria && CLAIMS && (!CLAIMS.roles || (!CLAIMS.roles.includes('teoria') && !CLAIMS.roles.includes('admin')))) {
   location.href = LANDING_URL;
 }
 // Marca desde el arranque si el usuario es admin, para que el sheet del
@@ -150,7 +170,12 @@ async function api(method, url, body, isForm = false) {
       opts.body = JSON.stringify(body);
     }
   }
-  const r = await fetch(url, opts);
+  // Normaliza a ruta ABSOLUTA (/teoria/api/...) para que la petición siga
+  // llegando al contenedor de teoría aunque el router SPA haya movido la
+  // URL a /tests/ durante una transición. Aceptamos url ya absoluta
+  // ("/teoria/api/..."), o relativa histórica ("api/...").
+  const absUrl = url.startsWith('/') ? url : (API_BASE + url);
+  const r = await fetch(absUrl, opts);
   if (r.status === 401) { deleteCookie(COOKIE_NAME); location.href = LANDING_URL; return; }
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
@@ -346,7 +371,7 @@ function menuContextualFichero(evt, f, card) {
     cerrarMenu();
     if (a === 'ver') verFichero(f);
     else if (a === 'editar') { await abrirMarkdown(f.ruta, f.nombre); mdEntrarEdicion(); }
-    else if (a === 'descargar') window.open('api/ver?ruta=' + encodeURIComponent(f.ruta), '_blank');
+    else if (a === 'descargar') window.open(API_BASE + 'api/ver?ruta=' + encodeURIComponent(f.ruta), '_blank');
     else if (a === 'visto') {
       const res = await api('POST', 'api/marcar_visto', { ruta: f.ruta });
       if (res && Array.isArray(res.logros_desbloqueados)) notificarLogros(res.logros_desbloqueados);
@@ -533,7 +558,7 @@ function verFichero(f) {
     abrirMarkdown(f.ruta, f.nombre);
     return;
   }
-  window.open('api/ver?ruta=' + encodeURIComponent(f.ruta), '_blank', 'noopener');
+  window.open(API_BASE + 'api/ver?ruta=' + encodeURIComponent(f.ruta), '_blank', 'noopener');
 }
 
 // ── Visor / editor de markdown ─────────────────────────────────────────────
@@ -709,9 +734,9 @@ async function mdGuardar() {
   }
 }
 
-document.getElementById('md-back').addEventListener('click', mdCerrar);
-document.getElementById('md-editar').addEventListener('click', mdEntrarEdicion);
-document.getElementById('md-cancelar').addEventListener('click', () => {
+document.getElementById('md-back')?.addEventListener('click', mdCerrar);
+document.getElementById('md-editar')?.addEventListener('click', mdEntrarEdicion);
+document.getElementById('md-cancelar')?.addEventListener('click', () => {
   if (MD.creando) { mdCerrar(); return; }
   if (mdEd().value !== MD.original &&
       !confirm('Descartar los cambios sin guardar?')) return;
@@ -721,11 +746,11 @@ document.getElementById('md-cancelar').addEventListener('click', () => {
   mdMostrarBotones();
   mdMarcarEstado();
 });
-document.getElementById('md-guardar').addEventListener('click', mdGuardar);
-document.getElementById('md-preview-toggle').addEventListener('click', () => {
+document.getElementById('md-guardar')?.addEventListener('click', mdGuardar);
+document.getElementById('md-preview-toggle')?.addEventListener('click', () => {
   mdBody().classList.toggle('show-preview');
 });
-document.getElementById('md-editor').addEventListener('input', mdActualizarPreview);
+document.getElementById('md-editor')?.addEventListener('input', mdActualizarPreview);
 document.addEventListener('keydown', (e) => {
   if (mdView().classList.contains('hidden')) return;
   if (e.key === 'Escape') {
@@ -875,12 +900,12 @@ function cerrarBuscador() {
   limpiarBusqueda();
 }
 
-document.getElementById('md-buscar').addEventListener('click', abrirBuscadorDoc);
-document.getElementById('md-find-cerrar').addEventListener('click', cerrarBuscador);
-document.getElementById('md-find-input').addEventListener('input', (e) => {
+document.getElementById('md-buscar')?.addEventListener('click', abrirBuscadorDoc);
+document.getElementById('md-find-cerrar')?.addEventListener('click', cerrarBuscador);
+document.getElementById('md-find-input')?.addEventListener('input', (e) => {
   aplicarBusqueda(e.target.value);
 });
-document.getElementById('md-find-input').addEventListener('keydown', (e) => {
+document.getElementById('md-find-input')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();
     saltoBusqueda(e.shiftKey ? -1 : 1);
@@ -889,8 +914,8 @@ document.getElementById('md-find-input').addEventListener('keydown', (e) => {
     cerrarBuscador();
   }
 });
-document.getElementById('md-find-prev').addEventListener('click', () => saltoBusqueda(-1));
-document.getElementById('md-find-next').addEventListener('click', () => saltoBusqueda(1));
+document.getElementById('md-find-prev')?.addEventListener('click', () => saltoBusqueda(-1));
+document.getElementById('md-find-next')?.addEventListener('click', () => saltoBusqueda(1));
 
 /* ── Subrayado del usuario ───────────────────────────────────────────
  * Guardamos offsets sobre el textContent completo del render. Al abrir
@@ -1019,8 +1044,8 @@ function borrarSubrayado(mark) {
   toast('Subrayado quitado');
 }
 
-document.getElementById('md-subrayar').addEventListener('click', toggleModoSubrayar);
-document.getElementById('md-marcador').addEventListener('click', toggleMarcadorActual);
+document.getElementById('md-subrayar')?.addEventListener('click', toggleModoSubrayar);
+document.getElementById('md-marcador')?.addEventListener('click', toggleMarcadorActual);
 
 // Captura selección de texto en el render solo si el modo está activo.
 mdOut().addEventListener('mouseup', () => {
@@ -1037,7 +1062,7 @@ mdOut().addEventListener('click', (e) => {
 });
 
 /* ── Kebab "Más" del header del visor ────────────────────────────── */
-document.getElementById('md-mas').addEventListener('click', (e) => {
+document.getElementById('md-mas')?.addEventListener('click', (e) => {
   e.stopPropagation();
   const menu = document.getElementById('md-mas-menu');
   const btn = document.getElementById('md-mas');
@@ -1052,7 +1077,7 @@ document.addEventListener('click', (e) => {
     document.getElementById('md-mas').setAttribute('aria-expanded', 'false');
   }
 });
-document.getElementById('md-limpiar-subrayados').addEventListener('click', () => {
+document.getElementById('md-limpiar-subrayados')?.addEventListener('click', () => {
   if (!MD.ruta) return;
   if (!confirm('¿Quitar todos los subrayados de este documento?')) return;
   setSubrayados(MD.ruta, []);
@@ -1190,19 +1215,26 @@ document.addEventListener('visibilitychange', () => {
   if (getCookie(COOKIE_NAME) !== TOKEN) location.reload();
 });
 
-window.addEventListener('hashchange', () => cargar(rutaDeHash()));
+// Sólo procesamos hashchange cuando la app de teoría está activa (el
+// script vive tanto en /teoria/ como en /tests/ mientras el router SPA
+// no ha activado el modo, y no queremos que un cambio de hash en tests
+// dispare un cargar() que asalte al #grid de tests). */
+window.addEventListener('hashchange', () => {
+  if (!/^\/teoria(\/|$)/.test(location.pathname)) return;
+  cargar(rutaDeHash());
+});
 
-document.getElementById('btn-logout').addEventListener('click', () => {
+document.getElementById('btn-logout')?.addEventListener('click', () => {
   deleteCookie(COOKIE_NAME);
   location.href = LANDING_URL;
 });
-document.getElementById('btn-nueva-carpeta').addEventListener('click', pedirNuevaCarpeta);
-document.getElementById('btn-nuevo-md').addEventListener('click', pedirNuevoMarkdown);
-document.getElementById('file-input').addEventListener('change', (e) => {
+document.getElementById('btn-nueva-carpeta')?.addEventListener('click', pedirNuevaCarpeta);
+document.getElementById('btn-nuevo-md')?.addEventListener('click', pedirNuevoMarkdown);
+document.getElementById('file-input')?.addEventListener('change', (e) => {
   subirFicheros(e.target.files);
   e.target.value = '';
 });
-document.getElementById('grid').addEventListener('click', onGridAction);
+document.getElementById('grid')?.addEventListener('click', onGridAction);
 
 /* ── Bottom-nav / sheet "Más" (aprentix:nav) ────────────────────────
  * <aprentix-header> emite CustomEvents con detail.id cuando el usuario
@@ -1374,15 +1406,10 @@ function pintarUsuario(nombre) {
   if (nameEl) nameEl.textContent = uname;
   if (avEl) avEl.textContent = (uname[0] || '?').toUpperCase();
 }
-pintarUsuario('…');
-api('GET', 'api/sesion')
-  .then(s => pintarUsuario(s && s.username))
-  .catch(() => pintarUsuario(''));
-
-cargar(ESTADO.ruta).catch(err => {
-  document.getElementById('grid').innerHTML =
-    `<div class="empty" style="grid-column:1/-1"><div class="empty-ico">⚠️</div><div>${err.message}</div></div>`;
-});
+// El arranque real vive en mount() al final del fichero. No pintamos
+// nada aquí porque este script también se precarga desde /tests/ y no
+// queremos que un pintarUsuario('…') sobrescriba el nombre del usuario
+// que tests ya haya rellenado en la cabecera compartida.
 
 
 /* ═════════════════════════════════════════════════════════════════════════
@@ -1780,3 +1807,46 @@ async function abrirMoverDialogo(rutas) {
     } catch (e) { toast(`⚠️ ${e.message}`); }
   };
 }
+
+
+/* ── Arranque ─────────────────────────────────────────────────────────────
+ * mount() es idempotente: la llama el auto-mount al final del IIFE si la
+ * URL es /teoria/ (comportamiento clásico) o el router SPA
+ * (shared/spa-router.js) tras un swap.  Se queda en la raíz por defecto;
+ * si el usuario venía navegando por carpetas y vuelve a teoría, el
+ * hashchange (listener de arriba) restaura la ruta. */
+async function mount() {
+  // Reconfigura la cabecera y ejecuta la primera carga.
+  pintarUsuario('…');
+  try {
+    const s = await api('GET', 'api/sesion');
+    pintarUsuario(s && s.username);
+  } catch { pintarUsuario(''); }
+  try {
+    await cargar(ESTADO.ruta);
+  } catch (err) {
+    const g = document.getElementById('grid');
+    if (g) g.innerHTML =
+      `<div class="empty" style="grid-column:1/-1"><div class="empty-ico">⚠️</div><div>${err.message}</div></div>`;
+  }
+}
+
+/* Cierra sheets/modales que puedan quedar abiertos al abandonar teoría
+ * (no destruimos estado — al volver, `cargar()` recargará el grid). */
+function unmount() {
+  document.querySelectorAll('.aprentix-sheet.open').forEach(s => {
+    s.classList.remove('open');
+    s.classList.add('hidden');
+  });
+  document.body.classList.remove('sheet-open');
+}
+
+// Expone la API al router SPA.
+window.APRENTIX_TEORIA = { mount, unmount, name: 'teoria' };
+
+// Auto-mount cuando el usuario ha cargado /teoria/ directamente.
+if (/^\/teoria(\/|$)/.test(location.pathname)) {
+  mount().catch(err => console.error('[APRENTIX_TEORIA] mount error', err));
+}
+
+})();

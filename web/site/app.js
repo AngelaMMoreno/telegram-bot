@@ -1,9 +1,28 @@
 /* ============================================================================
  * Aprentix · SPA contra PostgREST.  Sin Flask, sin adaptadores: el JS llama
  * directamente a /api/... (Caddy reenvía a PostgREST) y a /api/rpc/...
+ *
+ * ── Ciclo de vida (SPA merge) ────────────────────────────────────────────
+ * Este fichero se puede cargar desde /tests/ o desde /teoria/. Al primer
+ * load registra todos los helpers y listeners a nivel de document (los
+ * elementos concretos se atacan por delegación con e.target.closest),
+ * y expone `window.APRENTIX_TESTS = { mount, name: 'tests' }`.  El
+ * router (shared/spa-router.js) llama `mount()` para montar la app en
+ * el DOM actual y `unmount()` para dejarla dormida.  Si el usuario
+ * carga /tests/ directamente sin pasar por el router, hacemos
+ * auto-mount al final del IIFE.
+ *
+ * Todas las llamadas al backend van a `/tests/api/...` con ruta
+ * ABSOLUTA para que sigan funcionando aunque el router active esta
+ * app estando la URL del navegador en /teoria/ durante una transición.
  * ========================================================================== */
 (() => {
 "use strict";
+
+// Idempotencia: si el router ya cargó este script (o el navegador lo hizo
+// dos veces), no volvemos a registrar helpers ni listeners.  El mount()
+// expuesto en la ventana es el mismo del load anterior.
+if (window.APRENTIX_TESTS) { return; }
 
 /* ── Sesión compartida (cookie en .aprentix.es) ─────────────────────────── */
 const COOKIE_NAME = "aprentix_token";
@@ -183,10 +202,11 @@ async function pg(path, opts = {}) {
   if (state.jwt) headers["Authorization"] = "Bearer " + state.jwt;
   if (opts.headers) Object.assign(headers, opts.headers);
 
-  // Ruta relativa: resuelve contra el <base href> (/tests/), así el
-  // request va a /tests/api/... y el Caddy de la landing lo desnuda hasta
-  // /api/... en el contenedor web, que reenvía a PostgREST.
-  const res = await fetch("api" + path, {
+  // Ruta ABSOLUTA (/tests/api/...) para que la app siga apuntando al
+  // contenedor web aunque el router SPA haya mudado la URL del
+  // navegador a /teoria/ durante una transición. El Caddy de la
+  // landing desnuda /tests/ y reenvía /api/... a PostgREST.
+  const res = await fetch("/tests/api" + path, {
     method: opts.method || "GET",
     headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
@@ -391,13 +411,13 @@ $$(".tab").forEach(tab => tab.addEventListener("click", () => {
     p.id === ("form-" + tab.dataset.tab)));
 }));
 
-$("#form-login").addEventListener("submit", async e => {
+$("#form-login")?.addEventListener("submit", async e => {
   e.preventDefault();
   try { await login($("#login-user").value.trim(), $("#login-pass").value); }
   catch (err) { toast(err.message); }
 });
 
-$("#form-register").addEventListener("submit", async e => {
+$("#form-register")?.addEventListener("submit", async e => {
   e.preventDefault();
   const p1 = $("#reg-pass").value, p2 = $("#reg-pass2").value;
   if (p1 !== p2) return toast("Las contraseñas no coinciden");
@@ -703,7 +723,7 @@ $("#tests-list")?.addEventListener("click", (e) => {
 // La X y el cierre por Esc/click-backdrop los gestiona <ap-modal closable>.
 
 /* Listeners de los nuevos controles */
-$("#tests-vis-chips").addEventListener("click", e => {
+$("#tests-vis-chips")?.addEventListener("click", e => {
   const chip = e.target.closest(".chip");
   if (!chip) return;
   state.filtroVisTests = chip.dataset.vis;
@@ -712,7 +732,7 @@ $("#tests-vis-chips").addEventListener("click", e => {
   loadTests();
 });
 
-$("#tests-orden").addEventListener("change", e => {
+$("#tests-orden")?.addEventListener("change", e => {
   state.ordenTests = e.target.value;
   state.testsPage = 1;
   loadTests();
@@ -769,19 +789,19 @@ function renderPagination(r) {
   $("#tests-pagination").innerHTML = html;
 }
 
-$("#tests-filter").addEventListener("input", e => {
+$("#tests-filter")?.addEventListener("input", e => {
   state.filtroTests = e.target.value;
   renderTests();
 });
 
-$("#tests-pagination").addEventListener("click", e => {
+$("#tests-pagination")?.addEventListener("click", e => {
   const b = e.target.closest(".page");
   if (!b) return;
   state.testsPage = parseInt(b.dataset.page, 10);
   loadTests();
 });
 
-$("#tests-list").addEventListener("click", e => {
+$("#tests-list")?.addEventListener("click", e => {
   // El botón de estadísticas está dentro de .test-row; NO debe abrir el
   // detalle del test — se maneja en su propio listener, aquí bailamos.
   if (e.target.closest(".stats-btn")) return;
@@ -880,7 +900,7 @@ async function guardarEtiquetasTest() {
   } catch (e) { toast(e.message); }
 }
 
-$("#test-detail-questions").addEventListener("click", e => {
+$("#test-detail-questions")?.addEventListener("click", e => {
   const btn = e.target.closest("[data-action=edit-q]");
   if (!btn) return;
   const li = e.target.closest("[data-pid]");
@@ -975,7 +995,7 @@ function pintarModalTagChips() {
   }
 }
 
-$("#pq-tags-chips").addEventListener("click", e => {
+$("#pq-tags-chips")?.addEventListener("click", e => {
   const rm = e.target.closest("[data-rm]");
   if (!rm || !state.editingQ) return;
   state.editingQ.etiquetas = (state.editingQ.etiquetas || [])
@@ -983,7 +1003,7 @@ $("#pq-tags-chips").addEventListener("click", e => {
   pintarModalTagChips();
 });
 
-$("#pq-tag-add").addEventListener("keydown", e => {
+$("#pq-tag-add")?.addEventListener("keydown", e => {
   if (e.key !== "Enter") return;
   e.preventDefault();
   if (!state.editingQ) return;
@@ -1018,12 +1038,12 @@ function cerrarModal() {
 }
 
 // La X del modal-pregunta la pinta y gestiona <ap-modal closable>.
-$("#pq-cancelar").addEventListener("click", cerrarModal);
+$("#pq-cancelar")?.addEventListener("click", cerrarModal);
 // Si el usuario cierra por Esc, X o backdrop en vez de por "Cancelar",
 // también hay que resetear el estado de edición.
-$("#modal-pregunta").addEventListener("ap-close", () => { state.editingQ = null; });
+$("#modal-pregunta")?.addEventListener("ap-close", () => { state.editingQ = null; });
 
-$("#form-pregunta").addEventListener("submit", async e => {
+$("#form-pregunta")?.addEventListener("submit", async e => {
   e.preventDefault();
   if (!state.editingQ) return;
   // Parsea las opciones: cada línea es una opción; "*" al principio = correcta.
@@ -1063,7 +1083,7 @@ $("#form-pregunta").addEventListener("submit", async e => {
   } catch (err) { toast(err.message); }
 });
 
-$("#pq-borrar").addEventListener("click", async () => {
+$("#pq-borrar")?.addEventListener("click", async () => {
   if (!state.editingQ) return;
   if (!confirm("¿Borrar esta pregunta? Desaparecerá de TODOS los tests donde aparezca.")) return;
   try {
@@ -1077,7 +1097,7 @@ $("#pq-borrar").addEventListener("click", async () => {
 });
 
 /* ── Editar desde el quiz (botón visible tras responder) ── */
-$("#btn-edit-q").addEventListener("click", () => {
+$("#btn-edit-q")?.addEventListener("click", () => {
   if (!state.quiz) return;
   const q = state.quiz.questions[state.qi];
   editarPorId(q.id, async () => {
@@ -1099,7 +1119,7 @@ $("#btn-edit-q").addEventListener("click", () => {
   });
 });
 
-$("#btn-start-test").addEventListener("click", async () => {
+$("#btn-start-test")?.addEventListener("click", async () => {
   if (!state.currentTest) return;
   await iniciarConPosibleReanudacion({
     tipo: "quiz",
@@ -1195,7 +1215,7 @@ function iniciarQuizDesdeReanudacion(d) {
   toast(`Reanudado: ${d.correct} aciertos, ${d.wrong} fallos previos`);
 }
 
-$("#btn-delete-test").addEventListener("click", () => {
+$("#btn-delete-test")?.addEventListener("click", () => {
   if (!state.currentTestId) return;
   $("#modal-borrar-test").classList.remove("hidden");
 });
@@ -1206,9 +1226,9 @@ function cerrarModalBorrarTest() {
 
 // La X del header y el cierre con Esc / click en el backdrop los pinta y
 // gestiona <ap-modal closable>; aquí solo el botón textual "Cancelar".
-$("#btn-borrar-test-cancelar").addEventListener("click", cerrarModalBorrarTest);
+$("#btn-borrar-test-cancelar")?.addEventListener("click", cerrarModalBorrarTest);
 
-$("#btn-borrar-solo-test").addEventListener("click", async () => {
+$("#btn-borrar-solo-test")?.addEventListener("click", async () => {
   if (!state.currentTestId) return;
   try {
     await pg("/tests?id=eq." + state.currentTestId, { method: "DELETE" });
@@ -1218,7 +1238,7 @@ $("#btn-borrar-solo-test").addEventListener("click", async () => {
   } catch (e) { toast(e.message); }
 });
 
-$("#btn-borrar-test-y-preguntas").addEventListener("click", async () => {
+$("#btn-borrar-test-y-preguntas")?.addEventListener("click", async () => {
   if (!state.currentTestId) return;
   if (!confirm("Vas a borrar el test y todas las preguntas EXCLUSIVAS de este test. Las preguntas compartidas con otros tests se mantienen. ¿Continuar?")) return;
   try {
@@ -1330,20 +1350,20 @@ function cancelarTimerQuiz() {
   if (quizTimer) { clearInterval(quizTimer); quizTimer = null; }
 }
 
-$("#quiz-options").addEventListener("click", e => {
+$("#quiz-options")?.addEventListener("click", e => {
   const btn = e.target.closest(".option-btn");
   if (!btn || state.quiz.answered) return;
   responder(parseInt(btn.dataset.i, 10));
 });
 
-$("#btn-skip").addEventListener("click", () => responder(null, true));
-$("#btn-next").addEventListener("click", () => {
+$("#btn-skip")?.addEventListener("click", () => responder(null, true));
+$("#btn-next")?.addEventListener("click", () => {
   state.qi++;
   if (state.qi >= state.quiz.questions.length) finalizarQuiz();
   else renderPregunta();
 });
 
-$("#btn-fav-q").addEventListener("click", async () => {
+$("#btn-fav-q")?.addEventListener("click", async () => {
   const q = state.quiz.questions[state.qi];
   const btn = $("#btn-fav-q");
   if (btn.disabled) return;
@@ -1475,14 +1495,14 @@ async function loadFallos() {
   state.lastFallos = d.questions || [];
 }
 
-$("#list-fallos").addEventListener("click", e => {
+$("#list-fallos")?.addEventListener("click", e => {
   const btn = e.target.closest("[data-action=edit-q]");
   if (!btn) return;
   const li = e.target.closest("[data-pid]");
   if (li) editarPorId(li.dataset.pid, loadFallos);
 });
 
-$("#btn-start-fallos").addEventListener("click", async () => {
+$("#btn-start-fallos")?.addEventListener("click", async () => {
   if (!state.lastFallos || !state.lastFallos.length)
     return toast("No tienes fallos");
   await iniciarConPosibleReanudacion({
@@ -1508,14 +1528,14 @@ async function loadFavoritas() {
   state.lastFav = d.questions || [];
 }
 
-$("#list-fav").addEventListener("click", e => {
+$("#list-fav")?.addEventListener("click", e => {
   const btn = e.target.closest("[data-action=edit-q]");
   if (!btn) return;
   const li = e.target.closest("[data-pid]");
   if (li) editarPorId(li.dataset.pid, loadFavoritas);
 });
 
-$("#btn-start-fav").addEventListener("click", async () => {
+$("#btn-start-fav")?.addEventListener("click", async () => {
   if (!state.lastFav || !state.lastFav.length) return toast("Sin favoritas");
   await iniciarConPosibleReanudacion({
     tipo: "test_favoritas",
@@ -1526,7 +1546,7 @@ $("#btn-start-fav").addEventListener("click", async () => {
 });
 
 /* ── Buscador (vista) ── */
-$("#buscar-input").addEventListener("input", e => {
+$("#buscar-input")?.addEventListener("input", e => {
   clearTimeout(state._buscarDebounce);
   state._buscarDebounce = setTimeout(() => runBuscarView(e.target.value.trim()), 250);
 });
@@ -1560,7 +1580,7 @@ async function runBuscarView(q) {
   } catch (e) { toast(e.message); }
 }
 
-$("#btn-tematico").addEventListener("click", async () => {
+$("#btn-tematico")?.addEventListener("click", async () => {
   if (state.filtroEtiquetasBuscar.length === 0) return toast("Selecciona al menos una etiqueta");
   const n = parseInt($("#buscar-tem-n").value, 10);
   if (!n || n < 1) return toast("Indica un nº de preguntas válido");
@@ -1581,7 +1601,7 @@ $("#btn-tematico").addEventListener("click", async () => {
   }
 });
 
-$("#buscar-results").addEventListener("click", e => {
+$("#buscar-results")?.addEventListener("click", e => {
   const btn = e.target.closest("[data-action=edit-q]");
   if (!btn) return;
   const li = e.target.closest("[data-pid]");
@@ -1589,13 +1609,13 @@ $("#buscar-results").addEventListener("click", e => {
 });
 
 /* ── Subir test ── */
-$("#upload-file").addEventListener("change", async e => {
+$("#upload-file")?.addEventListener("change", async e => {
   const f = e.target.files[0];
   if (!f) return;
   $("#upload-textarea").value = await f.text();
 });
 
-$("#btn-upload").addEventListener("click", async () => {
+$("#btn-upload")?.addEventListener("click", async () => {
   let parsed;
   try { parsed = JSON.parse($("#upload-textarea").value); }
   catch (e) { return toast("JSON inválido"); }
@@ -1661,7 +1681,7 @@ async function loadEtiquetas() {
   `).join("") || "<p class='muted'>Crea tu primera etiqueta para que el auto-tagger empiece a clasificar.</p>";
 }
 
-$("#form-etiqueta").addEventListener("submit", async e => {
+$("#form-etiqueta")?.addEventListener("submit", async e => {
   e.preventDefault();
   const palabras = $("#et-palabras").value.split(",")
     .map(s => s.trim().toLowerCase()).filter(Boolean);
@@ -1680,7 +1700,7 @@ $("#form-etiqueta").addEventListener("submit", async e => {
   } catch (e) { toast(e.message); }
 });
 
-$("#etiquetas-list").addEventListener("click", async e => {
+$("#etiquetas-list")?.addEventListener("click", async e => {
   const del = e.target.closest("[data-del]");
   const edit = e.target.closest("[data-edit]");
   if (del) {
@@ -1705,8 +1725,8 @@ $("#etiquetas-list").addEventListener("click", async e => {
 /* Importación masiva de etiquetas: JSON array con {nombre, descripcion?,
    palabras_clave?, padre?}. La RPC ordena por padres, así que se puede
    subir el árbol entero en un solo fichero. */
-$("#btn-et-import").addEventListener("click", () => $("#et-import-file").click());
-$("#et-import-file").addEventListener("change", async e => {
+$("#btn-et-import")?.addEventListener("click", () => $("#et-import-file").click());
+$("#et-import-file")?.addEventListener("change", async e => {
   const file = e.target.files[0];
   if (!file) return;
   try {
@@ -1733,7 +1753,7 @@ $("#et-import-file").addEventListener("change", async e => {
   finally { e.target.value = ""; }
 });
 
-$("#btn-reclasificar").addEventListener("click", async () => {
+$("#btn-reclasificar")?.addEventListener("click", async () => {
   if (!confirm("Esto recorrerá TODOS los tests y preguntas, etiquetándolos por nombre, palabras clave y similitud vectorial. ¿Seguir?")) return;
   try {
     $("#btn-reclasificar").disabled = true;
@@ -1792,7 +1812,7 @@ async function actualizarEtiquetasPregunta(qId, nuevas) {
   await rpc("set_etiquetas_pregunta", { p_id: qId, p_etiquetas: nuevas });
 }
 
-$("#quiz-tags-chips").addEventListener("click", async e => {
+$("#quiz-tags-chips")?.addEventListener("click", async e => {
   const rm = e.target.closest("[data-rm]");
   if (!rm || !state.quiz) return;
   const q = state.quiz.questions[state.qi];
@@ -1805,7 +1825,7 @@ $("#quiz-tags-chips").addEventListener("click", async e => {
   } catch (err) { toast(err.message); }
 });
 
-$("#quiz-tag-add").addEventListener("keydown", async e => {
+$("#quiz-tag-add")?.addEventListener("keydown", async e => {
   if (e.key !== "Enter") return;
   e.preventDefault();
   if (!state.quiz) return;
@@ -1873,9 +1893,9 @@ function renderUsuarios() {
   }).join("") || "<p class='muted'>Sin usuarios.</p>";
 }
 
-$("#usuarios-filtro").addEventListener("input", renderUsuarios);
+$("#usuarios-filtro")?.addEventListener("input", renderUsuarios);
 
-$("#usuarios-list").addEventListener("click", e => {
+$("#usuarios-list")?.addEventListener("click", e => {
   const row = e.target.closest(".usuario-row");
   if (!row) return;
   const u = state.usuariosCache.find(x => x.id === row.dataset.id);
@@ -1984,7 +2004,7 @@ function cerrarModalUsuario() {
 // La X la pinta y gestiona <ap-modal closable>.
 // El listener de "ap-close" recarga la lista de usuarios al cerrar el modal
 // desde el propio componente (Esc, X o click en backdrop).
-$("#modal-usuario").addEventListener("ap-close", renderUsuarios);
+$("#modal-usuario")?.addEventListener("ap-close", renderUsuarios);
 
 
 /* ── Repaso espaciado ────────────────────────────────────────────────────
@@ -2226,9 +2246,20 @@ document.addEventListener("visibilitychange", () => {
   if (cookieNow !== state.jwt) location.reload();
 });
 
-/* ── Arranque ───────────────────────────────────────────────────────────── */
-inicializarInputsTiempo();
-(async () => {
+/* ── Arranque ─────────────────────────────────────────────────────────────
+ * `mount()` es la única función que arranca la app.  Se llama en dos
+ * situaciones:
+ *  1) Auto-mount al final de este IIFE cuando el usuario ha cargado
+ *     /tests/ directamente (comportamiento histórico).
+ *  2) El router (shared/spa-router.js) la llama tras un swap SPA para
+ *     que la app se vuelva a arrancar sobre el nuevo DOM.
+ *
+ * Es idempotente: si se llama dos veces seguidas, el segundo navigate()
+ * detecta que la vista ya está activa y no recarga datos.  Pero limpia
+ * cachés que puedan haberse quedado obsoletas para no arrastrar estado
+ * de una sesión anterior. */
+async function mount() {
+  inicializarInputsTiempo();
   await refrescarUsuarioDesdeJwt();
   if (state.jwt && localStorage.getItem("jwt")) {
     // Migración legada: token en localStorage → cookie compartida.
@@ -2257,7 +2288,26 @@ inicializarInputsTiempo();
   // suscripción con el backend (por si se creó en otro dispositivo o
   // el navegador rotó las claves).
   if (state.jwt && state.user) sincronizarPushSilencioso();
-})();
+}
+
+/* `unmount()` no destruye el estado (para volver rápido a Tests si el
+ * usuario alterna), pero cierra sheets/modales que quedaran abiertos
+ * para que no reaparezcan en teoría tras el swap. */
+function unmount() {
+  document.querySelectorAll('.aprentix-sheet.open').forEach(s => {
+    s.classList.remove('open');
+    s.classList.add('hidden');
+  });
+  document.body.classList.remove('sheet-open');
+}
+
+// Expone la API al router SPA (shared/spa-router.js).
+window.APRENTIX_TESTS = { mount, unmount, name: 'tests' };
+
+// Auto-mount al cargar directamente /tests/ (fuera del router).
+if (/^\/tests(\/|$)/.test(location.pathname)) {
+  mount().catch(err => console.error('[APRENTIX_TESTS] mount error', err));
+}
 
 
 /* ═════════════════════════════════════════════════════════════════════════

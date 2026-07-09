@@ -277,6 +277,13 @@
 <!-- Notificaciones de logros: pila fija arriba, poblada por notificarLogros(). -->
 <div id="logros-notif-stack" class="logros-notif-stack" aria-live="polite" aria-atomic="false"></div>
 
+<!-- App de teoría: se auto-monta si estamos en /teoria/ (guard interno). -->
 <script src="app.js"></script>
+<!-- App de tests: se precarga para que el router SPA la pueda montar sin
+     ir a la red al pulsar "Tests". Su guard interno evita registrar
+     handlers dos veces, y su auto-mount sólo dispara en /tests/. -->
+<script src="/tests/app.js" defer></script>
+<!-- Router SPA compartido con /tests/. -->
+<script src="shared/spa-router.js" defer></script>
 </body>
 </html>
