@@ -129,6 +129,12 @@
   }
 
   // ── HTML del modal ─────────────────────────────────────────────────────
+  // Cada grupo (Sistema, Tests) es un <details> plegable. Se abren al pulsar
+  // el título — así en móvil el modal se ve compacto y el usuario decide qué
+  // sección desplegar, en vez de ver todas las opciones a la vez.
+  const CHEVRON = '<svg class="config-chevron" viewBox="0 0 24 24" fill="none" '
+    + 'stroke="currentColor" stroke-width="2.5" stroke-linecap="round" '
+    + 'stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>';
   const MODAL_HTML = `
 <div id="aprentix-config-modal" class="modal hidden" role="dialog" aria-label="Configuración">
   <div class="modal-card">
@@ -138,35 +144,42 @@
     </header>
     <div class="modal-body">
 
-      <section class="config-group">
-        <h4 class="config-group-title">Sistema</h4>
+      <details class="config-group" id="ap-cfg-sistema-group">
+        <summary class="config-group-title">
+          <span class="config-group-label">Sistema</span>
+          ${CHEVRON}
+        </summary>
+        <div class="config-group-body">
+          <div class="config-section">
+            <h5>Apariencia</h5>
+            <div class="theme-toggle">
+              <label class="theme-option"><input type="radio" name="ap-theme" value="light"><span>☀️ Claro</span></label>
+              <label class="theme-option"><input type="radio" name="ap-theme" value="dark"><span>🌙 Oscuro</span></label>
+              <label class="theme-option"><input type="radio" name="ap-theme" value="auto"><span>🖥️ Sistema</span></label>
+            </div>
+          </div>
 
-        <div class="config-section">
-          <h5>Apariencia</h5>
-          <div class="theme-toggle">
-            <label class="theme-option"><input type="radio" name="ap-theme" value="light"><span>☀️ Claro</span></label>
-            <label class="theme-option"><input type="radio" name="ap-theme" value="dark"><span>🌙 Oscuro</span></label>
-            <label class="theme-option"><input type="radio" name="ap-theme" value="auto"><span>🖥️ Sistema</span></label>
+          <div class="config-section" id="ap-cfg-push-wrap">
+            <h5>Notificaciones</h5>
+            <p class="muted small">
+              Avisos de la aplicación en este dispositivo: repasos vencidos,
+              días sin entrar, novedades, etc. Puedes desactivarlas cuando quieras.
+            </p>
+            <div class="push-actions">
+              <button class="btn btn-pri" id="ap-cfg-push-on">🔔 Activar notificaciones</button>
+              <button class="btn btn-ghost btn-ghost-dark hidden" id="ap-cfg-push-off">🔕 Desactivar</button>
+            </div>
+            <p class="muted small hidden" id="ap-cfg-push-status"></p>
           </div>
         </div>
+      </details>
 
-        <div class="config-section" id="ap-cfg-push-wrap">
-          <h5>Notificaciones</h5>
-          <p class="muted small">
-            Avisos de la aplicación en este dispositivo: repasos vencidos,
-            días sin entrar, novedades, etc. Puedes desactivarlas cuando quieras.
-          </p>
-          <div class="push-actions">
-            <button class="btn btn-pri" id="ap-cfg-push-on">🔔 Activar notificaciones</button>
-            <button class="btn btn-ghost btn-ghost-dark hidden" id="ap-cfg-push-off">🔕 Desactivar</button>
-          </div>
-          <p class="muted small hidden" id="ap-cfg-push-status"></p>
-        </div>
-      </section>
-
-      <section class="config-group" id="ap-cfg-tests-group">
-        <h4 class="config-group-title">Tests</h4>
-        <div id="ap-cfg-tests-body">
+      <details class="config-group" id="ap-cfg-tests-group">
+        <summary class="config-group-title">
+          <span class="config-group-label">Tests</span>
+          ${CHEVRON}
+        </summary>
+        <div class="config-group-body" id="ap-cfg-tests-body">
           <div class="config-section">
             <h5>Ritmo de repaso</h5>
             <p class="muted small">
@@ -194,7 +207,7 @@
           🔒 No tienes acceso a los tests. Pídele al administrador que te dé acceso
           para configurar el ritmo de repaso.
         </p>
-      </section>
+      </details>
 
     </div>
   </div>
