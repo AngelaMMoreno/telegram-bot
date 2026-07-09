@@ -24,13 +24,38 @@ aprentix-header { display: contents; }
 @view-transition { navigation: auto; }
 .topbar     { view-transition-name: aprentix-topbar; }
 .bottom-nav { view-transition-name: aprentix-bottomnav; }
-/* Duración algo más corta que el default (~250 ms) para que se sienta
- * ligero. Respetamos prefers-reduced-motion apagando la animación. */
-::view-transition-group(root),
+/* Cross-fade suave y gradual entre tests y teoría. El contenido central
+ * (root) hace fade-out/in encabalgado; la topbar y la bottom-nav son
+ * elementos persistentes que morfan de estilo, así que llevan una
+ * duración un poco más corta y la misma curva para que todo el conjunto
+ * se sienta coherente. Respetamos prefers-reduced-motion. */
+::view-transition-group(root) {
+  animation-duration: 420ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+::view-transition-old(root) {
+  animation: apx-fade-out 420ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+::view-transition-new(root) {
+  animation: apx-fade-in 420ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
 ::view-transition-group(aprentix-topbar),
-::view-transition-group(aprentix-bottomnav) { animation-duration: 180ms; }
+::view-transition-group(aprentix-bottomnav) {
+  animation-duration: 320ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes apx-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+@keyframes apx-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(root),
+  ::view-transition-old(root),
+  ::view-transition-new(root),
   ::view-transition-group(aprentix-topbar),
   ::view-transition-group(aprentix-bottomnav) { animation-duration: 0.01ms; }
 }
