@@ -5,22 +5,51 @@
  * bloque "reset repasos". Se comparten entre landing, tests y teoría.
  */
 
-.config-group + .config-group {
-  margin-top: 22px;
-  padding-top: 18px;
-  border-top: 2px solid var(--border);
+/*
+ * Grupos plegables (Sistema, Tests). Usamos <details>/<summary> nativos
+ * — el usuario decide qué sección abrir. En móvil esto evita que "Ritmo
+ * de repaso" y "Resetear repaso" ocupen toda la pantalla siempre.
+ */
+.config-group {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius, 12px);
+  background: var(--bg-panel);
+  overflow: hidden;
 }
+.config-group + .config-group { margin-top: 10px; }
+.config-group[open] { border-color: var(--pri); }
+
 .config-group-title {
-  font-size: 11px; font-weight: 800; letter-spacing: 0.08em;
+  list-style: none;
+  cursor: pointer;
+  padding: 14px 16px;
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; font-weight: 700; letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--pri-d);
-  margin: 0 0 14px;
-  display: inline-flex; align-items: center; gap: 6px;
+  user-select: none;
 }
+.config-group-title::-webkit-details-marker { display: none; }
 .config-group-title::before {
   content: ""; display: inline-block;
-  width: 4px; height: 14px;
+  width: 4px; height: 16px;
   border-radius: 999px;
   background: linear-gradient(180deg, var(--grad-a), var(--grad-b));
+  flex: 0 0 auto;
+}
+.config-group-label { flex: 1 1 auto; }
+.config-chevron {
+  width: 18px; height: 18px;
+  color: var(--txt-soft);
+  transition: transform 0.2s ease;
+  flex: 0 0 auto;
+}
+.config-group[open] > .config-group-title .config-chevron {
+  transform: rotate(180deg);
+}
+.config-group-title:hover { background: var(--bg-soft); }
+.config-group-body {
+  padding: 4px 16px 16px;
+  border-top: 1px solid var(--border);
 }
 [data-theme="dark"] .config-group-title { color: var(--pri); }
 .config-section h5 {
@@ -46,7 +75,15 @@
   color: var(--txt); cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
-.theme-option input { display: none; }
+/* En tests, `.modal input { display: block; width: 100% }` pisaría el input
+ * si sólo cualificáramos por `.theme-option input`. Reforzamos con el modal
+ * de configuración y anulamos width/padding/border. */
+#aprentix-config-modal .theme-option input,
+.theme-option input[type="radio"] {
+  display: none !important;
+  width: 0; height: 0;
+  padding: 0; margin: 0; border: 0;
+}
 .theme-option:has(input:checked) {
   background: var(--pri-soft);
   border-color: var(--pri);
