@@ -31,6 +31,41 @@
 .tag.removable .x:hover { opacity: 1; color: var(--danger); }
 
 
+/* ─── Editor de etiquetas (chips + input "+ añadir") ──────────────────────
+ * Se usa en la ficha de un test y en el editor de una pregunta. Antes
+ * cada sitio lo pintaba distinto (el editor cogía los estilos genéricos
+ * de `.modal input`, la ficha del test se quedaba con los del navegador),
+ * así que la fila de etiquetas se veía muy diferente entre ambos. Ahora
+ * comparten `.tag-editor`: chips arriba y un input píldora ancho debajo.
+ */
+.tag-editor {
+  display: flex; flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+.tag-editor .tags { min-height: 0; }
+/* Cualificamos con [list] para ganarle en especificidad a `.modal input`
+ * (tests/style.css), que si no pisaría el border-radius píldora cuando el
+ * editor de etiquetas se usa dentro de un modal (editor de pregunta). */
+.tag-editor input,
+.tag-editor input[list] {
+  display: block; width: 100%;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-panel); color: var(--txt);
+  font-family: inherit; font-size: 0.85rem;
+  outline: none;
+  margin: 0;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.tag-editor input:focus,
+.tag-editor input[list]:focus {
+  border-color: var(--pri);
+  box-shadow: 0 0 0 3px var(--pri-glow, var(--pri-soft));
+}
+
+
 /* ─── Tag chips (filtros clickables) ──────────────────────────────────── */
 .tag-chips {
   display: flex; flex-wrap: wrap; gap: 0.35rem;
