@@ -5,3 +5,4 @@ users/
 # Secretos: solo se versiona el .env.example.
 .env
 .env.local
+.venv
