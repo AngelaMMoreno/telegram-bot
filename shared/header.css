@@ -13,6 +13,28 @@
 
 aprentix-header { display: contents; }
 
+/* View Transitions API entre documentos (Chrome 126+, cross-document).
+ * Al navegar de /tests/ a /teoria/ (o al revés) el navegador congela un
+ * screenshot de la cabecera y el bottom-nav, los identifica como el
+ * MISMO elemento en la página destino (por su view-transition-name) y
+ * hace cross-fade del contenido intermedio en lugar de un flash de
+ * recarga. En navegadores sin soporte se cae al comportamiento normal.
+ * Requiere que ambas páginas estén en el mismo origen (aprentix.es) y
+ * declaren la misma regla @view-transition. */
+@view-transition { navigation: auto; }
+.topbar     { view-transition-name: aprentix-topbar; }
+.bottom-nav { view-transition-name: aprentix-bottomnav; }
+/* Duración algo más corta que el default (~250 ms) para que se sienta
+ * ligero. Respetamos prefers-reduced-motion apagando la animación. */
+::view-transition-group(root),
+::view-transition-group(aprentix-topbar),
+::view-transition-group(aprentix-bottomnav) { animation-duration: 180ms; }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(root),
+  ::view-transition-group(aprentix-topbar),
+  ::view-transition-group(aprentix-bottomnav) { animation-duration: 0.01ms; }
+}
+
 .topbar {
   display: flex; align-items: center; gap: 0.65rem;
   height: var(--topbar-h);

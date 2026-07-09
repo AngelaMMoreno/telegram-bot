@@ -57,6 +57,13 @@
         theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
       }
       if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+      // Decide de forma síncrona el estado inicial: si hay cookie de sesión
+      // consideramos que el usuario está logueado y evitamos pintar el
+      // login mientras app.js valida el JWT. Si no la hay, mostramos login
+      // directamente. Sin este pre-cálculo se veía un flash de la pantalla
+      // de login cada vez que el usuario volvía a /tests/ desde /teoria/.
+      var hasSession = /(?:^|;\s*)aprentix_token=/.test(document.cookie);
+      document.documentElement.setAttribute('data-boot', hasSession ? 'session' : 'anon');
     })();
   </script>
   <script>
@@ -96,7 +103,7 @@
      componente a partir de nav-items / more-items. -->
 <aprentix-header active="tests"
   active-key="home"
-  teoria-hidden start-hidden
+  teoria-hidden
   nav-items='[
     {"id":"home","label":"Inicio","icon":"home","view":"home"},
     {"id":"tests","label":"Tests","icon":"tests","view":"tests"},
@@ -147,8 +154,10 @@
 
 <main class="content">
 
-  <!-- Login / Registro -->
-  <section id="view-login" class="view active">
+  <!-- Login / Registro.
+       Empieza SIN .active para no pintarse durante el chequeo de sesión al
+       arrancar; el boot en app.js decide entre esta vista o #view-home. -->
+  <section id="view-login" class="view">
     <div class="auth-card">
       <div class="auth-hero">
         <span class="brand-logo brand-logo-lg" aria-hidden="true"></span>
