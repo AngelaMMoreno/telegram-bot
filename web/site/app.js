@@ -148,51 +148,17 @@ function notificarLogros(logros) {
   });
 }
 
-/* Extrae logros_desbloqueados de una respuesta RPC y los notifica. */
+/* Extrae logros_desbloqueados de una respuesta RPC y los notifica.
+ * Además, si estamos dentro de un quiz, los acumula en state.quiz.logrosGanados
+ * para pintarlos línea a línea en la vista de resumen al terminar el test. */
 function notificarDesdeRPC(res) {
   const l = res && res.logros_desbloqueados;
-  if (Array.isArray(l) && l.length) notificarLogros(l);
-}
-
-/* Desglose de XP del test recién terminado: base + volumen + nota + racha.
- * Se pinta como una tarjeta más en el stack, con el icono grande del zorro
- * y el detalle en el cuerpo. Si xp === 0 (intento ya finalizado o test
- * vacío), no molestamos. */
-function notificarXpTest(res) {
-  if (!res || typeof res !== "object") return;
-  const xp = Number(res.xp) || 0;
-  if (xp <= 0 || res.ya_finalizado) return;
-  const stack = document.getElementById("logros-notif-stack");
-  if (!stack) return;
-  const partes = [];
-  if (res.base)    partes.push(`Base ${res.base}`);
-  if (res.volumen) partes.push(`Volumen ${res.volumen}`);
-  if (res.nota)    partes.push(`Nota ${res.nota}`);
-  if (res.racha)   partes.push(`Racha ${res.racha}`);
-  const card = document.createElement("article");
-  card.className = "logro-notif";
-  card.setAttribute("role", "status");
-  card.innerHTML = `
-    <div class="logro-notif-icono" aria-hidden="true">🦊</div>
-    <div class="logro-notif-body">
-      <div class="logro-notif-head">
-        <strong>¡Test terminado!</strong>
-        <span class="logro-notif-xp">+${xp} XP</span>
-      </div>
-      <div class="logro-notif-desc">${partes.join(" · ") || "Sigue así"}</div>
-      <div class="logro-notif-bar" role="progressbar"
-           aria-valuenow="${xp}" aria-valuemin="0" aria-valuemax="${xp}"><span></span></div>
-    </div>`;
-  stack.appendChild(card);
-  setTimeout(() => card.classList.add("done"), 60);
-  const cerrar = () => {
-    if (card._closed) return;
-    card._closed = true;
-    card.classList.add("out");
-    setTimeout(() => card.remove(), 350);
-  };
-  card.addEventListener("click", cerrar);
-  setTimeout(cerrar, 6000);
+  if (!Array.isArray(l) || !l.length) return;
+  notificarLogros(l);
+  if (state && state.quiz) {
+    state.quiz.logrosGanados = state.quiz.logrosGanados || [];
+    state.quiz.logrosGanados.push(...l);
+  }
 }
 
 /* ── Llamada HTTP a PostgREST ────────────────────────────────────────────── */
@@ -356,6 +322,10 @@ function navigate(view) {
   if (el) el.classList.add("active");
   $$(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.view === view));
   $("#sidebar").classList.remove("open");
+  // La cabecera Home persistente (saludo + gamificación) sólo tiene
+  // sentido en el propio Home; en el resto de vistas la ocultamos.
+  const homeHeader = document.getElementById("ap-user-home-header");
+  if (homeHeader) homeHeader.hidden = view !== "home" || !state.jwt || !state.user;
   if (view !== "login" && (!state.jwt || !state.user)) { navigate("login"); return; }
   if (yaActiva) return;
   const loader = loaders[view];
@@ -1205,6 +1175,7 @@ function iniciarQuizDesdeReanudacion(d) {
     totalEfectivo: d.total_efectivo,
     adelantada,
     favoritas: new Set(),
+    logrosGanados: [],
   };
   state.qi = 0;
   cargarFavoritasQuiz();  // no bloquea el render inicial
@@ -1289,6 +1260,7 @@ async function startQuiz(title, testId, questions, tipo = "quiz", opts = {}) {
     tiempoPorPregunta: getTiempo(),
     adelantada: !!opts.adelantada,
     favoritas: new Set(),
+    logrosGanados: [],
   };
   state.qi = 0;
   await cargarFavoritasQuiz();
@@ -1433,11 +1405,16 @@ async function responder(idx, saltada = false) {
 
 async function finalizarQuiz() {
   cancelarTimerQuiz();
+  // Datos de gamificación devueltos por finalizar_intento (xp, base, volumen,
+  // nota, racha, ya_finalizado). Se pintan línea a línea en el resumen en vez
+  // de mostrarse como tarjeta flotante.
+  let resFin = null;
   if (state.quiz.intentoId) {
     try {
-      const res = await rpc("finalizar_intento", { p_intento_id: state.quiz.intentoId });
-      notificarDesdeRPC(res);
-      notificarXpTest(res);
+      resFin = await rpc("finalizar_intento", { p_intento_id: state.quiz.intentoId });
+      // Los logros/retos que revienten al cerrar el intento también se
+      // acumulan al listado del resumen (además de mostrarse como notif).
+      notificarDesdeRPC(resFin);
     } catch (_) {}
   }
   // Nota sobre 10 con penalización 1/3.  Si veníamos de una reanudación,
@@ -1446,17 +1423,110 @@ async function finalizarQuiz() {
   // longitud de questions.
   const total = state.quiz.totalEfectivo ?? state.quiz.questions.length;
   const nota = total ? Math.max(((state.quiz.correct - state.quiz.wrong/3) / total) * 10, 0) : 0;
-  $("#quiz-summary-stats").innerHTML = `
-    <div class="stat-card"><div class="v">${state.quiz.correct}</div><div class="l">Aciertos</div></div>
-    <div class="stat-card"><div class="v">${state.quiz.wrong}</div><div class="l">Fallos</div></div>
-    <div class="stat-card"><div class="v">${state.quiz.blank}</div><div class="l">En blanco</div></div>
-    <div class="stat-card"><div class="v">${nota.toFixed(2)}</div><div class="l">Nota</div></div>
-  `;
+  const respondidas = state.quiz.correct + state.quiz.wrong + state.quiz.blank;
+  const pctAcierto = respondidas ? Math.round(100 * state.quiz.correct / respondidas) : 0;
+  const logrosGanados = state.quiz.logrosGanados || [];
+  renderQuizSummary({ nota, respondidas, pctAcierto, logrosGanados, resFin, quiz: state.quiz });
   state.quiz = null;
   // Las estadísticas por test cachean mi_progreso_detallado; al terminar
   // un intento, invalidamos para reflejar la última nota inmediatamente.
   state.progresoCache = null;
   navigate("quiz-summary");
+}
+
+/* Pinta la vista de resumen de forma compacta y visual: cabecera con la nota
+ * (medalla + barra), fila de stats (aciertos/fallos/blanco), lista de bonos
+ * conseguidos línea a línea y desglose de XP del test. Si finalizar_intento
+ * no ha devuelto XP (BBDD antigua) se ocultan esas secciones. */
+function renderQuizSummary({ nota, respondidas, pctAcierto, logrosGanados, resFin, quiz }) {
+  const cont = $("#quiz-summary-stats");
+  const notaStr = nota.toFixed(2);
+  const notaClass = nota >= 8 ? "sobresa" : nota >= 6 ? "aprob" : nota >= 4 ? "just" : "susp";
+  const titulo = quiz && quiz.title ? esc(quiz.title) : "Test";
+
+  const xp      = Number(resFin && resFin.xp)      || 0;
+  const xpBase  = Number(resFin && resFin.base)    || 0;
+  const xpVol   = Number(resFin && resFin.volumen) || 0;
+  const xpNota  = Number(resFin && resFin.nota)    || 0;
+  const xpRacha = Number(resFin && resFin.racha)   || 0;
+  const yaFin   = !!(resFin && resFin.ya_finalizado);
+
+  const filasXp = [];
+  if (xpBase)  filasXp.push({ ico: "🎯", txt: "Base por completar el test",   val: xpBase  });
+  if (xpVol)   filasXp.push({ ico: "📚", txt: "Bono por volumen de preguntas", val: xpVol   });
+  if (xpNota)  filasXp.push({ ico: "🏅", txt: "Bono por nota conseguida",      val: xpNota  });
+  if (xpRacha) filasXp.push({ ico: "🔥", txt: "Bono por racha diaria",         val: xpRacha });
+
+  const filaBono = (b) => `
+    <li class="bonus-row ${b.tipo === "reto" ? "es-reto" : "es-logro"}">
+      <span class="bonus-ico" aria-hidden="true">${esc(b.icono || (b.tipo === "reto" ? "🎯" : "🏆"))}</span>
+      <span class="bonus-body">
+        <strong>${esc(b.titulo || (b.tipo === "reto" ? "Reto" : "Logro"))}</strong>
+        ${b.descripcion ? `<span class="bonus-desc">${esc(b.descripcion)}</span>` : ""}
+      </span>
+      <span class="bonus-xp">+${Number(b.xp) || 0} XP</span>
+    </li>`;
+
+  const seccionBonos = logrosGanados.length ? `
+    <section class="summary-section">
+      <h3 class="summary-section-title">🎁 Recompensas conseguidas</h3>
+      <ul class="bonus-list">${logrosGanados.map(filaBono).join("")}</ul>
+    </section>` : "";
+
+  const seccionXp = filasXp.length || xp ? `
+    <section class="summary-section summary-xp">
+      <div class="summary-xp-head">
+        <h3 class="summary-section-title">✨ Experiencia ganada</h3>
+        <div class="summary-xp-total">+${xp} XP</div>
+      </div>
+      ${filasXp.length ? `
+        <ul class="xp-breakdown">
+          ${filasXp.map(f => `
+            <li class="xp-row">
+              <span class="xp-ico" aria-hidden="true">${f.ico}</span>
+              <span class="xp-txt">${f.txt}</span>
+              <span class="xp-val">+${f.val}</span>
+            </li>`).join("")}
+        </ul>` : ""}
+      ${yaFin ? `<p class="muted small">Ya habías terminado este intento; no se han otorgado nuevos XP.</p>` : ""}
+    </section>` : "";
+
+  cont.innerHTML = `
+    <div class="summary-hero">
+      <div class="summary-hero-medal ${notaClass}" aria-hidden="true">
+        <span class="summary-hero-nota">${notaStr}</span>
+        <span class="summary-hero-nota-l">/ 10</span>
+      </div>
+      <div class="summary-hero-info">
+        <div class="summary-hero-title">${titulo}</div>
+        <div class="summary-hero-sub">${pctAcierto}% de acierto sobre ${respondidas} respondida${respondidas === 1 ? "" : "s"}</div>
+        <div class="summary-hero-bar" role="progressbar" aria-valuenow="${pctAcierto}" aria-valuemin="0" aria-valuemax="100">
+          <span style="width:${pctAcierto}%"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="summary-stats">
+      <div class="stat-mini stat-hit">
+        <span class="stat-mini-ico" aria-hidden="true">✅</span>
+        <span class="stat-mini-v">${quiz.correct}</span>
+        <span class="stat-mini-l">Aciertos</span>
+      </div>
+      <div class="stat-mini stat-miss">
+        <span class="stat-mini-ico" aria-hidden="true">❌</span>
+        <span class="stat-mini-v">${quiz.wrong}</span>
+        <span class="stat-mini-l">Fallos</span>
+      </div>
+      <div class="stat-mini stat-blank">
+        <span class="stat-mini-ico" aria-hidden="true">➖</span>
+        <span class="stat-mini-v">${quiz.blank}</span>
+        <span class="stat-mini-l">En blanco</span>
+      </div>
+    </div>
+
+    ${seccionBonos}
+    ${seccionXp}
+  `;
 }
 
 document.addEventListener("keydown", e => {

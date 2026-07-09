@@ -153,6 +153,25 @@
   </button>
 </nav>
 
+<!-- Cabecera persistente Home (saludo + selector de oposición + gamificación).
+     Vive fuera de <main> para que el router SPA la preserve entre tests y
+     teoría: al saltar de una app a otra la tarjeta ya no desaparece. Ambas
+     apps la ocultan cuando el usuario no está en una vista tipo "Home". -->
+<section id="ap-user-home-header" class="ap-user-home-header" hidden>
+  <div class="ap-user-header">
+    <h2>Hola, <span id="hello-name"></span></h2>
+    <button class="btn btn-ghost btn-sm ap-op-btn" id="btn-cambiar-oposicion-home"
+            type="button" title="Cambiar de oposición" hidden>
+      <span class="ap-op-ico" aria-hidden="true">🎓</span>
+      <span class="ap-op-txt">
+        <span class="ap-op-label">Oposición</span>
+        <strong id="ap-op-actual">Todas</strong>
+      </span>
+    </button>
+  </div>
+  <div id="home-gamif" class="gamif-card"></div>
+</section>
+
 <main class="content">
 
   <!-- Login / Registro.
@@ -187,20 +206,9 @@
     </div>
   </section>
 
-  <!-- Home -->
+  <!-- Home. La cabecera (saludo + oposición + gamificación) vive fuera
+       de <main> en #ap-user-home-header para que persista entre apps. -->
   <section id="view-home" class="view">
-    <div class="ap-user-header">
-      <h2>Hola, <span id="hello-name"></span></h2>
-      <button class="btn btn-ghost btn-sm ap-op-btn" id="btn-cambiar-oposicion-home"
-              type="button" title="Cambiar de oposición">
-        <span class="ap-op-ico" aria-hidden="true">🎓</span>
-        <span class="ap-op-txt">
-          <span class="ap-op-label">Oposición</span>
-          <strong id="ap-op-actual">Todas</strong>
-        </span>
-      </button>
-    </div>
-    <div id="home-gamif" class="gamif-card"></div>
     <div class="stats-grid" id="stats-grid"></div>
     <div class="actions-grid">
       <button class="action-card" data-view="tests">
@@ -320,10 +328,9 @@
 
   <!-- Resumen del quiz -->
   <section id="view-quiz-summary" class="view">
-    <div class="auth-card">
-      <h2>Resumen</h2>
-      <div id="quiz-summary-stats" class="stats-grid"></div>
-      <div class="actions" style="margin-top:1rem">
+    <div class="quiz-summary">
+      <div id="quiz-summary-stats"></div>
+      <div class="quiz-summary-actions">
         <button class="btn btn-primary" data-view="home">Volver al inicio</button>
       </div>
     </div>
@@ -566,8 +573,8 @@
     <button class="btn btn-ghost" id="btn-repaso-sv-cancelar">Cancelar</button>
   </div>
   <p class="muted small" style="margin-top:0.5rem">
-    En sesiones adelantadas, los aciertos no cambian la caja de las preguntas
-    (para no romper la curva de olvido); los fallos sí penalizan.
+    En sesiones adelantadas, los aciertos no cambian el nivel de repaso
+    de las preguntas (para no romper la curva de olvido); los fallos sí penalizan.
   </p>
 </ap-modal>
 

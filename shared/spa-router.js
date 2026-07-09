@@ -95,7 +95,10 @@
   function swapAppContent(nextDoc, nextMode) {
     // Nodos que se conservan tal cual entre modos.
     const KEEP = new Set(['APRENTIX-HEADER', 'SCRIPT', 'STYLE', 'LINK']);
-    const KEEP_IDS = new Set(['toast', 'logros-notif-stack']);
+    // ap-user-home-header: saludo + gamificación. Se preserva para que
+    // el "Hola, X" y el nivel/XP no parpadeen al saltar entre tests y
+    // teoría — su contenido es idéntico en ambas apps.
+    const KEEP_IDS = new Set(['toast', 'logros-notif-stack', 'ap-user-home-header']);
 
     const body = document.body;
     const nextBody = nextDoc.body;

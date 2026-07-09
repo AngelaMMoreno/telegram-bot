@@ -20,7 +20,7 @@
 
 // Subimos versión al cambiar la arquitectura de rutas: la SPA ahora vive
 // bajo /tests/ y las cachés antiguas apuntaban a la raíz.
-const CACHE_VERSION = "aprentix-v10";
+const CACHE_VERSION = "aprentix-v12";
 const SHELL_CACHE   = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

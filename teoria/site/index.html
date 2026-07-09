@@ -79,6 +79,26 @@
     {"id":"upload","label":"Subir test","icon":"upload","href":"/tests/?atajo=upload","gestion":true}
   ]'></aprentix-header>
 
+<!-- Cabecera persistente Home (saludo + selector de oposición + gamificación).
+     Vive fuera de #app-content para que el router SPA la preserve entre
+     tests y teoría: al saltar de una app a otra la tarjeta ya no
+     desaparece. Ambas apps la ocultan cuando el usuario no está en una
+     vista tipo "Home". -->
+<section id="ap-user-home-header" class="ap-user-home-header" hidden>
+  <div class="ap-user-header">
+    <h2>Hola, <span id="hello-name"></span></h2>
+    <button class="btn btn-ghost btn-sm ap-op-btn" id="btn-cambiar-oposicion-home"
+            type="button" title="Cambiar de oposición" hidden>
+      <span class="ap-op-ico" aria-hidden="true">🎓</span>
+      <span class="ap-op-txt">
+        <span class="ap-op-label">Oposición</span>
+        <strong id="ap-op-actual">Todas</strong>
+      </span>
+    </button>
+  </div>
+  <div id="home-gamif" class="gamif-card"></div>
+</section>
+
 <!-- Sidebar de escritorio: refleja las opciones del bottom-nav móvil.
      Se oculta en móvil (< 900 px). Los IDs de las opciones (data-tnav)
      coinciden con los del menú móvil, así compartimos el mismo handler. -->
@@ -169,22 +189,9 @@
      y el contenido quedaba empujado por debajo de la sidebar. -->
 <div id="app-content">
 
-<!-- Cabecera común: saludo, oposición actual y tarjeta de gamificación.
-     Igual que la de Tests, pero servida en la raíz de teoría. -->
-<section class="teoria-home-header" id="teoria-home-header" hidden>
-  <div class="ap-user-header">
-    <h2>Hola, <span id="teoria-hello-name"></span></h2>
-    <button class="btn btn-ghost btn-sm ap-op-btn" id="btn-cambiar-oposicion-home"
-            type="button" title="Cambiar de oposición" hidden>
-      <span class="ap-op-ico" aria-hidden="true">🎓</span>
-      <span class="ap-op-txt">
-        <span class="ap-op-label">Oposición</span>
-        <strong id="ap-op-actual">Todas</strong>
-      </span>
-    </button>
-  </div>
-  <div id="teoria-home-gamif" class="gamif-card"></div>
-</section>
+<!-- La cabecera de Home (saludo + gamificación) vive fuera de
+     #app-content, en #ap-user-home-header, para que el router SPA la
+     preserve entre tests y teoría. -->
 
 <nav id="bc" class="bc" aria-label="Ruta"></nav>
 
