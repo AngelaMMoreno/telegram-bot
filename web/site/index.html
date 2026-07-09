@@ -320,10 +320,9 @@
 
   <!-- Resumen del quiz -->
   <section id="view-quiz-summary" class="view">
-    <div class="auth-card">
-      <h2>Resumen</h2>
-      <div id="quiz-summary-stats" class="stats-grid"></div>
-      <div class="actions" style="margin-top:1rem">
+    <div class="quiz-summary">
+      <div id="quiz-summary-stats"></div>
+      <div class="quiz-summary-actions">
         <button class="btn btn-primary" data-view="home">Volver al inicio</button>
       </div>
     </div>
@@ -566,8 +565,8 @@
     <button class="btn btn-ghost" id="btn-repaso-sv-cancelar">Cancelar</button>
   </div>
   <p class="muted small" style="margin-top:0.5rem">
-    En sesiones adelantadas, los aciertos no cambian la caja de las preguntas
-    (para no romper la curva de olvido); los fallos sí penalizan.
+    En sesiones adelantadas, los aciertos no cambian el nivel de repaso
+    de las preguntas (para no romper la curva de olvido); los fallos sí penalizan.
   </p>
 </ap-modal>
 

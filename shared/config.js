@@ -29,7 +29,7 @@
     intensivo: { emoji: '🔥', nombre: 'Intensivo',
                  desc: 'Para semanas previas a examen. Verás preguntas nuevas varias veces el mismo día.' },
     normal:    { emoji: '🎯', nombre: 'Normal',
-                 desc: 'Leitner clásico. Para aprendizaje continuo.' },
+                 desc: 'Ritmo equilibrado de repaso. Para aprendizaje continuo.' },
     relajado:  { emoji: '🌱', nombre: 'Relajado',
                  desc: 'Mantenimiento. Para no oxidarte cuando ya te sabes el temario.' },
   };
@@ -195,8 +195,9 @@
               <div class="reset-repasos-copy">
                 <strong>Empezar el repaso de cero</strong>
                 <span class="muted small">
-                  Borra las cajas Leitner de todas tus preguntas. No toca tus respuestas
-                  ni tus intentos: solo se olvida en qué fase de repaso está cada pregunta.
+                  Reinicia el progreso de repaso de todas tus preguntas. No toca tus
+                  respuestas ni tus intentos: solo se olvida en qué fase de repaso
+                  está cada pregunta.
                 </span>
               </div>
               <button class="btn btn-danger-outline" id="ap-cfg-reset">Resetear mi repaso</button>
@@ -217,7 +218,7 @@
   <div class="modal-card">
     <header class="modal-header"><h3>¿Resetear tu repaso?</h3></header>
     <div class="modal-body">
-      <p>Se borrarán todas las cajas Leitner (aciertos, fallos y programación de repasos).
+      <p>Se borrará todo tu progreso de repaso (aciertos, fallos y programación).
          Volverás a empezar como si nunca hubieras repasado nada.</p>
       <p class="muted small">
         Tus respuestas históricas, intentos y estadísticas se conservan intactos.

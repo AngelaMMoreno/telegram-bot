@@ -902,3 +902,217 @@ ap-modal[data-wide] .modal-card { width: min(720px, 96vw); max-width: none; }
 
 /* ── Cabecera unificada de Home (saludo + selector de oposición) ─────────
  * Vive en shared/user-header.css: la comparten tests y teoría. */
+
+
+/* ─────────── Resumen del test (vista final tras terminar un quiz) ───────────
+ * Sustituye la tarjeta flotante de XP por una vista integrada que ordena
+ * en secciones la nota, los aciertos/fallos, las recompensas conseguidas
+ * durante el test (línea a línea) y el desglose de XP. */
+.quiz-summary {
+  display: flex; flex-direction: column;
+  gap: 1rem;
+  max-width: 640px;
+  margin: 0.5rem auto 2rem;
+}
+.quiz-summary-actions {
+  display: flex; justify-content: center;
+  margin-top: 0.4rem;
+}
+.quiz-summary-actions .btn { min-width: 200px; }
+
+/* Cabecera del resumen: medalla con la nota + progreso de acierto. */
+.summary-hero {
+  display: flex; align-items: center; gap: 1rem;
+  padding: 1.1rem 1.15rem;
+  background: linear-gradient(135deg, var(--pri-soft), var(--sky-soft) 60%, var(--lavender-soft));
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 4px);
+  box-shadow: var(--shadow);
+  position: relative; overflow: hidden;
+}
+.summary-hero::after {
+  content: "";
+  position: absolute; inset: -40% -20% auto auto;
+  width: 220px; height: 220px;
+  background: radial-gradient(circle, var(--accent-soft) 0%, transparent 65%);
+  pointer-events: none;
+}
+.summary-hero-medal {
+  --medal-tint: var(--pri);
+  --medal-soft: var(--pri-soft);
+  flex: 0 0 auto;
+  width: 96px; height: 96px;
+  border-radius: 50%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: radial-gradient(circle at 30% 30%, #fff 0%, var(--medal-soft) 70%);
+  color: var(--medal-tint);
+  border: 3px solid var(--medal-tint);
+  box-shadow: 0 6px 18px var(--medal-soft), inset 0 0 0 6px rgba(255,255,255,0.35);
+  font-weight: 800;
+  position: relative; z-index: 1;
+}
+[data-theme="dark"] .summary-hero-medal {
+  background: radial-gradient(circle at 30% 30%, var(--bg-panel) 0%, var(--medal-soft) 70%);
+  box-shadow: 0 6px 18px var(--medal-soft), inset 0 0 0 6px rgba(255,255,255,0.06);
+}
+.summary-hero-medal.sobresa { --medal-tint: var(--leaf); --medal-soft: var(--leaf-soft); }
+.summary-hero-medal.aprob   { --medal-tint: var(--sky-d); --medal-soft: var(--sky-soft); }
+.summary-hero-medal.just    { --medal-tint: var(--accent-d); --medal-soft: var(--accent-soft); }
+.summary-hero-medal.susp    { --medal-tint: var(--coral-d); --medal-soft: var(--coral-soft); }
+[data-theme="dark"] .summary-hero-medal.aprob { --medal-tint: var(--sky); }
+[data-theme="dark"] .summary-hero-medal.just  { --medal-tint: var(--accent); }
+[data-theme="dark"] .summary-hero-medal.susp  { --medal-tint: var(--coral); }
+.summary-hero-nota { font-size: 1.9rem; line-height: 1; letter-spacing: -0.02em; }
+.summary-hero-nota-l { font-size: 0.75rem; opacity: 0.7; margin-top: 2px; font-weight: 600; }
+.summary-hero-info {
+  flex: 1; min-width: 0;
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; gap: 0.35rem;
+}
+.summary-hero-title {
+  font-size: 1.15rem; font-weight: 700; color: var(--txt);
+  word-break: break-word; line-height: 1.2;
+}
+.summary-hero-sub { color: var(--txt-soft); font-size: 0.85rem; }
+.summary-hero-bar {
+  height: 8px; border-radius: 999px;
+  background: rgba(0,0,0,0.08); overflow: hidden;
+  margin-top: 0.25rem;
+}
+[data-theme="dark"] .summary-hero-bar { background: rgba(255,255,255,0.1); }
+.summary-hero-bar > span {
+  display: block; height: 100%;
+  background: linear-gradient(90deg, var(--pri), var(--leaf));
+  border-radius: inherit;
+  transition: width 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+/* Fila de stats compacta: aciertos / fallos / blanco. */
+.summary-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+.stat-mini {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 0.75rem 0.5rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm, var(--shadow));
+  --mini-tint: var(--pri);
+}
+.stat-mini.stat-hit   { --mini-tint: var(--leaf); }
+.stat-mini.stat-miss  { --mini-tint: var(--coral-d); }
+.stat-mini.stat-blank { --mini-tint: var(--lavender-d); }
+[data-theme="dark"] .stat-mini.stat-miss  { --mini-tint: var(--coral); }
+[data-theme="dark"] .stat-mini.stat-blank { --mini-tint: var(--lavender); }
+.stat-mini-ico { font-size: 1.15rem; line-height: 1; }
+.stat-mini-v {
+  font-size: 1.55rem; font-weight: 800; line-height: 1.1;
+  color: var(--mini-tint); margin-top: 0.1rem;
+}
+.stat-mini-l { color: var(--txt-soft); font-size: 0.78rem; font-weight: 600; }
+
+/* Secciones (recompensas / XP). */
+.summary-section {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+  box-shadow: var(--shadow-sm, var(--shadow));
+}
+.summary-section-title {
+  margin: 0 0 0.55rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--txt);
+  letter-spacing: 0.01em;
+}
+
+/* Lista de bonos / logros conseguidos, línea a línea. */
+.bonus-list {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 0.35rem;
+}
+.bonus-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--pri);
+  border-radius: 10px;
+  background: var(--bg);
+  animation: bonus-in 0.32s ease both;
+}
+.bonus-row.es-reto { border-left-color: var(--coral); background: linear-gradient(90deg, var(--coral-soft), transparent 60%); }
+.bonus-row.es-logro { border-left-color: var(--accent-d); background: linear-gradient(90deg, var(--accent-soft), transparent 60%); }
+[data-theme="dark"] .bonus-row.es-logro { border-left-color: var(--accent); }
+.bonus-ico { font-size: 1.3rem; line-height: 1; }
+.bonus-body { display: flex; flex-direction: column; min-width: 0; }
+.bonus-body strong { font-size: 0.92rem; color: var(--txt); }
+.bonus-desc { font-size: 0.78rem; color: var(--txt-soft); }
+.bonus-xp {
+  font-weight: 800; font-size: 0.9rem;
+  color: var(--pri-d);
+  background: var(--pri-soft);
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+[data-theme="dark"] .bonus-xp { color: var(--pri); }
+.bonus-row.es-reto  .bonus-xp { color: var(--coral-d); background: var(--coral-soft); }
+.bonus-row.es-logro .bonus-xp { color: var(--accent-d); background: var(--accent-soft); }
+[data-theme="dark"] .bonus-row.es-reto  .bonus-xp { color: var(--coral); }
+[data-theme="dark"] .bonus-row.es-logro .bonus-xp { color: var(--accent); }
+@keyframes bonus-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Desglose de XP (base + volumen + nota + racha) — línea a línea. */
+.summary-xp-head {
+  display: flex; align-items: baseline; gap: 0.6rem;
+  justify-content: space-between;
+  margin-bottom: 0.45rem;
+}
+.summary-xp-head .summary-section-title { margin: 0; }
+.summary-xp-total {
+  font-weight: 800; font-size: 1.15rem;
+  color: var(--pri-d);
+  background: var(--pri-soft);
+  padding: 0.2rem 0.7rem;
+  border-radius: 999px;
+}
+[data-theme="dark"] .summary-xp-total { color: var(--pri); }
+.xp-breakdown {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column;
+}
+.xp-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.1rem;
+  border-bottom: 1px dashed var(--border);
+  font-size: 0.9rem;
+}
+.xp-row:last-child { border-bottom: 0; }
+.xp-ico { font-size: 1.05rem; line-height: 1; }
+.xp-txt { color: var(--txt); }
+.xp-val {
+  font-weight: 700; color: var(--pri-d);
+  white-space: nowrap;
+}
+[data-theme="dark"] .xp-val { color: var(--pri); }
+
+@media (max-width: 380px) {
+  .summary-hero { flex-direction: column; align-items: flex-start; text-align: left; }
+  .summary-hero-medal { align-self: center; }
+  .summary-stats { grid-template-columns: repeat(3, 1fr); }
+  .stat-mini-v { font-size: 1.35rem; }
+}

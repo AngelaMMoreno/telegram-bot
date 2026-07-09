@@ -3857,7 +3857,7 @@ INSERT INTO retos_catalogo(codigo, titulo, descripcion, periodo, objetivo, xp, i
   ('diario_test_1',             'Un test más',             'Termina al menos 1 test hoy',                         'diario', 1,   25, '📋'),
   ('diario_repasar_15',         'Repasa lo pendiente',     'Contesta 15 preguntas que ya tocaba repasar',         'diario', 15,  35, '🔁'),
   ('diario_rescatar_5',         'Rescata fallos',          'Acierta 5 preguntas que tenías falladas',             'diario', 5,   35, '🩹'),
-  ('diario_domar_5',            'Doma preguntas',          'Sube de caja Leitner a 5 preguntas',                  'diario', 5,   30, '📈'),
+  ('diario_domar_5',            'Doma preguntas',          'Sube de nivel de repaso a 5 preguntas',               'diario', 5,   30, '📈'),
   ('diario_teoria_1',           'Un rato de teoría',       'Marca al menos 1 documento de teoría como leído',     'diario', 1,   20, '📚'),
   ('diario_acierto_80',         'Puntería fina',           'Termina el día con ≥80% de acierto (mín. 20 resp.)',  'diario', 1,   40, '🎯'),
   ('diario_racha_10_aciertos',  '10 seguidas',             'Encadena 10 aciertos consecutivos',                   'diario', 10,  30, '⚡'),
@@ -3868,7 +3868,7 @@ INSERT INTO retos_catalogo(codigo, titulo, descripcion, periodo, objetivo, xp, i
   ('semanal_teoria_3',          'Explorador de teoría',    'Lee 3 documentos distintos de teoría',                'semanal', 3,   100, '🗺️'),
 
   ('mensual_responder_1000',    'Kilómetro cero',          '1000 preguntas respondidas este mes',                 'mensual', 1000, 500, '🛤️'),
-  ('mensual_dominar_20',        'Domador',                 'Lleva 20 preguntas a la caja 7 este mes',             'mensual', 20,   500, '👑'),
+  ('mensual_dominar_20',        'Domador',                 'Domina 20 preguntas este mes',                        'mensual', 20,   500, '👑'),
   ('mensual_maraton_150',       'Maratoniano',             'Un día del mes con ≥150 preguntas',                   'mensual', 1,    400, '🏃'),
   ('mensual_media_7',           'Consistencia 7/10',       'Media mensual ≥7 (mín. 500 respuestas)',              'mensual', 1,    600, '🎓')
 ON CONFLICT (codigo) DO NOTHING;
@@ -3880,8 +3880,8 @@ INSERT INTO logros_catalogo(codigo, titulo, descripcion, objetivo, xp, icono) VA
   ('centurion',            'Centurión',            '100 respuestas de por vida',          100,   100,  '💯'),
   ('millar',               'Millar',               '1000 respuestas de por vida',         1000,  500,  '🏵️'),
   ('decamil',              'Diez mil',             '10 000 respuestas de por vida',       10000, 2000, '🌟'),
-  ('primer_dominio',       'Primera dominada',     'Llevas tu primera pregunta a caja 7', 1,     150,  '🥇'),
-  ('dominador_100',        'Dominador',            '100 preguntas en caja 7',             100,   750,  '👑'),
+  ('primer_dominio',       'Primera dominada',     'Domina tu primera pregunta',          1,     150,  '🥇'),
+  ('dominador_100',        'Dominador',            'Domina 100 preguntas',                100,   750,  '👑'),
   ('resiliente_10',        'Resiliente',           '10 fallos rescatados en total',       10,    150,  '🩹'),
   ('explorador_teoria_10', 'Explorador de teoría', 'Lee 10 documentos distintos',         10,    200,  '📖')
 ON CONFLICT (codigo) DO NOTHING;
