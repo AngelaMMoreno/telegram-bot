@@ -1076,19 +1076,31 @@ mdOut().addEventListener('click', (e) => {
 });
 
 /* ── Kebab "Más" del header del visor ────────────────────────────── */
+function cerrarMenuMas() {
+  const menu = document.getElementById('md-mas-menu');
+  const btn = document.getElementById('md-mas');
+  if (!menu || !btn) return;
+  menu.classList.add('hidden');
+  btn.setAttribute('aria-expanded', 'false');
+}
 document.getElementById('md-mas')?.addEventListener('click', (e) => {
   e.stopPropagation();
   const menu = document.getElementById('md-mas-menu');
   const btn = document.getElementById('md-mas');
-  const open = menu.classList.toggle('hidden');
-  btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+  const nowHidden = menu.classList.toggle('hidden');
+  btn.setAttribute('aria-expanded', nowHidden ? 'false' : 'true');
 });
 document.addEventListener('click', (e) => {
   const menu = document.getElementById('md-mas-menu');
   if (!menu || menu.classList.contains('hidden')) return;
-  if (!e.target.closest('.md-mas-wrap')) {
-    menu.classList.add('hidden');
-    document.getElementById('md-mas').setAttribute('aria-expanded', 'false');
+  // Clic fuera del wrap → cerrar. Clic dentro sobre un menuitem → cerrar
+  // también, para que la siguiente vez el usuario tenga que pulsar los
+  // tres puntos para reabrirlo (antes se quedaba desplegado y, con el
+  // "Editar" escondiéndose en modo edición, parecía que "Limpiar
+  // subrayados" estuviera pinchado en pantalla).
+  if (!e.target.closest('.md-mas-wrap') ||
+      e.target.closest('.md-mas-item')) {
+    cerrarMenuMas();
   }
 });
 document.getElementById('md-limpiar-subrayados')?.addEventListener('click', () => {
@@ -1096,8 +1108,8 @@ document.getElementById('md-limpiar-subrayados')?.addEventListener('click', () =
   if (!confirm('¿Quitar todos los subrayados de este documento?')) return;
   setSubrayados(MD.ruta, []);
   reaplicarSubrayados();
-  document.getElementById('md-mas-menu').classList.add('hidden');
   toast('Subrayados limpios');
+  // El listener global (`.md-mas-item` closest) cierra el kebab.
 });
 
 // ── Acciones ───────────────────────────────────────────────────────────────
