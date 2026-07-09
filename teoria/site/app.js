@@ -1472,16 +1472,18 @@ function refrescarHintOposicion() {
 
 /*
  * Cabecera de "Inicio" en teoría: saludo, oposición actual y tarjeta de
- * gamificación (mismo layout que en Tests). Solo se muestra cuando el
- * usuario está en la raíz de la biblioteca.
+ * gamificación. Ahora vive en el elemento compartido
+ * #ap-user-home-header (fuera de #app-content) para que el router SPA la
+ * preserve al saltar a Tests. Solo se muestra cuando el usuario está en
+ * la raíz de la biblioteca.
  */
 async function pintarHomeHeader() {
-  const box = document.getElementById('teoria-home-header');
+  const box = document.getElementById('ap-user-home-header');
   if (!box) return;
   const enRaiz = !ESTADO.ruta || ESTADO.ruta === '/' || ESTADO.ruta === '';
   if (!enRaiz) { box.hidden = true; return; }
   box.hidden = false;
-  const helloEl = document.getElementById('teoria-hello-name');
+  const helloEl = document.getElementById('hello-name');
   if (helloEl) {
     // El nombre real llega por api/sesion; pintarUsuario ya rellena
     // #user-name, así que lo espejamos.
@@ -1494,9 +1496,9 @@ async function pintarHomeHeader() {
   // ocultamos con "hidden" para que no ocupe espacio.
   try {
     const g = await rpcPostgrest('mi_gamificacion', {});
-    renderGamifCard('#teoria-home-gamif', g);
+    renderGamifCard('#home-gamif', g);
   } catch {
-    const gCard = document.getElementById('teoria-home-gamif');
+    const gCard = document.getElementById('home-gamif');
     if (gCard) gCard.innerHTML = '';
   }
 }

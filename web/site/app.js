@@ -322,6 +322,10 @@ function navigate(view) {
   if (el) el.classList.add("active");
   $$(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.view === view));
   $("#sidebar").classList.remove("open");
+  // La cabecera Home persistente (saludo + gamificación) sólo tiene
+  // sentido en el propio Home; en el resto de vistas la ocultamos.
+  const homeHeader = document.getElementById("ap-user-home-header");
+  if (homeHeader) homeHeader.hidden = view !== "home" || !state.jwt || !state.user;
   if (view !== "login" && (!state.jwt || !state.user)) { navigate("login"); return; }
   if (yaActiva) return;
   const loader = loaders[view];

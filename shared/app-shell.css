@@ -39,6 +39,19 @@ body {
  * futuro merge en SPA global no cambiará la maquetación. */
 #app-content { flex: 1; min-width: 0; min-height: 0; }
 
+/* Cabecera persistente Home (saludo + gamificación). Compartida entre
+ * tests y teoría — el router SPA la preserva entre saltos para que
+ * "Hola, X" y la tarjeta de nivel no parpadeen. En móvil se apila entre
+ * la topbar y el contenido; en desktop ocupa una fila propia en la
+ * columna "main" (ver el bloque @media más abajo). */
+.ap-user-home-header {
+  padding: 0.75rem 0.85rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.ap-user-home-header[hidden] { display: none; }
+
 
 /* ─── Sidebar de escritorio ─────────────────────────────────────────────
  * En móvil (< 900 px) la navegación va en la bottom-nav de la cabecera,
@@ -90,8 +103,9 @@ body {
   body {
     display: grid;
     grid-template:
-      "header header" var(--topbar-h)
-      "side    main"  1fr
+      "header header"     var(--topbar-h)
+      "side   userheader" auto
+      "side   main"       1fr
       / var(--sidebar-w) 1fr;
     padding-bottom: 0;
   }
@@ -114,4 +128,17 @@ body {
    * app lo consigue metiendo su contenido bajo #app-content o marcando
    * sus wrappers con grid-area: main / grid-column: main. */
   #app-content { grid-area: main; overflow-x: hidden; }
+  /* La cabecera persistente ocupa su fila propia en la columna "main".
+   * Cuando está oculta (hidden), la fila colapsa a 0 y el layout se
+   * comporta como si no existiera. */
+  .ap-user-home-header {
+    grid-area: userheader;
+    padding: 1.1rem 1.75rem 0;
+  }
+  /* Sin cabecera visible, quita el hueco superior de #app-content para
+   * que el resto del contenido no baje. */
+  .ap-user-home-header[hidden] { display: none; }
+  /* Los tests utilizan <main class="content"> (no #app-content); le damos
+   * también grid-area: main para que se coloque en la columna correcta. */
+  main.content { grid-area: main; overflow-x: hidden; }
 }

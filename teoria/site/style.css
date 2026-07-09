@@ -544,26 +544,9 @@ body.en-seleccion .visto-tick { pointer-events: none; opacity: .5; }
 }
 
 
-/* ── Cabecera "Home" (raíz) ────────────────────────────────────────────── */
-/* Debe cuadrar píxel a píxel con la cabecera de Home de /tests/ (donde el
- * wrapper es <main class="content">). Copiamos los mismos paddings y en
- * modo PWA/standalone también reducimos igual que allí. */
-.teoria-home-header {
-  padding: 0.75rem 0.85rem 0;
-  margin: 0;
-}
-@media (display-mode: standalone) {
-  .teoria-home-header { padding: 0.6rem 0.85rem 0; }
-}
-@media (min-width: 900px) {
-  .teoria-home-header {
-    padding: 1.5rem 1.5rem 0;
-    max-width: 1100px;
-    margin: 0 auto;
-  }
-}
-/* Cabecera de Home (.ap-user-header) y gamif-card viven en
- * shared/user-header.css y shared/gamif.css: mismos estilos que en tests. */
+/* La cabecera "Home" (saludo + gamif) vive ahora en shared/app-shell.css
+ * como #ap-user-home-header — es un elemento compartido entre tests y
+ * teoría, preservado por el router SPA al saltar de una app a otra. */
 
 
 /* ════════════════ DESKTOP (>= 900 px) ════════════════
@@ -579,11 +562,4 @@ body.en-seleccion .visto-tick { pointer-events: none; opacity: .5; }
   }
   .grid { padding: 1.5rem; }
   .bc, .admin-bar { padding-left: 1.5rem; padding-right: 1.5rem; }
-  /* Ancla el contenido a la izquierda del área principal, sin centrar,
-   * para que la home-header, la ruta y el grid queden a la misma cota
-   * horizontal — el look "todo pegado al top-left" que espera el usuario. */
-  .teoria-home-header {
-    max-width: none;
-    margin: 0;
-  }
 }
