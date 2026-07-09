@@ -185,6 +185,12 @@ let ESTADO = {
 function renderBreadcrumb(bc, ruta) {
   const el = document.getElementById('bc');
   el.innerHTML = '';
+  // En la raíz no hay ruta que "migar" y la cabecera de Home (saludo +
+  // gamificación) ya deja claro dónde estamos. Renderizar aquí "🏠 Inicio"
+  // añadía una barra extra sobre el grid que hacía la cabecera de teoría
+  // parecer más alta que la de tests. Ocultamos el hueco entero.
+  if (!bc || bc.length <= 1) { el.hidden = true; return; }
+  el.hidden = false;
   bc.forEach((seg, i) => {
     if (i > 0) el.appendChild(Object.assign(document.createElement('span'), { className: 'bc-sep', textContent: '›' }));
     if (i === bc.length - 1) {

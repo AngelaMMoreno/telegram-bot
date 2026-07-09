@@ -1,0 +1,117 @@
+/*
+ * Aprentix · shell común de tests y teoría.
+ *
+ * Estas reglas viven en la raíz de <body> y en el layout de columnas
+ * (sidebar + main) que ambas apps comparten. Antes estaban duplicadas
+ * en web/site/style.css y teoria/site/style.css con pequeñas
+ * variaciones (unas usaban --text, otras --txt; unas eran flex column
+ * en móvil, otras no) y eso hacía que la cabecera y el primer contenido
+ * no cuadraran píxel a píxel al saltar entre modos.  Ahora la fuente
+ * de verdad es esta hoja, así los ajustes futuros solo requieren un
+ * único edit.
+ *
+ * Debe cargarse DESPUÉS de tokens.css/base.css y ANTES de la hoja de
+ * estilos propia de cada app.
+ */
+
+*, *::before, *::after { box-sizing: border-box; }
+html { font-size: 16px; }
+html, body { margin: 0; padding: 0; }
+button { font: inherit; cursor: pointer; }
+a { color: inherit; text-decoration: none; }
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  background-image: var(--bg-ambient);
+  background-attachment: fixed;
+  color: var(--txt);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  -webkit-text-size-adjust: 100%;
+  overflow-x: hidden;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+/* Slot canónico donde el router coloca el contenido de la app activa.
+ * Todavía no todas las vistas viven aquí, pero al reservar el ID el
+ * futuro merge en SPA global no cambiará la maquetación. */
+#app-content { flex: 1; min-width: 0; min-height: 0; }
+
+
+/* ─── Sidebar de escritorio ─────────────────────────────────────────────
+ * En móvil (< 900 px) la navegación va en la bottom-nav de la cabecera,
+ * así que el sidebar queda oculto. En escritorio se convierte en
+ * columna a la izquierda con estilo idéntico entre las dos apps. */
+.sidebar { display: none; }
+.nav-item {
+  display: inline-flex; align-items: center; gap: 0.75rem;
+  background: none; border: 0; color: var(--nav-side-text);
+  padding: 0.85rem 1rem; border-radius: var(--radius);
+  text-align: left;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 500;
+  font-family: inherit;
+  width: 100%;
+  transition: background 0.18s, color 0.18s;
+}
+.nav-item:hover, .nav-item:active { background: rgba(255, 255, 255, 0.10); color: #fff; }
+.nav-item .nav-ico { color: var(--pri); transition: color 0.15s; }
+.nav-item:nth-child(1) .nav-ico { color: var(--accent); }
+.nav-item:nth-child(2) .nav-ico { color: var(--pri); }
+.nav-item:nth-child(3) .nav-ico { color: var(--coral); }
+.nav-item:nth-child(4) .nav-ico { color: var(--lavender); }
+.nav-item:nth-child(5) .nav-ico { color: var(--sky); }
+.nav-item:nth-child(6) .nav-ico { color: var(--leaf); }
+.nav-item.active {
+  background: linear-gradient(135deg, var(--grad-a), var(--grad-b));
+  color: #14241D;
+  font-weight: 700;
+  pointer-events: none;
+  cursor: default;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.30);
+}
+.nav-item.active .nav-ico { color: #14241D; }
+.nav-ico { width: 18px; height: 18px; flex: 0 0 auto; }
+.nav-sep {
+  height: 1px; background: rgba(255, 255, 255, 0.08);
+  margin: 0.5rem 0.4rem;
+}
+
+
+/* ════════════════ DESKTOP (>= 900 px) ════════════════
+ * Grid "header/side/main" común. La topbar de <aprentix-header> queda
+ * en la fila superior (ocupando ambas columnas), el sidebar en la
+ * izquierda y el área de contenido en la derecha. Con esto la cabecera
+ * y el sidebar de tests y teoría acaban a la MISMA altura y ancho. */
+@media (min-width: 900px) {
+  body {
+    display: grid;
+    grid-template:
+      "header header" var(--topbar-h)
+      "side    main"  1fr
+      / var(--sidebar-w) 1fr;
+    padding-bottom: 0;
+  }
+  .topbar { grid-area: header; }
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.75rem 0.5rem;
+    grid-area: side;
+    background: var(--nav-side-bg);
+    background-image:
+      radial-gradient(80% 40% at 100% 0%, rgba(244, 208, 63, 0.10) 0%, transparent 60%),
+      radial-gradient(70% 40% at 0% 100%, rgba(176, 132, 245, 0.10) 0%, transparent 60%);
+    color: #fff;
+    overflow-y: auto;
+    z-index: 25;
+  }
+  /* Todo lo que no sea topbar/sidebar entra en la columna "main". Cada
+   * app lo consigue metiendo su contenido bajo #app-content o marcando
+   * sus wrappers con grid-area: main / grid-column: main. */
+  #app-content { grid-area: main; overflow-x: hidden; }
+}
