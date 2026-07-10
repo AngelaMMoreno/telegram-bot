@@ -1277,11 +1277,30 @@ document.getElementById('file-input')?.addEventListener('change', (e) => {
 });
 document.getElementById('grid')?.addEventListener('click', onGridAction);
 
+/* Marca el item activo tanto en el sidebar de escritorio (.nav-item)
+ * como en el bottom-nav móvil (.bnav-item). Las opciones tipo "acción"
+ * (buscar / marcadores / subir / nueva-carpeta / nuevo-md) NO son
+ * vistas propias, solo abren modales o disparadores; para esas no se
+ * cambia la marca activa (se conserva la de la vista principal).
+ */
+const TEORIA_VISTAS_MENU = new Set(['home']);
+function marcarNavActivo(id) {
+  document.querySelectorAll('.nav-item').forEach(b => {
+    const target = b.dataset.tnav || b.dataset.view;
+    b.classList.toggle('active', target === id);
+  });
+  document.querySelectorAll('.bnav-item').forEach(b => {
+    const target = b.dataset.navId || b.dataset.view;
+    b.classList.toggle('active', target === id);
+  });
+}
+
 /* ── Bottom-nav / sheet "Más" (aprentix:nav) ────────────────────────
  * <aprentix-header> emite CustomEvents con detail.id cuando el usuario
  * toca un item con "event":"…". Los mapeamos a acciones del app. */
 document.addEventListener('aprentix:nav', (e) => {
   const id = e.detail && e.detail.id;
+  if (TEORIA_VISTAS_MENU.has(id)) marcarNavActivo(id);
   switch (id) {
     case 'home':
       // Vuelve a la raíz de teoría.
@@ -1336,11 +1355,20 @@ async function abrirBuscador() {
     const p = new URLSearchParams({ ruta: ESTADO.ruta || '' });
     if (ESTADO.currentOposicion) p.set('oposicion_id', ESTADO.currentOposicion);
     const data = await api('GET', 'api/listar?' + p.toString());
-    entries = (data.entries || data.items || []).map(e => ({
-      nombre: e.nombre || e.name || '',
-      es_carpeta: !!(e.es_carpeta || e.type === 'folder'),
-      ruta: e.ruta || e.path || '',
+    // El backend devuelve { carpetas: [...], ficheros: [...] } — no
+    // "entries" / "items". Antes se leían campos inexistentes y la
+    // lista salía vacía siempre, así que "buscar no funcionaba".
+    const carpetas = (data.carpetas || []).map(e => ({
+      nombre: e.nombre || '',
+      es_carpeta: true,
+      ruta: e.ruta || '',
     }));
+    const ficheros = (data.ficheros || []).map(e => ({
+      nombre: e.nombre || '',
+      es_carpeta: false,
+      ruta: e.ruta || '',
+    }));
+    entries = [...carpetas, ...ficheros];
   } catch (err) {
     results.innerHTML = `<li class="muted small">Error: ${esc(err.message)}</li>`;
     return;
@@ -1871,6 +1899,11 @@ async function abrirMoverDialogo(rutas) {
 async function mount() {
   // Reconfigura la cabecera y ejecuta la primera carga.
   pintarUsuario('…');
+  // La teoría es una sola vista tipo "home": marcamos "Inicio" como
+  // activo en ambos menús desde el arranque, y cada navegación posterior
+  // dentro de teoría sigue en home. Antes, tras cambiar de tests a
+  // teoría en escritorio, ningún item quedaba destacado en el sidebar.
+  marcarNavActivo('home');
   try {
     const s = await api('GET', 'api/sesion');
     pintarUsuario(s && s.username);

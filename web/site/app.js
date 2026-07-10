@@ -320,7 +320,17 @@ function navigate(view) {
   $$(".view").forEach(v => v.classList.remove("active"));
   const el = $("#view-" + view);
   if (el) el.classList.add("active");
+  // Marcar en el sidebar de escritorio (.nav-item) y en el bottom-nav
+  // móvil (.bnav-item). Antes solo se sincronizaba el sidebar, así que
+  // en móvil "Inicio" quedaba siempre marcado aunque se estuviera en
+  // otra vista.
   $$(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.view === view));
+  $$(".bnav-item").forEach(b => {
+    // El bnav-item usa `data-view` (para items locales) o `data-nav-id`
+    // (para el resto, que solo emite eventos). Ambos IDs coinciden.
+    const id = b.dataset.view || b.dataset.navId;
+    b.classList.toggle("active", id === view);
+  });
   $("#sidebar").classList.remove("open");
   // La cabecera Home persistente (saludo + gamificación) sólo tiene
   // sentido en el propio Home; en el resto de vistas la ocultamos.
@@ -331,19 +341,6 @@ function navigate(view) {
   const loader = loaders[view];
   if (loader) loader().catch(e => toast(e.message));
 }
-
-// El botón "Más" del sidebar de escritorio abre el sheet flotante del
-// bottom-nav para reutilizar la misma UI en ambas resoluciones.
-document.addEventListener("click", e => {
-  const masBtn = e.target.closest("#sidebar-mas-tests");
-  if (!masBtn) return;
-  e.preventDefault();
-  const sheet = document.getElementById("more-sheet");
-  if (!sheet) return;
-  sheet.classList.remove("hidden");
-  sheet.classList.add("open");
-  document.body.classList.add("sheet-open");
-});
 
 document.addEventListener("click", e => {
   const navBtn = e.target.closest("[data-view]");
