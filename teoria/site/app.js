@@ -741,6 +741,11 @@ async function mdGuardar() {
       MD.creando = false; MD.padreCreacion = null;
       mdTitle().textContent = r.nombre;
       toast('Creado');
+      // Justo después de crearse pedimos las oposiciones a las que se
+      // asigna. Si el admin no quiere asignar ninguna, cierra el modal
+      // y el fichero queda global. Los errores no rompen la creación.
+      pedirOposicionesParaRutas([{ ruta: r.ruta, nombre: r.nombre }])
+        .catch(err => toast(`Fichero creado, pero fallo asignando oposiciones: ${err.message}`));
     } else {
       await api('POST', 'api/guardar', { ruta: MD.ruta, contenido });
       toast('Guardado');
@@ -1218,6 +1223,13 @@ async function subirFicheros(files) {
     const r = await api('POST', 'api/subir', fd, /* isForm */ true);
     toast(`${r.subidos.length} fichero${r.subidos.length === 1 ? '' : 's'} subido${r.subidos.length === 1 ? '' : 's'}`);
     recargar();
+    // Tras subir, ofrecemos al admin asignar las oposiciones a los
+    // ficheros recién creados en lote. Si cancela, quedan globales.
+    const subidos = Array.isArray(r.subidos) ? r.subidos : [];
+    if (subidos.length) {
+      pedirOposicionesParaRutas(subidos)
+        .catch(err => toast(`Subida OK, pero fallo asignando oposiciones: ${err.message}`));
+    }
   } catch (e) { toast(`⚠️ ${e.message}`); }
 }
 
@@ -1669,6 +1681,70 @@ document.getElementById('teoria-elegir-oposicion')?.addEventListener('ap-op-sele
 
 document.getElementById('btn-cambiar-oposicion')?.addEventListener('click', abrirSelectorOposicion);
 document.getElementById('btn-cambiar-oposicion-home')?.addEventListener('click', abrirSelectorOposicion);
+
+/* Reutiliza el modal multi-oposición para asignar el mismo conjunto de
+ * oposiciones a N rutas recién creadas (fichero subido o markdown nuevo).
+ * Si el admin no marca nada y guarda, cada ruta queda global.
+ * Se resuelve la promesa cuando el modal se cierra (guardar o cancelar).
+ */
+async function pedirOposicionesParaRutas(rutas) {
+  const modal = document.getElementById('teoria-carpeta-oposicion');
+  const lista = document.getElementById('teoria-carpeta-op-list');
+  const tit   = document.getElementById('teoria-carpeta-op-titulo');
+  const guardar = document.getElementById('teoria-carpeta-op-guardar');
+  const cancelar = document.getElementById('teoria-carpeta-op-cancelar');
+  if (!modal || !lista || !Array.isArray(rutas) || !rutas.length) return;
+  tit.textContent = rutas.length === 1
+    ? `Oposiciones de ${rutas[0].nombre}`
+    : `Oposiciones de ${rutas.length} ficheros nuevos`;
+  const ops = await rpcPostgrest('mis_oposiciones', {}).catch(() => []);
+  const items = Array.isArray(ops) ? ops : [];
+  if (!items.length) {
+    lista.innerHTML = `<li class="muted small" style="padding:.5rem 0">No hay oposiciones creadas todavía. Se dejará como global.</li>`;
+  } else {
+    lista.innerHTML = items.map(o => `
+      <li><label class="check-item check-item-multi">
+        <input type="checkbox" data-op-id="${o.id}">
+        <span class="check-item-body">
+          <strong>${esc(o.nombre)}</strong>
+          ${o.descripcion ? `<span class="muted small">${esc(o.descripcion)}</span>` : ''}
+        </span>
+      </label></li>`).join('');
+  }
+  if (typeof modal.open === 'function') modal.open();
+  else modal.classList.remove('hidden');
+  return new Promise((resolve, reject) => {
+    let resuelto = false;
+    const resolver = (val) => { if (resuelto) return; resuelto = true; resolve(val); };
+    const rechazar = (err) => { if (resuelto) return; resuelto = true; reject(err); };
+    const cerrar = () => {
+      if (typeof modal.close === 'function') modal.close();
+      else modal.classList.add('hidden');
+    };
+    const onClose = () => { resolver({ cancelado: true }); modal.removeEventListener('ap-close', onClose); };
+    modal.addEventListener('ap-close', onClose);
+    cancelar.onclick = cerrar;
+    guardar.onclick = async () => {
+      const ids = Array.from(lista.querySelectorAll('input[type="checkbox"]:checked'))
+        .map(el => el.dataset.opId);
+      try {
+        for (const r of rutas) {
+          await rpcPostgrest('set_carpeta_oposiciones', {
+            p_ruta: r.ruta,
+            p_oposicion_ids: ids,
+          });
+        }
+        modal.removeEventListener('ap-close', onClose);
+        cerrar();
+        toast(ids.length
+          ? `${rutas.length} fichero${rutas.length === 1 ? '' : 's'} asignado${rutas.length === 1 ? '' : 's'} a ${ids.length} oposicion${ids.length === 1 ? '' : 'es'}`
+          : `${rutas.length} fichero${rutas.length === 1 ? '' : 's'} dejado${rutas.length === 1 ? '' : 's'} como global${rutas.length === 1 ? '' : 'es'}`);
+        recargar();
+        resolver({ ids, rutas });
+      } catch (e) { rechazar(e); }
+    };
+  });
+}
 
 /* ── Picker MULTI-oposición para una carpeta (admin) ────────────────
  * Ahora una carpeta puede pertenecer a varias oposiciones a la vez.

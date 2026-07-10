@@ -533,7 +533,7 @@ const loaders = {
   fallos:      loadFallos,
   favoritas:   loadFavoritas,
   buscar:      () => runBuscarView($("#buscar-input").value.trim()),
-  upload:      async () => {},
+  upload:      loadUploadView,
   etiquetas:   loadEtiquetas,
   usuarios:    loadUsuarios,
   retos:       loadRetos,
@@ -1895,6 +1895,34 @@ on("#upload-file", "change", async e => {
   $("#upload-textarea").value = await f.text();
 });
 
+/* Rellena la lista de checkboxes de oposiciones en la vista de subir test.
+ * Usa mis_oposiciones() que, para admin/staff (test.crear), devuelve todas. */
+async function loadUploadView() {
+  const list = $("#upload-op-list");
+  if (!list) return;
+  try {
+    const ops = await rpc("mis_oposiciones");
+    const items = Array.isArray(ops) ? ops : [];
+    if (!items.length) {
+      list.innerHTML = "<li class='muted small'>No hay oposiciones creadas todavía. El test se importará como global.</li>";
+      return;
+    }
+    list.innerHTML = items.map(o => `
+      <li>
+        <label class="check-item check-item-multi">
+          <input type="checkbox" data-op-id="${o.id}">
+          <span class="check-item-body">
+            <strong>${esc(o.nombre)}</strong>
+            ${o.descripcion ? `<span class="muted small">${esc(o.descripcion)}</span>` : ""}
+          </span>
+        </label>
+      </li>
+    `).join("");
+  } catch (e) {
+    list.innerHTML = `<li class='muted small'>No se pudieron cargar las oposiciones: ${esc(e.message)}</li>`;
+  }
+}
+
 on("#btn-upload", "click", async () => {
   let parsed;
   try { parsed = JSON.parse($("#upload-textarea").value); }
@@ -1909,12 +1937,24 @@ on("#btn-upload", "click", async () => {
     preguntas = parsed.preguntas || [];
   }
   if (!preguntas.length) return toast("El JSON no tiene preguntas");
+  const opIds = $$("#upload-op-list input[type=checkbox]:checked")
+    .map(el => el.dataset.opId);
   try {
-    await rpc("importar_test_normalizado", {
+    const nuevoTestId = await rpc("importar_test_normalizado", {
       p_titulo: titulo, p_descripcion: descripcion, p_preguntas: preguntas,
     });
-    toast(`Importado: ${titulo}`);
+    if (opIds.length && nuevoTestId) {
+      try {
+        await rpc("set_test_oposiciones", {
+          p_test_id: nuevoTestId, p_oposicion_ids: opIds,
+        });
+      } catch (e) { toast(`Test importado, pero fallo asignando oposiciones: ${e.message}`); }
+    }
+    toast(opIds.length
+      ? `Importado: ${titulo} (asignado a ${opIds.length} oposicion${opIds.length === 1 ? "" : "es"})`
+      : `Importado: ${titulo}`);
     $("#upload-textarea").value = "";
+    $$("#upload-op-list input[type=checkbox]:checked").forEach(el => { el.checked = false; });
     navigate("tests");
   } catch (e) { toast(e.message); }
 });

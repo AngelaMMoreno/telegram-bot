@@ -53,6 +53,18 @@
 }
 .view-header h2 { margin: 0; font-size: 1.35rem; color: var(--txt); font-weight: 700; letter-spacing: -0.01em; }
 
+.upload-oposiciones {
+  margin: 0.75rem 0;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+.upload-oposiciones-head {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  margin-bottom: 0.5rem;
+}
+
 /* App-first: en modo standalone (PWA instalada) apretamos aún más los
    márgenes verticales para aprovechar la pantalla como una app nativa. */
 @media (display-mode: standalone) {
