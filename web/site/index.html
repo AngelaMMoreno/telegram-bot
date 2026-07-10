@@ -411,6 +411,13 @@
     <header class="view-header"><h2>Subir un test</h2></header>
     <p class="muted">Pega un JSON con <code>{titulo, descripcion, preguntas}</code> o un array de preguntas.</p>
     <textarea id="upload-textarea" placeholder="[ { &quot;pregunta&quot;: &quot;…&quot;, &quot;opciones&quot;: [&quot;…&quot;], &quot;explicacion&quot;: &quot;…&quot; } ]"></textarea>
+    <div class="upload-oposiciones">
+      <div class="upload-oposiciones-head">
+        <strong>Asignar a oposiciones</strong>
+        <span class="muted small">Si no marcas ninguna, el test será global (visible para todos).</span>
+      </div>
+      <ul id="upload-op-list" class="check-list"></ul>
+    </div>
     <div class="actions">
       <input type="file" id="upload-file" accept=".json">
       <button class="btn btn-primary" id="btn-upload">Importar</button>
