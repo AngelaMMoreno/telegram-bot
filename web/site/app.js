@@ -583,37 +583,51 @@ document.addEventListener("click", e => {
 
 /* ── Tests ── */
 async function loadTests() {
-  $("#tests-list").innerHTML = "<p class='muted'>Cargando…</p>";
-  // ensureEtiquetasCache alimenta el editor/quiz con TODAS las etiquetas.
-  await ensureEtiquetasCache();
-  // Para el filtro del listado, sólo mostramos las etiquetas presentes
-  // en tests de la oposición seleccionada. Así si el usuario no tiene
-  // ningún test con "java" en su oposición, tampoco puede filtrar por
-  // "java". Con oposición = null (Todas) se muestran todas.
-  const etsTests = await rpc("listar_etiquetas", {
-    p_oposicion_id: state.currentOposicion || null,
-  });
-  const etsList = Array.isArray(etsTests) ? etsTests : [];
-  if (state.filtroEtiquetaTests && !etsList.some(e => e.nombre === state.filtroEtiquetaTests)) {
-    state.filtroEtiquetaTests = null;
+  const listEl = $("#tests-list");
+  // Sin vacíar el contenido: dejamos el listado antiguo visible con un
+  // sutil "loading state" (opacidad + spinner) para que al cambiar de
+  // etiqueta no aparezca "Cargando…" a pantalla completa y el usuario
+  // no perciba parpadeo.
+  const primera = !listEl.hasChildNodes() || listEl.textContent.trim() === "";
+  if (primera) {
+    listEl.innerHTML = "<p class='muted'>Cargando…</p>";
+  } else {
+    listEl.classList.add("is-loading");
   }
-  renderTagChips("#tests-tag-chips", state.filtroEtiquetaTests, et => {
-    state.filtroEtiquetaTests = et;
-    state.testsPage = 1;
-    loadTests();
-  }, etsList);
-  const r = await rpc("listar_tests", {
-    p_solo_favoritos:  state.filtroVisTests === "favoritos",
-    p_solo_pendientes: state.filtroVisTests === "pendientes",
-    p_page:            state.testsPage,
-    p_size:            12,
-    p_etiqueta:        state.filtroEtiquetaTests || null,
-    p_orden:           state.ordenTests,
-    p_oposicion_id:    state.currentOposicion || null,
-  });
-  state.testsCache = r.tests;
-  renderTests();
-  renderPagination(r);
+  try {
+    // ensureEtiquetasCache alimenta el editor/quiz con TODAS las etiquetas.
+    await ensureEtiquetasCache();
+    // Para el filtro del listado, sólo mostramos las etiquetas presentes
+    // en tests de la oposición seleccionada. Así si el usuario no tiene
+    // ningún test con "java" en su oposición, tampoco puede filtrar por
+    // "java". Con oposición = null (Todas) se muestran todas.
+    const etsTests = await rpc("listar_etiquetas", {
+      p_oposicion_id: state.currentOposicion || null,
+    });
+    const etsList = Array.isArray(etsTests) ? etsTests : [];
+    if (state.filtroEtiquetaTests && !etsList.some(e => e.nombre === state.filtroEtiquetaTests)) {
+      state.filtroEtiquetaTests = null;
+    }
+    renderTagChips("#tests-tag-chips", state.filtroEtiquetaTests, et => {
+      state.filtroEtiquetaTests = et;
+      state.testsPage = 1;
+      loadTests();
+    }, etsList);
+    const r = await rpc("listar_tests", {
+      p_solo_favoritos:  state.filtroVisTests === "favoritos",
+      p_solo_pendientes: state.filtroVisTests === "pendientes",
+      p_page:            state.testsPage,
+      p_size:            12,
+      p_etiqueta:        state.filtroEtiquetaTests || null,
+      p_orden:           state.ordenTests,
+      p_oposicion_id:    state.currentOposicion || null,
+    });
+    state.testsCache = r.tests;
+    renderTests();
+    renderPagination(r);
+  } finally {
+    listEl.classList.remove("is-loading");
+  }
 }
 
 function renderTests() {
@@ -729,10 +743,25 @@ function renderTagChips(selector, valorActual, onClick, lista) {
   if (!wrap) return;
   const src = Array.isArray(lista) ? lista : state.etiquetasCache;
   const opciones = [{ nombre: "Todas", _all: true }, ...src];
-  wrap.innerHTML = opciones.map(e => {
-    const isActive = e._all ? !valorActual : (valorActual === e.nombre);
-    return `<span class="chip ${isActive ? "active" : ""}" data-tag="${e._all ? "" : esc(e.nombre)}">${esc(e.nombre)}</span>`;
-  }).join("");
+  // Firma de la lista: si sólo cambia el chip activo (mismo conjunto de
+  // etiquetas y mismo orden), NO tocamos el DOM entero — sólo movemos la
+  // clase .active. Así el cambio de filtro no parpadea.
+  const firma = opciones.map(e => (e._all ? "*" : e.nombre)).join("|");
+  const mismaLista = wrap.dataset.chipsFirma === firma
+    && wrap.children.length === opciones.length;
+  if (mismaLista) {
+    Array.from(wrap.children).forEach((c, i) => {
+      const e = opciones[i];
+      const isActive = e._all ? !valorActual : (valorActual === e.nombre);
+      c.classList.toggle("active", isActive);
+    });
+  } else {
+    wrap.innerHTML = opciones.map(e => {
+      const isActive = e._all ? !valorActual : (valorActual === e.nombre);
+      return `<span class="chip ${isActive ? "active" : ""}" data-tag="${e._all ? "" : esc(e.nombre)}">${esc(e.nombre)}</span>`;
+    }).join("");
+    wrap.dataset.chipsFirma = firma;
+  }
   wrap.onclick = ev => {
     const c = ev.target.closest(".chip");
     if (!c) return;

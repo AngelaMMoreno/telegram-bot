@@ -102,22 +102,29 @@ class ApOpSelector extends HTMLElement {
     // Sin oposición actual (primera selección): activa el guard para que
     // el cierre sin elegir dispare 'ap-op-selection-required' en la app.
     this._requireSelection = currentId == null || currentId === '';
-    const items = [{ id: null, nombre: 'Todas mis oposiciones' }, ...(oposiciones || [])];
+    const items = [{ id: null, nombre: 'Todas mis oposiciones', _todas: true }, ...(oposiciones || [])];
     this._list.innerHTML = items.map(op => {
       const idAttr = op.id == null ? '' : op.id;
       const activa = String(op.id ?? '') === String(currentId ?? '');
       const desc = op.descripcion
-        ? `<span class="muted small">${escHtml(op.descripcion)}</span>` : '';
+        ? `<span class="ap-op-desc muted small">${escHtml(op.descripcion)}</span>` : '';
+      // "Todas" lleva un icono global; el resto, birrete de graduado.
+      const emoji = op._todas ? '🌱' : '🎓';
+      const tick = activa
+        ? '<span class="ap-op-tick" aria-hidden="true">✓</span>' : '';
       return `
         <li>
-          <button class="check-item" type="button"
+          <button class="check-item ap-op-item${op._todas ? ' ap-op-item-todas' : ''}"
+                  type="button"
                   data-op-id="${escHtml(idAttr)}"
                   data-op-nombre="${escHtml(op.nombre || '')}"
                   aria-current="${activa ? 'true' : 'false'}">
-            <span>
+            <span class="ap-op-ico-wrap" aria-hidden="true">${emoji}</span>
+            <span class="ap-op-body">
               <strong>${escHtml(op.nombre || '')}</strong>
               ${desc}
             </span>
+            ${tick}
           </button>
         </li>`;
     }).join('');

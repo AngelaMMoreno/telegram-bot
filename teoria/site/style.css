@@ -51,6 +51,29 @@ button { font: inherit; cursor: pointer; }
 .seleccion-bar[hidden] { display: none; }
 .seleccion-count { font-weight: 700; font-size: 13px; margin-right: 4px; }
 
+/* ── Loading state (sin parpadeo al navegar) ─────────────────────────
+ * Mantenemos el contenido anterior atenuado hasta que llegan los datos,
+ * evitando el flash "vacío → nuevo". Sólo repintamos una vez. */
+.is-loading {
+  position: relative;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.is-loading > * { opacity: 0.55; transition: opacity 0.15s ease; }
+.is-loading::after {
+  content: "";
+  position: absolute; top: 14px; left: 50%;
+  width: 22px; height: 22px;
+  margin-left: -11px;
+  border-radius: 50%;
+  border: 3px solid var(--pri-soft);
+  border-top-color: var(--pri);
+  animation: spin-teoria 0.7s linear infinite;
+  z-index: 2;
+}
+@keyframes spin-teoria { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .is-loading::after { animation: none; } }
+
 /* ── Grid ────────────────────────────────────────────────────────────── */
 .grid {
   display: grid;
@@ -312,6 +335,24 @@ button { font: inherit; cursor: pointer; }
   cursor: text;
   outline: 2px dashed var(--accent);
   outline-offset: -6px;
+  /* Evita el menú contextual de "Copiar/Buscar…" al hacer long-press:
+   * el usuario en modo subrayar solo quiere marcar, no seleccionar. */
+  -webkit-touch-callout: none;
+}
+/* Selección dentro del render en modo subrayar: pintamos la selección
+ * como si ya fuera el subrayado, para que no exista el "flash azul" de
+ * la selección típica del navegador y el usuario vea al instante lo que
+ * va a quedar subrayado. */
+.md-body.hl-mode .md-render ::selection {
+  background: var(--accent-soft);
+  color: inherit;
+  text-decoration: underline solid var(--accent) 2px;
+  text-underline-offset: 2px;
+}
+.md-body.hl-mode .md-render ::-moz-selection {
+  background: var(--accent-soft);
+  color: inherit;
+  text-decoration: underline solid var(--accent) 2px;
 }
 
 .md-body {
@@ -453,42 +494,86 @@ button { font: inherit; cursor: pointer; }
 #teoria-marcadores .modal-body { flex: 1; min-height: 0; overflow: hidden; }
 .teoria-marcadores-lista {
   list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
+  margin: 4px 0 0;
+  padding: 4px 2px;
   overflow-y: auto;
   flex: 1;
+  display: flex; flex-direction: column;
+  gap: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pri) transparent;
 }
+.teoria-marcadores-lista::-webkit-scrollbar { width: 8px; }
+.teoria-marcadores-lista::-webkit-scrollbar-track { background: transparent; }
+.teoria-marcadores-lista::-webkit-scrollbar-thumb {
+  background: var(--pri-soft); border-radius: 999px;
+  border: 2px solid transparent; background-clip: padding-box;
+}
+.teoria-marcadores-lista::-webkit-scrollbar-thumb:hover { background: var(--pri); background-clip: padding-box; border: 2px solid transparent; }
 .teoria-marcadores-lista li {
-  display: flex; align-items: center; gap: 6px;
-  border-bottom: 1px solid var(--border);
+  display: flex; align-items: stretch; gap: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  transition: transform .15s, box-shadow .15s, border-color .15s;
+  overflow: hidden;
+  position: relative;
 }
-.teoria-marcadores-lista li:last-child { border-bottom: 0; }
+/* Cada marcador hereda un matiz distinto ciclando entre 5 acentos, igual
+   que las carpetas del grid — así el modal no queda "todo verde". */
+.teoria-marcadores-lista li::before {
+  content: "";
+  position: absolute; inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--accent);
+  opacity: 0.85;
+}
+.teoria-marcadores-lista li:nth-child(5n+2)::before { background: var(--sky); }
+.teoria-marcadores-lista li:nth-child(5n+3)::before { background: var(--lavender); }
+.teoria-marcadores-lista li:nth-child(5n+4)::before { background: var(--coral); }
+.teoria-marcadores-lista li:nth-child(5n)::before   { background: var(--leaf); }
+.teoria-marcadores-lista li:hover {
+  transform: translateY(-1px);
+  border-color: var(--pri);
+  box-shadow: var(--shadow);
+}
 .teoria-marc-item {
   flex: 1;
   display: grid;
-  grid-template-columns: 22px 1fr;
-  gap: 8px;
+  grid-template-columns: 30px 1fr;
+  gap: 4px 12px;
   align-items: center;
-  padding: 10px 4px;
+  padding: 12px 12px 12px 14px;
   background: transparent; border: 0;
-  border-radius: 8px;
   color: var(--text);
   font-family: inherit; font-size: 0.95rem;
   cursor: pointer;
   text-align: left;
   min-width: 0;
 }
+.teoria-marc-item > span[aria-hidden] {
+  grid-column: 1; grid-row: 1 / span 2;
+  font-size: 26px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+}
 .teoria-marc-item:hover { background: var(--pri-soft); }
 .teoria-marc-nombre {
   grid-column: 2; grid-row: 1;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-weight: 600;
+  font-weight: 700; font-size: 1rem;
+  color: var(--text);
 }
 .teoria-marc-ruta {
   grid-column: 2; grid-row: 2;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.8rem;
 }
-.teoria-marc-quitar { color: var(--sub); }
+.teoria-marc-quitar {
+  align-self: center;
+  margin-right: 6px;
+  color: var(--sub);
+}
 .teoria-marc-quitar:hover { color: var(--danger); background: var(--danger-light); }
 
 /* ── Fase 5b: modal de oposición ─────────────────────────────── */

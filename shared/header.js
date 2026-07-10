@@ -137,7 +137,13 @@
     connectedCallback() {
       const active = this.getAttribute('active') || 'tests';
       const teoriaHidden = this.hasAttribute('teoria-hidden');
-      const startsHidden = this.hasAttribute('start-hidden');
+      // Si ya hay sesión (cookie 'aprentix_token' en el dominio actual o
+      // en el padre .aprentix.es), la cabecera no debe arrancar oculta —
+      // navegar entre /tests/ y /teoria/ vería el topbar desaparecer un
+      // instante hasta que el app.js confirmara la sesión, y ese "flash"
+      // era el parpadeo entre modos. Con una sesión ya activa lo saltamos.
+      const yaHaySesion = /(?:^|;\s*)aprentix_token=/.test(document.cookie);
+      const startsHidden = this.hasAttribute('start-hidden') && !yaHaySesion;
 
       const navItems = parseItems(this.getAttribute('nav-items'));
       const moreItems = parseItems(this.getAttribute('more-items'));

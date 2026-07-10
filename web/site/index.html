@@ -57,6 +57,13 @@
         theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
       }
       if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+      // Sesión ya iniciada: apagamos el "start-hidden" del sidebar antes
+      // de que se dibuje, para que al pasar de teoría a tests el menú de
+      // escritorio no desaparezca un instante. Lo mismo hace <aprentix-
+      // header> internamente para su topbar y bottom-nav.
+      if (/(?:^|;\s*)aprentix_token=/.test(document.cookie)) {
+        document.documentElement.dataset.apSesion = '1';
+      }
     })();
   </script>
   <script>
@@ -140,11 +147,28 @@
     <span>Más</span>
   </button>
 </nav>
+<script>
+  // Si venimos de otra app con la cookie ya puesta, quitamos el "hidden"
+  // del sidebar en el mismo parse para no ver desaparecer el menú de
+  // escritorio al cambiar de teoría a tests.
+  if (document.documentElement.dataset.apSesion === '1') {
+    var sb = document.getElementById('sidebar');
+    if (sb) sb.classList.remove('hidden');
+  }
+</script>
 
 <main class="content">
 
   <!-- Login / Registro -->
   <section id="view-login" class="view active">
+    <script>
+      // Con sesión ya activa, la vista de login no debe arrancar visible:
+      // el app.js navegará a "home" y ver el login sólo un instante era
+      // parte del parpadeo al cambiar de teoría a tests.
+      if (document.documentElement.dataset.apSesion === '1') {
+        document.currentScript.parentElement.classList.remove('active');
+      }
+    </script>
     <div class="auth-card">
       <div class="auth-hero">
         <span class="brand-logo brand-logo-lg" aria-hidden="true"></span>

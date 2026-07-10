@@ -491,18 +491,27 @@ async function toggleVistoInline(item, btn, card) {
 // ── Navegación ─────────────────────────────────────────────────────────────
 
 async function cargar(ruta) {
-  const params = new URLSearchParams({ ruta });
-  if (ESTADO.currentOposicion) params.set('oposicion_id', ESTADO.currentOposicion);
-  const data = await api('GET', 'api/listar?' + params.toString());
-  ESTADO.ruta = data.ruta;
-  ESTADO.puede_gestionar = !!data.puede_gestionar;
-  // Le decimos al chasis compartido si mostrar los slots "gestión" en el
-  // sheet "Más". La regla en shared/header.css se apoya en estas clases.
-  document.body.classList.toggle('puede-gestionar', ESTADO.puede_gestionar);
-  document.title = `Aprentix — Teoría — ${data.ruta}`;
-  renderBreadcrumb(data.breadcrumb, data.ruta);
-  renderGrid(data);
-  pintarHomeHeader();
+  const grid = document.getElementById('grid');
+  // Loading state suave: mantenemos el grid anterior con opacidad reducida
+  // hasta que llegan los datos nuevos. Sólo repintamos una vez, evitando
+  // el flash de "vacío → contenido" al cambiar de carpeta.
+  if (grid) grid.classList.add('is-loading');
+  try {
+    const params = new URLSearchParams({ ruta });
+    if (ESTADO.currentOposicion) params.set('oposicion_id', ESTADO.currentOposicion);
+    const data = await api('GET', 'api/listar?' + params.toString());
+    ESTADO.ruta = data.ruta;
+    ESTADO.puede_gestionar = !!data.puede_gestionar;
+    // Le decimos al chasis compartido si mostrar los slots "gestión" en el
+    // sheet "Más". La regla en shared/header.css se apoya en estas clases.
+    document.body.classList.toggle('puede-gestionar', ESTADO.puede_gestionar);
+    document.title = `Aprentix — Teoría — ${data.ruta}`;
+    renderBreadcrumb(data.breadcrumb, data.ruta);
+    renderGrid(data);
+    pintarHomeHeader();
+  } finally {
+    if (grid) grid.classList.remove('is-loading');
+  }
 }
 
 function navegar(ruta) {
@@ -1029,6 +1038,13 @@ mdOut().addEventListener('click', (e) => {
   if (mark && !SUBR.activo) borrarSubrayado(mark);
 });
 
+// En modo subrayar el usuario quiere marcar, no copiar: bloqueamos el
+// menú contextual (copy/pega/buscar) dentro del render para que no
+// aparezca al soltar el ratón o al mantener pulsado en móvil.
+mdOut().addEventListener('contextmenu', (e) => {
+  if (SUBR.activo && !mdEnEdicion()) e.preventDefault();
+});
+
 /* ── Kebab "Más" del header del visor ────────────────────────────── */
 document.getElementById('md-mas').addEventListener('click', (e) => {
   e.stopPropagation();
@@ -1250,11 +1266,19 @@ async function abrirBuscador() {
     const p = new URLSearchParams({ ruta: ESTADO.ruta || '' });
     if (ESTADO.currentOposicion) p.set('oposicion_id', ESTADO.currentOposicion);
     const data = await api('GET', 'api/listar?' + p.toString());
-    entries = (data.entries || data.items || []).map(e => ({
-      nombre: e.nombre || e.name || '',
-      es_carpeta: !!(e.es_carpeta || e.type === 'folder'),
-      ruta: e.ruta || e.path || '',
+    // El backend devuelve dos arrays separados (carpetas / ficheros), no
+    // una lista "entries". Los unificamos aquí para el filtrado por nombre.
+    const carpetas = (data.carpetas || []).map(c => ({
+      nombre: c.nombre || (c.ruta || '').split('/').pop() || '',
+      es_carpeta: true,
+      ruta: c.ruta || '',
     }));
+    const ficheros = (data.ficheros || []).map(f => ({
+      nombre: f.nombre || (f.ruta || '').split('/').pop() || '',
+      es_carpeta: false,
+      ruta: f.ruta || '',
+    }));
+    entries = carpetas.concat(ficheros);
   } catch (err) {
     results.innerHTML = `<li class="muted small">Error: ${err.message}</li>`;
     return;
@@ -1287,15 +1311,19 @@ async function abrirBuscador() {
     const entry = entries.find(e => e.nombre === nombre);
     if (!entry) return;
     modal.classList.add('hidden');
-    // Navegar: si es carpeta, entra; si es fichero, abre.
+    // Navegar: si es carpeta, entra; si es fichero (markdown), lo abrimos
+    // directamente en el visor. Usamos entry.ruta que ya viene del backend
+    // (evita reconstruir rutas y arrastrar bugs si hay slashes raros).
     if (entry.es_carpeta) {
-      const base = ESTADO.ruta ? ESTADO.ruta.replace(/\/$/, '') + '/' : '';
-      navegar(base + entry.nombre);
+      navegar(entry.ruta);
+    } else if (/\.(md|markdown|txt)$/i.test(entry.nombre)) {
+      abrirMarkdown(entry.ruta, entry.nombre).catch(err => toast(err.message));
     } else {
-      // Los ficheros los abre el grid mediante onGridAction — dejamos que
-      // el usuario los pulse allí tras navegar. Cerramos el buscador.
-      const base = ESTADO.ruta ? ESTADO.ruta.replace(/\/$/, '') + '/' : '';
-      navegar(base);
+      // Otros ficheros: navegamos a la carpeta padre para que el usuario
+      // los abra desde el grid con la acción adecuada.
+      const parts = entry.ruta.split('/');
+      parts.pop();
+      navegar(parts.join('/') || '/');
     }
   };
 }
