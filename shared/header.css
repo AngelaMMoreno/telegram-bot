@@ -111,6 +111,26 @@ aprentix-header { display: contents; }
 
 .hdr-spacer { flex: 1; min-width: 0; }
 
+/* Botón "Más" del escritorio: sólo aparece cuando el sheet "Más" tiene
+ * items visibles para el usuario actual. En móvil manda la bottom-nav,
+ * así que este botón queda oculto y no compite con ella. */
+.hdr-more {
+  display: none;
+  background: transparent; border: 0;
+  color: var(--txt-soft);
+  padding: 8px; border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.hdr-more > span { display: inline-flex; width: 22px; height: 22px; }
+.hdr-more svg { width: 100%; height: 100%; }
+.hdr-more:hover { background: var(--pri-soft); color: var(--pri-d); }
+[data-theme="dark"] .hdr-more:hover { color: var(--pri); }
+.hdr-more[hidden], .hdr-more.hidden { display: none; }
+@media (min-width: 900px) {
+  .hdr-more:not([hidden]):not(.hidden) { display: inline-flex; align-items: center; }
+}
+
 /* Chip del usuario — en móvil solo es el círculo con la inicial. */
 .user-chip {
   display: flex; align-items: center; gap: 0.45rem;

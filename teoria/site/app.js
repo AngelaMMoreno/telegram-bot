@@ -496,7 +496,6 @@ async function cargar(ruta) {
   const data = await api('GET', 'api/listar?' + params.toString());
   ESTADO.ruta = data.ruta;
   ESTADO.puede_gestionar = !!data.puede_gestionar;
-  document.getElementById('admin-bar').hidden = !ESTADO.puede_gestionar;
   // Le decimos al chasis compartido si mostrar los slots "gestión" en el
   // sheet "Más". La regla en shared/header.css se apoya en estas clases.
   document.body.classList.toggle('puede-gestionar', ESTADO.puede_gestionar);
@@ -1067,20 +1066,25 @@ function modal({ titulo, texto, campo, aceptar = 'Aceptar', cancelar = 'Cancelar
   host.innerHTML = `
     <div class="modal">
       <div class="modal-card">
-        <h3>${titulo}</h3>
-        ${texto ? `<p>${texto}</p>` : ''}
-        ${campo !== undefined ? `<input id="modal-input" type="text" value="${campo || ''}">` : ''}
-        <div class="modal-actions">
-          <button class="btn btn-cancel" data-a="cancel">${cancelar}</button>
-          <button class="btn ${peligro ? 'btn-danger' : 'btn-pri'}" data-a="ok">${aceptar}</button>
+        <header class="modal-header">
+          <h3>${titulo}</h3>
+          <button class="modal-close" data-a="cancel" aria-label="Cerrar" type="button">✕</button>
+        </header>
+        <div class="modal-body">
+          ${texto ? `<p class="muted small">${texto}</p>` : ''}
+          ${campo !== undefined ? `<input id="modal-input" type="text" value="${campo || ''}">` : ''}
+          <div class="modal-actions">
+            <button class="btn btn-cancel" data-a="cancel" type="button">${cancelar}</button>
+            <button class="btn ${peligro ? 'btn-danger' : 'btn-pri'}" data-a="ok" type="button">${aceptar}</button>
+          </div>
         </div>
       </div>
     </div>`;
   const input = host.querySelector('#modal-input');
   if (input) { input.focus(); input.select(); }
   host.addEventListener('click', async (e) => {
-    if (e.target.dataset.a === 'cancel' || e.target.classList.contains('modal')) { host.innerHTML = ''; return; }
-    if (e.target.dataset.a === 'ok') {
+    if (e.target.closest('[data-a="cancel"]') || e.target.classList.contains('modal')) { host.innerHTML = ''; return; }
+    if (e.target.closest('[data-a="ok"]')) {
       try { await onOk(input ? input.value.trim() : null); host.innerHTML = ''; }
       catch (err) { toast(`⚠️ ${err.message}`); }
     }
@@ -1190,8 +1194,12 @@ document.getElementById('btn-logout').addEventListener('click', () => {
   deleteCookie(COOKIE_NAME);
   location.href = LANDING_URL;
 });
-document.getElementById('btn-nueva-carpeta').addEventListener('click', pedirNuevaCarpeta);
-document.getElementById('btn-nuevo-md').addEventListener('click', pedirNuevoMarkdown);
+// Los botones antiguos (Nueva carpeta / Nuevo markdown) vivían en la
+// admin-bar de la página. Ahora las acciones se disparan desde el sheet
+// "Más" del header a través del evento 'aprentix:nav'. Mantenemos los
+// bindings por si algún build antiguo los sigue montando.
+document.getElementById('btn-nueva-carpeta')?.addEventListener('click', pedirNuevaCarpeta);
+document.getElementById('btn-nuevo-md')?.addEventListener('click', pedirNuevoMarkdown);
 document.getElementById('file-input').addEventListener('change', (e) => {
   subirFicheros(e.target.files);
   e.target.value = '';
@@ -1519,6 +1527,10 @@ function abrirSelectorOposicion() {
 
 // La lista, el modal y el cierre los pinta y gestiona <ap-op-selector>;
 // aquí sólo reaccionamos al evento de elección.
+document.getElementById('teoria-elegir-oposicion')?.addEventListener('ap-op-selection-required', () => {
+  toast('Debes seleccionar una oposición para continuar.');
+});
+
 document.getElementById('teoria-elegir-oposicion')?.addEventListener('ap-op-select', (e) => {
   const { id, nombre } = e.detail;
   const op = id ? ESTADO.misOposicionesCache.find(o => o.id === id) : null;

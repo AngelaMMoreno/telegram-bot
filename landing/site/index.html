@@ -50,10 +50,19 @@
       <p class="sub-lead">Tests y teoría, en un mismo sitio.</p>
     </header>
 
-    <!-- Login (mientras no hay sesión) -->
+    <!-- Login / Registro: sustituyen entre sí para que no se solapen.
+         El toggle de arriba cambia el modo; sólo un formulario está
+         montado a la vez. -->
     <section id="login" class="card-panel">
-      <h2>Inicia sesión</h2>
-      <form id="form-login" autocomplete="on">
+      <div class="auth-tabs" role="tablist" aria-label="Modo de acceso">
+        <button type="button" class="auth-tab active" role="tab"
+                data-auth-tab="login" aria-selected="true">Iniciar sesión</button>
+        <button type="button" class="auth-tab" role="tab"
+                data-auth-tab="registro" aria-selected="false">Registrarse</button>
+      </div>
+
+      <form id="form-login" class="auth-form active" autocomplete="on"
+            data-auth-panel="login" role="tabpanel">
         <label>Usuario
           <input name="username" required autofocus autocomplete="username">
         </label>
@@ -63,22 +72,32 @@
         <button class="btn btn-pri" type="submit">Entrar</button>
         <div id="login-error" class="err" hidden></div>
       </form>
-      <details class="reg-toggle">
-        <summary>¿No tienes cuenta? Regístrate</summary>
-        <form id="form-registro" autocomplete="off">
-          <label>Usuario nuevo
-            <input name="username" required minlength="3">
-          </label>
-          <label>Contraseña
-            <input name="password" type="password" required minlength="6">
-          </label>
-          <label>Email (opcional)
-            <input name="email" type="email">
-          </label>
-          <button class="btn btn-sec" type="submit">Crear cuenta</button>
-          <div id="reg-error" class="err" hidden></div>
-        </form>
-      </details>
+
+      <form id="form-registro" class="auth-form" autocomplete="off"
+            data-auth-panel="registro" role="tabpanel" hidden>
+        <label>Usuario nuevo
+          <input name="username" required minlength="3" autocomplete="username">
+        </label>
+        <label>Email (opcional)
+          <input name="email" type="email" autocomplete="email">
+        </label>
+        <label>Contraseña
+          <input id="reg-password" name="password" type="password"
+                 required minlength="6" autocomplete="new-password">
+        </label>
+        <!-- Medidor de fortaleza: barra + etiqueta. La pinta app.js. -->
+        <div class="pw-strength" id="reg-pw-strength" data-level="0" hidden>
+          <div class="pw-strength-bar"><span></span></div>
+          <span class="pw-strength-label">Fortaleza: <strong id="reg-pw-strength-txt">—</strong></span>
+        </div>
+        <label>Repite la contraseña
+          <input id="reg-password2" name="password2" type="password"
+                 required minlength="6" autocomplete="new-password">
+        </label>
+        <div id="reg-match" class="err" hidden>Las contraseñas no coinciden.</div>
+        <button class="btn btn-pri" type="submit">Crear cuenta</button>
+        <div id="reg-error" class="err" hidden></div>
+      </form>
     </section>
 
     <!-- Selector (una vez logueado). Sólo se muestra si el usuario NO

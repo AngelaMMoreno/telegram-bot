@@ -321,10 +321,17 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
 document.getElementById('form-registro').addEventListener('submit', async (e) => {
   e.preventDefault();
   const fd = new FormData(e.target);
+  const p1 = fd.get('password');
+  const p2 = fd.get('password2');
+  if (p1 !== p2) {
+    const el = document.getElementById('reg-match');
+    if (el) { el.hidden = false; setTimeout(() => { el.hidden = true; }, 4000); }
+    return;
+  }
   try {
     const r = await rpc('registrar_web', {
       p_username: fd.get('username'),
-      p_password: fd.get('password'),
+      p_password: p1,
       p_email: fd.get('email') || null,
     });
     if (!r || !r.token) throw new Error('Respuesta sin token');
@@ -337,6 +344,68 @@ document.getElementById('form-registro').addEventListener('submit', async (e) =>
     showError('reg-error', String(err.message || err));
   }
 });
+
+// ── Tabs Login / Registro ─────────────────────────────────────────────────
+// El toggle sustituye un panel por el otro (sin details ni acordeón). El
+// usuario nunca ve los dos a la vez, así evitamos que el formulario de
+// registro asome debajo del de login y confunda al usuario.
+document.querySelectorAll('.auth-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const which = tab.dataset.authTab;
+    document.querySelectorAll('.auth-tab').forEach(t => {
+      const on = t === tab;
+      t.classList.toggle('active', on);
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    document.querySelectorAll('[data-auth-panel]').forEach(p => {
+      const on = p.dataset.authPanel === which;
+      p.classList.toggle('active', on);
+      p.hidden = !on;
+    });
+    // Foco al primer campo del panel visible para no romper el flujo.
+    const primero = document.querySelector(
+      `[data-auth-panel="${which}"] input`);
+    if (primero) primero.focus();
+  });
+});
+
+// ── Medidor de fortaleza de contraseña ─────────────────────────────────────
+// Heurística sencilla (longitud + variedad de caracteres). No pretende ser
+// zxcvbn: sólo dar señal visual al usuario mientras teclea.
+function evaluarFortaleza(pw) {
+  if (!pw) return { nivel: 0, texto: '—' };
+  let puntos = 0;
+  if (pw.length >= 8)  puntos++;
+  if (pw.length >= 12) puntos++;
+  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) puntos++;
+  if (/\d/.test(pw)) puntos++;
+  if (/[^A-Za-z0-9]/.test(pw)) puntos++;
+  const nivel = Math.min(4, puntos);
+  const texto = ['Muy débil', 'Débil', 'Aceptable', 'Fuerte', 'Muy fuerte'][nivel];
+  return { nivel, texto };
+}
+
+const pwInput  = document.getElementById('reg-password');
+const pwInput2 = document.getElementById('reg-password2');
+const pwWrap   = document.getElementById('reg-pw-strength');
+const pwTxt    = document.getElementById('reg-pw-strength-txt');
+const pwMatch  = document.getElementById('reg-match');
+pwInput?.addEventListener('input', () => {
+  const v = pwInput.value;
+  const { nivel, texto } = evaluarFortaleza(v);
+  if (pwWrap) {
+    pwWrap.hidden = v.length === 0;
+    pwWrap.dataset.level = String(nivel);
+  }
+  if (pwTxt) pwTxt.textContent = texto;
+});
+// Refresca el aviso "no coinciden" en cuanto el usuario corrige.
+[pwInput, pwInput2].forEach(el => el?.addEventListener('input', () => {
+  if (!pwMatch) return;
+  if (pwInput2?.value && pwInput?.value && pwInput.value === pwInput2.value) {
+    pwMatch.hidden = true;
+  }
+}));
 
 document.getElementById('btn-logout').addEventListener('click', () => {
   deleteCookie(COOKIE_NAME);

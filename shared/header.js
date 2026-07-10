@@ -155,6 +155,15 @@
             ${tab('teoria', active, teoriaHidden)}
           </nav>
           <div class="hdr-spacer"></div>
+          <!-- Botón "Más" del escritorio: sólo aparece cuando el sheet
+               "Más" tiene items visibles con los permisos actuales. En
+               móvil manda la bottom-nav; en desktop la bottom-nav se
+               oculta y este botón toma su relevo. -->
+          <button class="hdr-more" id="hdr-more-btn" type="button"
+                  data-more="1" aria-haspopup="dialog" aria-label="Más acciones"
+                  title="Más acciones" hidden>
+            <span aria-hidden="true">${icon('more')}</span>
+          </button>
           <div class="user-chip">
             <button class="user-btn" id="btn-user-menu" title="Cuenta" aria-haspopup="dialog" aria-expanded="false">
               <span class="avatar" id="user-avatar"></span>
@@ -283,8 +292,9 @@
      */
     _hideEmptyMore() {
       const btn = this.querySelector('.bnav-item[data-more="1"], .bnav-item[data-nav-id="more"]');
+      const desktopBtn = this.querySelector('#hdr-more-btn');
       const sheet = this.querySelector('#more-sheet .more-list');
-      if (!btn || !sheet) return;
+      if (!sheet) return;
       const evalMore = () => {
         const puedeGestionar = document.body.classList.contains('puede-gestionar');
         const esAdmin = document.body.classList.contains('es-admin');
@@ -295,8 +305,14 @@
           return true;
         });
         const hasItems = visibles.length > 0;
-        btn.hidden = !hasItems;
-        btn.classList.toggle('hidden', !hasItems);
+        if (btn) {
+          btn.hidden = !hasItems;
+          btn.classList.toggle('hidden', !hasItems);
+        }
+        if (desktopBtn) {
+          desktopBtn.hidden = !hasItems;
+          desktopBtn.classList.toggle('hidden', !hasItems);
+        }
       };
       evalMore();
       if ('MutationObserver' in window) {
@@ -349,12 +365,14 @@
         this.querySelectorAll('.aprentix-sheet.open').forEach(closeSheet);
       });
 
-      // Botón "Más" del bottom-nav → sheet secundaria.
-      this.querySelectorAll('[data-more]').forEach(b => {
-        b.addEventListener('click', (e) => {
-          e.preventDefault();
-          openSheet('more-sheet');
-        });
+      // Botón "Más" (bottom-nav, topbar de escritorio o sidebar de tests)
+      // → sheet secundaria. Delegamos en document para captar botones
+      // externos a <aprentix-header>, como el "Más" del sidebar de tests.
+      document.addEventListener('click', (e) => {
+        const el = e.target.closest('[data-more]');
+        if (!el) return;
+        e.preventDefault();
+        openSheet('more-sheet');
       });
 
       // Fila "Panel de admin" en el sheet del usuario → sheet admin.
@@ -378,10 +396,12 @@
       });
 
       // Al pulsar cualquier item del bottom-nav, del sheet "Más" o una
-      // fila del sheet del avatar (excepto la de admin que abre otro
-      // sheet), cerramos las sheets abiertas — el routing lo hace el app.
+      // fila del sheet del avatar (excepto la de admin y la de "Más" que
+      // abren otro sheet), cerramos las sheets abiertas — el routing lo
+      // hace el app.
       this.querySelectorAll('.bnav-item, .more-item, .sheet-row').forEach(b => {
         if (b.id === 'btn-admin-panel') return;  // abre otro sheet
+        if (b.hasAttribute('data-more')) return; // abre el sheet "Más"
         b.addEventListener('click', () => {
           setTimeout(() => {
             this.querySelectorAll('.aprentix-sheet.open').forEach(closeSheet);

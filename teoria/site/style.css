@@ -30,28 +30,23 @@ button { font: inherit; cursor: pointer; }
 .bc-sep { color: var(--border); margin: 0 4px; }
 .bc-current { color: var(--text); font-weight: 600; }
 
-/* ── Admin bar ───────────────────────────────────────────────────────── */
-.admin-bar {
-  padding: 10px 24px;
-  background: var(--card);
-  border-bottom: 1px solid var(--border);
-  display: flex; flex-direction: column; gap: 8px;
-}
+/* ── Barra de acciones ─────────────────────────────────────────────────
+ * Las acciones "Subir ficheros / Nueva carpeta / Nuevo markdown" viven
+ * ahora en el sheet "Más" de la cabecera. Sólo queda la fila de selección
+ * múltiple, que aparece cuando el usuario entra en modo selección. */
 .admin-bar-row {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
 }
 .admin-hint { color: var(--sub); font-size: 12px; margin-left: auto; }
-/* Admin-bar botones más compactos que el resto de la app. */
-.admin-bar .btn {
+/* La fila de selección sí lleva fondo propio para separarla del grid. */
+.seleccion-bar {
+  padding: 10px 24px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+.seleccion-bar .btn {
   min-height: 34px; padding: 0.35rem 0.75rem;
   font-size: 0.85rem; font-weight: 500;
-}
-/* Fila de selección: sale bajo la fila de subir/carpeta/markdown cuando se
- * entra en modo selección. La contra-visual es una línea sutil para
- * separarla de la fila principal sin peso. */
-.seleccion-bar {
-  border-top: 1px dashed var(--border);
-  padding-top: 8px;
 }
 .seleccion-bar[hidden] { display: none; }
 .seleccion-count { font-weight: 700; font-size: 13px; margin-right: 4px; }
@@ -135,12 +130,15 @@ button { font: inherit; cursor: pointer; }
  * Aquí solo quedan reglas específicas del markup de teoría dentro
  * de la caja. */
 
-.modal .modal-card h3 { font-size: 17px; margin-bottom: 12px; }
-.modal .modal-card p { font-size: 14px; color: var(--sub); margin-bottom: 16px; word-break: break-word; }
-.modal .modal-card input, .modal .modal-card select {
+.modal .modal-card h3 { font-size: 17px; }
+.modal .modal-card p { font-size: 14px; color: var(--sub); word-break: break-word; }
+.modal .modal-card .modal-body > input,
+.modal .modal-card .modal-body > select,
+.modal .modal-card .modal-body input:not([type="checkbox"]):not([type="radio"]),
+.modal .modal-card .modal-body select {
   width: 100%; padding: 10px 12px;
   border: 1px solid var(--border); border-radius: 8px;
-  font-size: 14px; margin-bottom: 16px;
+  font-size: 14px;
   background: var(--card); color: var(--text);
 }
 .modal .modal-card input:focus, .modal .modal-card select:focus {

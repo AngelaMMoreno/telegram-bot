@@ -36,13 +36,17 @@ class ApOpSelector extends HTMLElement {
 
     const title = this.getAttribute('title') || '¿Con qué oposición trabajas hoy?';
     const subtitle = this.getAttribute('subtitle') || '';
-    const closable = this.hasAttribute('closable') || false;
 
+    // Siempre mostramos la X: aunque sea la primera vez interceptamos el
+    // cierre y avisamos al usuario que debe seleccionar una oposición.
     this._modal = document.createElement('ap-modal');
     this._modal.setAttribute('title', title);
-    if (closable) this._modal.setAttribute('closable', '');
+    this._modal.setAttribute('closable', '');
     this._modal.setAttribute('hidden', '');
     this._modal.classList.add('hidden');
+    // Guarda de "primera selección obligatoria": la levanta setOptions()
+    // cuando currentId es null; el listener 'ap-close' lo cancela.
+    this._requireSelection = false;
 
     // OJO: no podemos crear <ul> y appendChild-ear al modal antes de
     // insertarlo, porque <ap-modal>.connectedCallback() reescribe su
@@ -65,12 +69,28 @@ class ApOpSelector extends HTMLElement {
       const raw = btn.dataset.opId;
       const id = raw === '' ? null : raw;
       const nombre = btn.dataset.opNombre || 'Todas';
+      // Al elegir baja el flag para que el próximo cierre sea normal.
+      this._requireSelection = false;
       this.dispatchEvent(new CustomEvent('ap-op-select', {
         detail: { id, nombre },
         bubbles: true,
       }));
       this.close();
     });
+
+    // Si la selección es obligatoria (primera vez sin oposición elegida) y
+    // el usuario intenta cerrar (X, Esc, backdrop), interceptamos el
+    // método .close() del <ap-modal> hijo para bloquearlo y avisar.
+    const origClose = this._modal.close.bind(this._modal);
+    this._modal.close = () => {
+      if (this._requireSelection) {
+        this.dispatchEvent(new CustomEvent('ap-op-selection-required', {
+          bubbles: true,
+        }));
+        return;
+      }
+      origClose();
+    };
   }
 
   setOptions(oposiciones, currentId) {
@@ -79,6 +99,9 @@ class ApOpSelector extends HTMLElement {
       this._list = this._modal && this._modal.querySelector('.ap-op-list');
     }
     if (!this._list) return;
+    // Sin oposición actual (primera selección): activa el guard para que
+    // el cierre sin elegir dispare 'ap-op-selection-required' en la app.
+    this._requireSelection = currentId == null || currentId === '';
     const items = [{ id: null, nombre: 'Todas mis oposiciones' }, ...(oposiciones || [])];
     this._list.innerHTML = items.map(op => {
       const idAttr = op.id == null ? '' : op.id;

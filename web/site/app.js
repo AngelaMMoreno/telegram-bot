@@ -2325,6 +2325,10 @@ function abrirSelectorOposicion() {
 
 // La lista, el modal y el cierre los pinta y gestiona <ap-op-selector>;
 // aquí sólo reaccionamos al evento de elección.
+$("#modal-elegir-oposicion")?.addEventListener("ap-op-selection-required", () => {
+  toast("Debes seleccionar una oposición para continuar.");
+});
+
 $("#modal-elegir-oposicion")?.addEventListener("ap-op-select", (e) => {
   const { id, nombre } = e.detail;
   const op = id ? state.misOposicionesCache.find(o => o.id === id) : null;
