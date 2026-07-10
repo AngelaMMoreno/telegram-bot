@@ -36,7 +36,7 @@ CREATE TABLE usuarios (
 );
 
 CREATE TABLE roles (
-    id          text PRIMARY KEY,                -- 'admin' | 'editor' | 'alumno'
+    id          text PRIMARY KEY,                -- 'admin' | 'editor' | 'tests' | 'teoria'
     descripcion text
 );
 
@@ -357,7 +357,7 @@ CREATE TABLE push_envios (
 -- =============================================================================
 -- Un único rol de conexión ('autenticador') usado por PostgREST; la identidad
 -- llega por JWT (claim 'sub'). Los roles funcionales de la app (admin,
--- editor, alumno) viven en la tabla 'roles', NO como roles Postgres.
+-- editor, tests, teoria) viven en la tabla 'roles', NO como roles Postgres.
 
 CREATE ROLE web_anon   NOLOGIN;
 CREATE ROLE web_user   NOLOGIN;
@@ -675,7 +675,7 @@ BEGIN
     INSERT INTO usuarios(username, email, password_hash)
     VALUES (p_username, p_email, crypt(p_password, gen_salt('bf', 12)))
     RETURNING id INTO v_id;
-    INSERT INTO usuario_roles(usuario_id, rol_id) VALUES (v_id, 'alumno');
+    INSERT INTO usuario_roles(usuario_id, rol_id) VALUES (v_id, 'tests');
     RETURN v_id;
 END $$;
 
@@ -3755,7 +3755,7 @@ END $$;
 INSERT INTO roles (id, descripcion) VALUES
     ('admin',  'Acceso total al sistema'),
     ('editor', 'Puede crear y editar preguntas, tests y temas'),
-    ('alumno', 'Puede realizar tests y consultar su propio progreso'),
+    ('tests',  'Puede realizar tests de las oposiciones que tenga asignadas'),
     ('teoria', 'Puede acceder al material de teoría')
 ON CONFLICT (id) DO NOTHING;
 
@@ -3791,9 +3791,9 @@ INSERT INTO rol_permisos (rol_id, permiso_id) VALUES
     ('editor', 'test.publicar'),
     ('editor', 'etiqueta.gestionar'),
     ('editor', 'test.realizar'),
-    ('alumno', 'test.realizar'),
+    ('tests',  'test.realizar'),
     -- El rol 'teoria' solo abre la puerta a leer la teoría, no a
-    -- realizar tests ni a gestionarla. Se combina con 'alumno' cuando
+    -- realizar tests ni a gestionarla. Se combina con 'tests' cuando
     -- corresponda.
     ('teoria', 'teoria.acceder')
 ON CONFLICT DO NOTHING;

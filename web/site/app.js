@@ -309,6 +309,7 @@ async function login(username, password) {
   state.user = { user_id: r.user_id, username: r.username, puede_gestionar: r.puede_gestionar, roles: r.roles };
   persistSession();
   applySession();
+  await cargarMisOposiciones().catch(() => {});
   navigate("home");
 }
 
@@ -323,6 +324,7 @@ async function register(form) {
   state.user = { user_id: r.user_id, username: r.username, puede_gestionar: r.puede_gestionar, roles: r.roles };
   persistSession();
   applySession();
+  await cargarMisOposiciones().catch(() => {});
   navigate("home");
 }
 
@@ -692,15 +694,42 @@ document.addEventListener("click", e => {
   if (t) activarPestanaRetos(t.dataset.retosTab);
 });
 
+/* Los usuarios sin permiso de gestión (rol 'tests') solo ven tests
+ * cuando han elegido una oposición concreta. La opción "Todas mis
+ * oposiciones" queda reservada al staff (admin/editor). */
+function necesitaOposicion() {
+  return !!(state.user && !state.user.puede_gestionar);
+}
+
 /* ── Tests ── */
 async function loadTests() {
+  const listWrap = $("#tests-list");
+
+  // Usuarios sin gestión: si aún no han elegido oposición, no tiene
+  // sentido pedir tests (verían un listado que no controlan). Abrimos
+  // el selector obligatorio y pintamos un aviso. Antes esto era un
+  // race: el fetch salía en paralelo a cargarMisOposiciones() y a
+  // veces devolvía tests globales, a veces vacío.
+  if (necesitaOposicion() && !state.currentOposicion) {
+    if (listWrap) {
+      listWrap.classList.remove("cargando");
+      listWrap.innerHTML = state.misOposicionesCache?.length
+        ? "<p class='muted'>Elige una oposición para ver sus tests.</p>"
+        : "<p class='muted'>Tu administrador aún no te ha asignado ninguna oposición.</p>";
+    }
+    renderPagination({ page: 1, total_pages: 0 });
+    if (state.misOposicionesCache?.length) {
+      abrirSelectorOposicion({ required: true });
+    }
+    return;
+  }
+
   // No borramos el listado de tests inmediatamente para evitar el
   // parpadeo al cambiar de filtro/etiqueta: mantenemos el contenido
   // actual con una atenuación sutil (clase .cargando en el wrapper) y
   // solo mostramos "Cargando…" si el fetch tarda más de 250 ms. Así
   // clicks rápidos sobre chips no provocan un flash blanco entre el
   // repintado y la nueva lista.
-  const listWrap = $("#tests-list");
   if (listWrap) listWrap.classList.add("cargando");
   const placeholderTimer = setTimeout(() => {
     if (!listWrap) return;
@@ -2518,6 +2547,16 @@ async function mount() {
   }
   applySession();
 
+  // Fase 5: cargar oposiciones accesibles del usuario y decidir si hay
+  // que mostrar el selector inicial. Para los usuarios sin gestión
+  // (rol 'tests'/'teoria') es imprescindible saber la oposición antes
+  // de pintar la vista de tests: si no, se dispara loadTests con
+  // p_oposicion_id=null y el listado sale inconsistente (a veces todos
+  // los públicos, a veces vacío según el orden de los fetch).
+  if (state.jwt && state.user) {
+    await cargarMisOposiciones().catch(() => {});
+  }
+
   // Atajos desde el manifest (Repasar / Fallos / Tests) o desde click en
   // notificación. Solo respetamos el atajo si hay sesión válida.
   const atajo = new URLSearchParams(location.search).get("atajo");
@@ -2528,12 +2567,6 @@ async function mount() {
   // y applySession(). Se hace tras navigate() para que el primer frame
   // ya muestre la vista definitiva sin parpadeos.
   document.documentElement.setAttribute("data-boot", "ready");
-
-  // Fase 5: cargar oposiciones accesibles del usuario y decidir si hay
-  // que mostrar el selector inicial.
-  if (state.jwt && state.user) {
-    cargarMisOposiciones().catch(() => {});
-  }
 
   // Si ya hay permiso concedido, sincronizamos silenciosamente la
   // suscripción con el backend (por si se creó en otro dispositivo o
@@ -2608,6 +2641,7 @@ async function cargarMisOposiciones() {
     abrirSelectorOposicion({ required: true });
   }
   refrescarHintOposicion();
+  return state.misOposicionesCache;
 }
 
 function refrescarHintOposicion() {
@@ -2625,7 +2659,10 @@ function refrescarHintOposicion() {
 function abrirSelectorOposicion(opts = {}) {
   const selector = $("#modal-elegir-oposicion");
   if (!selector) return;
-  selector.setOptions(state.misOposicionesCache, state.currentOposicion);
+  // "Todas mis oposiciones" solo tiene sentido para el staff. Al rol
+  // 'tests' se le fuerza a elegir una oposición concreta.
+  const allowAll = !necesitaOposicion();
+  selector.setOptions(state.misOposicionesCache, state.currentOposicion, { allowAll });
   // Si aún no hay ninguna elegida, hacemos que sea obligatorio: no se
   // puede cerrar sin escoger. En cambio, si el usuario está cambiando
   // desde el avatar/home, permitimos cerrar sin más.

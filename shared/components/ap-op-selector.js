@@ -12,10 +12,12 @@
  *                   subtitle="Se aplica a tests y a teoría."></ap-op-selector>
  *
  * API:
- *   el.setOptions(oposiciones, currentId)
+ *   el.setOptions(oposiciones, currentId, opts)
  *       oposiciones: array de { id, nombre }. Se añade automáticamente
- *       una fila "Todas" (id=null) al principio.
+ *       una fila "Todas" (id=null) al principio salvo que opts.allowAll
+ *       sea false: entonces solo aparecen las oposiciones asignadas.
  *       currentId: id actual o null.
+ *       opts: { allowAll?: boolean = true }
  *   el.open() / el.close()
  *
  * Eventos:
@@ -117,13 +119,16 @@ class ApOpSelector extends HTMLElement {
     hint.classList.add('shake');
   }
 
-  setOptions(oposiciones, currentId) {
+  setOptions(oposiciones, currentId, opts = {}) {
     // Si por algún motivo la ul se ha perdido, la re-buscamos.
     if (!this._list || !this._list.isConnected) {
       this._list = this._modal && this._modal.querySelector('.ap-op-list');
     }
     if (!this._list) return;
-    const items = [{ id: null, nombre: 'Todas mis oposiciones', _all: true }, ...(oposiciones || [])];
+    const allowAll = opts.allowAll !== false;
+    const items = allowAll
+      ? [{ id: null, nombre: 'Todas mis oposiciones', _all: true }, ...(oposiciones || [])]
+      : [...(oposiciones || [])];
     // Emojis rotativos para dar un toque visual a la ficha (queda cálida
     // en lugar de "texto sobre verde oscuro"). El "Todas" mantiene un
     // icono neutro.

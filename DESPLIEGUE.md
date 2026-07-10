@@ -145,9 +145,10 @@ Los stacks son independientes: reiniciar `web` no toca a `db`.
 
 - Usuario `admin` con la contraseña `ADMIN_PASS` del stack `core`
   (creada por el bloque final de `db/init/01_esquema.sql`).
-- Registros nuevos entran como `alumno`. El admin promueve al rol
-  `teoria` desde el panel de usuarios de la SPA de tests (o llamando a
-  `asignar_rol` desde pgAdmin).
+- Registros nuevos entran como `tests`. El admin añade además el rol
+  `teoria` (o cualquier otro) desde el panel de usuarios de la SPA de
+  tests (o llamando a `asignar_rol` desde pgAdmin). Ambos roles solo
+  ven contenido de las oposiciones que el admin les haya asignado.
 
 ## 6. Backup / restauración
 

@@ -34,13 +34,13 @@ edita `01_esquema.sql` y (si la base ya está en producción) escribe el
 | `web_anon` | ❌ | Endpoints públicos (login, registro, `leer_config`). |
 | `web_user` | ❌ | Sesión autenticada; la identidad y roles funcionales llegan por JWT. |
 
-Los roles funcionales de la aplicación (`admin`, `editor`, `alumno`,
+Los roles funcionales de la aplicación (`admin`, `editor`, `tests`,
 `teoria`) NO son roles Postgres: viven en la tabla `roles` y se
 comprueban con `tiene_permiso()` / `es_admin()` desde las políticas RLS.
-El rol `teoria` abre la puerta al material de teoría (`teoria.acceder`)
-y es completamente ortogonal a los demás: un mismo usuario puede tener
-`alumno + teoria`, o solo `teoria` si únicamente ha contratado la
-teoría.
+`tests` abre la puerta a realizar tests (`test.realizar`) y `teoria`
+al material de teoría (`teoria.acceder`); son ortogonales entre sí y
+al par `admin/editor`: un mismo usuario puede tener `tests + teoria`,
+solo `tests`, o solo `teoria` según lo que haya contratado.
 
 **Secretos como GUCs personalizados** (inyectados por `docker-compose`
 con `-c app.xxx=...`):
@@ -112,7 +112,7 @@ RLS: cada usuario solo ve su fila; los admins ven todas.
 Tablas clásicas de RBAC.
 
 - `roles(id text PK, descripcion text)` — semilla: `admin`, `editor`,
-  `alumno`.
+  `tests`, `teoria`.
 - `permisos(id text PK, descripcion text)` — cadenas semánticas del
   estilo `pregunta.crear`, `test.editar`, `etiqueta.gestionar`.
 - `rol_permisos(rol_id, permiso_id)` — mapping N:N.
@@ -381,7 +381,7 @@ Auxiliares invisibles al cliente pero clave para el resto del sistema.
 ### 4.2 Auth (accesible a `web_anon`)
 
 - **`registrarse(username, password, email?) → uuid`** — crea usuario
-  con rol `alumno`. Valida longitud mínima.
+  con rol `tests`. Valida longitud mínima.
 - **`iniciar_sesion(username, password) → text`** — devuelve un JWT
   firmado (12h de expiración).
 - **`login_web(username, password) → jsonb`** — envuelve
