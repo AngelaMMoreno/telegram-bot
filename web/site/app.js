@@ -332,6 +332,19 @@ function navigate(view) {
   if (loader) loader().catch(e => toast(e.message));
 }
 
+// El botón "Más" del sidebar de escritorio abre el sheet flotante del
+// bottom-nav para reutilizar la misma UI en ambas resoluciones.
+document.addEventListener("click", e => {
+  const masBtn = e.target.closest("#sidebar-mas-tests");
+  if (!masBtn) return;
+  e.preventDefault();
+  const sheet = document.getElementById("more-sheet");
+  if (!sheet) return;
+  sheet.classList.remove("hidden");
+  sheet.classList.add("open");
+  document.body.classList.add("sheet-open");
+});
+
 document.addEventListener("click", e => {
   const navBtn = e.target.closest("[data-view]");
   if (navBtn) {
@@ -374,12 +387,90 @@ function inicializarInputsTiempo() {
   });
 }
 
-/* ── Login / registro ────────────────────────────────────────────────────── */
-$$(".tab").forEach(tab => tab.addEventListener("click", () => {
-  $$(".tab").forEach(t => t.classList.toggle("active", t === tab));
-  $$(".tabpanel").forEach(p => p.classList.toggle("active",
-    p.id === ("form-" + tab.dataset.tab)));
-}));
+/* ── Login / registro ──────────────────────────────────────────────────────
+ * El registro SUSTITUYE al panel de login (no aparecen los dos a la vez).
+ * El link "¿No tienes cuenta?" del pie alterna entre ambos. Cuando se
+ * abre el registro se muestra el indicador de fortaleza de contraseña.
+ */
+function mostrarPanelAuth(cual) {
+  $$(".auth-panel").forEach(p => {
+    p.classList.toggle("active", p.id === "form-" + cual);
+  });
+  // Reset visual del indicador al alternar paneles.
+  if (cual === "register") {
+    const pass = $("#reg-pass");
+    if (pass) actualizarFortalezaPw(pass.value);
+    const pass2 = $("#reg-pass2");
+    if (pass2 && pass2.value === "" && $("#reg-pass").value === "") {
+      const m = $("#pw-match"); if (m) m.hidden = true;
+    }
+  }
+}
+
+document.addEventListener("click", e => {
+  const btn = e.target.closest("[data-auth-goto]");
+  if (!btn) return;
+  e.preventDefault();
+  mostrarPanelAuth(btn.dataset.authGoto);
+});
+
+/* Cálculo simple de fortaleza (0..4): longitud + variedad de clases
+ * (minúsculas, mayúsculas, dígitos, símbolos). No sustituye a zxcvbn,
+ * pero da al usuario una guía inmediata. */
+function calcularFortalezaPw(pw) {
+  if (!pw) return { nivel: 0, etiqueta: "" };
+  let pts = 0;
+  if (pw.length >= 6) pts++;
+  if (pw.length >= 10) pts++;
+  if (pw.length >= 14) pts++;
+  const clases = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter(r => r.test(pw)).length;
+  if (clases >= 2) pts++;
+  if (clases >= 3) pts++;
+  if (clases >= 4) pts++;
+  // Reescala a 1..4.
+  const nivel = Math.min(4, Math.max(1, Math.round(pts * 4 / 6)));
+  const etiqueta = ["", "Débil", "Aceptable", "Fuerte", "Muy fuerte"][nivel];
+  return { nivel, etiqueta };
+}
+
+function actualizarFortalezaPw(pw) {
+  const wrap = $("#pw-strength");
+  const fill = $("#pw-strength-fill");
+  const lbl  = $("#pw-strength-label");
+  if (!wrap || !fill || !lbl) return;
+  wrap.classList.remove("lvl-1", "lvl-2", "lvl-3", "lvl-4");
+  if (!pw) {
+    fill.style.width = "0%";
+    lbl.textContent = "Introduce una contraseña";
+    return;
+  }
+  const { nivel, etiqueta } = calcularFortalezaPw(pw);
+  wrap.classList.add("lvl-" + nivel);
+  fill.style.width = (nivel * 25) + "%";
+  lbl.textContent = etiqueta;
+}
+
+function actualizarCoincidenciaPw() {
+  const p1 = $("#reg-pass")?.value || "";
+  const p2 = $("#reg-pass2")?.value || "";
+  const m = $("#pw-match");
+  if (!m) return;
+  if (!p2) { m.hidden = true; return; }
+  m.hidden = false;
+  if (p1 === p2) {
+    m.textContent = "✓ Las contraseñas coinciden";
+    m.classList.remove("err"); m.classList.add("ok");
+  } else {
+    m.textContent = "✗ No coinciden";
+    m.classList.remove("ok"); m.classList.add("err");
+  }
+}
+
+$("#reg-pass")?.addEventListener("input", (e) => {
+  actualizarFortalezaPw(e.target.value);
+  actualizarCoincidenciaPw();
+});
+$("#reg-pass2")?.addEventListener("input", actualizarCoincidenciaPw);
 
 $("#form-login")?.addEventListener("submit", async e => {
   e.preventDefault();
@@ -391,6 +482,8 @@ $("#form-register")?.addEventListener("submit", async e => {
   e.preventDefault();
   const p1 = $("#reg-pass").value, p2 = $("#reg-pass2").value;
   if (p1 !== p2) return toast("Las contraseñas no coinciden");
+  const { nivel } = calcularFortalezaPw(p1);
+  if (nivel < 2) return toast("Elige una contraseña más fuerte");
   try {
     await register({
       username: $("#reg-user").value.trim(),
@@ -573,7 +666,20 @@ document.addEventListener("click", e => {
 
 /* ── Tests ── */
 async function loadTests() {
-  $("#tests-list").innerHTML = "<p class='muted'>Cargando…</p>";
+  // No borramos el listado de tests inmediatamente para evitar el
+  // parpadeo al cambiar de filtro/etiqueta: mantenemos el contenido
+  // actual con una atenuación sutil (clase .cargando en el wrapper) y
+  // solo mostramos "Cargando…" si el fetch tarda más de 250 ms. Así
+  // clicks rápidos sobre chips no provocan un flash blanco entre el
+  // repintado y la nueva lista.
+  const listWrap = $("#tests-list");
+  if (listWrap) listWrap.classList.add("cargando");
+  const placeholderTimer = setTimeout(() => {
+    if (!listWrap) return;
+    if (!listWrap.innerHTML || !listWrap.children.length) {
+      listWrap.innerHTML = "<p class='muted'>Cargando…</p>";
+    }
+  }, 250);
   // ensureEtiquetasCache alimenta el editor/quiz con TODAS las etiquetas.
   await ensureEtiquetasCache();
   // Para el filtro del listado, sólo mostramos las etiquetas presentes
@@ -602,8 +708,10 @@ async function loadTests() {
     p_oposicion_id:    state.currentOposicion || null,
   });
   state.testsCache = r.tests;
+  clearTimeout(placeholderTimer);
   renderTests();
   renderPagination(r);
+  if (listWrap) listWrap.classList.remove("cargando");
 }
 
 function renderTests() {
@@ -2426,7 +2534,7 @@ async function cargarMisOposiciones() {
     state.currentOposicionNombre = o.nombre;
     guardarOposicionPersistida(o);
   } else if (state.misOposicionesCache.length > 1 && !state.currentOposicion) {
-    abrirSelectorOposicion();
+    abrirSelectorOposicion({ required: true });
   }
   refrescarHintOposicion();
 }
@@ -2443,10 +2551,14 @@ function refrescarHintOposicion() {
   if (btnHome) btnHome.hidden = !varias;
 }
 
-function abrirSelectorOposicion() {
+function abrirSelectorOposicion(opts = {}) {
   const selector = $("#modal-elegir-oposicion");
   if (!selector) return;
   selector.setOptions(state.misOposicionesCache, state.currentOposicion);
+  // Si aún no hay ninguna elegida, hacemos que sea obligatorio: no se
+  // puede cerrar sin escoger. En cambio, si el usuario está cambiando
+  // desde el avatar/home, permitimos cerrar sin más.
+  selector.setRequired?.(!!opts.required);
   selector.open();
 }
 

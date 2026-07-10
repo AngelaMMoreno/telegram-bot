@@ -527,7 +527,12 @@ async function cargar(ruta) {
   const data = await api('GET', 'api/listar?' + params.toString());
   ESTADO.ruta = data.ruta;
   ESTADO.puede_gestionar = !!data.puede_gestionar;
-  document.getElementById('admin-bar').hidden = !ESTADO.puede_gestionar;
+  // La admin-bar solo contiene ya la fila de selección múltiple; se
+  // muestra únicamente al entrar en modo selección. Los botones de
+  // subir/nueva carpeta/nuevo markdown viven en el menú "Más" y en la
+  // sidebar de escritorio (ocultos si el usuario no tiene permiso).
+  const adminBar = document.getElementById('admin-bar');
+  if (adminBar) adminBar.hidden = !document.body.classList.contains('en-seleccion');
   // Le decimos al chasis compartido si mostrar los slots "gestión" en el
   // sheet "Más". La regla en shared/header.css se apoya en estas clases.
   document.body.classList.toggle('puede-gestionar', ESTADO.puede_gestionar);
@@ -1121,23 +1126,33 @@ function modal({ titulo, texto, campo, aceptar = 'Aceptar', cancelar = 'Cancelar
   const host = old.cloneNode(false);
   host.id = 'modal-host';
   old.parentNode.replaceChild(host, old);
+  const escT = (s) => String(s ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
   host.innerHTML = `
     <div class="modal">
       <div class="modal-card">
-        <h3>${titulo}</h3>
-        ${texto ? `<p>${texto}</p>` : ''}
-        ${campo !== undefined ? `<input id="modal-input" type="text" value="${campo || ''}">` : ''}
-        <div class="modal-actions">
-          <button class="btn btn-cancel" data-a="cancel">${cancelar}</button>
-          <button class="btn ${peligro ? 'btn-danger' : 'btn-pri'}" data-a="ok">${aceptar}</button>
+        <header class="modal-header">
+          <h3>${escT(titulo)}</h3>
+          <button class="modal-close" data-a="cancel" aria-label="Cerrar">✕</button>
+        </header>
+        <div class="modal-body">
+          ${texto ? `<p class="muted small">${escT(texto)}</p>` : ''}
+          ${campo !== undefined ? `<input id="modal-input" type="text" value="${escT(campo || '')}">` : ''}
+          <div class="modal-actions">
+            <button class="btn btn-cancel" data-a="cancel">${escT(cancelar)}</button>
+            <button class="btn ${peligro ? 'btn-danger' : 'btn-pri'}" data-a="ok">${escT(aceptar)}</button>
+          </div>
         </div>
       </div>
     </div>`;
   const input = host.querySelector('#modal-input');
   if (input) { input.focus(); input.select(); }
   host.addEventListener('click', async (e) => {
-    if (e.target.dataset.a === 'cancel' || e.target.classList.contains('modal')) { host.innerHTML = ''; return; }
-    if (e.target.dataset.a === 'ok') {
+    const cancelBtn = e.target.closest('[data-a="cancel"]');
+    if (cancelBtn || e.target.classList.contains('modal')) { host.innerHTML = ''; return; }
+    const okBtn = e.target.closest('[data-a="ok"]');
+    if (okBtn) {
       try { await onOk(input ? input.value.trim() : null); host.innerHTML = ''; }
       catch (err) { toast(`⚠️ ${err.message}`); }
     }
@@ -1311,6 +1326,8 @@ async function abrirBuscador() {
   const input = document.getElementById('teoria-buscar-input');
   const results = document.getElementById('teoria-buscar-results');
   if (!modal || !input || !results) return;
+  // El componente <ap-modal> usa tanto el atributo hidden como la clase.
+  modal.removeAttribute('hidden');
   modal.classList.remove('hidden');
   input.value = '';
   results.innerHTML = '<li class="muted small" style="padding:.5rem 0">Cargando…</li>';
@@ -1325,7 +1342,7 @@ async function abrirBuscador() {
       ruta: e.ruta || e.path || '',
     }));
   } catch (err) {
-    results.innerHTML = `<li class="muted small">Error: ${err.message}</li>`;
+    results.innerHTML = `<li class="muted small">Error: ${esc(err.message)}</li>`;
     return;
   }
   const pintar = (q) => {
@@ -1337,34 +1354,38 @@ async function abrirBuscador() {
       results.innerHTML = '<li class="muted small">Sin resultados</li>';
       return;
     }
-    results.innerHTML = filtered.slice(0, 60).map(e => `
+    results.innerHTML = filtered.slice(0, 60).map((e, i) => `
       <li>
-        <button class="teoria-buscar-res" data-nombre="${e.nombre.replace(/"/g, '&quot;')}">
+        <button class="teoria-buscar-res" data-idx="${i}">
           <span aria-hidden="true">${e.es_carpeta ? '📁' : emojiParaFichero(e.nombre)}</span>
-          <span class="teoria-buscar-nombre">${e.nombre}</span>
+          <span class="teoria-buscar-nombre">${esc(e.nombre)}</span>
         </button>
       </li>
     `).join('');
+    results._filtered = filtered;
   };
   pintar('');
   input.oninput = () => pintar(input.value);
   input.focus();
-  results.onclick = (ev) => {
+  results.onclick = async (ev) => {
     const btn = ev.target.closest('.teoria-buscar-res');
     if (!btn) return;
-    const nombre = btn.dataset.nombre;
-    const entry = entries.find(e => e.nombre === nombre);
+    const idx = Number(btn.dataset.idx);
+    const filtered = results._filtered || [];
+    const entry = filtered[idx];
     if (!entry) return;
     modal.classList.add('hidden');
-    // Navegar: si es carpeta, entra; si es fichero, abre.
     if (entry.es_carpeta) {
       const base = ESTADO.ruta ? ESTADO.ruta.replace(/\/$/, '') + '/' : '';
       navegar(base + entry.nombre);
     } else {
-      // Los ficheros los abre el grid mediante onGridAction — dejamos que
-      // el usuario los pulse allí tras navegar. Cerramos el buscador.
-      const base = ESTADO.ruta ? ESTADO.ruta.replace(/\/$/, '') + '/' : '';
-      navegar(base);
+      // Abre el fichero directamente: markdown en el visor interno,
+      // resto en pestaña nueva. Antes el buscador se limitaba a cerrar
+      // y navegar a la carpeta actual, así que "no funcionaba" al
+      // clicar sobre un fichero.
+      try {
+        verFichero(entry);
+      } catch (e) { toast(`⚠️ ${e.message || 'No se pudo abrir'}`); }
     }
   };
 }
@@ -1397,6 +1418,7 @@ function abrirMarcadores() {
       </li>
     `).join('');
   }
+  modal.removeAttribute('hidden');
   modal.classList.remove('hidden');
   lista.onclick = async (ev) => {
     const q = ev.target.closest('[data-quitar]');
@@ -1570,7 +1592,7 @@ async function refrescarMisOposiciones() {
       ESTADO.currentOposicionNombre = o.nombre;
       guardarOposicionPersistida(o);
     } else if (ESTADO.misOposicionesCache.length > 1 && !ESTADO.currentOposicion) {
-      abrirSelectorOposicion();
+      abrirSelectorOposicion({ required: true });
     }
     refrescarHintOposicion();
     // Al arranque la primera carga puede haber ocurrido antes de saber la
@@ -1584,10 +1606,11 @@ async function refrescarMisOposiciones() {
   }
 }
 
-function abrirSelectorOposicion() {
+function abrirSelectorOposicion(opts = {}) {
   const selector = document.getElementById('teoria-elegir-oposicion');
   if (!selector) return;
   selector.setOptions(ESTADO.misOposicionesCache, ESTADO.currentOposicion);
+  selector.setRequired?.(!!opts.required);
   selector.open();
 }
 
@@ -1680,6 +1703,8 @@ function toggleModoSeleccion(forzar) {
   const nuevo = typeof forzar === 'boolean' ? forzar : !SELECCION.activo;
   SELECCION.activo = nuevo;
   document.body.classList.toggle('en-seleccion', nuevo);
+  const adminBar = document.getElementById('admin-bar');
+  if (adminBar) adminBar.hidden = !nuevo;
   if (!nuevo) {
     // Limpiamos selección al salir.
     SELECCION.rutas.clear();

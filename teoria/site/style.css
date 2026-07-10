@@ -308,6 +308,21 @@ button { font: inherit; cursor: pointer; }
   outline: 2px dashed var(--accent);
   outline-offset: -6px;
 }
+/* Con el modo subrayado activo, el color de selección del navegador
+ * confunde: se ve como si el texto estuviera "marcado para copiar" antes
+ * de que el mouseup convierta la selección en un subrayado real. Usamos
+ * el mismo tinte ámbar del subrayado para que la transición visual sea
+ * fluida (no "azul selección" → "ámbar subrayado"). No afecta al resto
+ * de la app: fuera del render en modo hl-mode, la selección se ve igual
+ * que siempre. */
+.md-body.hl-mode .md-render ::selection {
+  background: var(--accent-soft);
+  color: inherit;
+}
+.md-body.hl-mode .md-render ::-moz-selection {
+  background: var(--accent-soft);
+  color: inherit;
+}
 
 .md-body {
   flex: 1; min-height: 0;
@@ -445,45 +460,73 @@ button { font: inherit; cursor: pointer; }
   flex-direction: column;
   max-height: 80vh;
 }
-#teoria-marcadores .modal-body { flex: 1; min-height: 0; overflow: hidden; }
+#teoria-marcadores .modal-body { flex: 1; min-height: 0; overflow: hidden; padding-top: 0.75rem; }
 .teoria-marcadores-lista {
   list-style: none;
-  margin: 8px 0 0;
+  margin: 0;
   padding: 0;
   overflow-y: auto;
   flex: 1;
+  display: flex; flex-direction: column; gap: 0.5rem;
 }
 .teoria-marcadores-lista li {
-  display: flex; align-items: center; gap: 6px;
-  border-bottom: 1px solid var(--border);
+  display: flex; align-items: stretch; gap: 0.4rem;
+  padding: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
-.teoria-marcadores-lista li:last-child { border-bottom: 0; }
+.teoria-marcadores-lista li:hover {
+  transform: translateY(-1px);
+  border-color: var(--pri);
+  box-shadow: var(--shadow);
+}
 .teoria-marc-item {
   flex: 1;
   display: grid;
-  grid-template-columns: 22px 1fr;
-  gap: 8px;
+  grid-template-columns: 38px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 0.75rem;
+  row-gap: 0.1rem;
   align-items: center;
-  padding: 10px 4px;
+  padding: 0.65rem 0.75rem;
   background: transparent; border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius);
   color: var(--text);
   font-family: inherit; font-size: 0.95rem;
   cursor: pointer;
   text-align: left;
   min-width: 0;
 }
-.teoria-marc-item:hover { background: var(--pri-soft); }
+.teoria-marc-item > span[aria-hidden="true"] {
+  grid-column: 1; grid-row: 1 / span 2;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px;
+  border-radius: 12px;
+  font-size: 1.35rem;
+  background: var(--accent-soft);
+  color: var(--accent-d);
+}
+[data-theme="dark"] .teoria-marc-item > span[aria-hidden="true"] { color: var(--accent); }
 .teoria-marc-nombre {
   grid-column: 2; grid-row: 1;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--text);
 }
 .teoria-marc-ruta {
   grid-column: 2; grid-row: 2;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--sub);
+  font-size: 0.8rem;
 }
-.teoria-marc-quitar { color: var(--sub); }
+.teoria-marc-quitar {
+  color: var(--sub);
+  margin: auto 0.35rem auto 0;
+  border-radius: 10px;
+}
 .teoria-marc-quitar:hover { color: var(--danger); background: var(--danger-light); }
 
 /* ── Fase 5b: modal de oposición ─────────────────────────────── */
