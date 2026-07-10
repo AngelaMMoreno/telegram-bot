@@ -503,8 +503,25 @@ CREATE POLICY preg_insert  ON preguntas FOR INSERT WITH CHECK (tiene_permiso('pr
 CREATE POLICY preg_update  ON preguntas FOR UPDATE USING  (tiene_permiso('pregunta.editar'));
 CREATE POLICY preg_delete  ON preguntas FOR DELETE USING  (tiene_permiso('pregunta.borrar'));
 
+-- Un test es visible si:
+--   • está marcado como público, o
+--   • el usuario es su autor, o
+--   • el usuario es admin, o
+--   • el test está asignado a alguna oposición que el usuario también
+--     tiene asignada (rutas de reparto normales del rol 'tests').
 CREATE POLICY test_lectura ON tests FOR SELECT
-    USING (publico OR autor_id = jwt_usuario_id() OR es_admin());
+    USING (
+        publico
+        OR autor_id = jwt_usuario_id()
+        OR es_admin()
+        OR EXISTS (
+            SELECT 1
+            FROM   test_oposiciones    tox
+            JOIN   usuario_oposiciones uo ON uo.oposicion_id = tox.oposicion_id
+            WHERE  tox.test_id   = tests.id
+              AND  uo.usuario_id = jwt_usuario_id()
+        )
+    );
 CREATE POLICY test_insert  ON tests FOR INSERT WITH CHECK (tiene_permiso('test.crear'));
 CREATE POLICY test_update  ON tests FOR UPDATE USING (tiene_permiso('test.editar') OR autor_id = jwt_usuario_id());
 CREATE POLICY test_delete  ON tests FOR DELETE USING (tiene_permiso('test.borrar') OR autor_id = jwt_usuario_id());
@@ -914,7 +931,16 @@ BEGIN
                    AND m.test_id = t.id
             ) AS favorito
         FROM tests t
-        WHERE (t.publico OR t.autor_id = jwt_usuario_id() OR es_admin())
+        WHERE (
+              t.publico
+              OR t.autor_id = jwt_usuario_id()
+              OR es_admin()
+              OR EXISTS (SELECT 1
+                           FROM test_oposiciones    tox
+                           JOIN usuario_oposiciones uo ON uo.oposicion_id = tox.oposicion_id
+                          WHERE tox.test_id   = t.id
+                            AND uo.usuario_id = jwt_usuario_id())
+          )
           AND (p_etiqueta IS NULL OR p_etiqueta = ANY(t.etiquetas))
           AND (
               p_oposicion_id IS NULL
@@ -949,7 +975,16 @@ BEGIN
                    AND m.test_id = t.id
             ) AS favorito
         FROM tests t
-        WHERE (t.publico OR t.autor_id = jwt_usuario_id() OR es_admin())
+        WHERE (
+              t.publico
+              OR t.autor_id = jwt_usuario_id()
+              OR es_admin()
+              OR EXISTS (SELECT 1
+                           FROM test_oposiciones    tox
+                           JOIN usuario_oposiciones uo ON uo.oposicion_id = tox.oposicion_id
+                          WHERE tox.test_id   = t.id
+                            AND uo.usuario_id = jwt_usuario_id())
+          )
           AND (p_etiqueta IS NULL OR p_etiqueta = ANY(t.etiquetas))
           AND (
               p_oposicion_id IS NULL
