@@ -206,7 +206,7 @@ def api_listar(request: Request, ruta: str = "/", oposicion_id: str | None = Non
     Lista una carpeta. Si se pasa `oposicion_id`, filtra la raíz para
     mostrar SOLO carpetas asignadas a esa oposición (filtro estricto:
     las carpetas globales no aparecen cuando el usuario ha elegido
-    una oposición). Sin oposicion_id, el alumno ve global + las
+    una oposición). Sin oposicion_id, el usuario ve global + las
     carpetas de cualquiera de sus oposiciones; el admin ve todas.
 
     Una vez dentro de una carpeta asignada, no se vuelve a filtrar:

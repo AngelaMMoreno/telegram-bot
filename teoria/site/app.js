@@ -1634,10 +1634,22 @@ async function refrescarMisOposiciones() {
   }
 }
 
+/* Al staff (admin/editor) le dejamos ver "Todas mis oposiciones".
+ * Al rol 'teoria' puro le forzamos a elegir una concreta: es lo que
+ * ha pedido el usuario y así el filtrado es consistente en cada
+ * arranque. Nos apoyamos en los roles del JWT porque puede_gestionar
+ * llega más tarde (con listar()). */
+function _puedeVerTodas() {
+  const roles = (CLAIMS && Array.isArray(CLAIMS.roles)) ? CLAIMS.roles : [];
+  return roles.includes('admin') || roles.includes('editor');
+}
+
 function abrirSelectorOposicion(opts = {}) {
   const selector = document.getElementById('teoria-elegir-oposicion');
   if (!selector) return;
-  selector.setOptions(ESTADO.misOposicionesCache, ESTADO.currentOposicion);
+  selector.setOptions(ESTADO.misOposicionesCache, ESTADO.currentOposicion, {
+    allowAll: _puedeVerTodas(),
+  });
   selector.setRequired?.(!!opts.required);
   selector.open();
 }
