@@ -151,18 +151,75 @@ input:focus, select:focus {
   font-size: 13px;
 }
 
-.reg-toggle {
-  margin-top: 20px;
-  border-top: 1px solid var(--border);
-  padding-top: 18px;
+/* ── Tabs Login / Registro ─────────────────────────────────────────────── */
+.auth-tabs {
+  display: flex;
+  gap: 6px;
+  background: var(--bg-soft);
+  padding: 5px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  margin-bottom: 20px;
 }
-.reg-toggle summary {
+.auth-tab {
+  flex: 1;
+  background: transparent; border: 0;
+  padding: 10px 14px;
+  border-radius: 999px;
+  font-size: 14px; font-weight: 700;
+  color: var(--sub);
   cursor: pointer;
-  font-size: 13.5px; color: var(--pri-d); font-weight: 600;
-  padding: 6px 0;
+  font-family: inherit;
+  min-height: 40px;
+  transition: background .15s, color .15s;
 }
-.reg-toggle summary:hover { color: var(--pri); }
-.reg-toggle form { margin-top: 14px; }
+.auth-tab:hover:not(.active) { color: var(--text); background: var(--pri-soft); }
+.auth-tab.active {
+  background: var(--pri); color: #fff;
+  box-shadow: 0 2px 8px rgba(107, 142, 35, 0.25);
+  cursor: default; pointer-events: none;
+}
+[data-theme="dark"] .auth-tab.active { color: #14241D; }
+.auth-form { display: none; }
+.auth-form.active { display: flex; }
+.auth-form[hidden] { display: none !important; }
+
+/* Medidor de fortaleza: barra fina en 5 niveles + etiqueta. */
+.pw-strength {
+  display: flex; flex-direction: column; gap: 4px;
+  margin-top: -4px;
+}
+.pw-strength[hidden] { display: none; }
+.pw-strength-bar {
+  height: 6px;
+  background: var(--bg-soft);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.pw-strength-bar > span {
+  display: block; height: 100%;
+  width: 0;
+  border-radius: 999px;
+  transition: width .18s ease, background .18s ease;
+  background: var(--danger);
+}
+.pw-strength[data-level="0"] > .pw-strength-bar > span { width: 10%;  background: var(--danger); }
+.pw-strength[data-level="1"] > .pw-strength-bar > span { width: 30%;  background: var(--coral); }
+.pw-strength[data-level="2"] > .pw-strength-bar > span { width: 55%;  background: var(--accent); }
+.pw-strength[data-level="3"] > .pw-strength-bar > span { width: 80%;  background: var(--leaf); }
+.pw-strength[data-level="4"] > .pw-strength-bar > span { width: 100%; background: var(--pri); }
+.pw-strength-label {
+  font-size: 12.5px; color: var(--sub); font-weight: 600;
+}
+.pw-strength-label strong { color: var(--text); }
+.pw-strength[data-level="0"] .pw-strength-label strong { color: var(--danger); }
+.pw-strength[data-level="1"] .pw-strength-label strong { color: var(--coral-d); }
+.pw-strength[data-level="2"] .pw-strength-label strong { color: var(--accent-d); }
+.pw-strength[data-level="3"] .pw-strength-label strong,
+.pw-strength[data-level="4"] .pw-strength-label strong { color: var(--pri-d); }
+[data-theme="dark"] .pw-strength[data-level="3"] .pw-strength-label strong,
+[data-theme="dark"] .pw-strength[data-level="4"] .pw-strength-label strong { color: var(--pri); }
 
 /* ── Chooser ───────────────────────────────────────────────────────── */
 .chooser {
@@ -323,12 +380,31 @@ input:focus, select:focus {
 /* ── Onboarding: primer login (elegir oposiciones) ─────────────────────── */
 .onboarding-list {
   list-style: none;
-  padding: 0;
+  padding: 0 6px 0 0;
   margin: 14px 0 10px;
   display: flex; flex-direction: column;
   gap: 8px;
   max-height: 60vh;
   overflow-y: auto;
+  /* Scrollbar acorde a la paleta Solarpunk: fino, verde musgo, sin
+   * "negro por defecto" del navegador. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--pri) transparent;
+}
+.onboarding-list::-webkit-scrollbar { width: 8px; }
+.onboarding-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.onboarding-list::-webkit-scrollbar-thumb {
+  background: var(--pri-soft);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.onboarding-list::-webkit-scrollbar-thumb:hover {
+  background: var(--pri);
+  background-clip: padding-box;
+  border: 2px solid transparent;
 }
 .onboarding-list .check-item {
   display: flex; align-items: center;

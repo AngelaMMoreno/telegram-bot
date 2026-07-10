@@ -84,6 +84,99 @@ button.check-item { background: transparent; }
 .check-item span { min-width: 0; }
 
 
+/* ─── Selector de oposición (<ap-op-selector>) ──────────────────────────
+ * La lista base viene de .check-list; aquí añadimos icono, ancho fijo
+ * de contenedor y matices de color para que cada oposición se
+ * distinga visualmente y el modal deje de ser "solo texto". */
+.ap-op-list {
+  gap: 8px;
+  padding: 4px 2px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pri) transparent;
+}
+.ap-op-list::-webkit-scrollbar { width: 8px; }
+.ap-op-list::-webkit-scrollbar-track { background: transparent; }
+.ap-op-list::-webkit-scrollbar-thumb {
+  background: var(--pri-soft); border-radius: 999px;
+  border: 2px solid transparent; background-clip: padding-box;
+}
+.ap-op-list::-webkit-scrollbar-thumb:hover {
+  background: var(--pri); background-clip: padding-box; border: 2px solid transparent;
+}
+.ap-op-list li { position: relative; }
+.ap-op-item {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 12px 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  color: var(--txt);
+  text-align: left;
+  cursor: pointer;
+  transition: transform .15s, box-shadow .15s, border-color .15s, background .15s;
+  min-height: 60px;
+}
+.ap-op-item:hover {
+  transform: translateY(-1px);
+  border-color: var(--pri);
+  background: var(--pri-soft);
+  box-shadow: var(--shadow);
+}
+.ap-op-item[aria-current="true"] {
+  border-color: var(--pri);
+  background: linear-gradient(135deg, var(--pri-soft), var(--accent-soft));
+  box-shadow: var(--shadow);
+}
+.ap-op-ico-wrap {
+  grid-column: 1; grid-row: 1 / span 2;
+  width: 44px; height: 44px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 22px; line-height: 1;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--glass-border);
+  color: var(--accent-d);
+  box-shadow: inset 0 -2px 4px rgba(255, 255, 255, 0.3);
+}
+/* Cicla color del icono para que cada fila sea distinta. */
+.ap-op-list li:nth-child(5n+2) .ap-op-ico-wrap { background: var(--sky-soft);      color: var(--sky-d); }
+.ap-op-list li:nth-child(5n+3) .ap-op-ico-wrap { background: var(--lavender-soft); color: var(--lavender-d); }
+.ap-op-list li:nth-child(5n+4) .ap-op-ico-wrap { background: var(--coral-soft);    color: var(--coral-d); }
+.ap-op-list li:nth-child(5n)   .ap-op-ico-wrap { background: var(--leaf-soft);     color: var(--pri-d); }
+/* "Todas" siempre con verde salvia, aunque cambie de posición. */
+.ap-op-item-todas .ap-op-ico-wrap {
+  background: var(--pri-soft) !important;
+  color: var(--pri-d) !important;
+}
+[data-theme="dark"] .ap-op-item-todas .ap-op-ico-wrap { color: var(--pri) !important; }
+.ap-op-body {
+  grid-column: 2; grid-row: 1 / span 2;
+  min-width: 0; display: flex; flex-direction: column; gap: 2px;
+}
+.ap-op-body strong {
+  font-size: 1rem; font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  line-height: 1.3;
+}
+.ap-op-desc { line-height: 1.35; font-size: 0.8rem; }
+.ap-op-tick {
+  grid-column: 3; grid-row: 1 / span 2;
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--pri);
+  color: #fff;
+  font-weight: 800; font-size: 14px;
+  box-shadow: 0 2px 6px rgba(107, 142, 35, 0.30);
+}
+[data-theme="dark"] .ap-op-tick { color: #14241D; }
+
+
 /* ─── Badge (contador circular al lado de un botón) ───────────────────── */
 .badge {
   display: inline-block;

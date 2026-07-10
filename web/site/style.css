@@ -66,7 +66,19 @@ body {
 /* ─── Main ─── */
 .content { padding: 0.75rem 0.85rem; flex: 1; min-width: 0; }
 .view { display: none; }
-.view.active { display: block; }
+.view.active {
+  display: block;
+  /* Fade-in suave al entrar a la vista para evitar el "corte" duro entre
+   * secciones cuando el usuario toca un item del menú. */
+  animation: view-in 0.18s ease-out both;
+}
+@keyframes view-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .view.active { animation: none; }
+}
 
 .view-header {
   display: flex; flex-direction: column;
@@ -232,6 +244,34 @@ body {
 .action-card .ico { width: 24px; height: 24px; color: var(--action-tint); }
 .action-card strong { font-size: 1rem; color: var(--action-tint); font-weight: 700; }
 .action-card small { color: var(--txt-soft); font-size: 0.82rem; line-height: 1.3; }
+
+/* ─── Loading state (sin parpadeo) ───
+ * En vez de vaciar la lista y volver a pintar, la atenuamos y mostramos
+ * un spinner discreto encima. Cuando llegan los nuevos datos, sólo se
+ * repinta el listado en una única operación. */
+.is-loading {
+  position: relative;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.is-loading > * { opacity: 0.55; transition: opacity 0.15s ease; }
+.is-loading::after {
+  content: "";
+  position: absolute; top: 12px; left: 50%;
+  width: 22px; height: 22px;
+  margin-left: -11px;
+  border-radius: 50%;
+  border: 3px solid var(--pri-soft);
+  border-top-color: var(--pri);
+  animation: spin-list 0.7s linear infinite;
+  z-index: 2;
+}
+@keyframes spin-list {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .is-loading::after { animation: none; }
+}
 
 /* ─── Listas ─── */
 #tests-list { display: flex; flex-direction: column; gap: 0.55rem; }

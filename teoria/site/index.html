@@ -149,25 +149,19 @@
 
 <nav id="bc" class="bc" aria-label="Ruta"></nav>
 
-<div id="admin-bar" class="admin-bar" hidden>
-  <div class="admin-bar-row">
-    <label class="btn btn-sec">
-      📤 Subir ficheros
-      <input id="file-input" type="file" multiple hidden>
-    </label>
-    <button id="btn-nueva-carpeta" class="btn btn-sec">📁 Nueva carpeta</button>
-    <button id="btn-nuevo-md" class="btn btn-sec">📝 Nuevo markdown</button>
-    <span class="admin-hint">Mantén pulsado sobre un fichero o carpeta para más opciones</span>
-  </div>
-  <!-- Fila de acciones sobre selección múltiple: aparece cuando el modo
-       selección está activo. La clave de UX es que quede pegada bajo la
-       fila de "Subir/Nueva carpeta/Nuevo markdown", no como barra flotante. -->
-  <div id="seleccion-bar" class="admin-bar-row seleccion-bar" hidden role="region" aria-label="Acciones sobre selección">
-    <span class="seleccion-count" id="seleccion-count">0 seleccionados</span>
-    <button class="btn btn-sec" id="seleccion-mover">📂 Mover</button>
-    <button class="btn btn-danger" id="seleccion-borrar">🗑️ Eliminar</button>
-    <button class="btn btn-cancel" id="seleccion-cancelar">Cancelar</button>
-  </div>
+<!-- Input de fichero suelto: lo dispara el evento "subir" del menú Más.
+     Ya no vive dentro de un botón visible (la barra de subir/nueva
+     carpeta/nuevo markdown se mudó al sheet "Más" del header). -->
+<input id="file-input" type="file" multiple hidden>
+
+<!-- Barra de acciones sobre selección múltiple. Vive suelta (ya no dentro
+     de la vieja admin-bar de subir/carpeta/markdown) y sólo aparece
+     mientras el usuario está en modo selección. -->
+<div id="seleccion-bar" class="admin-bar-row seleccion-bar" hidden role="region" aria-label="Acciones sobre selección">
+  <span class="seleccion-count" id="seleccion-count">0 seleccionados</span>
+  <button class="btn btn-sec" id="seleccion-mover">📂 Mover</button>
+  <button class="btn btn-danger" id="seleccion-borrar">🗑️ Eliminar</button>
+  <button class="btn btn-cancel" id="seleccion-cancelar">Cancelar</button>
 </div>
 
 <main id="grid" class="grid" aria-live="polite"></main>
