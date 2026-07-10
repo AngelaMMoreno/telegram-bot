@@ -117,6 +117,80 @@ button.check-item { background: transparent; }
   flex: 0 0 auto;
 }
 .check-item span { min-width: 0; }
+.check-item[aria-current="true"] {
+  border-color: var(--pri);
+  background: var(--pri-soft);
+}
+.check-item[aria-current="true"] strong { color: var(--pri-d); }
+[data-theme="dark"] .check-item[aria-current="true"] strong { color: var(--pri); }
+
+
+/* ─── Tarjeta de oposición dentro del selector (ap-op-selector) ────────
+ * Cada oposición se muestra como una tarjeta más cálida y "amigable":
+ * icono a la izquierda, título + descripción a la derecha y un check
+ * verde cuando está activa. Antes era solo texto plano sobre el fondo
+ * esmerilado y no se distinguían las opciones entre sí.
+ */
+.op-card {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem 0.9rem;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.op-card:hover {
+  transform: translateY(-1px);
+  border-color: var(--pri);
+  background: linear-gradient(160deg, var(--pri-soft) 0%, var(--bg-panel) 60%);
+  box-shadow: var(--shadow);
+}
+.op-card[aria-current="true"] {
+  border-color: var(--pri);
+  background: linear-gradient(160deg, var(--pri-soft) 0%, var(--bg-panel) 70%);
+}
+.op-card-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 42px; height: 42px;
+  border-radius: 12px;
+  font-size: 1.35rem;
+  background: var(--accent-soft);
+  color: var(--accent-d);
+  flex: 0 0 auto;
+}
+.op-card:nth-child(5n+2) .op-card-ico { background: var(--sky-soft);      color: var(--sky-d); }
+.op-card:nth-child(5n+3) .op-card-ico { background: var(--lavender-soft); color: var(--lavender-d); }
+.op-card:nth-child(5n+4) .op-card-ico { background: var(--coral-soft);    color: var(--coral-d); }
+.op-card:nth-child(5n)   .op-card-ico { background: var(--leaf-soft);     color: var(--pri-d); }
+[data-theme="dark"] .op-card-ico { color: var(--accent); }
+[data-theme="dark"] .op-card:nth-child(5n+2) .op-card-ico { color: var(--sky); }
+[data-theme="dark"] .op-card:nth-child(5n+3) .op-card-ico { color: var(--lavender); }
+[data-theme="dark"] .op-card:nth-child(5n+4) .op-card-ico { color: var(--coral); }
+[data-theme="dark"] .op-card:nth-child(5n)   .op-card-ico { color: var(--pri); }
+.op-card-body {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  min-width: 0;
+}
+.op-card-body strong {
+  font-size: 0.98rem; font-weight: 700;
+  color: var(--txt);
+  overflow: hidden; text-overflow: ellipsis;
+}
+.op-card-body .check-item-desc {
+  font-size: 0.8rem; color: var(--txt-soft);
+  line-height: 1.35;
+}
+.op-card-check {
+  color: var(--pri-d);
+  font-weight: 800;
+  font-size: 1.1rem;
+  flex: 0 0 auto;
+}
+[data-theme="dark"] .op-card-check { color: var(--pri); }
 
 
 /* ─── Badge (contador circular al lado de un botón) ───────────────────── */

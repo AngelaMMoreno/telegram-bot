@@ -73,3 +73,83 @@
   cursor: pointer;
 }
 .modal-close:hover { background: var(--bg-soft); color: var(--txt); }
+
+/* Aviso "debes seleccionar" cuando el selector de oposición es obligatorio
+ * y el usuario intenta cerrarlo sin haber elegido. */
+.ap-op-required-hint {
+  margin: 0 0 0.4rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+  background: var(--coral-soft, rgba(242, 126, 98, 0.16));
+  color: var(--coral-d, #DA5A3B);
+  border: 1px solid var(--coral, #F27E62);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: center;
+}
+[data-theme="dark"] .ap-op-required-hint { color: var(--coral, #FF9B85); }
+.ap-op-required-hint.shake {
+  animation: ap-op-shake 0.4s ease;
+}
+@keyframes ap-op-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+/* Scrollbars finas y coherentes con la paleta dentro de modales y de
+ * listas con scroll interno (marcadores, selector de oposición,
+ * onboarding). Antes se veía la barra por defecto del sistema en
+ * gris/negro sobre el fondo esmerilado del modal. */
+.modal-card,
+.check-list,
+.teoria-op-list,
+.teoria-marcadores-lista,
+.teoria-buscar-results,
+.onboarding-list,
+.bulk-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--pri) transparent;
+}
+.modal-card::-webkit-scrollbar,
+.check-list::-webkit-scrollbar,
+.teoria-op-list::-webkit-scrollbar,
+.teoria-marcadores-lista::-webkit-scrollbar,
+.teoria-buscar-results::-webkit-scrollbar,
+.onboarding-list::-webkit-scrollbar,
+.bulk-list::-webkit-scrollbar {
+  width: 8px;
+}
+.modal-card::-webkit-scrollbar-track,
+.check-list::-webkit-scrollbar-track,
+.teoria-op-list::-webkit-scrollbar-track,
+.teoria-marcadores-lista::-webkit-scrollbar-track,
+.teoria-buscar-results::-webkit-scrollbar-track,
+.onboarding-list::-webkit-scrollbar-track,
+.bulk-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.modal-card::-webkit-scrollbar-thumb,
+.check-list::-webkit-scrollbar-thumb,
+.teoria-op-list::-webkit-scrollbar-thumb,
+.teoria-marcadores-lista::-webkit-scrollbar-thumb,
+.teoria-buscar-results::-webkit-scrollbar-thumb,
+.onboarding-list::-webkit-scrollbar-thumb,
+.bulk-list::-webkit-scrollbar-thumb {
+  background: var(--pri-soft);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.modal-card::-webkit-scrollbar-thumb:hover,
+.check-list::-webkit-scrollbar-thumb:hover,
+.teoria-op-list::-webkit-scrollbar-thumb:hover,
+.teoria-marcadores-lista::-webkit-scrollbar-thumb:hover,
+.teoria-buscar-results::-webkit-scrollbar-thumb:hover,
+.onboarding-list::-webkit-scrollbar-thumb:hover,
+.bulk-list::-webkit-scrollbar-thumb:hover {
+  background: var(--pri);
+  background-clip: content-box;
+}

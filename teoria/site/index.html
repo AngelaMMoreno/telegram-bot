@@ -195,19 +195,16 @@
 
 <nav id="bc" class="bc" aria-label="Ruta"></nav>
 
+<!-- Input oculto para subir ficheros: sigue vivo aquí para que
+     document.getElementById('file-input').click() del sheet "Más" y
+     del sidebar puedan dispararlo. La barra visible con los botones
+     de subir/nueva carpeta/nuevo markdown se ha retirado: esas acciones
+     viven ahora en el sheet "Más" (móvil) y en la sidebar (escritorio). -->
+<input id="file-input" type="file" multiple hidden>
+
 <div id="admin-bar" class="admin-bar" hidden>
-  <div class="admin-bar-row">
-    <label class="btn btn-sec">
-      📤 Subir ficheros
-      <input id="file-input" type="file" multiple hidden>
-    </label>
-    <button id="btn-nueva-carpeta" class="btn btn-sec">📁 Nueva carpeta</button>
-    <button id="btn-nuevo-md" class="btn btn-sec">📝 Nuevo markdown</button>
-    <span class="admin-hint">Mantén pulsado sobre un fichero o carpeta para más opciones</span>
-  </div>
   <!-- Fila de acciones sobre selección múltiple: aparece cuando el modo
-       selección está activo. La clave de UX es que quede pegada bajo la
-       fila de "Subir/Nueva carpeta/Nuevo markdown", no como barra flotante. -->
+       selección está activo. -->
   <div id="seleccion-bar" class="admin-bar-row seleccion-bar" hidden role="region" aria-label="Acciones sobre selección">
     <span class="seleccion-count" id="seleccion-count">0 seleccionados</span>
     <button class="btn btn-sec" id="seleccion-mover">📂 Mover</button>

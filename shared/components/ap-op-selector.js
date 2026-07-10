@@ -36,11 +36,12 @@ class ApOpSelector extends HTMLElement {
 
     const title = this.getAttribute('title') || '¿Con qué oposición trabajas hoy?';
     const subtitle = this.getAttribute('subtitle') || '';
-    const closable = this.hasAttribute('closable') || false;
-
+    // El selector siempre trae X de cerrar. El guard "requerido" (ver
+    // setRequired) impide que se cierre sin elegir cuando es la primera
+    // vez que el usuario configura su oposición.
     this._modal = document.createElement('ap-modal');
     this._modal.setAttribute('title', title);
-    if (closable) this._modal.setAttribute('closable', '');
+    this._modal.setAttribute('closable', '');
     this._modal.setAttribute('hidden', '');
     this._modal.classList.add('hidden');
 
@@ -65,12 +66,55 @@ class ApOpSelector extends HTMLElement {
       const raw = btn.dataset.opId;
       const id = raw === '' ? null : raw;
       const nombre = btn.dataset.opNombre || 'Todas';
+      // Al elegir, ya no es "obligatorio" (ha seleccionado).
+      this._required = false;
+      this._modal._required = false;
       this.dispatchEvent(new CustomEvent('ap-op-select', {
         detail: { id, nombre },
         bubbles: true,
       }));
       this.close();
     });
+
+    // Intercepta intentos de cerrar (X, Esc, backdrop) cuando el modo
+    // "requerido" está activo. En vez de cerrar, mostramos un aviso.
+    this._modal.addEventListener('click', (e) => {
+      if (!this._required) return;
+      const cerrando = e.target === this._modal ||
+                       e.target.closest('[data-ap-close]');
+      if (!cerrando) return;
+      e.stopPropagation();
+      // Aviso inline: pintamos un mensaje temporal encima de la lista.
+      this._showRequiredHint();
+      // Evita el close por click en overlay: <ap-modal>'s click handler
+      // se dispara después; devolvemos el modal a estado abierto.
+      queueMicrotask(() => this._modal && this._modal.open());
+    }, true);
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if (!this._required) return;
+      if (this._modal.classList.contains('hidden')) return;
+      e.stopPropagation();
+      this._showRequiredHint();
+      queueMicrotask(() => this._modal && this._modal.open());
+    }, true);
+  }
+
+  _showRequiredHint() {
+    if (!this._modal) return;
+    const body = this._modal.querySelector('.modal-body');
+    if (!body) return;
+    let hint = body.querySelector('.ap-op-required-hint');
+    if (!hint) {
+      hint = document.createElement('p');
+      hint.className = 'ap-op-required-hint';
+      hint.setAttribute('role', 'alert');
+      hint.textContent = 'Debes seleccionar una oposición para continuar.';
+      body.prepend(hint);
+    }
+    hint.classList.remove('shake');
+    void hint.offsetWidth;
+    hint.classList.add('shake');
   }
 
   setOptions(oposiciones, currentId) {
@@ -79,27 +123,42 @@ class ApOpSelector extends HTMLElement {
       this._list = this._modal && this._modal.querySelector('.ap-op-list');
     }
     if (!this._list) return;
-    const items = [{ id: null, nombre: 'Todas mis oposiciones' }, ...(oposiciones || [])];
-    this._list.innerHTML = items.map(op => {
+    const items = [{ id: null, nombre: 'Todas mis oposiciones', _all: true }, ...(oposiciones || [])];
+    // Emojis rotativos para dar un toque visual a la ficha (queda cálida
+    // en lugar de "texto sobre verde oscuro"). El "Todas" mantiene un
+    // icono neutro.
+    const ICONS = ['🎓', '📚', '🧪', '⚖️', '🏛️', '🩺', '📐', '🌐', '🧭', '📝'];
+    this._list.innerHTML = items.map((op, i) => {
       const idAttr = op.id == null ? '' : op.id;
       const activa = String(op.id ?? '') === String(currentId ?? '');
       const desc = op.descripcion
-        ? `<span class="muted small">${escHtml(op.descripcion)}</span>` : '';
+        ? `<span class="check-item-desc">${escHtml(op.descripcion)}</span>` : '';
+      const icono = op._all ? '✨' : ICONS[i % ICONS.length];
       return `
         <li>
-          <button class="check-item" type="button"
+          <button class="check-item op-card" type="button"
                   data-op-id="${escHtml(idAttr)}"
                   data-op-nombre="${escHtml(op.nombre || '')}"
                   aria-current="${activa ? 'true' : 'false'}">
-            <span>
+            <span class="op-card-ico" aria-hidden="true">${icono}</span>
+            <span class="op-card-body">
               <strong>${escHtml(op.nombre || '')}</strong>
               ${desc}
             </span>
+            ${activa ? '<span class="op-card-check" aria-hidden="true">✓</span>' : ''}
           </button>
         </li>`;
     }).join('');
   }
 
+  setRequired(required) {
+    this._required = !!required;
+    if (this._modal) this._modal._required = this._required;
+    // Limpia el aviso si dejó de ser requerido.
+    if (!this._required && this._modal) {
+      this._modal.querySelector('.ap-op-required-hint')?.remove();
+    }
+  }
   open() { this._modal && this._modal.open(); }
   close() { this._modal && this._modal.close(); }
 }

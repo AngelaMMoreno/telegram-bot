@@ -12,7 +12,26 @@
 /* ─── Main ─── */
 .content { padding: 0.75rem 0.85rem; flex: 1; min-width: 0; }
 .view { display: none; }
-.view.active { display: block; }
+.view.active {
+  display: block;
+  animation: view-fade-in 0.14s ease both;
+}
+@keyframes view-fade-in {
+  from { opacity: 0.6; }
+  to   { opacity: 1; }
+}
+
+/* Atenuación suave del listado de tests mientras se recargan filtros:
+ * evita el flash de "Cargando…" cuando el fetch tarda unos ms y no
+ * despega la lista actual del sitio (así el usuario no ve un salto en
+ * blanco al cambiar de chip). */
+#tests-list.cargando {
+  opacity: 0.55;
+  transition: opacity 0.12s ease;
+  pointer-events: none;
+}
+#tests-list { transition: opacity 0.2s ease; }
+#tests-tag-chips, #buscar-tag-chips { transition: opacity 0.15s ease; }
 
 /* Estado de arranque síncrono (lo pinta el inline script del <head>):
  *  - data-boot="session" → hay cookie, el usuario probablemente está
@@ -24,7 +43,8 @@
  * reglas normales de .view.active toman el control. */
 :root[data-boot="anon"] #view-login { display: block; }
 :root[data-boot="anon"] .topbar,
-:root[data-boot="anon"] .bottom-nav { display: none; }
+:root[data-boot="anon"] .bottom-nav,
+:root[data-boot="anon"] .sidebar { display: none; }
 :root[data-boot="session"] #view-login { display: none; }
 
 .view-header {
@@ -93,16 +113,90 @@
   outline: none; border-color: var(--pri);
   box-shadow: 0 0 0 4px var(--pri-glow);
 }
-.tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
-.tab {
-  flex: 1; background: none; border: 0; padding: 0.7rem;
-  cursor: pointer; color: var(--txt-soft); font-weight: 600;
-  border-bottom: 2px solid transparent;
-  min-height: 44px; font-family: inherit;
-}
-.tab.active { color: var(--pri); border-bottom-color: var(--pri); }
+/* Legado: los tabs se sustituyeron por dos paneles que se alternan y un
+ * link de "¿No tienes cuenta? Regístrate" en el pie. */
+.tabs { display: none; }
+.tab { display: none; }
 .tabpanel { display: none; }
 .tabpanel.active { display: block; }
+
+/* Panel de auth (login o registro). Solo uno visible a la vez para no
+ * confundir al usuario con dos formularios. */
+.auth-panel { display: none; }
+.auth-panel.active { display: block; }
+.auth-panel-title {
+  margin: 0 0 0.9rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--txt);
+  text-align: center;
+}
+.auth-switch {
+  margin: 0.9rem 0 0;
+  text-align: center;
+}
+.auth-switch-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--pri);
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+}
+.auth-switch-btn:hover { color: var(--pri-d); }
+[data-theme="dark"] .auth-switch-btn:hover { color: var(--pri-hover); }
+
+/* Indicador de fuerza de contraseña. Cuatro segmentos que se van
+ * "encendiendo" según el nivel: débil → moderada → fuerte → muy fuerte. */
+.pw-strength {
+  display: flex; align-items: center;
+  gap: 0.55rem;
+  margin: -0.35rem 0 0.75rem;
+}
+.pw-strength-bar {
+  flex: 1; height: 6px;
+  background: var(--bg-soft);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.pw-strength-bar > span {
+  display: block; height: 100%;
+  width: 0%;
+  background: var(--danger, #C0533E);
+  border-radius: inherit;
+  transition: width 0.25s ease, background 0.25s ease;
+}
+.pw-strength-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--txt-soft);
+  white-space: nowrap;
+  min-width: 5.5rem;
+  text-align: right;
+}
+.pw-strength.lvl-1 > span { background: var(--danger, #C0533E); }
+.pw-strength.lvl-2 > span { background: var(--accent, #F4B740); }
+.pw-strength.lvl-3 > span { background: var(--leaf, #9BC53D); }
+.pw-strength.lvl-4 > span { background: var(--pri, #6B8E23); }
+.pw-strength.lvl-1 .pw-strength-label { color: var(--danger); }
+.pw-strength.lvl-2 .pw-strength-label { color: var(--accent-d); }
+.pw-strength.lvl-3 .pw-strength-label { color: var(--pri-d); }
+.pw-strength.lvl-4 .pw-strength-label { color: var(--pri-d); }
+[data-theme="dark"] .pw-strength.lvl-3 .pw-strength-label,
+[data-theme="dark"] .pw-strength.lvl-4 .pw-strength-label { color: var(--pri); }
+[data-theme="dark"] .pw-strength.lvl-2 .pw-strength-label { color: var(--accent); }
+
+.pw-match {
+  margin: -0.35rem 0 0.4rem;
+  font-weight: 600;
+}
+.pw-match.ok { color: var(--pri-d); }
+[data-theme="dark"] .pw-match.ok { color: var(--pri); }
+.pw-match.err { color: var(--danger); }
 
 /* ─── Stats ─── */
 .stats-grid {

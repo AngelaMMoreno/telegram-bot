@@ -109,9 +109,12 @@
     {"id":"home","label":"Inicio","icon":"home","view":"home"},
     {"id":"tests","label":"Tests","icon":"tests","view":"tests"},
     {"id":"fallos","label":"Fallos","icon":"target","view":"fallos"},
-    {"id":"retos","label":"Retos","icon":"trophy","view":"retos"}
+    {"id":"more","label":"Más","icon":"more","more":true}
   ]'
-  more-items='[]'
+  more-items='[
+    {"id":"upload","label":"Subir test","icon":"upload","view":"upload","gestion":true},
+    {"id":"etiquetas","label":"Etiquetas","icon":"tag","view":"etiquetas","gestion":true}
+  ]'
   admin-items='[
     {"id":"usuarios","label":"Usuarios","icon":"users","view":"usuarios","admin":true},
     {"id":"oposiciones","label":"Oposiciones","icon":"folder","view":"oposiciones","gestion":true},
@@ -119,9 +122,14 @@
     {"id":"upload","label":"Subir test","icon":"upload","view":"upload","gestion":true}
   ]'></aprentix-header>
 
-<!-- Sidebar (solo visible en desktop — en móvil manda la bottom-nav). -->
+<!-- Sidebar (solo visible en desktop — en móvil manda la bottom-nav).
+     No arranca con `.hidden`: la CSS de boot lo oculta si el usuario no
+     tiene sesión (data-boot="anon"). Así, cuando el router SPA hace swap
+     desde teoría → tests, la sidebar del layout nuevo se pinta ya visible
+     y no hay un frame en el que "desaparece" antes de que applySession()
+     le vuelva a levantar la visibilidad. -->
 <div class="sidebar-backdrop hidden" id="sidebar-backdrop"></div>
-<nav class="sidebar hidden" id="sidebar">
+<nav class="sidebar" id="sidebar">
   <button class="nav-item" data-view="home">
     <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-9 9 9"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>
     <span>Inicio</span>
@@ -134,22 +142,14 @@
     <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
     <span>Mis fallos</span>
   </button>
-  <button class="nav-item" data-view="retos">
-    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.5 12.5L17 22l-5-3-5 3 1.5-9.5"/></svg>
-    <span>Retos</span>
-  </button>
-  <div class="nav-sep"></div>
-  <button class="nav-item gestion" data-view="upload">
-    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-    <span>Subir test</span>
-  </button>
-  <button class="nav-item gestion" data-view="etiquetas">
-    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/><circle cx="7" cy="7" r="1.5" fill="currentColor" stroke="none"/></svg>
-    <span>Etiquetas</span>
-  </button>
-  <button class="nav-item solo-admin" data-view="usuarios">
-    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-    <span>Usuarios</span>
+  <div class="nav-sep gestion"></div>
+  <!-- "Más" en el sidebar de escritorio: abre el mismo sheet flotante
+       que el bottom-nav móvil (subir tests + etiquetas). Se muestra
+       solo a usuarios con permiso de gestión (clase .gestion). Así el
+       escritorio y el móvil exponen el mismo agrupamiento. -->
+  <button class="nav-item gestion" id="sidebar-mas-tests" aria-haspopup="dialog">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>
+    <span>Más</span>
   </button>
 </nav>
 
@@ -176,7 +176,10 @@
 
   <!-- Login / Registro.
        Empieza SIN .active para no pintarse durante el chequeo de sesión al
-       arrancar; el boot en app.js decide entre esta vista o #view-home. -->
+       arrancar; el boot en app.js decide entre esta vista o #view-home.
+       El registro SUSTITUYE al panel de login (no se muestra debajo) al
+       pulsar el link de la parte inferior; así no se confunde al usuario
+       con dos formularios visibles a la vez. -->
   <section id="view-login" class="view">
     <div class="auth-card">
       <div class="auth-hero">
@@ -185,23 +188,33 @@
         <p class="tagline">Tu oposición, a tu ritmo.</p>
       </div>
 
-      <div class="tabs">
-        <button class="tab active" data-tab="login">Iniciar sesión</button>
-        <button class="tab" data-tab="register">Registrarse</button>
-      </div>
-
-      <form id="form-login" class="tabpanel active">
+      <form id="form-login" class="auth-panel active">
+        <h2 class="auth-panel-title">Iniciar sesión</h2>
         <label>Usuario <input id="login-user" autocomplete="username" required></label>
         <label>Contraseña <input id="login-pass" type="password" autocomplete="current-password" required></label>
         <button class="btn btn-primary" type="submit">Entrar</button>
+        <p class="auth-switch muted small">
+          ¿No tienes cuenta?
+          <button type="button" class="auth-switch-btn" data-auth-goto="register">Regístrate</button>
+        </p>
       </form>
 
-      <form id="form-register" class="tabpanel">
+      <form id="form-register" class="auth-panel">
+        <h2 class="auth-panel-title">Crear cuenta</h2>
         <label>Usuario <input id="reg-user" autocomplete="username" minlength="3" required></label>
         <label>Email (opcional) <input id="reg-email" type="email" autocomplete="email"></label>
         <label>Contraseña <input id="reg-pass" type="password" autocomplete="new-password" minlength="6" required></label>
+        <div class="pw-strength" id="pw-strength" aria-live="polite">
+          <div class="pw-strength-bar"><span id="pw-strength-fill"></span></div>
+          <span class="pw-strength-label" id="pw-strength-label">Introduce una contraseña</span>
+        </div>
         <label>Repite la contraseña <input id="reg-pass2" type="password" autocomplete="new-password" minlength="6" required></label>
+        <p class="pw-match muted small" id="pw-match" hidden></p>
         <button class="btn btn-primary" type="submit">Crear cuenta</button>
+        <p class="auth-switch muted small">
+          ¿Ya tienes cuenta?
+          <button type="button" class="auth-switch-btn" data-auth-goto="login">Inicia sesión</button>
+        </p>
       </form>
     </div>
   </section>
