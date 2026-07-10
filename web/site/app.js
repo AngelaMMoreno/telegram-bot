@@ -907,9 +907,17 @@ function renderPagination(r) {
   $("#tests-pagination").innerHTML = html;
 }
 
-$("#tests-filter")?.addEventListener("input", e => {
-  state.filtroTests = e.target.value;
-  renderTests();
+/* Delegamos el filtro en `document` porque el SPA-router (al saltar
+ * entre /tests/ y /teoria/) clona el <body> destino: cualquier listener
+ * anclado directamente al nodo #tests-filter en la carga inicial se
+ * pierde con el swap y el usuario deja de poder filtrar. */
+document.addEventListener("input", e => {
+  if (e.target && e.target.id === "tests-filter") {
+    state.filtroTests = e.target.value;
+    renderTests();
+  } else if (e.target && e.target.id === "usuarios-filtro") {
+    renderUsuarios();
+  }
 });
 
 $("#tests-pagination")?.addEventListener("click", e => {
@@ -2113,7 +2121,8 @@ function renderUsuarios() {
   }).join("") || "<p class='muted'>Sin usuarios.</p>";
 }
 
-$("#usuarios-filtro")?.addEventListener("input", renderUsuarios);
+// El listener de #usuarios-filtro está delegado en `document` (ver
+// bloque input↑) para sobrevivir a los swaps del SPA-router.
 
 $("#usuarios-list")?.addEventListener("click", e => {
   const row = e.target.closest(".usuario-row");
