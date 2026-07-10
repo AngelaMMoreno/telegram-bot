@@ -1195,6 +1195,30 @@ ap-modal[data-wide] .modal-card { width: min(720px, 96vw); max-width: none; }
 }
 .bulk-list .check-item strong { display: block; }
 
+/* Modal N×M: cada sección (oposiciones destino + tests a asignar)
+ * lleva su propio recuadro con contador, filtros y su lista scrolleable. */
+.bulk-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.8rem 0.75rem;
+  margin: 0.6rem 0;
+  display: flex; flex-direction: column; gap: 0.5rem;
+}
+.bulk-section legend {
+  padding: 0 0.35rem;
+  font-weight: 600;
+  color: var(--txt);
+}
+.bulk-section .bulk-list {
+  max-height: min(32vh, 260px);
+}
+
+/* Barra bajo el formulario de "Crear oposición" con el atajo bulk N×M. */
+.opos-toolbar {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  margin: 0.6rem 0 0.8rem;
+}
+
 /* ── Cabecera unificada de Home (saludo + selector de oposición) ─────────
  * Vive en shared/user-header.css: la comparten tests y teoría. */
 

@@ -2895,6 +2895,12 @@ on("#btn-test-oposiciones", "click", async () => {
 });
 // La X y el cierre por Esc/backdrop los gestiona <ap-modal closable>.
 on("#modal-test-op-cancelar", "click", () => $("#modal-test-oposiciones").classList.add("hidden"));
+on("#modal-test-op-todas", "click", () => {
+  $$("#modal-test-op-list input[type=checkbox]").forEach(cb => (cb.checked = true));
+});
+on("#modal-test-op-ninguna", "click", () => {
+  $$("#modal-test-op-list input[type=checkbox]").forEach(cb => (cb.checked = false));
+});
 on("#modal-test-op-guardar", "click", async () => {
   const modal = $("#modal-test-oposiciones");
   const ids = $$("#modal-test-op-list input[type=checkbox]:checked").map(x => x.dataset.opId);
@@ -2902,6 +2908,154 @@ on("#modal-test-op-guardar", "click", async () => {
     await rpc("set_test_oposiciones", { p_test_id: state.currentTestId, p_oposicion_ids: ids });
     toast("Oposiciones del test actualizadas");
     modal.classList.add("hidden");
+  } catch (e) { toast(e.message); }
+});
+
+/* ── Modal BULK N×M: asignar varios tests a varias oposiciones ─────────
+ * Diferente semántica que set_oposicion_tests / set_test_oposiciones:
+ * este flujo INSERTA los pares faltantes vía asignar_tests_a_oposiciones
+ * sin borrar los existentes. Pensado para tests recién subidos que no
+ * están en ninguna oposición: el admin marca todas las oposiciones (o
+ * solo algunas) y varios tests, y las combinaciones se crean de una
+ * sola llamada. */
+const BULKMM = { tests: [], ops: [], testsSel: new Set(), opsSel: new Set() };
+
+async function abrirModalBulkMulti() {
+  const modal = $("#modal-bulk-multi");
+  BULKMM.tests = [];
+  BULKMM.ops = [];
+  BULKMM.testsSel = new Set();
+  BULKMM.opsSel = new Set();
+  $("#bulk-multi-op-list").innerHTML   = "<li class='muted'>Cargando…</li>";
+  $("#bulk-multi-test-list").innerHTML = "<li class='muted'>Cargando…</li>";
+  modal.classList.remove("hidden");
+  try {
+    const [tests, ops] = await Promise.all([
+      rpc("listar_tests_min").catch(() => []),
+      rpc("listar_oposiciones_admin").catch(() => []),
+    ]);
+    BULKMM.tests = Array.isArray(tests) ? tests : [];
+    BULKMM.ops   = Array.isArray(ops)   ? ops   : [];
+
+    // Filtro por etiqueta a partir de las etiquetas presentes en los tests.
+    const etsSet = new Set();
+    BULKMM.tests.forEach(t => (t.etiquetas || []).forEach(e => etsSet.add(e)));
+    const opts = ['<option value="">Todas las etiquetas</option>']
+      .concat([...etsSet].sort().map(t => `<option value="${esc(t)}">${esc(t)}</option>`));
+    $("#bulk-multi-filter-etiqueta").innerHTML = opts.join("");
+    $("#bulk-multi-filter-nombre").value = "";
+
+    pintarBulkMultiOps();
+    pintarBulkMultiTests();
+  } catch (e) {
+    $("#bulk-multi-test-list").innerHTML = `<li class='muted'>${esc(e.message)}</li>`;
+  }
+}
+
+function pintarBulkMultiOps() {
+  const lista = $("#bulk-multi-op-list");
+  lista.innerHTML = BULKMM.ops.map(o => `
+    <li>
+      <label class="check-item">
+        <input type="checkbox" data-op-id="${o.id}" ${BULKMM.opsSel.has(o.id) ? "checked" : ""}>
+        <span>
+          <strong>${esc(o.nombre)}</strong>
+          <span class="muted small">${o.num_tests || 0} tests${o.activa ? "" : " · <em>inactiva</em>"}</span>
+        </span>
+      </label>
+    </li>
+  `).join("") || "<li class='muted'>No hay oposiciones. Crea alguna primero.</li>";
+  $("#bulk-multi-op-counter").textContent =
+    `${BULKMM.opsSel.size} / ${BULKMM.ops.length} oposiciones`;
+}
+
+function bulkMultiFiltrarTests() {
+  const q  = ($("#bulk-multi-filter-nombre").value || "").trim().toLowerCase();
+  const et = $("#bulk-multi-filter-etiqueta").value || "";
+  return BULKMM.tests.filter(t => {
+    if (q && !t.titulo.toLowerCase().includes(q)) return false;
+    if (et && !(t.etiquetas || []).includes(et))  return false;
+    return true;
+  });
+}
+
+function pintarBulkMultiTests() {
+  const lista = $("#bulk-multi-test-list");
+  const vis = bulkMultiFiltrarTests();
+  lista.innerHTML = vis.map(t => `
+    <li>
+      <label class="check-item">
+        <input type="checkbox" data-test-id="${t.id}" ${BULKMM.testsSel.has(t.id) ? "checked" : ""}>
+        <span>
+          <strong>${esc(t.titulo)}</strong>
+          <span class="muted small">${t.num_preguntas || 0} preguntas${(t.etiquetas || []).length ? " · " + (t.etiquetas || []).map(esc).join(", ") : ""}</span>
+        </span>
+      </label>
+    </li>
+  `).join("") || "<li class='muted'>Sin tests con esos filtros.</li>";
+  $("#bulk-multi-test-counter").textContent =
+    `${BULKMM.testsSel.size} / ${BULKMM.tests.length} tests` +
+    (vis.length !== BULKMM.tests.length ? ` · ${vis.length} visibles` : "");
+}
+
+on("#btn-bulk-multi", "click", abrirModalBulkMulti);
+on("#modal-bulk-multi-cancelar", "click",
+   () => $("#modal-bulk-multi").classList.add("hidden"));
+
+on("#bulk-multi-op-list", "change", (e) => {
+  const cb = e.target.closest("input[type=checkbox][data-op-id]");
+  if (!cb) return;
+  if (cb.checked) BULKMM.opsSel.add(cb.dataset.opId);
+  else            BULKMM.opsSel.delete(cb.dataset.opId);
+  $("#bulk-multi-op-counter").textContent =
+    `${BULKMM.opsSel.size} / ${BULKMM.ops.length} oposiciones`;
+});
+on("#bulk-multi-op-todas", "click", () => {
+  BULKMM.ops.forEach(o => BULKMM.opsSel.add(o.id));
+  pintarBulkMultiOps();
+});
+on("#bulk-multi-op-ninguna", "click", () => {
+  BULKMM.opsSel.clear();
+  pintarBulkMultiOps();
+});
+
+on("#bulk-multi-test-list", "change", (e) => {
+  const cb = e.target.closest("input[type=checkbox][data-test-id]");
+  if (!cb) return;
+  if (cb.checked) BULKMM.testsSel.add(cb.dataset.testId);
+  else            BULKMM.testsSel.delete(cb.dataset.testId);
+  $("#bulk-multi-test-counter").textContent =
+    `${BULKMM.testsSel.size} / ${BULKMM.tests.length} tests`;
+});
+on("#bulk-multi-filter-nombre", "input",  pintarBulkMultiTests);
+on("#bulk-multi-filter-etiqueta", "change", pintarBulkMultiTests);
+on("#bulk-multi-test-visibles", "click", () => {
+  bulkMultiFiltrarTests().forEach(t => BULKMM.testsSel.add(t.id));
+  pintarBulkMultiTests();
+});
+on("#bulk-multi-test-limpiar", "click", () => {
+  bulkMultiFiltrarTests().forEach(t => BULKMM.testsSel.delete(t.id));
+  pintarBulkMultiTests();
+});
+
+on("#modal-bulk-multi-guardar", "click", async () => {
+  const testIds = [...BULKMM.testsSel];
+  const opIds   = [...BULKMM.opsSel];
+  if (!testIds.length) return toast("Marca al menos un test");
+  if (!opIds.length)   return toast("Marca al menos una oposición");
+  try {
+    const nuevos = await rpc("asignar_tests_a_oposiciones", {
+      p_test_ids: testIds, p_oposicion_ids: opIds,
+    });
+    const total = testIds.length * opIds.length;
+    toast(
+      nuevos === 0
+        ? "Ya estaban asignados"
+        : `${nuevos} de ${total} enlaces creados` +
+          (nuevos < total ? " · el resto ya existían" : "")
+    );
+    $("#modal-bulk-multi").classList.add("hidden");
+    loadOposicionesAdmin();
   } catch (e) { toast(e.message); }
 });
 
