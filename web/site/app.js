@@ -759,28 +759,71 @@ async function abrirStatsTest(testId, titulo) {
     const suma = notas.reduce((a, b) => a + b, 0);
     const media = suma / notas.length;
     const mejor = Math.max(...notas);
+    const peor  = Math.min(...notas);
     const ult   = notas[notas.length - 1];
-    const cell = (v, l, tone = "") => `
+    const aprobados = notas.filter(n => n >= 5).length;
+    const pctAprob = Math.round((aprobados / notas.length) * 100);
+    const cell = (v, l, tone = "", ico = "") => `
       <div class="stat-tile ${tone}">
+        ${ico ? `<div class="stat-tile-ico" aria-hidden="true">${ico}</div>` : ""}
         <div class="stat-tile-v">${v}</div>
         <div class="stat-tile-l">${l}</div>
       </div>`;
-    // Mini "sparkline" de barras con las últimas 12 notas.
-    const ultimos = notas.slice(-12);
-    const barras = ultimos.map(n => {
-      const alto = Math.round((Math.max(0, Math.min(10, n)) / 10) * 100);
-      return `<span class="bar" style="height:${alto}%" title="${n.toFixed(2)}"></span>`;
-    }).join("");
+    // Tendencia: comparamos la última nota con la media de las anteriores.
+    let tendencia = "";
+    if (notas.length >= 2) {
+      const previas = notas.slice(0, -1);
+      const mediaPrev = previas.reduce((a, b) => a + b, 0) / previas.length;
+      const delta = ult - mediaPrev;
+      if (Math.abs(delta) >= 0.2) {
+        tendencia = delta > 0
+          ? `<span class="stats-trend up">▲ ${delta.toFixed(2)} vs media anterior</span>`
+          : `<span class="stats-trend down">▼ ${Math.abs(delta).toFixed(2)} vs media anterior</span>`;
+      } else {
+        tendencia = `<span class="stats-trend flat">= estable respecto a la media</span>`;
+      }
+    }
+    // Timeline de intentos: cada intento como fila con nº, nota,
+    // medalla de color según rango y barra proporcional. Mucho más
+    // legible que la sparkline plana anterior.
+    const ultimos = intentos.slice(-12);
+    const idxBase = intentos.length - ultimos.length;
+    const notaClase = n =>
+      n >= 8 ? "sobresa" : n >= 6 ? "aprob" : n >= 5 ? "just" : "susp";
+    const filasIntentos = ultimos.map((it, i) => {
+      const n = Number(it.nota) || 0;
+      const pct = Math.round((Math.max(0, Math.min(10, n)) / 10) * 100);
+      const nAbs = idxBase + i + 1;
+      const clase = notaClase(n);
+      return `
+        <li class="attempt-row ${clase}">
+          <span class="attempt-num">#${nAbs}</span>
+          <span class="attempt-bar-wrap">
+            <span class="attempt-bar" style="--pct:${pct}%"></span>
+          </span>
+          <span class="attempt-nota">${n.toFixed(2)}</span>
+        </li>`;
+    }).reverse().join("");
     cont.innerHTML = `
       <div class="stat-grid">
-        ${cell(intentos.length, "Veces intentado")}
-        ${cell(media.toFixed(2), "Nota media", media >= 5 ? "ok" : "warn")}
-        ${cell(ult.toFixed(2), "Última nota", ult >= 5 ? "ok" : "warn")}
-        ${cell(mejor.toFixed(2), "Mejor nota", "hi")}
+        ${cell(intentos.length, "Veces intentado", "", "📊")}
+        ${cell(media.toFixed(2), "Nota media", media >= 5 ? "ok" : "warn", "🎯")}
+        ${cell(mejor.toFixed(2), "Mejor nota", "hi", "🏆")}
+        ${cell(pctAprob + "%", "Aprobados", pctAprob >= 50 ? "ok" : "warn", "✅")}
       </div>
-      <h4 class="stats-sub">Últimos intentos</h4>
-      <div class="stats-spark" aria-label="Notas de los últimos intentos">${barras}</div>
-      <p class="muted small stats-hint">Cada barra es un intento. Escala 0 – 10.</p>
+      <div class="stats-highlight ${ult >= 5 ? "ok" : "warn"}">
+        <div class="stats-highlight-l">Última nota</div>
+        <div class="stats-highlight-v">
+          <span class="stats-highlight-num">${ult.toFixed(2)}</span>
+          <span class="stats-highlight-slash">/ 10</span>
+        </div>
+        ${tendencia}
+      </div>
+      <h4 class="stats-sub">Historial de intentos</h4>
+      <ul class="attempts-list" aria-label="Notas de los últimos intentos">${filasIntentos}</ul>
+      ${intentos.length > ultimos.length
+        ? `<p class="muted small stats-hint">Mostrando los últimos ${ultimos.length} de ${intentos.length} intentos.</p>`
+        : `<p class="muted small stats-hint">Peor nota registrada: ${peor.toFixed(2)}.</p>`}
     `;
   } catch (e) {
     cont.innerHTML = `<p class='muted'>No se pudieron cargar las estadísticas: ${esc(e.message)}</p>`;

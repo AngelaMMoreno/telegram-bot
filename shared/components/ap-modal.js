@@ -67,10 +67,23 @@ class ApModal extends HTMLElement {
     // legacy abren el modal con classList.remove("hidden") (solo la clase).
     // Convertimos aquí el atributo en la clase para que ambas APIs sean
     // equivalentes y `.classList.remove("hidden")` baste para abrir.
-    if (this.hasAttribute('hidden')) {
-      this.removeAttribute('hidden');
-      this.classList.add('hidden');
-    }
+    // Además observamos cambios posteriores del atributo `hidden` para
+    // mantenerlo sincronizado con la clase — así, si un fragmento de
+    // código legado hace `.removeAttribute("hidden")` o le pega otro
+    // `hidden` a posteriori, el modal responde igualmente.
+    this._syncingHidden = false;
+    const syncFromAttr = () => {
+      if (this._syncingHidden) return;
+      this._syncingHidden = true;
+      if (this.hasAttribute('hidden')) {
+        this.removeAttribute('hidden');
+        this.classList.add('hidden');
+      }
+      this._syncingHidden = false;
+    };
+    syncFromAttr();
+    this._hiddenObserver = new MutationObserver(syncFromAttr);
+    this._hiddenObserver.observe(this, { attributes: true, attributeFilter: ['hidden'] });
 
     this.addEventListener('click', (e) => {
       if (!this.hasAttribute('closable')) return;
@@ -89,15 +102,21 @@ class ApModal extends HTMLElement {
 
   disconnectedCallback() {
     if (this._onKey) document.removeEventListener('keydown', this._onKey);
+    if (this._hiddenObserver) this._hiddenObserver.disconnect();
   }
 
   open() {
+    this._syncingHidden = true;
     this.removeAttribute('hidden');
     this.classList.remove('hidden');
+    this._syncingHidden = false;
     this.dispatchEvent(new CustomEvent('ap-open', { bubbles: true }));
   }
   close() {
+    this._syncingHidden = true;
+    this.removeAttribute('hidden');
     this.classList.add('hidden');
+    this._syncingHidden = false;
     this.dispatchEvent(new CustomEvent('ap-close', { bubbles: true }));
   }
   toggle(force) {
