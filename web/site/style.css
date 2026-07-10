@@ -82,6 +82,71 @@
 }
 .view-header .actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 
+/* ─── Detalle de un test: cabecera compacta y ergonómica ─────────────
+ * Antes: título + timer + Empezar test + Repasar + Oposiciones + 🗑️
+ * apilados en columna → ocupaba toda la pantalla. Ahora:
+ *  · Fila 1 → "← Volver" y título en línea.
+ *  · Fila 2 → CTA principal (timer + Empezar test) a lo ancho.
+ *  · Fila 3 → acciones secundarias (Repasar / Oposiciones / 🗑️)
+ *    como chips más pequeños.
+ */
+.test-detail-header { gap: 0.55rem; }
+.test-detail-head-row {
+  display: flex; align-items: center; gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.test-detail-head-row h2 {
+  flex: 1; min-width: 0;
+  font-size: 1.35rem; margin: 0;
+  color: var(--txt); font-weight: 700; letter-spacing: -0.01em;
+  word-break: break-word;
+}
+.test-detail-actions {
+  display: flex; flex-direction: column;
+  gap: 0.5rem;
+}
+.test-detail-cta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+.test-detail-cta .tiempo-input-wrap {
+  margin: 0;
+  min-height: 42px;
+}
+.test-detail-cta .btn-cta {
+  font-weight: 700;
+  padding: 0.7rem 1.1rem;
+  font-size: 1rem;
+  box-shadow: 0 4px 12px var(--pri-glow);
+  min-height: 42px;
+}
+.test-detail-secondary {
+  display: flex; flex-wrap: wrap; gap: 0.35rem;
+}
+.test-detail-secondary .btn-secondary-action {
+  flex: 1 1 auto;
+  min-height: 38px;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.88rem;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.test-detail-secondary #btn-delete-test {
+  flex: 0 0 auto;
+  min-width: 42px;
+}
+
+@media (min-width: 600px) {
+  .test-detail-head-row { flex-wrap: nowrap; }
+  .test-detail-cta {
+    grid-template-columns: auto minmax(180px, 260px);
+    justify-content: start;
+  }
+  .test-detail-secondary .btn-secondary-action { flex: 0 0 auto; }
+}
+
 /* ─── Auth ─── */
 .auth-card {
   background: var(--bg-panel); padding: 1.5rem;
@@ -363,20 +428,30 @@
   #modal-stats-test .stat-grid { grid-template-columns: repeat(4, 1fr); }
 }
 .stat-tile {
+  position: relative;
+  overflow: hidden;
   background: var(--bg-soft);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.85rem 0.75rem;
+  padding: 0.95rem 0.65rem 0.85rem;
   text-align: center;
-  display: flex; flex-direction: column; gap: 0.15rem;
+  display: flex; flex-direction: column; gap: 0.2rem;
+  transition: transform 0.15s ease, box-shadow 0.2s ease;
+}
+.stat-tile:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.stat-tile-ico {
+  font-size: 1.2rem;
+  line-height: 1;
+  opacity: 0.85;
 }
 .stat-tile-v {
   font-size: 1.55rem; font-weight: 800;
   color: var(--txt);
   line-height: 1.1;
+  font-variant-numeric: tabular-nums;
 }
 .stat-tile-l {
-  font-size: 0.72rem; font-weight: 700;
+  font-size: 0.7rem; font-weight: 700;
   color: var(--txt-soft);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -389,27 +464,127 @@
 .stat-tile.hi   { background: linear-gradient(160deg, var(--sky-soft, var(--accent-soft)), var(--bg-soft)); border-color: var(--sky, var(--accent)); }
 .stat-tile.hi .stat-tile-v { color: var(--pri-d); }
 
+.stats-highlight {
+  margin-top: 0.9rem;
+  padding: 0.9rem 1.05rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: linear-gradient(135deg, var(--pri-soft), transparent 65%);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.7rem 1rem;
+}
+.stats-highlight.warn {
+  background: linear-gradient(135deg, var(--accent-soft), transparent 65%);
+  border-color: var(--accent);
+}
+.stats-highlight-l {
+  font-size: 0.72rem; font-weight: 700;
+  color: var(--txt-soft);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.stats-highlight-v {
+  grid-column: 2 / 3;
+  display: flex; align-items: baseline; gap: 0.25rem;
+  font-variant-numeric: tabular-nums;
+}
+.stats-highlight-num {
+  font-size: 2.1rem; font-weight: 800; line-height: 1;
+  color: var(--pri-d);
+}
+[data-theme="dark"] .stats-highlight-num { color: var(--pri); }
+.stats-highlight.warn .stats-highlight-num { color: var(--accent-d); }
+.stats-highlight-slash {
+  color: var(--txt-soft); font-size: 1rem; font-weight: 600;
+}
+.stats-trend {
+  grid-column: 3 / 4;
+  font-size: 0.78rem; font-weight: 700;
+  padding: 0.28rem 0.6rem;
+  border-radius: 999px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.stats-trend.up   { color: var(--pri-d); border-color: var(--pri); }
+[data-theme="dark"] .stats-trend.up { color: var(--pri); }
+.stats-trend.down { color: var(--accent-d); border-color: var(--accent); }
+.stats-trend.flat { color: var(--txt-soft); }
+
 .stats-sub {
   font-size: 0.82rem; font-weight: 700;
   color: var(--txt-soft);
   text-transform: uppercase; letter-spacing: 0.06em;
   margin: 1.1rem 0 0.5rem;
 }
-.stats-spark {
-  display: flex; align-items: flex-end; gap: 4px;
-  height: 72px;
-  padding: 6px 8px;
+
+/* Timeline de intentos ─ sustituye a la sparkline plana */
+.attempts-list {
+  list-style: none;
+  padding: 0.35rem;
+  margin: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-soft);
+  display: flex; flex-direction: column;
+  gap: 0.25rem;
+  max-height: 260px;
+  overflow-y: auto;
 }
-.stats-spark .bar {
-  flex: 1;
-  min-height: 4px;
-  border-radius: 4px 4px 2px 2px;
-  background: linear-gradient(180deg, var(--pri), var(--grad-b, var(--pri)));
-  box-shadow: 0 1px 3px rgba(107, 142, 35, 0.25);
+.attempt-row {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 0.55rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  animation: attempt-in 0.28s ease both;
 }
+@keyframes attempt-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.attempt-num {
+  font-size: 0.78rem; font-weight: 700;
+  color: var(--txt-soft);
+  font-variant-numeric: tabular-nums;
+}
+.attempt-bar-wrap {
+  position: relative;
+  height: 10px;
+  background: var(--bg-soft);
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.attempt-bar {
+  position: absolute; inset: 0 auto 0 0;
+  width: var(--pct, 0%);
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--grad-a), var(--grad-b));
+  transition: width 0.5s ease;
+}
+.attempt-nota {
+  font-size: 0.95rem; font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--txt);
+  min-width: 42px; text-align: right;
+}
+.attempt-row.sobresa { border-color: var(--pri); }
+.attempt-row.sobresa .attempt-bar { background: linear-gradient(90deg, var(--pri), var(--sky, var(--pri))); }
+.attempt-row.sobresa .attempt-nota { color: var(--pri-d); }
+[data-theme="dark"] .attempt-row.sobresa .attempt-nota { color: var(--pri); }
+.attempt-row.aprob .attempt-bar { background: linear-gradient(90deg, var(--grad-a), var(--grad-b)); }
+.attempt-row.just  .attempt-bar { background: linear-gradient(90deg, var(--accent), var(--accent-d)); }
+.attempt-row.just  { border-color: var(--accent); }
+.attempt-row.just  .attempt-nota { color: var(--accent-d); }
+.attempt-row.susp  .attempt-bar { background: linear-gradient(90deg, #d97575, #b04a4a); }
+.attempt-row.susp  { border-color: rgba(217, 117, 117, 0.5); }
+.attempt-row.susp  .attempt-nota { color: #b04a4a; }
+[data-theme="dark"] .attempt-row.susp .attempt-nota { color: #ff9b9b; }
 .stats-hint { margin-top: 0.5rem; }
 
 .question-list {
@@ -501,15 +676,30 @@
   line-height: 1.55;
 }
 [data-theme="dark"] .explanation { background: rgba(244, 208, 63, 0.10); border-color: rgba(244, 208, 63, 0.45); }
-.quiz-actions { margin-top: 1.3rem; display: flex; gap: 0.45rem; flex-wrap: wrap; align-items: center; }
-.quiz-actions > span { display: none; } /* spacer solo en desktop */
+.quiz-actions {
+  margin-top: 1.3rem;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.6rem;
+  align-items: center;
+}
+.quiz-actions-tools {
+  display: flex; gap: 0.4rem;
+  justify-content: center;
+}
 .quiz-actions .btn-icon {
   padding: 0.5rem 0.75rem;
-  min-width: 46px;
+  min-width: 48px;
   font-size: 1.15rem;
   line-height: 1;
 }
 .quiz-actions .btn-icon.fav-on { color: var(--accent, #f4d03f); }
+.quiz-actions .btn-next {
+  padding: 0.7rem 1.4rem;
+  min-width: 130px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px var(--pri-glow);
+}
 
 /* En móvil, con enunciados largos o explicaciones extensas, el botón
  * "Siguiente" quedaba fuera del viewport y había que hacer scroll cada
@@ -530,17 +720,18 @@
     bottom: calc(var(--bottom-nav-h, 58px) + 0.4rem);
     z-index: 10;
     margin-top: 1rem;
-    padding: 0.5rem 0.7rem;
+    padding: 0.55rem 0.8rem;
     background: var(--glass-bg);
     backdrop-filter: blur(var(--glass-blur)) saturate(160%);
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
     border: 1px solid var(--glass-border);
     border-radius: 999px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-    flex-wrap: nowrap;
+    grid-template-columns: auto 1fr auto;
+    gap: 0.5rem;
   }
   #view-quiz .quiz-actions .btn { min-height: 42px; }
-  #view-quiz .quiz-actions #btn-next { padding: 0.55rem 1.1rem; }
+  #view-quiz .quiz-actions .btn-next { padding: 0.55rem 1.1rem; min-width: 110px; }
 }
 
 /* ─── Tiempo per-pregunta input ─── */
@@ -793,6 +984,11 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
     align-items: center;
     flex-wrap: wrap;
   }
+  /* El detalle de un test mantiene su layout en columna incluso en
+   * tablet/desktop: título arriba, CTA principal en su fila y las
+   * acciones secundarias en la última. Así ni el título ni "Empezar
+   * test" se ven aplastados al lado de un timer estrecho. */
+  .view-header.test-detail-header { flex-direction: column; align-items: stretch; }
   .view-header h2 { font-size: 1.4rem; flex: 1; min-width: 200px; }
   .inline-form {
     flex-direction: row; flex-wrap: wrap; align-items: stretch;
@@ -814,7 +1010,6 @@ body:not(.es-admin)         .solo-admin { display: none !important; }
   .user-chip .user-name { max-width: 180px; }
   .hamburger { display: none; }
   .content { grid-area: main; padding: 1.5rem; max-width: none; overflow-x: hidden; }
-  .quiz-actions > span { display: block; flex: 1; }
   .auth-card { margin-top: 3rem; padding: 2rem; }
 }
 

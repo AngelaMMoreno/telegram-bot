@@ -282,20 +282,26 @@
 
   <!-- Detalle de un test -->
   <section id="view-test-detail" class="view">
-    <header class="view-header">
-      <button class="btn btn-ghost" data-view="tests">← Volver</button>
-      <h2 id="test-detail-title"></h2>
-      <div class="actions">
-        <label class="tiempo-input-wrap" title="Segundos por pregunta">
-          ⏱ <input type="number" class="tiempo-input" min="3" max="3600">
-          <span class="muted">s</span>
-        </label>
-        <button class="btn btn-primary" id="btn-start-test">Empezar test</button>
-        <button class="btn btn-primary" id="btn-repasar-test" title="Repaso espaciado de este test">
-          🔁 Repasar <span id="repaso-test-badge" class="badge hidden"></span>
-        </button>
-        <button class="btn btn-ghost gestion" id="btn-test-oposiciones" title="Asignar oposiciones a este test">🎓 Oposiciones</button>
-        <button class="btn btn-ghost gestion" id="btn-delete-test">🗑️</button>
+    <header class="view-header test-detail-header">
+      <div class="test-detail-head-row">
+        <button class="btn btn-ghost" data-view="tests" aria-label="Volver">← Volver</button>
+        <h2 id="test-detail-title"></h2>
+      </div>
+      <div class="test-detail-actions">
+        <div class="test-detail-cta">
+          <label class="tiempo-input-wrap" title="Segundos por pregunta">
+            ⏱ <input type="number" class="tiempo-input" min="3" max="3600">
+            <span class="muted">s</span>
+          </label>
+          <button class="btn btn-primary btn-cta" id="btn-start-test">Empezar test</button>
+        </div>
+        <div class="test-detail-secondary">
+          <button class="btn btn-ghost btn-secondary-action" id="btn-repasar-test" title="Repaso espaciado de este test">
+            🔁 Repasar <span id="repaso-test-badge" class="badge hidden"></span>
+          </button>
+          <button class="btn btn-ghost btn-secondary-action gestion" id="btn-test-oposiciones" title="Asignar oposiciones a este test">🎓 Oposiciones</button>
+          <button class="btn btn-ghost btn-secondary-action gestion" id="btn-delete-test" title="Borrar test" aria-label="Borrar test">🗑️</button>
+        </div>
       </div>
     </header>
     <p id="test-detail-meta" class="muted"></p>
@@ -334,10 +340,11 @@
       </div>
       <div class="quiz-actions">
         <button class="btn btn-ghost" id="btn-skip">Saltar</button>
-        <button class="btn btn-ghost btn-icon" id="btn-fav-q" aria-label="Marcar como favorita" title="Favorita">☆</button>
-        <button class="btn btn-ghost btn-icon gestion hidden" id="btn-edit-q" aria-label="Editar pregunta" title="Editar">✏️</button>
-        <span style="flex:1"></span>
-        <button class="btn btn-primary hidden" id="btn-next">Siguiente</button>
+        <div class="quiz-actions-tools">
+          <button class="btn btn-ghost btn-icon" id="btn-fav-q" aria-label="Marcar como favorita" title="Favorita">☆</button>
+          <button class="btn btn-ghost btn-icon gestion hidden" id="btn-edit-q" aria-label="Editar pregunta" title="Editar">✏️</button>
+        </div>
+        <button class="btn btn-primary btn-next hidden" id="btn-next">Siguiente →</button>
       </div>
     </div>
   </section>
