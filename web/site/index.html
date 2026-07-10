@@ -143,13 +143,16 @@
     <span>Mis fallos</span>
   </button>
   <div class="nav-sep gestion"></div>
-  <!-- "Más" en el sidebar de escritorio: abre el mismo sheet flotante
-       que el bottom-nav móvil (subir tests + etiquetas). Se muestra
-       solo a usuarios con permiso de gestión (clase .gestion). Así el
-       escritorio y el móvil exponen el mismo agrupamiento. -->
-  <button class="nav-item gestion" id="sidebar-mas-tests" aria-haspopup="dialog">
-    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>
-    <span>Más</span>
+  <!-- En escritorio, Subir test y Etiquetas se muestran directamente en
+       el sidebar (solo con permisos). En móvil, esas opciones viven en
+       el sheet flotante "Más" del bottom-nav. -->
+  <button class="nav-item gestion" data-view="upload">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    <span>Subir test</span>
+  </button>
+  <button class="nav-item gestion" data-view="etiquetas">
+    <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/><circle cx="7" cy="7" r="1.5" fill="currentColor" stroke="none"/></svg>
+    <span>Etiquetas</span>
   </button>
 </nav>
 

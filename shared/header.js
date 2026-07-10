@@ -398,10 +398,14 @@
         this.querySelectorAll('.aprentix-sheet.open').forEach(closeSheet);
       });
 
-      // Botón "Más" del bottom-nav → sheet secundaria.
+      // Botón "Más" del bottom-nav → sheet secundaria. Cerramos cualquier
+      // otro sheet abierto antes de abrir "más" para que la transición
+      // sea limpia.
       this.querySelectorAll('[data-more]').forEach(b => {
         b.addEventListener('click', (e) => {
           e.preventDefault();
+          e.stopPropagation();
+          this.querySelectorAll('.aprentix-sheet.open').forEach(closeSheet);
           openSheet('more-sheet');
         });
       });
@@ -427,10 +431,11 @@
       });
 
       // Al pulsar cualquier item del bottom-nav, del sheet "Más" o una
-      // fila del sheet del avatar (excepto la de admin que abre otro
-      // sheet), cerramos las sheets abiertas — el routing lo hace el app.
+      // fila del sheet del avatar (excepto los que ABREN otro sheet),
+      // cerramos las sheets abiertas — el routing lo hace el app.
       this.querySelectorAll('.bnav-item, .more-item, .sheet-row').forEach(b => {
-        if (b.id === 'btn-admin-panel') return;  // abre otro sheet
+        if (b.id === 'btn-admin-panel') return;   // abre otro sheet
+        if (b.hasAttribute('data-more')) return;  // el propio botón "Más" abre el more-sheet
         b.addEventListener('click', () => {
           setTimeout(() => {
             this.querySelectorAll('.aprentix-sheet.open').forEach(closeSheet);
