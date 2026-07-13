@@ -144,46 +144,84 @@
 .auth-switch-btn:hover { color: var(--pri-d); }
 [data-theme="dark"] .auth-switch-btn:hover { color: var(--pri-hover); }
 
-/* Indicador de fuerza de contraseña. Cuatro segmentos que se van
- * "encendiendo" según el nivel: débil → moderada → fuerte → muy fuerte. */
+/* Indicador de fuerza de contraseña.
+ * La barra se pinta como cuatro segmentos redondeados que se encienden
+ * progresivamente (débil → moderada → fuerte → muy fuerte) usando un
+ * mask sobre la track. La etiqueta se muestra como chip a la derecha
+ * con colores solarpunk según el nivel. */
 .pw-strength {
   display: flex; align-items: center;
-  gap: 0.55rem;
-  margin: -0.35rem 0 0.75rem;
+  gap: 0.6rem;
+  margin: -0.25rem 0 0.75rem;
 }
 .pw-strength-bar {
-  flex: 1; height: 6px;
+  flex: 1;
+  position: relative;
+  height: 8px;
   background: var(--bg-soft);
+  border: 1px solid var(--border);
   border-radius: 999px;
   overflow: hidden;
-  border: 1px solid var(--border);
+  /* Cuatro segmentos separados por finos huecos transparentes */
+  -webkit-mask: linear-gradient(to right,
+    #000 0 calc(25% - 3px), transparent calc(25% - 3px) 25%,
+    #000 25% calc(50% - 3px), transparent calc(50% - 3px) 50%,
+    #000 50% calc(75% - 3px), transparent calc(75% - 3px) 75%,
+    #000 75% 100%);
+          mask: linear-gradient(to right,
+    #000 0 calc(25% - 3px), transparent calc(25% - 3px) 25%,
+    #000 25% calc(50% - 3px), transparent calc(50% - 3px) 50%,
+    #000 50% calc(75% - 3px), transparent calc(75% - 3px) 75%,
+    #000 75% 100%);
 }
 .pw-strength-bar > span {
   display: block; height: 100%;
   width: 0%;
-  background: var(--danger, #C0533E);
-  border-radius: inherit;
-  transition: width 0.25s ease, background 0.25s ease;
+  background: var(--coral);
+  transition: width 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2),
+              background 0.3s ease;
 }
+.pw-strength.lvl-1 > .pw-strength-bar > span { background: var(--coral); }
+.pw-strength.lvl-2 > .pw-strength-bar > span { background: var(--accent); }
+.pw-strength.lvl-3 > .pw-strength-bar > span { background: var(--leaf); }
+.pw-strength.lvl-4 > .pw-strength-bar > span {
+  background: linear-gradient(90deg, var(--leaf), var(--pri));
+}
+
 .pw-strength-label {
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   color: var(--txt-soft);
   white-space: nowrap;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
   min-width: 5.5rem;
-  text-align: right;
+  text-align: center;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
 }
-.pw-strength.lvl-1 > span { background: var(--danger, #C0533E); }
-.pw-strength.lvl-2 > span { background: var(--accent, #F4B740); }
-.pw-strength.lvl-3 > span { background: var(--leaf, #9BC53D); }
-.pw-strength.lvl-4 > span { background: var(--pri, #6B8E23); }
-.pw-strength.lvl-1 .pw-strength-label { color: var(--danger); }
-.pw-strength.lvl-2 .pw-strength-label { color: var(--accent-d); }
-.pw-strength.lvl-3 .pw-strength-label { color: var(--pri-d); }
-.pw-strength.lvl-4 .pw-strength-label { color: var(--pri-d); }
+.pw-strength.lvl-1 .pw-strength-label {
+  color: var(--coral-d); background: var(--coral-soft);
+  border-color: color-mix(in srgb, var(--coral) 40%, transparent);
+}
+.pw-strength.lvl-2 .pw-strength-label {
+  color: var(--accent-d); background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.pw-strength.lvl-3 .pw-strength-label {
+  color: var(--pri-d); background: var(--leaf-soft);
+  border-color: color-mix(in srgb, var(--leaf) 50%, transparent);
+}
+.pw-strength.lvl-4 .pw-strength-label {
+  color: var(--pri-d); background: var(--pri-soft);
+  border-color: color-mix(in srgb, var(--pri) 45%, transparent);
+}
+[data-theme="dark"] .pw-strength.lvl-1 .pw-strength-label { color: var(--coral); }
+[data-theme="dark"] .pw-strength.lvl-2 .pw-strength-label { color: var(--accent); }
 [data-theme="dark"] .pw-strength.lvl-3 .pw-strength-label,
 [data-theme="dark"] .pw-strength.lvl-4 .pw-strength-label { color: var(--pri); }
-[data-theme="dark"] .pw-strength.lvl-2 .pw-strength-label { color: var(--accent); }
 
 .pw-match {
   margin: -0.35rem 0 0.4rem;

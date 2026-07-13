@@ -193,6 +193,77 @@ button.check-item { background: transparent; }
 [data-theme="dark"] .op-card-check { color: var(--pri); }
 
 
+/* ─── Input de archivo (subir test, importar etiquetas…) ─────────────────
+ * El file input nativo se ve muy inconsistente entre navegadores. Damos
+ * al control un aspecto de "chip + botón" alineado con el resto de la
+ * UI: fondo panel, borde suave, botón interior estilo secundario, y
+ * halo verde al enfocarlo. */
+input[type="file"]:not([hidden]) {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  min-height: 46px;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  color: var(--txt);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+input[type="file"]:not([hidden]):hover {
+  border-color: var(--pri);
+  background: color-mix(in srgb, var(--pri-soft) 55%, var(--bg-panel));
+}
+input[type="file"]:not([hidden]):focus-visible {
+  outline: none;
+  border-color: var(--pri);
+  box-shadow: 0 0 0 4px var(--pri-glow);
+}
+input[type="file"]::file-selector-button {
+  padding: 0.7rem 1rem;
+  margin-right: 0.7rem;
+  border: 0;
+  border-right: 1px solid var(--border);
+  background: linear-gradient(135deg, var(--grad-a), var(--pri));
+  color: #fff;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: background 0.15s, filter 0.15s;
+}
+input[type="file"]::-webkit-file-upload-button {
+  padding: 0.7rem 1rem;
+  margin-right: 0.7rem;
+  border: 0;
+  border-right: 1px solid var(--border);
+  background: linear-gradient(135deg, var(--grad-a), var(--pri));
+  color: #fff;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+input[type="file"]:hover::file-selector-button {
+  filter: brightness(1.05);
+}
+input[type="file"]:hover::-webkit-file-upload-button {
+  filter: brightness(1.05);
+}
+[data-theme="dark"] input[type="file"]::file-selector-button,
+[data-theme="dark"] input[type="file"]::-webkit-file-upload-button {
+  color: #14241D;
+  background: linear-gradient(135deg, var(--pri), var(--grad-b));
+  border-right-color: color-mix(in srgb, var(--pri) 30%, transparent);
+}
+
+
 /* ─── Badge (contador circular al lado de un botón) ───────────────────── */
 .badge {
   display: inline-block;
