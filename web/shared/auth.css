@@ -27,12 +27,16 @@
   width: 104px; height: 104px;
   margin: 0 auto;
   display: block;
-  background: linear-gradient(135deg,
-    var(--pri) 0%,
-    var(--leaf) 28%,
-    var(--accent) 55%,
-    var(--coral) 78%,
-    var(--lavender) 100%);
+  /* Solarpunk día: base verde salvia → musgo con un "sol" ámbar arriba
+     a la izquierda y un beso coral abajo a la derecha. Da profundidad
+     y calidez sin abandonar la identidad verde. */
+  background:
+    radial-gradient(circle at 26% 24%, rgba(244, 183, 64, 0.85) 0%, transparent 42%),
+    radial-gradient(circle at 78% 82%, rgba(242, 126, 98, 0.55) 0%, transparent 48%),
+    linear-gradient(140deg,
+      var(--leaf)  0%,
+      var(--pri)  55%,
+      var(--pri-d) 100%);
   filter: drop-shadow(0 8px 20px rgba(107, 142, 35, 0.28));
   transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
@@ -41,12 +45,15 @@
   .auth-hero .brand-logo { width: 120px; height: 120px; }
 }
 [data-theme="dark"] .auth-hero .brand-logo {
-  background: linear-gradient(135deg,
-    var(--pri) 0%,
-    var(--leaf) 30%,
-    var(--accent) 55%,
-    var(--coral) 78%,
-    var(--lavender) 100%);
+  /* Solarpunk noche (bosque bioluminiscente): musgo profundo con
+     luciérnaga ámbar arriba y seta púrpura abajo. */
+  background:
+    radial-gradient(circle at 26% 24%, rgba(244, 208, 63, 0.75) 0%, transparent 44%),
+    radial-gradient(circle at 78% 82%, rgba(176, 132, 245, 0.60) 0%, transparent 50%),
+    linear-gradient(140deg,
+      var(--leaf)  0%,
+      var(--pri)  55%,
+      var(--pri-d) 100%);
   filter: drop-shadow(0 8px 22px rgba(92, 229, 213, 0.28));
 }
 .auth-card h1 {
@@ -56,21 +63,23 @@
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1.1;
-  background: linear-gradient(120deg,
+  /* Marca predominantemente verde (identidad) con un remate cálido
+     ámbar → coral, siguiendo la misma paleta que el logo. */
+  background: linear-gradient(115deg,
     var(--pri-d) 0%,
-    var(--accent-d) 40%,
-    var(--coral-d) 72%,
-    var(--lavender-d) 100%);
+    var(--pri) 45%,
+    var(--accent-d) 80%,
+    var(--coral-d) 100%);
   -webkit-background-clip: text;
           background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 [data-theme="dark"] .auth-card h1 {
-  background: linear-gradient(120deg,
+  background: linear-gradient(115deg,
     var(--pri) 0%,
-    var(--accent) 40%,
-    var(--coral) 72%,
-    var(--lavender) 100%);
+    var(--leaf) 45%,
+    var(--accent) 80%,
+    var(--coral) 100%);
   -webkit-background-clip: text;
           background-clip: text;
   -webkit-text-fill-color: transparent;
