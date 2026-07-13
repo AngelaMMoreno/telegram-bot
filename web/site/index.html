@@ -479,6 +479,15 @@
       <input id="op-desc"   placeholder="Descripción corta (opcional)">
       <button class="btn btn-primary" type="submit">Crear oposición</button>
     </form>
+    <div class="opos-toolbar">
+      <button class="btn btn-primary btn-sm" id="btn-bulk-multi" type="button">
+        🧩 Asignar tests a oposiciones
+      </button>
+      <span class="muted small">
+        Enlaza varios tests con varias oposiciones a la vez. No borra
+        las asignaciones existentes.
+      </span>
+    </div>
     <ul id="oposiciones-list" class="oposiciones-list"></ul>
   </section>
 
@@ -519,6 +528,11 @@
 <!-- Modal para asignar oposiciones a un test -->
 <ap-modal id="modal-test-oposiciones" title="Oposiciones del test" closable hidden>
   <p class="muted small">Marca las oposiciones a las que pertenece este test. Si no marcas ninguna, será global (visible para todos).</p>
+  <div class="bulk-actions">
+    <span style="flex:1"></span>
+    <button class="btn btn-ghost btn-sm" id="modal-test-op-todas" type="button">Todas</button>
+    <button class="btn btn-ghost btn-sm" id="modal-test-op-ninguna" type="button">Ninguna</button>
+  </div>
   <ul id="modal-test-op-list" class="check-list"></ul>
   <div class="modal-actions">
     <button class="btn btn-ghost" id="modal-test-op-cancelar">Cancelar</button>
@@ -556,6 +570,49 @@
   <div class="modal-actions">
     <button class="btn btn-ghost" id="modal-bulk-cancelar">Cancelar</button>
     <button class="btn btn-primary" id="modal-bulk-guardar">Guardar</button>
+  </div>
+</ap-modal>
+
+<!-- Modal BULK N×M: adjunta varios tests a varias oposiciones sin borrar
+     las asignaciones existentes. Usa la RPC `asignar_tests_a_oposiciones`. -->
+<ap-modal id="modal-bulk-multi" title="Asignar tests a oposiciones"
+          data-wide closable hidden>
+  <p class="muted small">
+    Marca los tests y las oposiciones a enlazar. Se añaden solo las
+    combinaciones nuevas; no se borra ninguna asignación existente.
+  </p>
+
+  <fieldset class="bulk-section">
+    <legend>Oposiciones destino</legend>
+    <div class="bulk-actions">
+      <span id="bulk-multi-op-counter" class="muted small">0 / 0 oposiciones</span>
+      <span style="flex:1"></span>
+      <button class="btn btn-ghost btn-sm" id="bulk-multi-op-todas" type="button">Todas</button>
+      <button class="btn btn-ghost btn-sm" id="bulk-multi-op-ninguna" type="button">Ninguna</button>
+    </div>
+    <ul id="bulk-multi-op-list" class="check-list bulk-list"></ul>
+  </fieldset>
+
+  <fieldset class="bulk-section">
+    <legend>Tests a asignar</legend>
+    <div class="bulk-toolbar">
+      <input type="search" id="bulk-multi-filter-nombre" placeholder="Buscar por título…" autocomplete="off">
+      <select id="bulk-multi-filter-etiqueta" class="select-styled">
+        <option value="">Todas las etiquetas</option>
+      </select>
+    </div>
+    <div class="bulk-actions">
+      <span id="bulk-multi-test-counter" class="muted small">0 / 0 tests</span>
+      <span style="flex:1"></span>
+      <button class="btn btn-ghost btn-sm" id="bulk-multi-test-visibles" type="button">Seleccionar visibles</button>
+      <button class="btn btn-ghost btn-sm" id="bulk-multi-test-limpiar" type="button">Deseleccionar visibles</button>
+    </div>
+    <ul id="bulk-multi-test-list" class="check-list bulk-list"></ul>
+  </fieldset>
+
+  <div class="modal-actions">
+    <button class="btn btn-ghost"   id="modal-bulk-multi-cancelar" type="button">Cancelar</button>
+    <button class="btn btn-primary" id="modal-bulk-multi-guardar"  type="button">Asignar</button>
   </div>
 </ap-modal>
 
