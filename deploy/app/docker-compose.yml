@@ -1,9 +1,9 @@
 # Stack APP — todo el frontend + backend de teoría en un solo contenedor.
 #
-# Sustituye a los stacks landing, web y teoria cuando se quiere operar
-# la app como un único servicio (menos partes móviles, un solo deploy
-# en Dokploy). Los stacks segmentados (deploy/landing/, deploy/web/,
-# deploy/teoria/) se conservan por si se prefiere seguir con ellos.
+# Es el único modo soportado ya. Los stacks segmentados de landing/, web/
+# y teoria/ se retiraron al unificar el frontend bajo web/: hoy hay un
+# único Dockerfile que empaqueta las tres SPAs y el backend de teoría en
+# una sola imagen.
 #
 # Habla con PostgREST (stack core) por http://postgrest:3000 en la red
 # externa dokploy-network.

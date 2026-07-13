@@ -19,74 +19,30 @@
  */
 'use strict';
 
-const COOKIE_NAME  = 'aprentix_token';
-const COOKIE_DAYS  = 12 / 24;              // 12 h — coincide con el JWT.
+// Sesión, cookies y RPC viven en shared/auth/session.js.
+// Se carga como script clásico antes que este fichero, así que
+// window.AprentixSession está garantizado aquí.
+const {
+  COOKIE_NAME,
+  COOKIE_HORAS,
+  getCookie, setCookie, deleteCookie,
+  parseJwt,
+} = window.AprentixSession;
+
 const MODE_COOKIE  = 'aprentix_ultimo_modo';
 const MODE_DAYS    = 365;
 const API          = '/api';
 const TESTS_URL    = '/tests/';
 const TEORIA_URL   = '/teoria/';
 
-// ── Cookie helpers ─────────────────────────────────────────────────────────
+// Wrapper local para no repetir { api: API } en cada call.  `token` es
+// opcional: si se omite, la shared rpc() lee automáticamente la cookie.
+const rpc = (fn, body, token) =>
+  window.AprentixSession.rpc(fn, body, { api: API, token });
 
-function cookieDomain() {
-  const h = location.hostname;
-  const parts = h.split('.');
-  if (parts.length >= 2) return '.' + parts.slice(-2).join('.');
-  return '';
-}
-
-function setCookie(name, value, days) {
-  const dom = cookieDomain();
-  const attrs = [
-    `Max-Age=${Math.round(days * 86400)}`,
-    'Path=/',
-    'SameSite=Lax',
-    location.protocol === 'https:' ? 'Secure' : '',
-    dom ? `Domain=${dom}` : '',
-  ].filter(Boolean);
-  document.cookie = `${name}=${encodeURIComponent(value)}; ${attrs.join('; ')}`;
-}
-
-function getCookie(name) {
-  for (const raw of document.cookie.split(';')) {
-    const [k, ...v] = raw.trim().split('=');
-    if (k === name) return decodeURIComponent(v.join('='));
-  }
-  return null;
-}
-
-function deleteCookie(name) {
-  const dom = cookieDomain();
-  document.cookie = `${name}=; Max-Age=0; Path=/; ${dom ? 'Domain=' + dom : ''}`;
-  document.cookie = `${name}=; Max-Age=0; Path=/`;
-}
-
-function parseJwt(tok) {
-  try {
-    const b64 = tok.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    return JSON.parse(atob(b64));
-  } catch { return null; }
-}
-
-// ── PostgREST calls ────────────────────────────────────────────────────────
-
-async function rpc(fn, body, token) {
-  const r = await fetch(`${API}/rpc/${fn}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body || {}),
-  });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) {
-    const msg = data.message || data.hint || data.error || `HTTP ${r.status}`;
-    throw new Error(msg);
-  }
-  return data;
-}
+// setCookieDays: la shared usa horas; conservamos el helper por días para
+// la cookie `aprentix_ultimo_modo` que dura 1 año.
+const setCookieDays = (name, value, days) => setCookie(name, value, days * 24);
 
 // ── UI helpers ─────────────────────────────────────────────────────────────
 
@@ -220,7 +176,7 @@ document.getElementById('onboarding-guardar')?.addEventListener('click', async (
       p_oposicion_ids: [...ONBOARDING.seleccion],
     }, tok);
     toast('¡Listo! Empezamos con tus tests.');
-    setCookie(MODE_COOKIE, 'tests', MODE_DAYS);
+    setCookieDays(MODE_COOKIE, 'tests', MODE_DAYS);
     location.href = TESTS_URL;
   } catch (e) {
     toast(e.message);
@@ -269,7 +225,7 @@ async function comprobarSesion() {
 
   // Si viene un ?next= explícito, respétalo.
   if (next && (next.startsWith('/tests') || next.startsWith('/teoria'))) {
-    setCookie(MODE_COOKIE, next.startsWith('/teoria') ? 'teoria' : 'tests', MODE_DAYS);
+    setCookieDays(MODE_COOKIE, next.startsWith('/teoria') ? 'teoria' : 'tests', MODE_DAYS);
     location.href = next;
     return true;
   }
@@ -286,7 +242,7 @@ async function comprobarSesion() {
   }
   // Sin modo previo → tests por defecto (la app principal).
   if (!ultimo) {
-    setCookie(MODE_COOKIE, 'tests', MODE_DAYS);
+    setCookieDays(MODE_COOKIE, 'tests', MODE_DAYS);
     location.href = TESTS_URL;
     return true;
   }
@@ -297,17 +253,16 @@ async function comprobarSesion() {
 }
 
 // ── Handlers de login/registro ─────────────────────────────────────────────
+// Los eventos los emite <ap-auth-form> (shared/components/ap-auth-form.js).
+// El componente ya se encarga de la UI (fortaleza, coincidencia, alternar
+// paneles); aquí solo llamamos a la RPC correspondiente.
 
-document.getElementById('form-login').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const fd = new FormData(e.target);
+document.addEventListener('ap-auth-login', async (e) => {
+  const { username, password } = e.detail;
   try {
-    const r = await rpc('login_web', {
-      p_username: fd.get('username'),
-      p_password: fd.get('password'),
-    });
+    const r = await rpc('login_web', { p_username: username, p_password: password });
     if (!r || !r.token) throw new Error('Respuesta sin token');
-    setCookie(COOKIE_NAME, r.token, COOKIE_DAYS);
+    setCookie(COOKIE_NAME, r.token, COOKIE_HORAS);
     await comprobarSesion();
   } catch (err) {
     const raw = String(err.message || err);
@@ -318,17 +273,16 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
   }
 });
 
-document.getElementById('form-registro').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const fd = new FormData(e.target);
+document.addEventListener('ap-auth-register', async (e) => {
+  const { username, password, email } = e.detail;
   try {
     const r = await rpc('registrar_web', {
-      p_username: fd.get('username'),
-      p_password: fd.get('password'),
-      p_email: fd.get('email') || null,
+      p_username: username,
+      p_password: password,
+      p_email: email || null,
     });
     if (!r || !r.token) throw new Error('Respuesta sin token');
-    setCookie(COOKIE_NAME, r.token, COOKIE_DAYS);
+    setCookie(COOKIE_NAME, r.token, COOKIE_HORAS);
     // Registro nuevo → borra la cookie de "último modo" para forzar el
     // onboarding aunque venga de otro navegador con la cookie puesta.
     deleteCookie(MODE_COOKIE);

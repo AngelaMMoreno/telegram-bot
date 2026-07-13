@@ -24,6 +24,7 @@
   <link rel="stylesheet" href="/shared/components.css">
   <link rel="stylesheet" href="/shared/modal.css">
   <link rel="stylesheet" href="/shared/config.css">
+  <link rel="stylesheet" href="/shared/auth.css">
   <link rel="stylesheet" href="/style.css">
   <link rel="icon" type="image/svg+xml" href="/shared/pwa-icons/icon-any.svg">
   <link rel="icon" type="image/png" sizes="192x192" href="/shared/pwa-icons/icon-any-192.png">
@@ -35,8 +36,36 @@
       if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
     })();
   </script>
+  <script>
+    // Registro del service worker en la raíz (scope "/"): cubre landing,
+    // tests y teoría como una única PWA.  Antes solo lo registraba tests,
+    // así que la instalación desde la landing quedaba sin SW.
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker
+          .register("/service-worker.js", { scope: "/" })
+          .then(function (reg) {
+            if (reg.waiting) reg.waiting.postMessage("SKIP_WAITING");
+            reg.addEventListener("updatefound", function () {
+              var nw = reg.installing;
+              if (!nw) return;
+              nw.addEventListener("statechange", function () {
+                if (nw.state === "installed" && navigator.serviceWorker.controller) {
+                  nw.postMessage("SKIP_WAITING");
+                }
+              });
+            });
+          })
+          .catch(function () { /* silent */ });
+      });
+    }
+  </script>
+  <!-- Sesión compartida (cookies, JWT, rpc): sin defer para que app.js
+       pueda usar window.AprentixSession desde su primer tick. -->
+  <script src="/shared/auth/session.js"></script>
   <script src="/shared/components/ap-modal.js" defer></script>
   <script src="/shared/components/ap-op-selector.js" defer></script>
+  <script src="/shared/components/ap-auth-form.js" defer></script>
   <script src="/shared/config.js" defer></script>
 </head>
 <body>
@@ -50,35 +79,14 @@
       <p class="sub-lead">Tests y teoría, en un mismo sitio.</p>
     </header>
 
-    <!-- Login (mientras no hay sesión) -->
-    <section id="login" class="card-panel">
-      <h2>Inicia sesión</h2>
-      <form id="form-login" autocomplete="on">
-        <label>Usuario
-          <input name="username" required autofocus autocomplete="username">
-        </label>
-        <label>Contraseña
-          <input name="password" type="password" required autocomplete="current-password">
-        </label>
-        <button class="btn btn-pri" type="submit">Entrar</button>
-        <div id="login-error" class="err" hidden></div>
-      </form>
-      <details class="reg-toggle">
-        <summary>¿No tienes cuenta? Regístrate</summary>
-        <form id="form-registro" autocomplete="off">
-          <label>Usuario nuevo
-            <input name="username" required minlength="3">
-          </label>
-          <label>Contraseña
-            <input name="password" type="password" required minlength="6">
-          </label>
-          <label>Email (opcional)
-            <input name="email" type="email">
-          </label>
-          <button class="btn btn-sec" type="submit">Crear cuenta</button>
-          <div id="reg-error" class="err" hidden></div>
-        </form>
-      </details>
+    <!-- Login / registro (mientras no hay sesión). El formulario y la
+         lógica (fortaleza, coincidencia, alternar paneles) vive en
+         shared/components/ap-auth-form.js — así los cambios en el flujo
+         de auth se reflejan a la vez en la landing y en la SPA de tests. -->
+    <section id="login" class="auth-section">
+      <ap-auth-form mode="login"
+                    error-login-id="login-error"
+                    error-register-id="reg-error"></ap-auth-form>
     </section>
 
     <!-- Selector (una vez logueado). Sólo se muestra si el usuario NO
