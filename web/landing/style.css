@@ -50,6 +50,11 @@ button, a { font: inherit; }
   .hero .brand { display: none; }
   .hero { margin-top: 0; }
 }
+/* Mientras se está mostrando login/registro, la cabecera del formulario
+   (dentro de <ap-auth-form>) ya lleva logo + marca + tagline. Ocultamos
+   el hero externo para no duplicar la cabecera. Al iniciar sesión, el
+   hero vuelve a aparecer sobre el chooser/onboarding como titular. */
+.wrap:has(#login:not([hidden])) .hero { display: none; }
 .lead {
   margin-top: 16px;
   font-size: 24px; font-weight: 800;

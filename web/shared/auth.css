@@ -16,13 +16,80 @@
   margin: 2rem auto;
   color: var(--txt);
 }
-.auth-hero { text-align: center; margin-bottom: 1rem; }
-.auth-hero .brand-logo { color: var(--pri); margin: 0 auto 0.4rem; display: block; }
-.auth-card h1 { text-align: center; margin: 0 0 0.2rem; color: var(--txt); }
+.auth-hero {
+  text-align: center;
+  margin-bottom: 1.25rem;
+  padding-top: 0.25rem;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 0.35rem;
+}
+.auth-hero .brand-logo {
+  width: 104px; height: 104px;
+  margin: 0 auto;
+  display: block;
+  background: linear-gradient(135deg,
+    var(--pri) 0%,
+    var(--leaf) 28%,
+    var(--accent) 55%,
+    var(--coral) 78%,
+    var(--lavender) 100%);
+  filter: drop-shadow(0 8px 20px rgba(107, 142, 35, 0.28));
+  transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.auth-hero .brand-logo:hover { transform: rotate(-4deg) scale(1.04); }
+@media (min-width: 600px) {
+  .auth-hero .brand-logo { width: 120px; height: 120px; }
+}
+[data-theme="dark"] .auth-hero .brand-logo {
+  background: linear-gradient(135deg,
+    var(--pri) 0%,
+    var(--leaf) 30%,
+    var(--accent) 55%,
+    var(--coral) 78%,
+    var(--lavender) 100%);
+  filter: drop-shadow(0 8px 22px rgba(92, 229, 213, 0.28));
+}
+.auth-card h1 {
+  text-align: center;
+  margin: 0;
+  font-size: 2.15rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  background: linear-gradient(120deg,
+    var(--pri-d) 0%,
+    var(--accent-d) 40%,
+    var(--coral-d) 72%,
+    var(--lavender-d) 100%);
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+[data-theme="dark"] .auth-card h1 {
+  background: linear-gradient(120deg,
+    var(--pri) 0%,
+    var(--accent) 40%,
+    var(--coral) 72%,
+    var(--lavender) 100%);
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
 .tagline {
-  text-align: center; margin: 0.2rem 0 0.6rem;
+  text-align: center; margin: 0;
   font-size: 1.05rem; font-weight: 600;
-  background: linear-gradient(135deg, var(--grad-a), var(--grad-b));
+  background: linear-gradient(120deg,
+    var(--sky-d) 0%,
+    var(--pri-d) 50%,
+    var(--leaf) 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+[data-theme="dark"] .tagline {
+  background: linear-gradient(120deg,
+    var(--sky) 0%,
+    var(--pri) 50%,
+    var(--leaf) 100%);
   -webkit-background-clip: text; background-clip: text;
   -webkit-text-fill-color: transparent;
 }
