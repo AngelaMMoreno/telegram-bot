@@ -3,10 +3,23 @@
 # tests bajo /tests/*, y reenvía /teoria/* al uvicorn local que tiene
 # la SPA + la API + los ficheros de teoría.
 #
+# Los assets compartidos viven en una única copia en /srv/shared.
+# Este Caddyfile reescribe /tests/shared/* y /teoria/shared/* a esa
+# copia, así el contenedor no duplica ~1 MB por cada SPA.
+#
 # Traefik termina TLS y nos pasa HTTP por :80.
 
 :80 {
     encode zstd gzip
+
+    # ── Service worker en la raíz (scope "/") ─────────────────────────
+    # Debe servirse desde el path exacto en el que se registra
+    # (aprentix.es/service-worker.js).  Este bloque va ANTES de los
+    # `handle` genéricos para no caer en el file_server de la landing
+    # con cabeceras equivocadas.
+    @sw path /service-worker.js
+    header @sw Cache-Control "no-cache"
+    header @sw Service-Worker-Allowed "/"
 
     # Sin barra final los prefijos no matchean; redirigimos para que el
     # <base href> de cada SPA resuelva correctamente los assets.
@@ -15,10 +28,24 @@
     @teoria_no_slash path /teoria
     redir @teoria_no_slash /teoria/ 301
 
+    # ── Assets compartidos: una sola copia física en /srv/shared ─────
+    # Los tres SPAs los piden con paths diferentes (/shared/, /tests/shared/,
+    # /teoria/shared/) porque cada uno tiene su propio <base href>.  Este
+    # rewrite evita duplicar la carpeta shared en la imagen.
+    handle_path /tests/shared/* {
+        root * /srv/shared
+        file_server
+    }
+    handle_path /teoria/shared/* {
+        root * /srv/shared
+        file_server
+    }
+
     # ── App de teoría (uvicorn interno, :8000) ────────────────────────
     # Sirve la SPA (StaticFiles) y todos sus endpoints /api/*. handle_path
     # descarta /teoria del path antes de proxyar, así el backend sigue
-    # viendo /api/*, /index.html, /shared/*, etc. tal cual.
+    # viendo /api/*, /index.html, etc. tal cual.  Los /teoria/shared/*
+    # los interceptó el handle_path anterior, así que uvicorn no los ve.
     handle_path /teoria/* {
         reverse_proxy 127.0.0.1:8000
     }

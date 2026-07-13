@@ -1,24 +1,45 @@
 # Despliegue en Dokploy
 
-El proyecto está partido en **cuatro stacks independientes** para poder
+El proyecto está partido en **tres stacks independientes** para poder
 redesplegarlos por separado desde Dokploy. Cada stack es una **Compose
 Application** distinta que apunta a su propio fichero:
 
 ```
 deploy/
 ├── core/docker-compose.yml         ← db + postgrest + embeddings + pgadmin
-├── landing/docker-compose.yml      ← aprentix.es / www.aprentix.es
-├── web/docker-compose.yml          ← test.aprentix.es / www.test.aprentix.es
-├── teoria/docker-compose.yml       ← teoria.aprentix.es / www.teoria.aprentix.es
+├── app/docker-compose.yml          ← landing + tests + teoría (frontend) + backend teoría, todo en un contenedor
 └── notificador/docker-compose.yml  ← worker de Web Push (sin dominio propio)
 ```
 
-Los cuatro comparten la red externa `dokploy-network` y se ven entre sí
+Los tres comparten la red externa `dokploy-network` y se ven entre sí
 por nombre de servicio (`db:5432`, `postgrest:3000`).
 
 El `docker-compose.yml` raíz **solo es para desarrollo local**: usa
-`include:` para levantar los cuatro composes de una tacada
+`include:` para levantar los tres composes de una tacada
 (`docker compose up`). Dokploy no lo utiliza.
+
+## Estructura del frontend
+
+Todo el código de front vive bajo `web/`:
+
+```
+web/
+├── landing/            ← SPA de landing (aprentix.es/)
+├── tests/              ← SPA de tests (aprentix.es/tests/)
+├── teoria/             ← SPA de teoría (aprentix.es/teoria/)
+├── shared/             ← componentes y CSS compartidos (una copia)
+│   ├── auth/session.js       ← cookies + JWT + rpc
+│   ├── auth.css              ← estilos de <ap-auth-form>
+│   ├── components/
+│   │   ├── ap-auth-form.js   ← formulario login+registro compartido
+│   │   ├── ap-modal.js
+│   │   └── ap-op-selector.js
+│   └── header.js, config.js, tokens.css, ...
+└── service-worker.js   ← SW en la raíz con scope "/"
+```
+
+El backend de teoría vive en `teoria/app.py` (FastAPI), y se empaqueta
+junto al frontend en `deploy/app/`.
 
 ## 0. Preparar el servidor
 
@@ -32,19 +53,19 @@ El `docker-compose.yml` raíz **solo es para desarrollo local**: usa
    ```
 
 4. Crear los registros DNS **A** apuntando a la IP del servidor para
-   los ocho dominios (Let's Encrypt los necesita):
-   `aprentix.es`, `www.aprentix.es`, `test.aprentix.es`,
-   `www.test.aprentix.es`, `teoria.aprentix.es`, `www.teoria.aprentix.es`,
-   `api.aprentix.es`, `pgadmin.aprentix.es`.
+   los dominios (Let's Encrypt los necesita):
+   `aprentix.es`, `www.aprentix.es`, `api.aprentix.es`,
+   `pgadmin.aprentix.es`.
+   Los dominios legacy `test.aprentix.es` y `teoria.aprentix.es`
+   redirigen a `aprentix.es/tests/` y `aprentix.es/teoria/`; sus DNS
+   siguen siendo necesarios mientras existan.
 
 ## 1. Orden de despliegue
 
 Crea las Compose Applications en Dokploy en este orden:
 
 1. **core** — imprescindible; el resto depende de que la BBDD esté viva.
-2. **teoria** — necesita compartir el `JWT_SECRET` con `core`.
-3. **landing** y **web** — independientes entre sí, se pueden desplegar
-   en cualquier orden después de `core`.
+2. **app** — necesita compartir el `JWT_SECRET` con `core`.
 
 En Dokploy, para cada una:
 
@@ -57,9 +78,7 @@ En Dokploy, para cada una:
 | Stack     | Compose path                          | .env de referencia            |
 |-----------|---------------------------------------|-------------------------------|
 | `core`    | `deploy/core/docker-compose.yml`      | `deploy/core/.env.example`    |
-| `landing` | `deploy/landing/docker-compose.yml`   | `deploy/landing/.env.example` |
-| `web`     | `deploy/web/docker-compose.yml`       | `deploy/web/.env.example`     |
-| `teoria`  | `deploy/teoria/docker-compose.yml`    | `deploy/teoria/.env.example`  |
+| `app`     | `deploy/app/docker-compose.yml`       | (usa `JWT_SECRET` de `core`)  |
 
 ## 2. Variables de entorno por stack
 
@@ -69,38 +88,28 @@ En Dokploy, para cada una:
 |--------------------|----------------------------------------------------------------|
 | `DB_PASS`          | Contraseña del rol `aprentix` (owner de la BBDD).              |
 | `AUTH_PASS`        | Contraseña del rol `autenticador` (con el que conecta PostgREST). |
-| `JWT_SECRET`       | HMAC HS256 con el que Postgres firma los JWT. **Debe coincidir con el de `teoria`.** |
+| `JWT_SECRET`       | HMAC HS256 con el que Postgres firma los JWT. **Debe coincidir con el de `app`.** |
 | `ADMIN_PASS`       | Contraseña inicial del usuario `admin` de la app (solo se aplica en el primer init). |
 | `PGADMIN_EMAIL`    | Login de pgAdmin.                                              |
 | `PGADMIN_PASS`     | Contraseña de pgAdmin.                                         |
 | `DOMINIO_API`      | Host de PostgREST (por defecto `api.aprentix.es`).             |
 | `DOMINIO_PGADMIN`  | Host de pgAdmin (por defecto `pgadmin.aprentix.es`).           |
 
-### `landing` (aprentix.es)
+### `app` (aprentix.es — landing + tests + teoría en un contenedor)
 
-| Clave                 | Uso                                                    |
-|-----------------------|--------------------------------------------------------|
-| `DOMINIO_LANDING`     | Host principal (por defecto `aprentix.es`).            |
-| `DOMINIO_LANDING_ALT` | Host alternativo (por defecto `www.aprentix.es`).      |
+| Clave                 | Uso                                                                             |
+|-----------------------|---------------------------------------------------------------------------------|
+| `JWT_SECRET`          | Igual que el de `core` (el backend de teoría verifica los JWT).                 |
+| `DOMINIO_LANDING`     | Host principal (por defecto `aprentix.es`).                                     |
+| `DOMINIO_LANDING_ALT` | Host alternativo (por defecto `www.aprentix.es`).                               |
+| `DOMINIO_WEB`         | Host legacy redirigido a `aprentix.es/tests/` (por defecto `test.aprentix.es`). |
+| `DOMINIO_WEB_ALT`     | Host legacy alternativo (por defecto `www.test.aprentix.es`).                   |
+| `DOMINIO_TEORIA`      | Host legacy redirigido a `aprentix.es/teoria/` (por defecto `teoria.aprentix.es`). |
+| `DOMINIO_TEORIA_ALT`  | Host legacy alternativo (por defecto `www.teoria.aprentix.es`).                 |
 
-### `web` (SPA de tests)
-
-| Clave              | Uso                                                            |
-|--------------------|----------------------------------------------------------------|
-| `DOMINIO_WEB`      | Host principal (por defecto `test.aprentix.es`).               |
-| `DOMINIO_WEB_ALT`  | Host alternativo (por defecto `www.test.aprentix.es`).         |
-
-### `teoria` (navegador de ficheros)
-
-| Clave                | Uso                                                                    |
-|----------------------|------------------------------------------------------------------------|
-| `JWT_SECRET`         | Igual que el de `core` (el backend verifica los JWT).                  |
-| `DOMINIO_TEORIA`     | Host principal (por defecto `teoria.aprentix.es`).                     |
-| `DOMINIO_TEORIA_ALT` | Host alternativo (por defecto `www.teoria.aprentix.es`).               |
-
-> **Importante:** `JWT_SECRET` aparece en `core` y `teoria`; los dos
-> deben tener EXACTAMENTE el mismo valor, si no, las cookies emitidas
-> por PostgREST no valdrán para el backend de teoría.
+> **Importante:** `JWT_SECRET` aparece en `core` y `app`; los dos deben
+> tener EXACTAMENTE el mismo valor, si no, las cookies emitidas por
+> PostgREST no valdrán para el backend de teoría.
 
 ## 3. Verificación
 
@@ -110,22 +119,23 @@ Desde el host del servidor:
 docker network inspect dokploy-network | jq '.[].Containers | keys'
 ```
 
-Deberías ver contenedores de los cuatro stacks conectados a la misma red.
+Deberías ver contenedores de los tres stacks conectados a la misma red.
 
 Compose por compose:
 
 ```bash
 docker compose -f deploy/core/docker-compose.yml logs db --tail=80
-docker compose -f deploy/teoria/docker-compose.yml logs teoria --tail=40
-docker compose -f deploy/web/docker-compose.yml logs web --tail=40
-docker compose -f deploy/landing/docker-compose.yml logs landing --tail=40
+docker compose -f deploy/app/docker-compose.yml logs app --tail=40
+docker compose -f deploy/notificador/docker-compose.yml logs notificador --tail=40
 ```
 
 En el navegador:
 
-- `https://aprentix.es` → landing con login + chooser.
-- `https://test.aprentix.es` → SPA de tests.
-- `https://teoria.aprentix.es` → navegador de ficheros.
+- `https://aprentix.es` → landing con login/registro.
+- `https://aprentix.es/tests/` → SPA de tests.
+- `https://aprentix.es/teoria/` → navegador de ficheros.
+- `https://test.aprentix.es` y `https://teoria.aprentix.es` → 301 a las
+  rutas anteriores (dominios legacy conservados).
 - `https://api.aprentix.es` → OpenAPI de PostgREST.
 - `https://pgadmin.aprentix.es` → panel de administración.
 
@@ -135,11 +145,11 @@ En el navegador:
   solo `core`. La BBDD reejecuta scripts de `docker-entrypoint-initdb.d`
   solo si el volumen está vacío; para BBDD viva, aplica el `ALTER` /
   `CREATE OR REPLACE` desde pgAdmin.
-- **Cambio en la SPA de tests** → redeploy solo `web`.
-- **Cambio en teoría (backend o SPA)** → redeploy solo `teoria`.
-- **Cambio en la landing** → redeploy solo `landing`.
+- **Cambio en cualquier SPA (landing, tests, teoría) o en el backend de
+  teoría** → redeploy solo `app`.
+- **Cambio en el notificador de push** → redeploy solo `notificador`.
 
-Los stacks son independientes: reiniciar `web` no toca a `db`.
+Los stacks son independientes: reiniciar `app` no toca a `db`.
 
 ## 5. Login inicial
 
@@ -176,13 +186,13 @@ cp .env.example .env
 docker compose up --build
 ```
 
-El `include:` del `docker-compose.yml` raíz agrupa los cuatro composes
+El `include:` del `docker-compose.yml` raíz agrupa los tres composes
 como si fuera uno solo, así que sale toda la plataforma con un único
 comando. Para levantar solo una parte:
 
 ```bash
 docker compose -f deploy/core/docker-compose.yml up -d
-docker compose -f deploy/web/docker-compose.yml up -d
+docker compose -f deploy/app/docker-compose.yml up -d
 ```
 
 ## 8. Cambios de esquema en BBDD viva

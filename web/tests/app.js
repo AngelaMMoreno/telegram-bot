@@ -418,108 +418,22 @@ function inicializarInputsTiempo() {
 }
 
 /* ── Login / registro ──────────────────────────────────────────────────────
- * El registro SUSTITUYE al panel de login (no aparecen los dos a la vez).
- * El link "¿No tienes cuenta?" del pie alterna entre ambos. Cuando se
- * abre el registro se muestra el indicador de fortaleza de contraseña.
+ * El HTML del formulario y toda la UX (alternar login/registro, fortaleza
+ * de la contraseña, coincidencia con la repetida) los gestiona el web
+ * component <ap-auth-form> (shared/components/ap-auth-form.js) — el mismo
+ * que usa la landing. Aquí solo escuchamos los eventos que emite y
+ * llamamos a las funciones login() / register() que ya existen.
  */
-function mostrarPanelAuth(cual) {
-  $$(".auth-panel").forEach(p => {
-    p.classList.toggle("active", p.id === "form-" + cual);
-  });
-  // Reset visual del indicador al alternar paneles.
-  if (cual === "register") {
-    const pass = $("#reg-pass");
-    if (pass) actualizarFortalezaPw(pass.value);
-    const pass2 = $("#reg-pass2");
-    if (pass2 && pass2.value === "" && $("#reg-pass").value === "") {
-      const m = $("#pw-match"); if (m) m.hidden = true;
-    }
-  }
-}
-
-document.addEventListener("click", e => {
-  const btn = e.target.closest("[data-auth-goto]");
-  if (!btn) return;
-  e.preventDefault();
-  mostrarPanelAuth(btn.dataset.authGoto);
-});
-
-/* Cálculo simple de fortaleza (0..4): longitud + variedad de clases
- * (minúsculas, mayúsculas, dígitos, símbolos). No sustituye a zxcvbn,
- * pero da al usuario una guía inmediata. */
-function calcularFortalezaPw(pw) {
-  if (!pw) return { nivel: 0, etiqueta: "" };
-  let pts = 0;
-  if (pw.length >= 6) pts++;
-  if (pw.length >= 10) pts++;
-  if (pw.length >= 14) pts++;
-  const clases = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter(r => r.test(pw)).length;
-  if (clases >= 2) pts++;
-  if (clases >= 3) pts++;
-  if (clases >= 4) pts++;
-  // Reescala a 1..4.
-  const nivel = Math.min(4, Math.max(1, Math.round(pts * 4 / 6)));
-  const etiqueta = ["", "Débil", "Aceptable", "Fuerte", "Muy fuerte"][nivel];
-  return { nivel, etiqueta };
-}
-
-function actualizarFortalezaPw(pw) {
-  const wrap = $("#pw-strength");
-  const fill = $("#pw-strength-fill");
-  const lbl  = $("#pw-strength-label");
-  if (!wrap || !fill || !lbl) return;
-  wrap.classList.remove("lvl-1", "lvl-2", "lvl-3", "lvl-4");
-  if (!pw) {
-    fill.style.width = "0%";
-    lbl.textContent = "Introduce una contraseña";
-    return;
-  }
-  const { nivel, etiqueta } = calcularFortalezaPw(pw);
-  wrap.classList.add("lvl-" + nivel);
-  fill.style.width = (nivel * 25) + "%";
-  lbl.textContent = etiqueta;
-}
-
-function actualizarCoincidenciaPw() {
-  const p1 = $("#reg-pass")?.value || "";
-  const p2 = $("#reg-pass2")?.value || "";
-  const m = $("#pw-match");
-  if (!m) return;
-  if (!p2) { m.hidden = true; return; }
-  m.hidden = false;
-  if (p1 === p2) {
-    m.textContent = "✓ Las contraseñas coinciden";
-    m.classList.remove("err"); m.classList.add("ok");
-  } else {
-    m.textContent = "✗ No coinciden";
-    m.classList.remove("ok"); m.classList.add("err");
-  }
-}
-
-on("#reg-pass", "input", (e) => {
-  actualizarFortalezaPw(e.target.value);
-  actualizarCoincidenciaPw();
-});
-on("#reg-pass2", "input", actualizarCoincidenciaPw);
-
-on("#form-login", "submit", async e => {
-  e.preventDefault();
-  try { await login($("#login-user").value.trim(), $("#login-pass").value); }
+on("ap-auth-form", "ap-auth-login", async e => {
+  const { username, password } = e.detail;
+  try { await login(username, password); }
   catch (err) { toast(err.message); }
 });
 
-on("#form-register", "submit", async e => {
-  e.preventDefault();
-  const p1 = $("#reg-pass").value, p2 = $("#reg-pass2").value;
-  if (p1 !== p2) return toast("Las contraseñas no coinciden");
-  const { nivel } = calcularFortalezaPw(p1);
-  if (nivel < 2) return toast("Elige una contraseña más fuerte");
+on("ap-auth-form", "ap-auth-register", async e => {
+  const { username, password, email } = e.detail;
   try {
-    await register({
-      username: $("#reg-user").value.trim(),
-      password: p1,
-      email:    $("#reg-email").value.trim(),
-    });
+    await register({ username, password, email });
   } catch (err) { toast(err.message); }
 });
 

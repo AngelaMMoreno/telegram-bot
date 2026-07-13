@@ -4,9 +4,15 @@
 # SPA de teoría junto con sus endpoints dinámicos (uploads, PDFs con
 # JWT, marcar_visto, etc.).
 #
-# Los stacks originales de deploy/landing/, deploy/web/ y deploy/teoria/
-# se conservan como opción de despliegue segmentado; deploy/app/ es la
-# opción monolítica y más simple de operar.
+# Tras la reorganización todo el frontend vive bajo web/:
+#   web/landing/  → landing SPA
+#   web/tests/    → SPA de tests
+#   web/teoria/   → SPA de teoría (uvicorn la sirve como StaticFiles)
+#   web/shared/   → assets compartidos, UNA sola copia física en /srv/shared
+#                    (Caddy reescribe /tests/shared/* y /teoria/shared/*)
+#   web/service-worker.js → SW en la raíz con scope "/"
+#
+# La API sigue en teoria/app.py (backend FastAPI) y en postgrest.
 
 FROM python:3.11-slim
 
@@ -29,18 +35,20 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY teoria/app.py .
 
 # ── Estáticos ────────────────────────────────────────────────────────
-# Landing va en la raíz de Caddy (/srv), tests bajo /srv/tests, y la
-# SPA de teoría bajo ./site (la sirve el propio uvicorn con StaticFiles).
-COPY landing/site /srv
-COPY web/site     /srv/tests
-COPY teoria/site  ./site
+# Landing en /srv, tests bajo /srv/tests, y la SPA de teoría bajo ./site
+# (uvicorn la sirve como StaticFiles).
+#
+# El SW se copia también en /srv para que se sirva en
+# aprentix.es/service-worker.js con scope "/" y cubra toda la app.
+COPY web/landing              /srv
+COPY web/tests                /srv/tests
+COPY web/teoria               ./site
+COPY web/service-worker.js    /srv/service-worker.js
 
-# /shared se duplica en cada raíz porque cada SPA lo carga con rutas
-# relativas a su base href. Copiarlo tres veces cuesta unos KB y evita
-# hacer alias globales que compliquen los service workers.
-COPY shared /srv/shared
-COPY shared /srv/tests/shared
-COPY shared ./site/shared
+# Una sola copia física de web/shared. El Caddyfile intercepta
+# /tests/shared/* y /teoria/shared/* y los sirve directamente de aquí,
+# así que no hace falta duplicar dentro de la imagen.
+COPY web/shared               /srv/shared
 
 # ── Config Caddy + script de arranque ────────────────────────────────
 COPY deploy/app/Caddyfile /etc/caddy/Caddyfile

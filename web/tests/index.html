@@ -43,11 +43,16 @@
   <link rel="stylesheet" href="shared/user-header.css">
   <link rel="stylesheet" href="shared/gamif.css">
   <link rel="stylesheet" href="shared/config.css">
+  <link rel="stylesheet" href="shared/auth.css">
   <link rel="stylesheet" href="style.css">
+  <!-- Sesión compartida (cookies, JWT, rpc) sin defer: app.js la puede
+       usar en su primer tick. -->
+  <script src="shared/auth/session.js"></script>
   <!-- Registra el custom element antes de que el parser llegue a él. -->
   <script src="shared/header.js"></script>
   <script src="shared/components/ap-modal.js" defer></script>
   <script src="shared/components/ap-op-selector.js" defer></script>
+  <script src="shared/components/ap-auth-form.js" defer></script>
   <!-- Configuración unificada (misma en landing/tests/teoría). -->
   <script src="shared/config.js" defer></script>
   <script>
@@ -68,15 +73,13 @@
     })();
   </script>
   <script>
-    // Registro del service worker. Solo en https (o localhost); el navegador
-    // ya rechaza el registro fuera de contextos seguros, pero cortocircuitar
-    // aquí evita ruido en la consola.
+    // Registro del service worker.  El fichero ahora vive en la raíz
+    // (aprentix.es/service-worker.js) con scope "/" para que controle
+    // landing, tests y teoría como una única PWA.
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", function () {
-        // Rutas relativas: al servirse en aprentix.es/tests/ el scope
-        // queda automáticamente confinado a /tests/, sin invadir /teoria/.
         navigator.serviceWorker
-          .register("service-worker.js", { scope: "./" })
+          .register("/service-worker.js", { scope: "/" })
           .then(function (reg) {
             // Si aparece una versión nueva mientras la app está abierta,
             // le pedimos al SW que se active de inmediato para el próximo
@@ -180,46 +183,14 @@
   <!-- Login / Registro.
        Empieza SIN .active para no pintarse durante el chequeo de sesión al
        arrancar; el boot en app.js decide entre esta vista o #view-home.
-       El registro SUSTITUYE al panel de login (no se muestra debajo) al
-       pulsar el link de la parte inferior; así no se confunde al usuario
-       con dos formularios visibles a la vez. -->
+       El formulario, la fortaleza de contraseña, la coincidencia y el
+       alternar login↔registro los pinta el web component <ap-auth-form>
+       (shared/components/ap-auth-form.js) — el mismo que usa la landing,
+       así los cambios se reflejan a la vez en las dos superficies. -->
   <section id="view-login" class="view">
-    <div class="auth-card">
-      <div class="auth-hero">
-        <span class="brand-logo brand-logo-lg" aria-hidden="true"></span>
-        <h1>Aprentix</h1>
-        <p class="tagline">Tu oposición, a tu ritmo.</p>
-      </div>
-
-      <form id="form-login" class="auth-panel active">
-        <h2 class="auth-panel-title">Iniciar sesión</h2>
-        <label>Usuario <input id="login-user" autocomplete="username" required></label>
-        <label>Contraseña <input id="login-pass" type="password" autocomplete="current-password" required></label>
-        <button class="btn btn-primary" type="submit">Entrar</button>
-        <p class="auth-switch muted small">
-          ¿No tienes cuenta?
-          <button type="button" class="auth-switch-btn" data-auth-goto="register">Regístrate</button>
-        </p>
-      </form>
-
-      <form id="form-register" class="auth-panel">
-        <h2 class="auth-panel-title">Crear cuenta</h2>
-        <label>Usuario <input id="reg-user" autocomplete="username" minlength="3" required></label>
-        <label>Email (opcional) <input id="reg-email" type="email" autocomplete="email"></label>
-        <label>Contraseña <input id="reg-pass" type="password" autocomplete="new-password" minlength="6" required></label>
-        <div class="pw-strength" id="pw-strength" aria-live="polite">
-          <div class="pw-strength-bar"><span id="pw-strength-fill"></span></div>
-          <span class="pw-strength-label" id="pw-strength-label">Introduce una contraseña</span>
-        </div>
-        <label>Repite la contraseña <input id="reg-pass2" type="password" autocomplete="new-password" minlength="6" required></label>
-        <p class="pw-match muted small" id="pw-match" hidden></p>
-        <button class="btn btn-primary" type="submit">Crear cuenta</button>
-        <p class="auth-switch muted small">
-          ¿Ya tienes cuenta?
-          <button type="button" class="auth-switch-btn" data-auth-goto="login">Inicia sesión</button>
-        </p>
-      </form>
-    </div>
+    <ap-auth-form mode="login"
+                  error-login-id="login-error"
+                  error-register-id="reg-error"></ap-auth-form>
   </section>
 
   <!-- Home. La cabecera (saludo + oposición + gamificación) vive fuera

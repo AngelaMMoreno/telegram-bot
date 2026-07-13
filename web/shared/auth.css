@@ -1,0 +1,118 @@
+/*
+ * shared/auth.css · estilos del formulario <ap-auth-form>.
+ *
+ * Se movieron aquí desde web/tests/style.css para que landing y tests
+ * (y cualquier otra SPA futura) compartan el mismo aspecto sin duplicar
+ * reglas.  Las clases (`auth-card`, `auth-panel`, `pw-strength`, …) las
+ * genera el componente en light DOM, así que un único CSS global las
+ * cubre.
+ */
+
+.auth-card {
+  background: var(--bg-panel); padding: 1.5rem;
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  width: 100%; max-width: 380px;
+  margin: 2rem auto;
+  color: var(--txt);
+}
+.auth-hero { text-align: center; margin-bottom: 1rem; }
+.auth-hero .brand-logo { color: var(--pri); margin: 0 auto 0.4rem; display: block; }
+.auth-card h1 { text-align: center; margin: 0 0 0.2rem; color: var(--txt); }
+.tagline {
+  text-align: center; margin: 0.2rem 0 0.6rem;
+  font-size: 1.05rem; font-weight: 600;
+  background: linear-gradient(135deg, var(--grad-a), var(--grad-b));
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.auth-card label { display: block; margin-bottom: 0.75rem; color: var(--txt-soft); font-size: 0.85rem; font-weight: 600; }
+.auth-card input {
+  display: block; width: 100%;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  margin-top: 0.3rem; font-size: 1rem; font-family: inherit;
+  background: var(--bg-panel); color: var(--txt);
+}
+.auth-card input:focus {
+  outline: none; border-color: var(--pri);
+  box-shadow: 0 0 0 4px var(--pri-glow);
+}
+
+/* Panel de auth (login o registro). Solo uno visible a la vez para no
+ * confundir al usuario con dos formularios. */
+.auth-panel { display: none; }
+.auth-panel.active { display: block; }
+.auth-panel-title {
+  margin: 0 0 0.9rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--txt);
+  text-align: center;
+}
+.auth-switch {
+  margin: 0.9rem 0 0;
+  text-align: center;
+}
+.auth-switch-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--pri);
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+}
+.auth-switch-btn:hover { color: var(--pri-d); }
+[data-theme="dark"] .auth-switch-btn:hover { color: var(--pri-hover); }
+
+/* Indicador de fuerza de contraseña. Cuatro segmentos que se van
+ * "encendiendo" según el nivel: débil → moderada → fuerte → muy fuerte. */
+.pw-strength {
+  display: flex; align-items: center;
+  gap: 0.55rem;
+  margin: -0.35rem 0 0.75rem;
+}
+.pw-strength-bar {
+  flex: 1; height: 6px;
+  background: var(--bg-soft);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.pw-strength-bar > span {
+  display: block; height: 100%;
+  width: 0%;
+  background: var(--danger, #C0533E);
+  border-radius: inherit;
+  transition: width 0.25s ease, background 0.25s ease;
+}
+.pw-strength-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--txt-soft);
+  white-space: nowrap;
+  min-width: 5.5rem;
+  text-align: right;
+}
+.pw-strength.lvl-1 > span { background: var(--danger, #C0533E); }
+.pw-strength.lvl-2 > span { background: var(--accent, #F4B740); }
+.pw-strength.lvl-3 > span { background: var(--leaf, #9BC53D); }
+.pw-strength.lvl-4 > span { background: var(--pri, #6B8E23); }
+.pw-strength.lvl-1 .pw-strength-label { color: var(--danger); }
+.pw-strength.lvl-2 .pw-strength-label { color: var(--accent-d); }
+.pw-strength.lvl-3 .pw-strength-label { color: var(--pri-d); }
+.pw-strength.lvl-4 .pw-strength-label { color: var(--pri-d); }
+[data-theme="dark"] .pw-strength.lvl-3 .pw-strength-label,
+[data-theme="dark"] .pw-strength.lvl-4 .pw-strength-label { color: var(--pri); }
+[data-theme="dark"] .pw-strength.lvl-2 .pw-strength-label { color: var(--accent); }
+
+.pw-match {
+  margin: -0.35rem 0 0.4rem;
+  font-weight: 600;
+}
+.pw-match.ok { color: var(--pri-d); }
+[data-theme="dark"] .pw-match.ok { color: var(--pri); }
+.pw-match.err { color: var(--danger); }
