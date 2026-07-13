@@ -4,11 +4,6 @@
  * Se sirve en aprentix.es/service-worker.js con scope "/". Cubre landing
  * (/), tests (/tests/*) y teoría (/teoria/*) como una única PWA.
  *
- * Antes vivía bajo /tests/service-worker.js con scope /tests/, así que:
- *   - La instalación PWA solo funcionaba dentro de /tests/.
- *   - Landing y teoría no tenían caché offline.
- *   - Los pushes solo se recibían con /tests/ como cliente.
- *
  * Ahora, con la app unificada bajo web/, el SW controla todo el origin.
  *
  * Responsabilidades:
