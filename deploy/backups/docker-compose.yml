@@ -19,6 +19,11 @@ services:
 
   backups:
     build: .
+    # crond (BusyBox) llama a setpgid(0,0) al arrancar y el kernel se
+    # lo prohíbe cuando corre como PID 1 (EPERM); sin este flag el
+    # contenedor entra en bucle de reinicios. `init: true` mete tini
+    # como PID 1 y crond arranca como PID 2, donde setpgid sí funciona.
+    init: true
     environment:
       # ── BBDD (mismas creds que el stack core) ──────────────────────
       PGHOST:     ${PGHOST:-db}
