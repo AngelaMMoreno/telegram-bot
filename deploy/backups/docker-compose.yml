@@ -51,9 +51,12 @@ services:
       # Los ficheros de teoría en RO — el backup no debería poder
       # tocarlos por accidente.
       - /mnt/data/ficheros:/data/ficheros:ro
-      # rclone.conf con el token OAuth de Google Drive. Se genera con
-      # `rclone config` en local y se sube al VPS UNA vez. Ver README.
-      - /mnt/data/backup-config/rclone.conf:/root/.config/rclone/rclone.conf:ro
+      # Config de rclone (rclone.conf con el token OAuth de Drive). Se
+      # monta como CARPETA ESCRIBIBLE — no como fichero — para poder
+      # correr `rclone config` DENTRO del contenedor la primera vez y
+      # que el fichero resultante se persista en el host (sobrevive a
+      # reinicios y redespliegues). Ver deploy/backups/README.md.
+      - /mnt/data/backup-config:/root/.config/rclone
       # Cache local de restic (metadata de snapshots): acelera mucho
       # los `forget --prune` y los backup diarios.
       - restic_cache:/root/.cache/restic

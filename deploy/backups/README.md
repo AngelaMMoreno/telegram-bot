@@ -24,53 +24,84 @@ cifrado end-to-end con `RESTIC_PASSWORD`.
 
 ## Configuración inicial (una sola vez)
 
-### 1. Autorizar Google Drive con rclone (en tu máquina local)
+El plan: autorizamos Google Drive con OAuth desde el navegador de tu
+ordenador local (headless) y pegamos el token generado dentro del
+contenedor. El `rclone.conf` resultante queda persistido en el host
+en `/mnt/data/backup-config/` gracias al bind-mount, así sobrevive a
+reinicios y redespliegues.
 
-Rclone necesita un token OAuth de Google. Se genera en local (donde
-hay navegador) y se copia al VPS:
+### 1. Preparar la carpeta en el VPS
 
 ```bash
-# En tu ordenador local (Linux/macOS):
-brew install rclone         # o: sudo apt install rclone
+# En el VPS por SSH:
+sudo mkdir -p /mnt/data/backup-config
+sudo chmod 700 /mnt/data/backup-config
+```
+
+### 2. Obtener el token OAuth en tu máquina local
+
+Rclone tiene un modo específico para máquinas sin navegador:
+
+```bash
+# En tu ordenador local (Linux/macOS/Windows):
+brew install rclone           # o: sudo apt install rclone / scoop install rclone
+rclone authorize "drive"
+```
+
+Se abre el navegador, autorizas con tu cuenta de Google y rclone te
+imprime en el terminal (y copia al portapapeles) un JSON parecido a:
+
+```
+{"token":{"access_token":"ya29...","refresh_token":"1//...","expiry":"..."}}
+```
+
+Cópialo entero — lo vas a pegar en el paso siguiente.
+
+### 3. Configurar el remote DENTRO del contenedor
+
+Levanta el stack por primera vez con `docker compose up -d --build` (o
+desde Dokploy). El contenedor arrancará pero el backup no se ejecutará
+todavía porque falta el `rclone.conf`. Entra al terminal del
+contenedor:
+
+```bash
+# Desde el VPS por SSH:
+docker compose -f deploy/backups/docker-compose.yml exec backups sh
+# O desde Dokploy: stack backups → contenedor → Terminal.
+
+# Ya dentro del contenedor:
 rclone config
 ```
 
-Elige:
+Responde así:
 - `n` → New remote
-- Nombre: **`gdrive`** (usa el mismo que aparezca en `RESTIC_REPOSITORY`)
-- Storage: `drive` (Google Drive)
-- `client_id` y `client_secret`: déjalos vacíos (usa los de rclone) o
-  crea los tuyos siguiendo <https://rclone.org/drive/#making-your-own-client-id>
-  (recomendado si vas a mover mucho volumen — evita rate-limits).
-- Scope: `drive` (acceso completo) o `drive.file` (solo ficheros que
-  cree rclone — más seguro y suficiente para esto).
+- Nombre: **`gdrive`** (tiene que coincidir con `RESTIC_REPOSITORY`).
+- Storage: `drive`
+- `client_id` / `client_secret`: déjalos vacíos (o crea los tuyos
+  siguiendo <https://rclone.org/drive/#making-your-own-client-id>
+  si vas a mover mucho volumen — evita rate-limits).
+- Scope: `1` (`drive`, acceso completo) o `2` (`drive.file`, solo lo
+  que suba rclone — más seguro y sobra para esto).
 - `service_account_file`: vacío.
 - `Edit advanced config`: `n`.
-- `Use auto config`: `y` → se abre el navegador, autorizas, y rclone
-  guarda el token.
-- `Configure this as a Shared Drive`: `n` (a menos que uses un Drive
-  compartido de Google Workspace).
+- **`Use auto config`: `n`** ← esto activa el modo headless.
+- `config_token>` → **pega aquí el JSON del paso 2** y Enter.
+- `Configure this as a Shared Drive`: `n` (a menos que sea un Drive
+  compartido de Workspace).
+- Confirma con `y` y sal con `q`.
 
-Verifica que funciona:
+Verifica que va:
 
 ```bash
-rclone mkdir gdrive:aprentix-backups
+# Sigue dentro del contenedor:
 rclone lsd gdrive:
+rclone mkdir gdrive:aprentix-backups
 ```
 
-### 2. Copiar `rclone.conf` al VPS
+El fichero queda en `/mnt/data/backup-config/rclone.conf` del host
+gracias al bind-mount; puedes salir con `exit`.
 
-```bash
-# En el VPS:
-sudo mkdir -p /mnt/data/backup-config
-# Desde tu ordenador local:
-scp ~/.config/rclone/rclone.conf usuario@vps:/tmp/rclone.conf
-# De vuelta en el VPS:
-sudo mv /tmp/rclone.conf /mnt/data/backup-config/rclone.conf
-sudo chmod 600 /mnt/data/backup-config/rclone.conf
-```
-
-### 3. Variables de entorno
+### 4. Variables de entorno
 
 Copia `deploy/backups/.env.example` en Dokploy → Compose Application
 `backups` y rellena:
@@ -84,14 +115,10 @@ Copia `deploy/backups/.env.example` en Dokploy → Compose Application
 - `KEEP_LAST` — cuántos snapshots conservar por tag (default 2).
 - `BACKUP_CRON` — horario cron de 5 campos (default `30 3 * * *`).
 
-### 4. Desplegar
+### 5. Forzar el primer backup
 
-```bash
-docker compose -f deploy/backups/docker-compose.yml up -d --build
-```
-
-Fuerza una primera corrida para inicializar el repositorio y validar
-que todo va:
+Con el remote ya configurado, dispara una corrida manual para
+inicializar el repositorio restic en Drive y validar que todo va:
 
 ```bash
 docker compose -f deploy/backups/docker-compose.yml exec backups /backup.sh
