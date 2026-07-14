@@ -8,21 +8,14 @@ set -e
 : "${BACKUP_CRON:=30 3 * * *}"
 
 # El cron de BusyBox necesita el crontab en /etc/crontabs/<user>.
+# OJO: dcron (a diferencia de Vixie/cronie) NO soporta líneas
+# `VAR=value` en el crontab — las trata como entries mal formadas y
+# escupe "failed parsing crontab for user root: ...". Por eso el env
+# no se define aquí; el propio job hace `. /etc/backup.env` (ver más
+# abajo) para cargar PG*/RESTIC_* al shell hijo. TZ ya viene del
+# entorno del contenedor y crond la hereda para saber cuándo disparar.
 mkdir -p /etc/crontabs
-# Exportamos las variables al proceso hijo escribiéndolas antes del
-# comando en el propio crontab — cron no hereda el entorno del padre
-# más allá de HOME/PATH.
-{
-  echo "SHELL=/bin/bash"
-  echo "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-  echo "TZ=${TZ:-UTC}"
-  # Cada línea `Foo=Bar` se copia a un `export` en el shell del job.
-  env | grep -E '^(PG|RESTIC_|KEEP_LAST|RESTIC_HOST)' | sed 's/^/export /' \
-    | awk '{ print "# " $0 }'
-  # El propio job carga el entorno desde /etc/backup.env — se genera
-  # a continuación con las variables completas.
-  echo "$BACKUP_CRON . /etc/backup.env && /backup.sh 2>&1"
-} > /etc/crontabs/root
+echo "$BACKUP_CRON . /etc/backup.env && /backup.sh 2>&1" > /etc/crontabs/root
 
 # Vuelca las variables sensibles a /etc/backup.env para que el job las
 # lea. Se filtran a las que interesan para no meter ruido innecesario.
