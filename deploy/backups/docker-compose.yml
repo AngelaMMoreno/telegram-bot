@@ -30,7 +30,7 @@ services:
       # ── Repositorio restic ─────────────────────────────────────────
       # Formato: `rclone:<remote>:<carpeta>`. El remote (p. ej. gdrive)
       # tiene que existir en el rclone.conf montado más abajo.
-      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:?ej: rclone:gdrive:aprentix-backups}
+      RESTIC_REPOSITORY: '${RESTIC_REPOSITORY:?ej: rclone:gdrive:aprentix-backups}'
       # Cifra los datos end-to-end. Guárdala en un gestor de
       # contraseñas: sin ella no se puede restaurar NADA aunque tengas
       # el fichero en Drive.
