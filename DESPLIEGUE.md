@@ -8,7 +8,8 @@ Application** distinta que apunta a su propio fichero:
 deploy/
 ├── core/docker-compose.yml         ← db + postgrest + embeddings + pgadmin
 ├── app/docker-compose.yml          ← landing + tests + teoría (frontend) + backend teoría, todo en un contenedor
-└── notificador/docker-compose.yml  ← worker de Web Push (sin dominio propio)
+├── notificador/docker-compose.yml  ← worker de Web Push (sin dominio propio)
+└── backups/docker-compose.yml      ← snapshots automáticos a Google Drive (restic + rclone)
 ```
 
 Los tres comparten la red externa `dokploy-network` y se ven entre sí
@@ -100,7 +101,6 @@ En Dokploy, para cada una:
 | Clave                 | Uso                                                                             |
 |-----------------------|---------------------------------------------------------------------------------|
 | `JWT_SECRET`          | Igual que el de `core` (el backend de teoría verifica los JWT).                 |
-| `DB_PASS`             | Igual que el de `core`. Solo se usa cuando el admin lanza el backup total desde el panel (pg_dump + pg_restore contra `db`). |
 | `DOMINIO_LANDING`     | Host principal (por defecto `aprentix.es`).                                     |
 | `DOMINIO_LANDING_ALT` | Host alternativo (por defecto `www.aprentix.es`).                               |
 | `DOMINIO_WEB`         | Host legacy redirigido a `aprentix.es/tests/` (por defecto `test.aprentix.es`). |
@@ -163,53 +163,49 @@ Los stacks son independientes: reiniciar `app` no toca a `db`.
 
 ## 6. Backup / restauración
 
-### 6.1 Backup total desde el panel de admin (recomendado)
+### 6.1 Snapshots automáticos a Google Drive (stack `backups`)
 
-El panel de administración (menú avatar → **Panel de administración**)
-tiene dos opciones exclusivas de `admin`:
+Un contenedor de fondo (`deploy/backups/`) lanza cada noche un
+snapshot deduplicado y cifrado de la BBDD + `/mnt/data/ficheros` sobre
+un repositorio [restic](https://restic.net/) alojado en Google Drive
+vía rclone. La retención por defecto (`KEEP_LAST=2`) conserva los 2
+snapshots más recientes de cada tag (`db` y `teoria`); todo lo
+anterior se poda y libera espacio en Drive automáticamente.
 
-- **Backup total** — genera un `.apbak` con:
-  - `db/aprentix.dump` (pg_dump -Fc de la BBDD).
-  - `teoria/…` (copia íntegra de `/mnt/data/ficheros`).
-  - `README.md` con las instrucciones de restauración específicas.
+Restic deduplica a nivel de bloque, así que la primera corrida sube
+el estado entero y las noches siguientes solo suben los cambios
+reales; para restaurar necesitas `restic` + `rclone` +
+`RESTIC_PASSWORD` desde cualquier máquina.
 
-  El archivo se cifra con **AES-256** (7z, `-mhe=on`: también los
-  nombres de fichero) con una contraseña que eliges en el momento. Al
-  darle a *Generar y descargar*, el navegador descarga el fichero.
-  Guarda la contraseña junto al backup — sin ella no se puede abrir.
+**Setup completo (una sola vez)**: `deploy/backups/README.md`
+describe paso a paso `rclone config` en local, la copia de
+`rclone.conf` al VPS, las variables de Dokploy y el primer arranque.
+Resumen:
 
-- **Restaurar backup** — sube un `.apbak`, escribe la contraseña, y el
-  servidor:
-  1. Ejecuta `pg_restore --clean --if-exists --no-owner` sobre la BBDD.
-  2. Vacía `/mnt/data/ficheros` y copia dentro el árbol del backup.
-  3. La app queda funcional sin más pasos manuales.
+| Clave               | Uso                                                                            |
+|---------------------|--------------------------------------------------------------------------------|
+| `DB_PASS`           | Igual que en `core` (pg_dump se conecta al servicio `db`).                     |
+| `RESTIC_REPOSITORY` | `rclone:<remote>:<carpeta>` — el `<remote>` es el nombre que le des en rclone. |
+| `RESTIC_PASSWORD`   | Contraseña de cifrado del repo restic. **Guárdala en un gestor.**              |
+| `KEEP_LAST`         | Snapshots conservados por tag (default 2 → anoche + antes).                    |
+| `BACKUP_CRON`       | Cron de 5 campos (default `30 3 * * *` = todas las noches a las 03:30).        |
+| `TZ`                | Zona horaria del cron y de los logs (default `Europe/Madrid`).                 |
 
-Esto vale para migrar el proyecto de un VPS a otro: despliega los
-stacks `core` + `app` en el nuevo servidor con el `DESPLIEGUE.md`, entra
-como `admin` (con la `ADMIN_PASS` del stack `core`) y sube el `.apbak`.
+Además necesitas subir una vez `rclone.conf` con el token OAuth de
+Drive a `/mnt/data/backup-config/rclone.conf` en el VPS — ver
+`deploy/backups/README.md`.
 
-### 6.2 Backup / restauración manual (equivalente)
-
-Si el panel no está accesible (por ejemplo, la BBDD aún no tiene
-usuario `admin`), se puede hacer todo desde el host del VPS:
+**Restaurar** desde cualquier máquina:
 
 ```bash
-# Backup de la BBDD (dentro del contenedor db del stack core)
-docker compose -f deploy/core/docker-compose.yml exec db \
-    pg_dump -Fc -U aprentix -d aprentix > db/backups/aprentix_$(date +%F).dump
-
-# Restauración sobre BBDD ya inicializada por 01_esquema.sql
-cat aprentix_YYYY-MM-DD.dump | \
-    docker compose -f deploy/core/docker-compose.yml exec -T db \
-    pg_restore --clean --if-exists -U aprentix -d aprentix
-
-# Ficheros de teoría
-rsync -a /mnt/data/ficheros/ destino/
+export RESTIC_REPOSITORY=rclone:gdrive:aprentix-backups
+export RESTIC_PASSWORD='...'
+restic snapshots
+restic restore latest --tag db     --host aprentix --target /tmp/r
+restic restore latest --tag teoria --host aprentix --target /tmp/r
+psql -h HOST -U aprentix -d aprentix < /tmp/r/stdin
+sudo rsync -a --delete /tmp/r/data/ficheros/ /mnt/data/ficheros/
 ```
-
-Un `.apbak` se puede descomprimir a mano con `7z x backup.apbak` (te
-pedirá la contraseña) y luego seguir estos pasos con los ficheros
-resultantes.
 
 ## 7. Desarrollo local
 

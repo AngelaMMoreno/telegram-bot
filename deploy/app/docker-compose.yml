@@ -20,15 +20,6 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET requerida}
       BASE_DIR: /ficheros
       POSTGREST_URL: http://postgrest:3000
-      # Credenciales de Postgres para el backup/restauración total
-      # desde el panel de admin. Deben coincidir con las del rol
-      # `aprentix` del stack `core`; solo se usan por pg_dump/pg_restore
-      # cuando el admin lanza la acción.
-      PGHOST: db
-      PGPORT: "5432"
-      PGUSER: aprentix
-      PGDATABASE: aprentix
-      PGPASSWORD: ${DB_PASS:?DB_PASS requerida (misma que en el stack core)}
     volumes:
       # Los ficheros de teoría (PDFs, markdown, etc.) viven fuera del
       # contenedor para sobrevivir a redespliegues.

@@ -1,0 +1,69 @@
+# Stack BACKUPS — snapshots automáticos a Google Drive.
+#
+# Corre un único contenedor de fondo (dcron) que cada noche a las
+# 03:30 (BACKUP_CRON) lanza backup.sh:
+#   - pg_dump  → snapshot 'db'
+#   - /data/ficheros → snapshot 'teoria'
+#   - restic forget --keep-last N --prune para no llenar Drive.
+#
+# El repositorio restic vive en Google Drive vía rclone (backend
+# `rclone:` de restic). rclone.conf con el token OAuth se genera UNA
+# vez en tu máquina local (`rclone config`) y se copia al VPS a
+# /mnt/data/backup-config/rclone.conf. Ver deploy/backups/README.md.
+#
+# Se conecta a la BBDD del stack core por la red externa
+# dokploy-network usando el hostname `db`. Depende de que core esté
+# levantado; si no lo está, la corrida falla y sale por logs.
+
+services:
+
+  backups:
+    build: .
+    environment:
+      # ── BBDD (mismas creds que el stack core) ──────────────────────
+      PGHOST:     ${PGHOST:-db}
+      PGPORT:     ${PGPORT:-5432}
+      PGUSER:     ${PGUSER:-aprentix}
+      PGDATABASE: ${PGDATABASE:-aprentix}
+      PGPASSWORD: ${DB_PASS:?DB_PASS requerida (misma que en el stack core)}
+
+      # ── Repositorio restic ─────────────────────────────────────────
+      # Formato: `rclone:<remote>:<carpeta>`. El remote (p. ej. gdrive)
+      # tiene que existir en el rclone.conf montado más abajo.
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:?ej: rclone:gdrive:aprentix-backups}
+      # Cifra los datos end-to-end. Guárdala en un gestor de
+      # contraseñas: sin ella no se puede restaurar NADA aunque tengas
+      # el fichero en Drive.
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:?Contraseña del repo restic}
+      RESTIC_HOST:     ${RESTIC_HOST:-aprentix}
+
+      # ── Retención y horario ────────────────────────────────────────
+      # Se conservan los KEEP_LAST snapshots más recientes de cada tag
+      # (db + teoria). Con KEEP_LAST=2 tienes "el de anoche + el de
+      # antes de anoche" y todo lo demás se poda automáticamente.
+      KEEP_LAST:   ${KEEP_LAST:-2}
+      # Cinco campos cron. Por defecto: todas las noches a las 03:30
+      # (hora TZ). Ejemplos: `0 4 * * 0` = solo los domingos a las 04.
+      BACKUP_CRON: ${BACKUP_CRON:-30 3 * * *}
+      TZ:          ${TZ:-Europe/Madrid}
+
+    volumes:
+      # Los ficheros de teoría en RO — el backup no debería poder
+      # tocarlos por accidente.
+      - /mnt/data/ficheros:/data/ficheros:ro
+      # rclone.conf con el token OAuth de Google Drive. Se genera con
+      # `rclone config` en local y se sube al VPS UNA vez. Ver README.
+      - /mnt/data/backup-config/rclone.conf:/root/.config/rclone/rclone.conf:ro
+      # Cache local de restic (metadata de snapshots): acelera mucho
+      # los `forget --prune` y los backup diarios.
+      - restic_cache:/root/.cache/restic
+
+    restart: unless-stopped
+    networks: [dokploy-network]
+
+volumes:
+  restic_cache:
+
+networks:
+  dokploy-network:
+    external: true
