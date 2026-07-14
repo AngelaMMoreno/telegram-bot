@@ -100,6 +100,7 @@ En Dokploy, para cada una:
 | Clave                 | Uso                                                                             |
 |-----------------------|---------------------------------------------------------------------------------|
 | `JWT_SECRET`          | Igual que el de `core` (el backend de teoría verifica los JWT).                 |
+| `DB_PASS`             | Igual que el de `core`. Solo se usa cuando el admin lanza el backup total desde el panel (pg_dump + pg_restore contra `db`). |
 | `DOMINIO_LANDING`     | Host principal (por defecto `aprentix.es`).                                     |
 | `DOMINIO_LANDING_ALT` | Host alternativo (por defecto `www.aprentix.es`).                               |
 | `DOMINIO_WEB`         | Host legacy redirigido a `aprentix.es/tests/` (por defecto `test.aprentix.es`). |
@@ -162,19 +163,53 @@ Los stacks son independientes: reiniciar `app` no toca a `db`.
 
 ## 6. Backup / restauración
 
+### 6.1 Backup total desde el panel de admin (recomendado)
+
+El panel de administración (menú avatar → **Panel de administración**)
+tiene dos opciones exclusivas de `admin`:
+
+- **Backup total** — genera un `.apbak` con:
+  - `db/aprentix.dump` (pg_dump -Fc de la BBDD).
+  - `teoria/…` (copia íntegra de `/mnt/data/ficheros`).
+  - `README.md` con las instrucciones de restauración específicas.
+
+  El archivo se cifra con **AES-256** (7z, `-mhe=on`: también los
+  nombres de fichero) con una contraseña que eliges en el momento. Al
+  darle a *Generar y descargar*, el navegador descarga el fichero.
+  Guarda la contraseña junto al backup — sin ella no se puede abrir.
+
+- **Restaurar backup** — sube un `.apbak`, escribe la contraseña, y el
+  servidor:
+  1. Ejecuta `pg_restore --clean --if-exists --no-owner` sobre la BBDD.
+  2. Vacía `/mnt/data/ficheros` y copia dentro el árbol del backup.
+  3. La app queda funcional sin más pasos manuales.
+
+Esto vale para migrar el proyecto de un VPS a otro: despliega los
+stacks `core` + `app` en el nuevo servidor con el `DESPLIEGUE.md`, entra
+como `admin` (con la `ADMIN_PASS` del stack `core`) y sube el `.apbak`.
+
+### 6.2 Backup / restauración manual (equivalente)
+
+Si el panel no está accesible (por ejemplo, la BBDD aún no tiene
+usuario `admin`), se puede hacer todo desde el host del VPS:
+
 ```bash
 # Backup de la BBDD (dentro del contenedor db del stack core)
 docker compose -f deploy/core/docker-compose.yml exec db \
     pg_dump -Fc -U aprentix -d aprentix > db/backups/aprentix_$(date +%F).dump
 
-# Restauración sobre BBDD vacía
+# Restauración sobre BBDD ya inicializada por 01_esquema.sql
 cat aprentix_YYYY-MM-DD.dump | \
     docker compose -f deploy/core/docker-compose.yml exec -T db \
-    pg_restore -U aprentix -d aprentix -c
+    pg_restore --clean --if-exists -U aprentix -d aprentix
+
+# Ficheros de teoría
+rsync -a /mnt/data/ficheros/ destino/
 ```
 
-Los ficheros de teoría se respaldan aparte: `rsync -a
-/mnt/data/ficheros/ destino/`.
+Un `.apbak` se puede descomprimir a mano con `7z x backup.apbak` (te
+pedirá la contraseña) y luego seguir estos pasos con los ficheros
+resultantes.
 
 ## 7. Desarrollo local
 

@@ -17,13 +17,18 @@
 FROM python:3.11-slim
 
 # ── Caddy 2 desde su repositorio oficial ─────────────────────────────
+# `postgresql-client` da el `pg_dump`/`pg_restore` que usa el endpoint
+# /api/backup (dump de la BBDD) y /api/restore. `p7zip-full` da el
+# binario `7z` con soporte de cifrado AES-256 y cabecera cifrada
+# (-mhe=on) para el .apbak.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl gnupg debian-keyring debian-archive-keyring apt-transport-https ca-certificates \
     && curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
         | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
     && curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
         > /etc/apt/sources.list.d/caddy-stable.list \
-    && apt-get update && apt-get install -y --no-install-recommends caddy \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        caddy postgresql-client p7zip-full \
     && apt-get purge -y --auto-remove curl gnupg apt-transport-https \
     && rm -rf /var/lib/apt/lists/*
 
