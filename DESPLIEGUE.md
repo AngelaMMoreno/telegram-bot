@@ -8,7 +8,8 @@ Application** distinta que apunta a su propio fichero:
 deploy/
 ├── core/docker-compose.yml         ← db + postgrest + embeddings + pgadmin
 ├── app/docker-compose.yml          ← landing + tests + teoría (frontend) + backend teoría, todo en un contenedor
-└── notificador/docker-compose.yml  ← worker de Web Push (sin dominio propio)
+├── notificador/docker-compose.yml  ← worker de Web Push (sin dominio propio)
+└── backups/docker-compose.yml      ← snapshots automáticos a Google Drive (restic + rclone)
 ```
 
 Los tres comparten la red externa `dokploy-network` y se ven entre sí
@@ -210,6 +211,53 @@ rsync -a /mnt/data/ficheros/ destino/
 Un `.apbak` se puede descomprimir a mano con `7z x backup.apbak` (te
 pedirá la contraseña) y luego seguir estos pasos con los ficheros
 resultantes.
+
+### 6.3 Snapshots automáticos a Google Drive (stack `backups`)
+
+Complementario al backup manual desde el panel. Un contenedor de
+fondo (`deploy/backups/`) lanza cada noche un snapshot deduplicado y
+cifrado de la BBDD + `/mnt/data/ficheros` sobre un repositorio
+[restic](https://restic.net/) alojado en Google Drive vía rclone. La
+retención por defecto (`KEEP_LAST=2`) conserva los 2 snapshots más
+recientes de cada tag (`db` y `teoria`); todo lo anterior se poda y
+libera espacio en Drive automáticamente.
+
+Un snapshot restic **NO es el mismo formato que `.apbak`**: el
+repositorio de Drive es una carpeta de chunks deduplicados, y para
+restaurarlo necesitas `restic` + `rclone` + `RESTIC_PASSWORD`
+(cualquier máquina sirve, no tiene que ser el VPS origen). El
+`.apbak` del panel sigue siendo la vía "descarga manual, único
+fichero portátil" — coexisten sin problema.
+
+**Setup completo (una sola vez)**: `deploy/backups/README.md`
+describe paso a paso `rclone config` en local, la copia de
+`rclone.conf` al VPS, las variables de Dokploy y el primer arranque.
+Resumen:
+
+| Clave               | Uso                                                                            |
+|---------------------|--------------------------------------------------------------------------------|
+| `DB_PASS`           | Igual que en `core` (pg_dump se conecta al servicio `db`).                     |
+| `RESTIC_REPOSITORY` | `rclone:<remote>:<carpeta>` — el `<remote>` es el nombre que le des en rclone. |
+| `RESTIC_PASSWORD`   | Contraseña de cifrado del repo restic. **Guárdala en un gestor.**              |
+| `KEEP_LAST`         | Snapshots conservados por tag (default 2 → anoche + antes).                    |
+| `BACKUP_CRON`       | Cron de 5 campos (default `30 3 * * *` = todas las noches a las 03:30).        |
+| `TZ`                | Zona horaria del cron y de los logs (default `Europe/Madrid`).                 |
+
+Además necesitas subir una vez `rclone.conf` con el token OAuth de
+Drive a `/mnt/data/backup-config/rclone.conf` en el VPS — ver
+`deploy/backups/README.md`.
+
+**Restaurar** desde cualquier máquina:
+
+```bash
+export RESTIC_REPOSITORY=rclone:gdrive:aprentix-backups
+export RESTIC_PASSWORD='...'
+restic snapshots
+restic restore latest --tag db     --host aprentix --target /tmp/r
+restic restore latest --tag teoria --host aprentix --target /tmp/r
+psql -h HOST -U aprentix -d aprentix < /tmp/r/stdin
+sudo rsync -a --delete /tmp/r/data/ficheros/ /mnt/data/ficheros/
+```
 
 ## 7. Desarrollo local
 
