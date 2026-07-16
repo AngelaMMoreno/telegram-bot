@@ -579,11 +579,70 @@ if (window.marked && window.marked.setOptions) {
   marked.setOptions({ gfm: true, breaks: true });
 }
 
+/* Carga perezosa de marked/purify: pueden faltar cuando la app de teoría
+ * la monta el router SPA sobre una página de tests que no las incluye
+ * directamente. Sin esto, el visor caía al fallback `esc()` y el .md se
+ * mostraba como texto plano (bug reportado). Reintentar el render tras
+ * cargar los scripts evita ese estado. */
+let _mdVendorLoading = null;
+function _loadScript(src) {
+  return new Promise((resolve, reject) => {
+    // ¿Ya está en el DOM? esperamos su load.
+    const existing = document.querySelector(`script[src$="${src}"]`);
+    if (existing) {
+      if (existing.dataset.loaded === '1') { resolve(); return; }
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(new Error(src)), { once: true });
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = src; s.defer = false;
+    s.onload = () => { s.dataset.loaded = '1'; resolve(); };
+    s.onerror = () => reject(new Error(src));
+    document.head.appendChild(s);
+  });
+}
+function asegurarMarkedYPurify() {
+  if (window.marked && window.marked.parse &&
+      window.DOMPurify && DOMPurify.sanitize) {
+    return Promise.resolve();
+  }
+  if (!_mdVendorLoading) {
+    // Rutas absolutas: la SPA puede estar en /tests/... con teoría montada.
+    _mdVendorLoading = Promise.all([
+      window.marked && window.marked.parse
+        ? Promise.resolve()
+        : _loadScript('/teoria/shared/vendor/marked.min.js'),
+      window.DOMPurify && DOMPurify.sanitize
+        ? Promise.resolve()
+        : _loadScript('/teoria/shared/vendor/purify.min.js'),
+    ]).then(() => {
+      if (window.marked && window.marked.setOptions) {
+        marked.setOptions({ gfm: true, breaks: true });
+      }
+    }).catch(err => {
+      _mdVendorLoading = null;
+      throw err;
+    });
+  }
+  return _mdVendorLoading;
+}
+
 function mdRender(texto) {
   const html = (window.marked && marked.parse) ? marked.parse(texto || '') : esc(texto || '');
   return (window.DOMPurify && DOMPurify.sanitize)
     ? DOMPurify.sanitize(html)
     : html;
+}
+/* Envuelve la asignación de innerHTML: si marked aún no está, dispara la
+ * carga y re-renderiza cuando esté lista. */
+function mdSetRendered(target, texto) {
+  target.innerHTML = mdRender(texto);
+  if (!(window.marked && marked.parse) || !(window.DOMPurify && DOMPurify.sanitize)) {
+    asegurarMarkedYPurify()
+      .then(() => { target.innerHTML = mdRender(texto); })
+      .catch(() => { /* deja el fallback plano si la red falla */ });
+  }
 }
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => (
@@ -634,14 +693,14 @@ function mdMarcarEstado() {
 }
 
 function mdActualizarPreview() {
-  mdOut().innerHTML = mdRender(mdEd().value);
+  mdSetRendered(mdOut(), mdEd().value);
   mdMarcarEstado();
 }
 
 function mdAbrirVista(nombre, contenido) {
   mdTitle().textContent = nombre;
   mdEd().value = contenido;
-  mdOut().innerHTML = mdRender(contenido);
+  mdSetRendered(mdOut(), contenido);
   mdBody().classList.remove('editing', 'show-preview', 'preview-only');
   mdView().classList.remove('hidden');
   mdView().setAttribute('aria-hidden', 'false');
@@ -766,7 +825,7 @@ document.getElementById('md-cancelar')?.addEventListener('click', () => {
       !confirm('Descartar los cambios sin guardar?')) return;
   mdEd().value = MD.original;
   mdBody().classList.remove('editing', 'show-preview');
-  mdOut().innerHTML = mdRender(MD.original);
+  mdSetRendered(mdOut(), MD.original);
   mdMostrarBotones();
   mdMarcarEstado();
 });

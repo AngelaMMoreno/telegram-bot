@@ -128,16 +128,23 @@ button { font: inherit; cursor: pointer; }
  * Aquí solo quedan reglas específicas del markup de teoría dentro
  * de la caja. */
 
-.modal .modal-card h3 { font-size: 17px; margin: 0 0 12px; }
-.modal .modal-card p { font-size: 14px; color: var(--sub); margin: 0 0 16px; word-break: break-word; }
+.modal .modal-card h3 { font-size: 1.05rem; margin: 0 0 0.75rem; color: var(--txt); font-weight: 700; }
+.modal .modal-card p { font-size: 0.9rem; color: var(--txt-soft); margin: 0 0 1rem; word-break: break-word; }
+/* Inputs coherentes con /tests/: mismo radius (--radius), padding y foco.
+ * Antes teoría usaba 8px + outline verde y en tests eran 16px con halo:
+ * salían visualmente distintos entre las dos apps. */
 .modal .modal-card input, .modal .modal-card select {
-  width: 100%; padding: 10px 12px;
-  border: 1px solid var(--border); border-radius: 8px;
-  font-size: 14px; margin-bottom: 16px;
-  background: var(--card); color: var(--text);
+  width: 100%; padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: 0.95rem; margin-bottom: 0.9rem;
+  background: var(--bg-panel); color: var(--txt);
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 .modal .modal-card input:focus, .modal .modal-card select:focus {
-  outline: 2px solid var(--pri); border-color: var(--pri);
+  outline: none;
+  border-color: var(--pri);
+  box-shadow: 0 0 0 4px var(--pri-glow);
 }
 
 /* La cabecera del modal la pinta <ap-modal> con .modal-header. */
@@ -149,21 +156,24 @@ button { font: inherit; cursor: pointer; }
 .md-view {
   position: fixed; inset: 0;
   background: var(--bg);
-  color: var(--text);
+  color: var(--txt);
   display: flex; flex-direction: column;
   z-index: 500;
 }
 .md-view.hidden { display: none; }
 .md-view-header {
   display: flex; align-items: center; gap: 4px;
-  padding: 6px 12px;
-  padding-top: calc(6px + env(safe-area-inset-top, 0));
-  background: var(--card);
-  border-bottom: 1px solid var(--border);
+  padding: 8px 14px;
+  padding-top: calc(8px + env(safe-area-inset-top, 0));
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+  border-bottom: 1px solid var(--glass-border);
   flex-wrap: nowrap;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
 }
 @media (min-width: 720px) {
-  .md-view-header { gap: 6px; padding: 8px 18px; }
+  .md-view-header { gap: 8px; padding: 10px 22px; }
 }
 
 /* Botones icon-only del visor: sutiles, cuadrados y del mismo tamaño
@@ -255,15 +265,20 @@ button { font: inherit; cursor: pointer; }
 .md-find.hidden { display: none; }
 .md-find input[type="search"] {
   flex: 1; min-width: 0;
-  padding: 8px 12px;
+  padding: 0.55rem 0.85rem;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--bg);
-  color: var(--text);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  color: var(--txt);
   font-size: 0.95rem;
+  font-family: inherit;
   outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.md-find input[type="search"]:focus { border-color: var(--pri); }
+.md-find input[type="search"]:focus {
+  border-color: var(--pri);
+  box-shadow: 0 0 0 4px var(--pri-glow);
+}
 .md-find-count {
   font-size: 12px; color: var(--sub);
   padding: 4px 8px; border-radius: 8px;
@@ -329,27 +344,53 @@ button { font: inherit; cursor: pointer; }
   display: grid;
   grid-template-columns: 1fr;
   overflow: hidden;
+  /* Fondo cálido tipo "papel" para que la lectura no sea un bloque de
+   * blanco plano. En claro es marfil con leves tintes; en oscuro respeta
+   * el tono bosque de los tokens. */
+  background:
+    radial-gradient(80% 40% at 100% 0%, var(--accent-soft) 0%, transparent 60%),
+    radial-gradient(70% 40% at 0% 100%, var(--sky-soft) 0%, transparent 60%),
+    var(--bg-soft);
+}
+[data-theme="dark"] .md-body {
+  background:
+    radial-gradient(80% 40% at 100% 0%, rgba(244, 208, 63, 0.06) 0%, transparent 60%),
+    radial-gradient(70% 40% at 0% 100%, rgba(111, 211, 232, 0.05) 0%, transparent 60%),
+    var(--bg);
 }
 .md-body.editing { grid-template-columns: 1fr 1fr; }
 .md-editor {
   display: none;
   width: 100%; height: 100%;
-  padding: 16px 20px;
+  padding: 20px 22px;
   border: 0; outline: none; resize: none;
-  background: var(--card-alt); color: var(--text);
+  background: var(--card-alt); color: var(--txt);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 14px; line-height: 1.55;
+  font-size: 0.95rem; line-height: 1.6;
   border-right: 1px solid var(--border);
 }
 .md-body.editing .md-editor { display: block; }
+
+/* .md-render vive en un carril centrado con ancho legible (~72ch) en
+ * escritorio, para que el texto no se estire de borde a borde. En móvil
+ * ocupa todo el ancho disponible. El fondo tipo papel + sombra suave lo
+ * separa del entorno y evita la sensación de "texto plano sobre blanco". */
 .md-render {
   overflow: auto;
-  padding: 24px;
-  background: var(--card);
-  color: var(--text);
-  line-height: 1.65;
-  font-size: 15px;
+  padding: 1.35rem 1.15rem 3.5rem;
+  background: transparent;
+  color: var(--txt);
+  line-height: 1.7;
+  font-size: 1rem;
+  font-family: -apple-system, "Segoe UI", "Inter", "Helvetica Neue", Arial, sans-serif;
 }
+.md-render > * {
+  max-width: 72ch;
+  margin-left: auto;
+  margin-right: auto;
+}
+/* En modo edición lado a lado, no centramos porque cada mitad ya es estrecha. */
+.md-body.editing .md-render > * { max-width: none; }
 .md-body.editing .md-render { border-left: 0; }
 .md-body.preview-only .md-editor { display: none; }
 .md-body.preview-only { grid-template-columns: 1fr; }
@@ -365,47 +406,107 @@ button { font: inherit; cursor: pointer; }
 
 /* Contenido markdown renderizado */
 .md-render h1, .md-render h2, .md-render h3, .md-render h4 {
-  margin: 1.4em 0 0.5em; line-height: 1.25;
+  margin: 1.6em 0 0.55em; line-height: 1.25;
+  color: var(--txt);
+  letter-spacing: -0.01em;
+  font-weight: 700;
 }
-.md-render h1 { font-size: 1.9em; border-bottom: 1px solid var(--border); padding-bottom: 0.2em; }
-.md-render h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 0.2em; }
-.md-render h3 { font-size: 1.25em; }
-.md-render h4 { font-size: 1.05em; color: var(--sub); }
-.md-render p { margin: 0.7em 0; }
-.md-render a { color: var(--pri); text-decoration: underline; }
-.md-render ul, .md-render ol { padding-left: 1.4em; margin: 0.6em 0; }
-.md-render li { margin: 0.2em 0; }
+.md-render > *:first-child { margin-top: 0.25rem; }
+.md-render h1 {
+  font-size: 1.75em;
+  border-bottom: 2px solid var(--pri-soft);
+  padding-bottom: 0.25em;
+  color: var(--pri-d);
+}
+[data-theme="dark"] .md-render h1 { color: var(--pri); }
+.md-render h2 {
+  font-size: 1.35em;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.2em;
+}
+.md-render h3 { font-size: 1.15em; color: var(--pri-d); }
+[data-theme="dark"] .md-render h3 { color: var(--pri); }
+.md-render h4 { font-size: 1em; color: var(--txt-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+.md-render p { margin: 0.75em 0; }
+.md-render a { color: var(--pri-d); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+[data-theme="dark"] .md-render a { color: var(--pri); }
+.md-render a:hover { text-decoration-thickness: 2px; }
+.md-render ul, .md-render ol { padding-left: 1.5em; margin: 0.7em 0; }
+.md-render li { margin: 0.3em 0; }
+.md-render li::marker { color: var(--pri); }
 .md-render blockquote {
   border-left: 4px solid var(--pri);
-  background: var(--pri-soft);
-  color: var(--text);
-  margin: 0.9em 0; padding: 0.4em 1em;
-  border-radius: 6px;
+  background: linear-gradient(90deg, var(--pri-soft), transparent 90%);
+  color: var(--txt);
+  margin: 1em 0; padding: 0.6em 1em;
+  border-radius: 8px;
+  font-style: italic;
 }
 .md-render code {
-  background: var(--bg-soft);
-  padding: 1px 6px; border-radius: 4px;
+  background: var(--pri-soft);
+  color: var(--pri-d);
+  padding: 0.1em 0.4em; border-radius: 5px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.9em;
+  font-size: 0.88em;
+  font-weight: 500;
 }
+[data-theme="dark"] .md-render code { color: var(--pri); }
 .md-render pre {
-  background: var(--bg-soft);
-  padding: 12px 14px; border-radius: 8px;
-  overflow: auto; margin: 0.9em 0;
+  background: var(--bg-panel);
+  padding: 0.9em 1em; border-radius: 10px;
+  overflow: auto; margin: 1em 0;
   border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
 }
-.md-render pre code { background: transparent; padding: 0; font-size: 0.9em; }
-.md-render hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
+.md-render pre code {
+  background: transparent; padding: 0;
+  font-size: 0.88em; color: var(--txt);
+  font-weight: normal;
+}
+.md-render hr { border: 0; border-top: 1px dashed var(--border); margin: 1.75em 0; }
 .md-render table {
-  border-collapse: collapse; margin: 0.8em 0;
+  border-collapse: collapse; margin: 1em 0;
   width: 100%;
+  background: var(--bg-panel);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 .md-render th, .md-render td {
   border: 1px solid var(--border);
-  padding: 6px 10px; text-align: left;
+  padding: 0.5em 0.75em; text-align: left;
 }
-.md-render th { background: var(--bg-soft); }
-.md-render img { max-width: 100%; height: auto; border-radius: 6px; }
+.md-render th {
+  background: var(--pri-soft);
+  color: var(--pri-d);
+  font-weight: 700;
+}
+[data-theme="dark"] .md-render th { color: var(--pri); }
+.md-render tr:nth-child(even) td { background: var(--bg-soft); }
+.md-render img {
+  max-width: 100%; height: auto;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  margin: 0.5em 0;
+}
+.md-render strong { color: var(--txt); font-weight: 700; }
+.md-render em { color: var(--txt); }
+
+/* Ajuste tipográfico por breakpoint: en móvil 16px (suficiente para no
+ * activar zoom en iOS), en escritorio 17-18px para lectura larga. */
+@media (min-width: 720px) {
+  .md-render {
+    padding: 1.75rem 1.5rem 4rem;
+    font-size: 1.05rem;
+    line-height: 1.75;
+  }
+}
+@media (min-width: 1100px) {
+  .md-render {
+    padding: 2.25rem 2rem 5rem;
+    font-size: 1.1rem;
+  }
+}
 
 /* ── Menú contextual ─────────────────────────────────────────────────── */
 .ctx-menu {
