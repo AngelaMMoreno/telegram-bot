@@ -223,44 +223,51 @@ input[type="file"]:not([hidden]):focus-visible {
   border-color: var(--pri);
   box-shadow: 0 0 0 4px var(--pri-glow);
 }
+/* Mismo look que .btn-primary: fondo sólido --pri, texto blanco, sin
+ * gradiente. Hover pasa a --pri-d, coherente con el resto de botones. */
 input[type="file"]::file-selector-button {
   padding: 0.7rem 1rem;
   margin-right: 0.7rem;
   border: 0;
   border-right: 1px solid var(--border);
-  background: linear-gradient(135deg, var(--grad-a), var(--pri));
+  background: var(--pri);
   color: #fff;
   font: inherit;
   font-size: 0.9rem;
   font-weight: 700;
   letter-spacing: 0.01em;
   cursor: pointer;
-  transition: background 0.15s, filter 0.15s;
+  transition: background 0.15s;
 }
 input[type="file"]::-webkit-file-upload-button {
   padding: 0.7rem 1rem;
   margin-right: 0.7rem;
   border: 0;
   border-right: 1px solid var(--border);
-  background: linear-gradient(135deg, var(--grad-a), var(--pri));
+  background: var(--pri);
   color: #fff;
   font: inherit;
   font-size: 0.9rem;
   font-weight: 700;
   cursor: pointer;
-  transition: filter 0.15s;
+  transition: background 0.15s;
 }
 input[type="file"]:hover::file-selector-button {
-  filter: brightness(1.05);
+  background: var(--pri-d);
 }
 input[type="file"]:hover::-webkit-file-upload-button {
-  filter: brightness(1.05);
+  background: var(--pri-d);
 }
 [data-theme="dark"] input[type="file"]::file-selector-button,
 [data-theme="dark"] input[type="file"]::-webkit-file-upload-button {
   color: #14241D;
-  background: linear-gradient(135deg, var(--pri), var(--grad-b));
+  background: var(--pri);
   border-right-color: color-mix(in srgb, var(--pri) 30%, transparent);
+}
+[data-theme="dark"] input[type="file"]:hover::file-selector-button,
+[data-theme="dark"] input[type="file"]:hover::-webkit-file-upload-button {
+  background: var(--pri-d);
+  color: #fff;
 }
 
 
