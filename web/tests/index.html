@@ -55,6 +55,13 @@
   <script src="shared/components/ap-auth-form.js" defer></script>
   <!-- Configuración unificada (misma en landing/tests/teoría). -->
   <script src="shared/config.js" defer></script>
+  <!-- Markdown: parser + saneador. Se cargan también aquí para que la app
+       de teoría, montada por el router SPA sobre esta página, disponga
+       de window.marked / DOMPurify sin tener que ir a la red. Sin esto,
+       al saltar tests → teoría los .md se renderizaban como texto plano
+       (mdRender caía al fallback esc()). -->
+  <script src="shared/vendor/marked.min.js" defer></script>
+  <script src="shared/vendor/purify.min.js" defer></script>
   <script>
     (function () {
       var m = document.cookie.match(/(?:^|;\s*)aprentix_theme=(dark|light|auto)/);
