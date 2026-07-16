@@ -463,19 +463,33 @@
     document.getElementById('aprentix-config-modal').classList.add('hidden');
   }
 
+  // Delegación global de "abrir configuración": un único listener en
+  // document que sobrevive a swaps del router SPA. Antes se enganchaba
+  // directamente a `#btn-config` / `[data-open-config]` con un flag
+  // `_apConfigBound` en cada elemento; al saltar tests ↔ teoría el
+  // router clona los nodos (document.importNode), los clones no llevan
+  // el flag ni el listener → el botón "Configuración" del sheet del
+  // avatar dejaba de abrir el modal y el sheet se cerraba solo (el
+  // click burbujeaba a su handler de cierre).
+  let _apConfigDelegated = false;
+  function bindOpeners() {
+    if (_apConfigDelegated) return;
+    _apConfigDelegated = true;
+    document.addEventListener('click', (e) => {
+      const b = e.target && e.target.closest
+        ? e.target.closest('#btn-config, [data-open-config]')
+        : null;
+      if (!b) return;
+      e.preventDefault();
+      open();
+    });
+  }
+
   // ── Init público ───────────────────────────────────────────────────────
   function init(opts) {
     CFG = Object.assign(CFG, opts || {});
     ensureDom();
-    // Cablea todos los disparadores conocidos: fila del sheet (tests/teoría)
-    // y botón de la landing. Idempotente.
-    document.querySelectorAll(
-      '#btn-config, [data-open-config]'
-    ).forEach(b => {
-      if (b._apConfigBound) return;
-      b._apConfigBound = true;
-      b.addEventListener('click', (e) => { e.preventDefault(); open(); });
-    });
+    bindOpeners();
     applyTheme(currentTheme());
   }
 
