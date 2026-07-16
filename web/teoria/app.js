@@ -103,6 +103,14 @@ function emojiParaFichero(nombre, mime) {
   return '📄';
 }
 
+// Icono kebab (tres puntos verticales) — SVG inline para no depender de
+// fuentes de iconos y colorearlo con currentColor.
+const KEBAB_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+  <circle cx="12" cy="5"  r="1.7" fill="currentColor"/>
+  <circle cx="12" cy="12" r="1.7" fill="currentColor"/>
+  <circle cx="12" cy="19" r="1.7" fill="currentColor"/>
+</svg>`;
+
 function toast(msg, ms = 2500) {
   const el = document.createElement('div');
   el.className = 'toast';
@@ -269,8 +277,21 @@ function tarjetaCarpeta(c) {
   card.dataset.oposicionIds = opIds.join(',');
   card.dataset.oposicionNombres = opNombres.join('|');
 
+  // Kebab arriba a la derecha: mismo menú que click-derecho / long-press,
+  // pero accesible con un solo tap tanto en móvil como en escritorio. En
+  // carpetas el menú solo trae acciones de gestión, así que lo mostramos
+  // únicamente si el usuario puede gestionar. Los usuarios normales abren
+  // la carpeta con el click normal.
+  const kebabHtml = ESTADO.puede_gestionar ? `
+    <button class="card-kebab" data-accion="kebab"
+            aria-label="Más opciones" title="Más opciones"
+            aria-haspopup="menu" aria-expanded="false">
+      ${KEBAB_SVG}
+    </button>` : '';
+
   card.innerHTML = `
     <div class="card-check" hidden><input type="checkbox" data-accion="toggle-select" aria-label="Seleccionar carpeta"></div>
+    ${kebabHtml}
     <div class="card-emoji">📁</div>
     <div class="card-name" title="${esc(c.nombre)}">${esc(c.nombre)}</div>
     <div class="card-meta">${c.num_elementos} elemento${c.num_elementos === 1 ? '' : 's'}</div>
@@ -309,6 +330,11 @@ function tarjetaFichero(f) {
             aria-label="${tickTitle}"
             aria-pressed="${f.visto ? 'true' : 'false'}">
       <span class="visto-tick-check">${f.visto ? '✓' : ''}</span>
+    </button>
+    <button class="card-kebab" data-accion="kebab"
+            aria-label="Más opciones" title="Más opciones"
+            aria-haspopup="menu" aria-expanded="false">
+      ${KEBAB_SVG}
     </button>
     <div class="card-emoji">${emoji}</div>
     <div class="card-name" title="${esc(f.nombre)}">${esc(f.nombre)}</div>
@@ -369,12 +395,12 @@ function menuContextualFichero(evt, f, card) {
   cerrarMenu();
   const m = document.createElement('div');
   m.className = 'ctx-menu';
+  m.dataset.owner = card?.dataset?.ruta || f.ruta || '';
   posicionarMenu(m, evt);
   const admin = ESTADO.puede_gestionar;
   const puedeEditar = admin && esMarkdown(f.nombre);
   m.innerHTML = `
     <div class="ctx-item" data-a="ver">📖 Abrir</div>
-    <div class="ctx-item" data-a="descargar">⬇️ Descargar</div>
     <div class="ctx-sep"></div>
     <div class="ctx-item" data-a="${f.visto ? 'no-visto' : 'visto'}">
       ${f.visto ? '↩️ Marcar como no visto' : '✓ Marcar como visto'}
@@ -395,7 +421,6 @@ function menuContextualFichero(evt, f, card) {
     cerrarMenu();
     if (a === 'ver') verFichero(f);
     else if (a === 'editar') { await abrirMarkdown(f.ruta, f.nombre); mdEntrarEdicion(); }
-    else if (a === 'descargar') window.open(API_BASE + 'api/ver?ruta=' + encodeURIComponent(f.ruta), '_blank');
     else if (a === 'visto') {
       const res = await api('POST', 'api/marcar_visto', { ruta: f.ruta });
       if (res && Array.isArray(res.logros_desbloqueados)) notificarLogros(res.logros_desbloqueados);
@@ -407,7 +432,7 @@ function menuContextualFichero(evt, f, card) {
     else if (a === 'mover') abrirMoverDialogo([f.ruta]);
     else if (a === 'borrar') pedirBorrar(item);
   });
-  setTimeout(() => document.addEventListener('click', cerrarMenu, { once: true }), 0);
+  registrarCierreClickFuera();
 }
 
 function menuContextualCarpeta(evt, c, card) {
@@ -415,6 +440,7 @@ function menuContextualCarpeta(evt, c, card) {
   if (!ESTADO.puede_gestionar) return;
   const m = document.createElement('div');
   m.className = 'ctx-menu';
+  m.dataset.owner = card?.dataset?.ruta || c.ruta || '';
   posicionarMenu(m, evt);
   m.innerHTML = `
     <div class="ctx-item" data-a="abrir">📁 Abrir</div>
@@ -436,7 +462,7 @@ function menuContextualCarpeta(evt, c, card) {
     else if (a === 'oposicion') abrirCarpetaOposicionPicker(c, card);
     else if (a === 'borrar') pedirBorrar(c);
   });
-  setTimeout(() => document.addEventListener('click', cerrarMenu, { once: true }), 0);
+  registrarCierreClickFuera();
 }
 
 /* Coloca el menú evitando salir del viewport. Se llama antes de append. */
@@ -462,8 +488,57 @@ function activarSeleccionDesdeMenu(ruta, card) {
   toggleSeleccion(ruta, card, true);
 }
 
+/* Listener global "click fuera → cerrar" del menú contextual.
+ *
+ * Antes cada apertura registraba un `document.addEventListener('click',
+ * cerrarMenu, { once: true })` con `setTimeout(0)`. Eso rompía el toggle
+ * del kebab: al reabrir el menú de otra tarjeta, el listener del menú
+ * anterior seguía vivo y cerraba el nuevo justo después de abrirlo.
+ *
+ * Ahora guardamos el listener en una variable, así `cerrarMenu()` lo
+ * puede desmontar antes de que dispare de más, y se registra uno nuevo
+ * al abrir cada menú. El listener ignora clicks dentro del propio menú
+ * (esos los gestiona el handler interno con su cerrarMenu) y clicks
+ * sobre cualquier `.card-kebab` (los gestiona `onGridAction` con lógica
+ * de toggle). */
+let _menuOutsideCloseHandler = null;
+
 function cerrarMenu() {
   document.querySelectorAll('.ctx-menu').forEach(n => n.remove());
+  // Devuelve todos los kebabs a estado colapsado por si alguno se quedó
+  // marcado como abierto (p.ej. click fuera cerró el menú, o el usuario
+  // pulsó Escape).
+  document.querySelectorAll('.card-kebab[aria-expanded="true"]')
+    .forEach(k => k.setAttribute('aria-expanded', 'false'));
+  if (_menuOutsideCloseHandler) {
+    document.removeEventListener('click', _menuOutsideCloseHandler);
+    _menuOutsideCloseHandler = null;
+  }
+}
+
+function registrarCierreClickFuera() {
+  // Cancela cualquier listener heredado antes de registrar el nuevo:
+  // así solo hay un vigilante "click fuera" en cada momento, y no cierra
+  // un menú recién abierto por el listener del anterior.
+  if (_menuOutsideCloseHandler) {
+    document.removeEventListener('click', _menuOutsideCloseHandler);
+  }
+  _menuOutsideCloseHandler = (e) => {
+    // Clicks dentro del menú los procesa el handler interno, que ya llama
+    // a cerrarMenu tras ejecutar la acción. Clicks sobre un kebab los
+    // gestiona onGridAction ('kebab' con toggle). Evitamos así doble
+    // cierre / reapertura sin querer.
+    if (e.target.closest('.ctx-menu')) return;
+    if (e.target.closest('.card-kebab')) return;
+    cerrarMenu();
+  };
+  // setTimeout(0) para que el click que abrió el menú no se cuente como
+  // "click fuera" en este mismo tick.
+  setTimeout(() => {
+    if (_menuOutsideCloseHandler) {
+      document.addEventListener('click', _menuOutsideCloseHandler);
+    }
+  }, 0);
 }
 
 function renderGrid(data) {
@@ -514,7 +589,54 @@ function onGridAction(e) {
     const ruta = card.dataset.ruta;
     const item = { ruta, nombre: card.dataset.nombre || ruta.split('/').pop(), es_carpeta: false };
     toggleVistoInline(item, btn, card);
+    return;
   }
+  if (accion === 'kebab') {
+    // Toggle: si el menú ya está abierto para esta tarjeta, ciérralo.
+    // stopPropagation evita que el `document click → cerrarMenu` que se
+    // arma al abrir el menú anterior interfiera con la reapertura.
+    e.stopPropagation();
+    e.preventDefault();
+    const card = btn.closest('.card');
+    const yaAbierto = document.querySelector('.ctx-menu');
+    // Si había un menú abierto (de esta tarjeta o de otra), lo cerramos.
+    // Solo reabrimos si el que estaba abierto NO era el suyo.
+    const eraSuyo = yaAbierto && yaAbierto.dataset.owner === card.dataset.ruta;
+    cerrarMenu();
+    if (eraSuyo) return;
+    abrirMenuDesdeKebab(btn, card);
+  }
+}
+
+/* Abre el menú contextual anclado al kebab de la tarjeta (esquina
+ * inferior-derecha del botón). Reutiliza `menuContextualFichero` /
+ * `menuContextualCarpeta`. El `data-owner` en el menú permite que un
+ * segundo click sobre el MISMO kebab lo interprete como "cerrar"
+ * (toggle) en `onGridAction`. */
+function abrirMenuDesdeKebab(kebabBtn, card) {
+  const rect = kebabBtn.getBoundingClientRect();
+  const evt = {
+    clientX: rect.right,
+    clientY: rect.bottom + 4,
+    preventDefault: () => {},
+  };
+  const ruta = card.dataset.ruta;
+  const nombre = card.dataset.nombre || ruta.split('/').pop();
+  const tipo = card.dataset.tipo;
+  kebabBtn.setAttribute('aria-expanded', 'true');
+  if (tipo === 'carpeta') {
+    menuContextualCarpeta(evt, { ruta, nombre }, card);
+  } else {
+    // Reconstruimos un fichero mínimo desde el dataset. Para el estado
+    // "visto" leemos la clase de la propia card (que se actualiza en
+    // toggleVistoInline).
+    const f = {
+      ruta, nombre,
+      visto: card.classList.contains('visto'),
+    };
+    menuContextualFichero(evt, f, card);
+  }
+  // El data-owner ya lo pone menuContextual*() a partir del card.
 }
 
 async function toggleVistoInline(item, btn, card) {
