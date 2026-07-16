@@ -2640,8 +2640,8 @@ on("#modal-elegir-oposicion", "ap-op-select", (e) => {
   }
 });
 
-document.getElementById("btn-cambiar-oposicion")?.addEventListener("click", abrirSelectorOposicion);
-document.getElementById("btn-cambiar-oposicion-home")?.addEventListener("click", abrirSelectorOposicion);
+on("#btn-cambiar-oposicion", "click", abrirSelectorOposicion);
+on("#btn-cambiar-oposicion-home", "click", abrirSelectorOposicion);
 
 /* ── Vista Oposiciones (admin) ──────────────────────────────────────────── */
 loaders.oposiciones = loadOposicionesAdmin;

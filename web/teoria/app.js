@@ -65,6 +65,30 @@ function fmtDate(unix) {
   return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+/* Delegación global de eventos.
+ *
+ * Antes cada listener se enganchaba directamente al nodo con
+ * `document.getElementById('foo')?.addEventListener(evt, fn)`. Cuando el
+ * router SPA (shared/spa-router.js) clona el <body> al saltar entre
+ * /tests/ y /teoria/, esos nodos originales desaparecen y con ellos sus
+ * listeners: el botón "← Volver" del visor de teoría dejaba de responder
+ * después de la primera ida y vuelta.
+ *
+ * `on(selector, event, handler)` engancha UN listener a `document` y
+ * despacha por `closest(selector)` en cada disparo. Como `document` no
+ * se sustituye nunca, el listener sobrevive a swaps SPA sin re-registrar.
+ *
+ * Los eventos que usamos aquí (click, input, change, keydown, mouseup,
+ * touchend y los custom `ap-*` con `bubbles: true`) burbujean hasta
+ * document, así que la delegación los captura sin problema. */
+function on(selector, event, handler, options) {
+  document.addEventListener(event, (e) => {
+    const t = e.target && e.target.closest ? e.target.closest(selector) : null;
+    if (!t) return;
+    handler.call(t, e);
+  }, options);
+}
+
 function emojiParaFichero(nombre, mime) {
   const ext = (nombre.split('.').pop() || '').toLowerCase();
   if (['pdf'].includes(ext)) return '📕';
@@ -817,9 +841,9 @@ async function mdGuardar() {
   }
 }
 
-document.getElementById('md-back')?.addEventListener('click', mdCerrar);
-document.getElementById('md-editar')?.addEventListener('click', mdEntrarEdicion);
-document.getElementById('md-cancelar')?.addEventListener('click', () => {
+on('#md-back', 'click', mdCerrar);
+on('#md-editar', 'click', mdEntrarEdicion);
+on('#md-cancelar', 'click', () => {
   if (MD.creando) { mdCerrar(); return; }
   if (mdEd().value !== MD.original &&
       !confirm('Descartar los cambios sin guardar?')) return;
@@ -829,11 +853,11 @@ document.getElementById('md-cancelar')?.addEventListener('click', () => {
   mdMostrarBotones();
   mdMarcarEstado();
 });
-document.getElementById('md-guardar')?.addEventListener('click', mdGuardar);
-document.getElementById('md-preview-toggle')?.addEventListener('click', () => {
+on('#md-guardar', 'click', mdGuardar);
+on('#md-preview-toggle', 'click', () => {
   mdBody().classList.toggle('show-preview');
 });
-document.getElementById('md-editor')?.addEventListener('input', mdActualizarPreview);
+on('#md-editor', 'input', mdActualizarPreview);
 document.addEventListener('keydown', (e) => {
   if (mdView().classList.contains('hidden')) return;
   if (e.key === 'Escape') {
@@ -983,12 +1007,12 @@ function cerrarBuscador() {
   limpiarBusqueda();
 }
 
-document.getElementById('md-buscar')?.addEventListener('click', abrirBuscadorDoc);
-document.getElementById('md-find-cerrar')?.addEventListener('click', cerrarBuscador);
-document.getElementById('md-find-input')?.addEventListener('input', (e) => {
+on('#md-buscar', 'click', abrirBuscadorDoc);
+on('#md-find-cerrar', 'click', cerrarBuscador);
+on('#md-find-input', 'input', (e) => {
   aplicarBusqueda(e.target.value);
 });
-document.getElementById('md-find-input')?.addEventListener('keydown', (e) => {
+on('#md-find-input', 'keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();
     saltoBusqueda(e.shiftKey ? -1 : 1);
@@ -997,8 +1021,8 @@ document.getElementById('md-find-input')?.addEventListener('keydown', (e) => {
     cerrarBuscador();
   }
 });
-document.getElementById('md-find-prev')?.addEventListener('click', () => saltoBusqueda(-1));
-document.getElementById('md-find-next')?.addEventListener('click', () => saltoBusqueda(1));
+on('#md-find-prev', 'click', () => saltoBusqueda(-1));
+on('#md-find-next', 'click', () => saltoBusqueda(1));
 
 /* ── Subrayado del usuario ───────────────────────────────────────────
  * Guardamos offsets sobre el textContent completo del render. Al abrir
@@ -1127,19 +1151,19 @@ function borrarSubrayado(mark) {
   toast('Subrayado quitado');
 }
 
-document.getElementById('md-subrayar')?.addEventListener('click', toggleModoSubrayar);
-document.getElementById('md-marcador')?.addEventListener('click', toggleMarcadorActual);
+on('#md-subrayar', 'click', toggleModoSubrayar);
+on('#md-marcador', 'click', toggleMarcadorActual);
 
 // Captura selección de texto en el render solo si el modo está activo.
-mdOut().addEventListener('mouseup', () => {
+on('#md-render', 'mouseup', () => {
   if (SUBR.activo && !mdEnEdicion()) guardarSeleccionActual();
 });
-mdOut().addEventListener('touchend', () => {
+on('#md-render', 'touchend', () => {
   if (SUBR.activo && !mdEnEdicion()) setTimeout(guardarSeleccionActual, 10);
 });
 
 // Click sobre un subrayado existente → lo elimina.
-mdOut().addEventListener('click', (e) => {
+on('#md-render', 'click', (e) => {
   const mark = e.target.closest('mark.md-user-hl');
   if (mark && !SUBR.activo) borrarSubrayado(mark);
 });
@@ -1152,7 +1176,7 @@ function cerrarMenuMas() {
   menu.classList.add('hidden');
   btn.setAttribute('aria-expanded', 'false');
 }
-document.getElementById('md-mas')?.addEventListener('click', (e) => {
+on('#md-mas', 'click', (e) => {
   e.stopPropagation();
   const menu = document.getElementById('md-mas-menu');
   const btn = document.getElementById('md-mas');
@@ -1172,7 +1196,7 @@ document.addEventListener('click', (e) => {
     cerrarMenuMas();
   }
 });
-document.getElementById('md-limpiar-subrayados')?.addEventListener('click', () => {
+on('#md-limpiar-subrayados', 'click', () => {
   if (!MD.ruta) return;
   if (!confirm('¿Quitar todos los subrayados de este documento?')) return;
   setSubrayados(MD.ruta, []);
@@ -1336,17 +1360,17 @@ window.addEventListener('hashchange', () => {
   cargar(rutaDeHash());
 });
 
-document.getElementById('btn-logout')?.addEventListener('click', () => {
+on('#btn-logout', 'click', () => {
   deleteCookie(COOKIE_NAME);
   location.href = LANDING_URL;
 });
-document.getElementById('btn-nueva-carpeta')?.addEventListener('click', pedirNuevaCarpeta);
-document.getElementById('btn-nuevo-md')?.addEventListener('click', pedirNuevoMarkdown);
-document.getElementById('file-input')?.addEventListener('change', (e) => {
+on('#btn-nueva-carpeta', 'click', pedirNuevaCarpeta);
+on('#btn-nuevo-md', 'click', pedirNuevoMarkdown);
+on('#file-input', 'change', (e) => {
   subirFicheros(e.target.files);
   e.target.value = '';
 });
-document.getElementById('grid')?.addEventListener('click', onGridAction);
+on('#grid', 'click', onGridAction);
 
 /* Marca el item activo tanto en el sidebar de escritorio (.nav-item)
  * como en el bottom-nav móvil (.bnav-item). Las opciones tipo "acción"
@@ -1727,7 +1751,7 @@ function abrirSelectorOposicion(opts = {}) {
 
 // La lista, el modal y el cierre los pinta y gestiona <ap-op-selector>;
 // aquí sólo reaccionamos al evento de elección.
-document.getElementById('teoria-elegir-oposicion')?.addEventListener('ap-op-select', (e) => {
+on('#teoria-elegir-oposicion', 'ap-op-select', (e) => {
   const { id, nombre } = e.detail;
   const op = id ? ESTADO.misOposicionesCache.find(o => o.id === id) : null;
   ESTADO.currentOposicion = id;
@@ -1738,8 +1762,8 @@ document.getElementById('teoria-elegir-oposicion')?.addEventListener('ap-op-sele
   cargar(ESTADO.ruta).catch(err => toast(err.message));
 });
 
-document.getElementById('btn-cambiar-oposicion')?.addEventListener('click', abrirSelectorOposicion);
-document.getElementById('btn-cambiar-oposicion-home')?.addEventListener('click', abrirSelectorOposicion);
+on('#btn-cambiar-oposicion', 'click', abrirSelectorOposicion);
+on('#btn-cambiar-oposicion-home', 'click', abrirSelectorOposicion);
 
 /* Reutiliza el modal multi-oposición para asignar el mismo conjunto de
  * oposiciones a N rutas recién creadas (fichero subido o markdown nuevo).
@@ -1913,9 +1937,9 @@ function actualizarBarraSeleccion() {
   if (cnt) cnt.textContent = `${n} seleccionado${n === 1 ? '' : 's'}`;
 }
 
-document.getElementById('seleccion-cancelar')?.addEventListener('click', () => toggleModoSeleccion(false));
-document.getElementById('seleccion-borrar')?.addEventListener('click', () => pedirBorrarLote());
-document.getElementById('seleccion-mover')?.addEventListener('click', () => {
+on('#seleccion-cancelar', 'click', () => toggleModoSeleccion(false));
+on('#seleccion-borrar', 'click', () => pedirBorrarLote());
+on('#seleccion-mover', 'click', () => {
   if (!SELECCION.rutas.size) return;
   abrirMoverDialogo(Array.from(SELECCION.rutas));
 });
