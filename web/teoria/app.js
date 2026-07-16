@@ -401,7 +401,6 @@ function menuContextualFichero(evt, f, card) {
   const puedeEditar = admin && esMarkdown(f.nombre);
   m.innerHTML = `
     <div class="ctx-item" data-a="ver">📖 Abrir</div>
-    <div class="ctx-item" data-a="descargar">⬇️ Descargar</div>
     <div class="ctx-sep"></div>
     <div class="ctx-item" data-a="${f.visto ? 'no-visto' : 'visto'}">
       ${f.visto ? '↩️ Marcar como no visto' : '✓ Marcar como visto'}
@@ -422,7 +421,6 @@ function menuContextualFichero(evt, f, card) {
     cerrarMenu();
     if (a === 'ver') verFichero(f);
     else if (a === 'editar') { await abrirMarkdown(f.ruta, f.nombre); mdEntrarEdicion(); }
-    else if (a === 'descargar') window.open(API_BASE + 'api/ver?ruta=' + encodeURIComponent(f.ruta), '_blank');
     else if (a === 'visto') {
       const res = await api('POST', 'api/marcar_visto', { ruta: f.ruta });
       if (res && Array.isArray(res.logros_desbloqueados)) notificarLogros(res.logros_desbloqueados);
