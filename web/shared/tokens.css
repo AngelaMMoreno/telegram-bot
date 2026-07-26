@@ -182,6 +182,17 @@
     radial-gradient(60% 50% at 50% 55%, rgba(111, 211, 232, 0.08) 0%, transparent 65%);
 }
 
+/* Alias legado: los CSS de auth/modal antiguos usan estos nombres. */
+:root {
+  --text: var(--txt);
+  --sub: var(--txt-soft);
+  --card: var(--bg-panel);
+  --card-alt: var(--bg-alt);
+  --muted: var(--txt-soft);
+  --card-bg: var(--bg-panel);
+  --card-border: var(--border);
+}
+
 /* ─── Accesibilidad: respeta prefers-reduced-motion ─── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

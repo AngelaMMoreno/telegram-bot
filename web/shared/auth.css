@@ -1,0 +1,253 @@
+/*
+ * shared/auth.css · estilos del formulario <ap-auth-form>.
+ *
+ * Se movieron aquí desde web/tests/style.css para que landing y tests
+ * (y cualquier otra SPA futura) compartan el mismo aspecto sin duplicar
+ * reglas.  Las clases (`auth-card`, `auth-panel`, `pw-strength`, …) las
+ * genera el componente en light DOM, así que un único CSS global las
+ * cubre.
+ */
+
+.auth-card {
+  background: var(--bg-panel); padding: 1.5rem;
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  width: 100%; max-width: 380px;
+  margin: 2rem auto;
+  color: var(--txt);
+}
+.auth-hero {
+  text-align: center;
+  margin-bottom: 1.25rem;
+  padding-top: 0.25rem;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 0.35rem;
+}
+.auth-hero .brand-logo {
+  width: 104px; height: 104px;
+  margin: 0 auto;
+  display: block;
+  /* Solarpunk día: base verde salvia → musgo con un "sol" ámbar arriba
+     a la izquierda y un beso coral abajo a la derecha. Da profundidad
+     y calidez sin abandonar la identidad verde. */
+  background:
+    radial-gradient(circle at 26% 24%, rgba(244, 183, 64, 0.85) 0%, transparent 42%),
+    radial-gradient(circle at 78% 82%, rgba(242, 126, 98, 0.55) 0%, transparent 48%),
+    linear-gradient(140deg,
+      var(--leaf)  0%,
+      var(--pri)  55%,
+      var(--pri-d) 100%);
+  filter: drop-shadow(0 8px 20px rgba(107, 142, 35, 0.28));
+  transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+.auth-hero .brand-logo:hover { transform: rotate(-4deg) scale(1.04); }
+@media (min-width: 600px) {
+  .auth-hero .brand-logo { width: 120px; height: 120px; }
+}
+[data-theme="dark"] .auth-hero .brand-logo {
+  /* Solarpunk noche (bosque bioluminiscente): musgo profundo con
+     luciérnaga ámbar arriba y seta púrpura abajo. */
+  background:
+    radial-gradient(circle at 26% 24%, rgba(244, 208, 63, 0.75) 0%, transparent 44%),
+    radial-gradient(circle at 78% 82%, rgba(176, 132, 245, 0.60) 0%, transparent 50%),
+    linear-gradient(140deg,
+      var(--leaf)  0%,
+      var(--pri)  55%,
+      var(--pri-d) 100%);
+  filter: drop-shadow(0 8px 22px rgba(92, 229, 213, 0.28));
+}
+.auth-card h1 {
+  text-align: center;
+  margin: 0;
+  font-size: 2.15rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  /* Marca predominantemente verde (identidad) con un remate cálido
+     ámbar → coral, siguiendo la misma paleta que el logo. */
+  background: linear-gradient(115deg,
+    var(--pri-d) 0%,
+    var(--pri) 45%,
+    var(--accent-d) 80%,
+    var(--coral-d) 100%);
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+[data-theme="dark"] .auth-card h1 {
+  background: linear-gradient(115deg,
+    var(--pri) 0%,
+    var(--leaf) 45%,
+    var(--accent) 80%,
+    var(--coral) 100%);
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.tagline {
+  text-align: center; margin: 0;
+  font-size: 1.05rem; font-weight: 600;
+  background: linear-gradient(120deg,
+    var(--sky-d) 0%,
+    var(--pri-d) 50%,
+    var(--leaf) 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+[data-theme="dark"] .tagline {
+  background: linear-gradient(120deg,
+    var(--sky) 0%,
+    var(--pri) 50%,
+    var(--leaf) 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.auth-card label { display: block; margin-bottom: 0.75rem; color: var(--txt-soft); font-size: 0.85rem; font-weight: 600; }
+.auth-card input {
+  display: block; width: 100%;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  margin-top: 0.3rem; font-size: 1rem; font-family: inherit;
+  background: var(--bg-panel); color: var(--txt);
+}
+.auth-card input:focus {
+  outline: none; border-color: var(--pri);
+  box-shadow: 0 0 0 4px var(--pri-glow);
+}
+
+/* Panel de auth (login o registro). Solo uno visible a la vez para no
+ * confundir al usuario con dos formularios. */
+.auth-panel { display: none; }
+.auth-panel.active { display: block; }
+.auth-panel-title {
+  margin: 0 0 0.9rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--txt);
+  text-align: center;
+}
+.auth-switch {
+  margin: 0.9rem 0 0;
+  text-align: center;
+}
+.auth-switch-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--pri);
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+}
+.auth-switch-btn:hover { color: var(--pri-d); }
+[data-theme="dark"] .auth-switch-btn:hover { color: var(--pri-hover); }
+
+/* Indicador de fuerza de contraseña.
+ * La barra se pinta como cuatro segmentos redondeados que se encienden
+ * progresivamente (débil → moderada → fuerte → muy fuerte) usando un
+ * mask sobre la track. La etiqueta se muestra como chip a la derecha
+ * con colores solarpunk según el nivel. */
+.pw-strength {
+  display: flex; align-items: center;
+  gap: 0.6rem;
+  margin: -0.25rem 0 0.75rem;
+}
+.pw-strength-bar {
+  flex: 1;
+  position: relative;
+  height: 8px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  /* Cuatro segmentos separados por finos huecos transparentes */
+  -webkit-mask: linear-gradient(to right,
+    #000 0 calc(25% - 3px), transparent calc(25% - 3px) 25%,
+    #000 25% calc(50% - 3px), transparent calc(50% - 3px) 50%,
+    #000 50% calc(75% - 3px), transparent calc(75% - 3px) 75%,
+    #000 75% 100%);
+          mask: linear-gradient(to right,
+    #000 0 calc(25% - 3px), transparent calc(25% - 3px) 25%,
+    #000 25% calc(50% - 3px), transparent calc(50% - 3px) 50%,
+    #000 50% calc(75% - 3px), transparent calc(75% - 3px) 75%,
+    #000 75% 100%);
+}
+.pw-strength-bar > span {
+  display: block; height: 100%;
+  width: 0%;
+  background: var(--coral);
+  transition: width 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.2),
+              background 0.3s ease;
+}
+.pw-strength.lvl-1 > .pw-strength-bar > span { background: var(--coral); }
+.pw-strength.lvl-2 > .pw-strength-bar > span { background: var(--accent); }
+.pw-strength.lvl-3 > .pw-strength-bar > span { background: var(--leaf); }
+.pw-strength.lvl-4 > .pw-strength-bar > span {
+  background: linear-gradient(90deg, var(--leaf), var(--pri));
+}
+
+.pw-strength-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--txt-soft);
+  white-space: nowrap;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  min-width: 5.5rem;
+  text-align: center;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.pw-strength.lvl-1 .pw-strength-label {
+  color: var(--coral-d); background: var(--coral-soft);
+  border-color: color-mix(in srgb, var(--coral) 40%, transparent);
+}
+.pw-strength.lvl-2 .pw-strength-label {
+  color: var(--accent-d); background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.pw-strength.lvl-3 .pw-strength-label {
+  color: var(--pri-d); background: var(--leaf-soft);
+  border-color: color-mix(in srgb, var(--leaf) 50%, transparent);
+}
+.pw-strength.lvl-4 .pw-strength-label {
+  color: var(--pri-d); background: var(--pri-soft);
+  border-color: color-mix(in srgb, var(--pri) 45%, transparent);
+}
+[data-theme="dark"] .pw-strength.lvl-1 .pw-strength-label { color: var(--coral); }
+[data-theme="dark"] .pw-strength.lvl-2 .pw-strength-label { color: var(--accent); }
+[data-theme="dark"] .pw-strength.lvl-3 .pw-strength-label,
+[data-theme="dark"] .pw-strength.lvl-4 .pw-strength-label { color: var(--pri); }
+
+.pw-match {
+  margin: -0.35rem 0 0.4rem;
+  font-weight: 600;
+}
+.pw-match.ok { color: var(--pri-d); }
+[data-theme="dark"] .pw-match.ok { color: var(--pri); }
+.pw-match.err { color: var(--danger); }
+
+/* Mensajes de error / información dentro del card de auth. */
+.auth-card .err {
+  background: var(--danger-soft, rgba(192, 83, 62, 0.10));
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  border-radius: 10px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.auth-card .info {
+  background: var(--pri-soft);
+  color: var(--pri-d);
+  border: 1px solid color-mix(in srgb, var(--pri) 40%, transparent);
+  border-radius: 10px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+[data-theme="dark"] .auth-card .info { color: var(--pri); }

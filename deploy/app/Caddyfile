@@ -33,10 +33,9 @@
         reverse_proxy 127.0.0.1:8000
     }
 
-    # ── SPA nueva /estudio (rediseño). Usa <base href="/estudio/"> y hace
-    # sus RPCs contra /api/rpc/… (ruta absoluta), así que aquí sólo hay
-    # que servir estáticos. No necesita handle_path /estudio/api/* porque
-    # el fetch va directo a /api/*.
+    # ── SPA (rediseño). Sirve estáticos desde /srv/estudio. La SPA hace
+    # sus RPCs contra /api/rpc/… (ruta absoluta) y las rutas privadas se
+    # encaminan por hash (#/…), así que basta con servir index.html.
     handle_path /estudio/* {
         root * /srv/estudio
         try_files {path} /index.html
@@ -69,22 +68,24 @@
     header @waoa Content-Type application/json
     header @waoa Access-Control-Allow-Origin *
 
-    # Las rutas anteriores no mantienen implementaciones duplicadas. Los
-    # bloques `handle` aseguran que /teoria/api/* se resuelva antes.
-    #
-    # Ojo: `redir <to> <code>` sin matcher no funciona aquí porque Caddy
-    # interpreta el primer argumento con `/` inicial como *matcher* de path
-    # y trata el 3xx como URL de destino → genera Location: "308", status
-    # 302 y matcher inservible /estudio/. Efecto observado: aprentix.es
-    # devuelve 200 con cuerpo vacío (pantalla en blanco). El `*` explícito
-    # consume la posición del matcher y deja que 308 sea el código.
+    # Rutas legadas que ya no existen como apps propias: /tests y /teoria
+    # ahora viven dentro de la SPA remodelada. Redirigimos a la raíz para
+    # que el usuario aterrice en la pantalla de login (o el home si ya
+    # tiene sesión) en vez de en URLs muertas.
     handle /tests/* {
-        redir * /estudio/ 308
+        redir * / 308
     }
     handle /teoria/* {
-        redir * /estudio/ 308
+        redir * / 308
     }
-    handle / {
-        redir * /estudio/ 308
+
+    # ── Raíz: sirve la SPA directamente, sin redirección. Antes
+    # aprentix.es → /estudio/, lo que confundía al usuario que sólo
+    # quería entrar en su cuenta. Ahora, si no hay sesión, la SPA
+    # muestra la pantalla de login solarpunk; si ya la hay, va al home.
+    handle {
+        root * /srv/estudio
+        try_files {path} /index.html
+        file_server
     }
 }

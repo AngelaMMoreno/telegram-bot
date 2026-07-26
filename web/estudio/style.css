@@ -1,7 +1,23 @@
-/* Aprentix · SPA /estudio ─ estilos mínimos (MVP).
- * Se apoya en tokens.css / base.css / components.css de shared. Aquí sólo
- * lo específico del árbol Oposición → Tema → Módulo → Sección y flujo test.
+/* Aprentix · SPA /estudio ─ estilos específicos.
+ * Se apoya en tokens.css / base.css / components.css / auth.css / modal.css
+ * de shared. Aquí sólo lo específico del árbol Oposición → Tema → Módulo
+ * → Sección y flujo test.
  */
+
+* { box-sizing: border-box; }
+
+html, body { min-height: 100%; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--txt);
+  background: var(--bg);
+  background-image: var(--bg-ambient);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  min-height: 100vh;
+  transition: background-color 0.2s, color 0.2s;
+}
 
 main#root {
   max-width: 960px;
@@ -14,6 +30,27 @@ main#root {
   main#root {
     /* Deja hueco para el bottom-nav de la cabecera móvil. */
     padding-bottom: calc(72px + env(safe-area-inset-bottom, 0));
+  }
+}
+
+/* ── Auth "app-first": centra el card cuando no hay sesión ─────────── */
+body.auth-mode main#root {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0));
+}
+body.auth-mode main#root ap-auth-form {
+  display: block;
+  width: 100%;
+}
+/* En móviles pequeños dejamos el card pegado al borde superior si el
+   teclado ocupa espacio. */
+@media (max-width: 480px) {
+  body.auth-mode main#root {
+    align-items: flex-start;
+    padding-top: max(1.2rem, env(safe-area-inset-top, 0));
   }
 }
 

@@ -121,6 +121,12 @@
     { re: /^\/login$/,                       view: viewLogin,      pub: true },
   ];
 
+  function _toggleHeader(show) {
+    const h = document.getElementById('ap-header');
+    if (!h) return;
+    h.classList.toggle('hidden', !show);
+  }
+
   async function _render() {
     const { path, params } = parseHash();
     const route = routes.find(r => r.re.test(path));
@@ -128,6 +134,12 @@
 
     // Rutas privadas: si no hay sesión, al login.
     if (!route.pub && !S.getUser()) { navigate('#/login'); return; }
+
+    // Cualquier vista distinta del login (o login pero con sesión válida)
+    // muestra la cabecera y sale del "auth-mode" del body.
+    const enAuth = ['/login', '/verify', '/reset'].includes(path);
+    _toggleHeader(!enAuth && !!S.getUser());
+    document.body.classList.toggle('auth-mode', enAuth);
 
     const m = path.match(route.re) || [];
     try {
@@ -139,79 +151,67 @@
   }
   window.addEventListener('hashchange', _render);
 
+  // Si la sesión se pierde (logout / refresh rechazado), sacamos al usuario
+  // a login y ocultamos la cabecera al instante.
+  window.addEventListener('aprentix:session', (e) => {
+    if (!e.detail) {
+      _toggleHeader(false);
+      if (!['/login', '/verify', '/reset'].includes(parseHash().path)) {
+        navigate('#/login');
+      }
+    }
+  });
 
-  // ── Vista: login/registro ──────────────────────────────────────────
-  function viewLogin() {
-    root.innerHTML = html`
-      <div class="view-head"><h2>Aprentix — Estudio</h2></div>
-      <div class="tema-card" style="cursor:default">
-        <div style="display:flex; gap:.5rem; margin-bottom: 1rem">
-          <button class="btn btn-pri" id="tab-login">Iniciar sesión</button>
-          <button class="btn"          id="tab-reg">Crear cuenta</button>
-          <button class="btn"          id="tab-forgot" style="margin-left:auto">¿Olvidaste?</button>
-        </div>
-        <form id="form-login">
-          <input class="input" name="email"    type="email"    placeholder="Email"       required style="width:100%;margin:.3rem 0">
-          <input class="input" name="password" type="password" placeholder="Contraseña"  required style="width:100%;margin:.3rem 0">
-          <input class="input" name="totp"     type="text"     placeholder="Código 2FA (si tienes)" style="width:100%;margin:.3rem 0">
-          <button class="btn btn-pri" style="width:100%;margin-top:.6rem">Entrar</button>
-          <div class="muted small" id="err-login" style="color:#b83a3a;margin-top:.4rem"></div>
-        </form>
-        <form id="form-reg" hidden>
-          <input class="input" name="email"          type="email"    placeholder="Email"           required style="width:100%;margin:.3rem 0">
-          <input class="input" name="nombre_visible" type="text"     placeholder="Nombre a mostrar" required style="width:100%;margin:.3rem 0">
-          <input class="input" name="password"       type="password" placeholder="Contraseña (≥10 chars)" required style="width:100%;margin:.3rem 0">
-          <button class="btn btn-pri" style="width:100%;margin-top:.6rem">Crear cuenta</button>
-          <div class="muted small" id="err-reg" style="color:#b83a3a;margin-top:.4rem"></div>
-        </form>
-        <form id="form-forgot" hidden>
-          <input class="input" name="email" type="email" placeholder="Email" required style="width:100%;margin:.3rem 0">
-          <button class="btn btn-pri" style="width:100%;margin-top:.6rem">Recibir enlace de reset</button>
-          <div class="muted small" id="msg-forgot" style="margin-top:.4rem"></div>
-        </form>
-      </div>
-    `;
-    const $ = (s) => root.querySelector(s);
-    const show = (id) => {
-      $('#form-login').hidden  = id !== 'login';
-      $('#form-reg').hidden    = id !== 'reg';
-      $('#form-forgot').hidden = id !== 'forgot';
-    };
-    $('#tab-login').onclick  = () => show('login');
-    $('#tab-reg').onclick    = () => show('reg');
-    $('#tab-forgot').onclick = () => show('forgot');
 
-    $('#form-login').onsubmit = async (e) => {
-      e.preventDefault();
-      const f = new FormData(e.target);
+  // ── Vista: login/registro/recuperar ────────────────────────────────
+  //
+  // Monta el web-component <ap-auth-form> (light DOM). Todos los estilos
+  // los pone /shared/auth.css; aquí solo escuchamos los eventos.
+  function viewLogin(_, params) {
+    // La cabecera con XP/racha no tiene sentido si no hay sesión: la
+    // pantalla de login queda "app-first".
+    _toggleHeader(false);
+    document.body.classList.add('auth-mode');
+
+    const initial = params && params.get('mode') || 'login';
+    root.innerHTML = `<ap-auth-form mode="${esc(initial)}"></ap-auth-form>`;
+    const form = root.querySelector('ap-auth-form');
+    if (!form) { root.innerHTML = '<div class="empty">No se pudo cargar el formulario.</div>'; return; }
+
+    form.addEventListener('ap-auth-login', async (e) => {
+      const { email, password } = e.detail;
       try {
-        await S.login(f.get('email'), f.get('password'), f.get('totp') || null);
+        await S.login(email, password, null);
+        form.reset();
         navigate('#/');
       } catch (err) {
-        $('#err-login').textContent = _msgError(err.message);
+        form.showError(_msgError(err.message), 'login');
       }
-    };
-    $('#form-reg').onsubmit = async (e) => {
-      e.preventDefault();
-      const f = new FormData(e.target);
+    });
+
+    form.addEventListener('ap-auth-register', async (e) => {
+      const { email, password, nombre_visible } = e.detail;
       try {
-        const r = await S.registrar(f.get('email'), f.get('password'), f.get('nombre_visible'));
+        const r = await S.registrar(email, password, nombre_visible);
+        form.showInfo(r.mensaje || 'Revisa tu correo para verificar la cuenta.', 'register');
+        // Tras 2 s pasamos al login para que el usuario pueda entrar en
+        // cuanto verifique el email; el mensaje sigue visible en toast.
         showToast(r.mensaje || 'Revisa tu correo para verificar la cuenta.', 5000);
-        show('login');
+        setTimeout(() => form.setMode('login'), 1200);
       } catch (err) {
-        $('#err-reg').textContent = _msgError(err.message);
+        form.showError(_msgError(err.message), 'register');
       }
-    };
-    $('#form-forgot').onsubmit = async (e) => {
-      e.preventDefault();
-      const f = new FormData(e.target);
+    });
+
+    form.addEventListener('ap-auth-forgot', async (e) => {
+      const { email } = e.detail;
       try {
-        const r = await S.solicitarReset(f.get('email'));
-        $('#msg-forgot').textContent = r.mensaje || 'Si el email existe, recibirás un correo.';
+        const r = await S.solicitarReset(email);
+        form.showInfo(r.mensaje || 'Si el email existe, recibirás un correo con instrucciones.', 'forgot');
       } catch (err) {
-        $('#msg-forgot').textContent = _msgError(err.message);
+        form.showError(_msgError(err.message), 'forgot');
       }
-    };
+    });
   }
 
   function _msgError(code) {
@@ -913,6 +913,16 @@
   (async function main() {
     // Rehidratación silenciosa: si hay refresh, obtiene un access nuevo.
     await S.bootstrap();
+
+    // Sin sesión → siempre a la pantalla de login (esta es la home
+    // "app-first" que ve el usuario si aún no ha entrado nunca o si
+    // cerró sesión). Respetamos rutas públicas explícitas (verify / reset).
+    const { path } = parseHash();
+    const publicPaths = ['/login', '/verify', '/reset'];
+    if (!S.getUser() && !publicPaths.includes(path)) {
+      location.hash = '#/login';
+      return;
+    }
     if (!location.hash) location.hash = '#/';
     else _render();
   })();

@@ -3,8 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Aprentix · Estudio</title>
-  <base href="/estudio/">
+  <title>Aprentix</title>
 
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="application-name" content="Aprentix">
@@ -14,12 +13,16 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Aprentix">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="apple-touch-icon" href="/shared/pwa-icons/apple-touch-icon.png">
   <link rel="icon" type="image/svg+xml" href="/shared/pwa-icons/icon-any.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="/shared/pwa-icons/icon-any-192.png">
 
   <link rel="stylesheet" href="/shared/tokens.css">
   <link rel="stylesheet" href="/shared/base.css">
   <link rel="stylesheet" href="/shared/components.css">
+  <link rel="stylesheet" href="/shared/modal.css">
+  <link rel="stylesheet" href="/shared/auth.css">
   <link rel="stylesheet" href="/shared/header.css">
   <link rel="stylesheet" href="/estudio/style.css">
 
@@ -32,19 +35,49 @@
     })();
   </script>
 
+  <script>
+    // Registro del service worker en la raíz (scope "/"): cubre toda la
+    // navegación de la SPA como una sola PWA instalada.
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker
+          .register("/service-worker.js", { scope: "/" })
+          .then(function (reg) {
+            if (reg.waiting) reg.waiting.postMessage("SKIP_WAITING");
+            reg.addEventListener("updatefound", function () {
+              var nw = reg.installing;
+              if (!nw) return;
+              nw.addEventListener("statechange", function () {
+                if (nw.state === "installed" && navigator.serviceWorker.controller) {
+                  nw.postMessage("SKIP_WAITING");
+                }
+              });
+            });
+          })
+          .catch(function () { /* silencioso */ });
+      });
+    }
+  </script>
+
   <!-- Sesión + auth. Deben cargarse ANTES de app.js (no defer). -->
   <script src="/shared/auth/session.js"></script>
 
   <!-- Cabecera reescrita: <xp-ring>, <streak-flame>, sin brand/tabs. -->
   <script src="/shared/header.js" defer></script>
 
+  <!-- Componentes reutilizables (modal + formulario de auth solarpunk). -->
+  <script src="/shared/components/ap-modal.js" defer></script>
+  <script src="/shared/components/ap-auth-form.js" defer></script>
+
   <!-- Markdown para renderizar teoría. -->
   <script src="/shared/vendor/marked.min.js" defer></script>
   <script src="/shared/vendor/purify.min.js" defer></script>
 </head>
 <body>
-  <!-- Cabecera compartida: XP ring + racha + avatar. Sin brand. -->
-  <aprentix-header active="estudio"
+  <!-- Cabecera compartida: XP ring + racha + avatar. Sin brand.
+       Se oculta con .hidden desde app.js cuando no hay sesión, así la
+       pantalla de login queda "app-first" sin barra vacía encima. -->
+  <aprentix-header id="ap-header" active="estudio" class="hidden"
     nav-items='[
       {"id":"home","label":"Inicio","icon":"home","view":"home"},
       {"id":"estadisticas","label":"Estadísticas","icon":"chart","view":"estadisticas"},
@@ -52,7 +85,6 @@
     ]'></aprentix-header>
 
   <main id="root">
-    <!-- El router hash mete aquí la vista activa. -->
     <div class="loading">Cargando…</div>
   </main>
 
