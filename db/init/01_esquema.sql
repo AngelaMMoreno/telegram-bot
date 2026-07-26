@@ -285,11 +285,25 @@ CREATE TABLE usuario_oposiciones (
 -- Un único rol de conexión ('autenticador') usado por PostgREST; la identidad
 -- llega por JWT (claim 'sub'). Los roles funcionales de la app (admin,
 -- editor, tests, teoria) viven en la tabla 'roles', NO como roles Postgres.
+--
+-- Los roles son a nivel de CLÚSTER (no de BD), así que ya pueden existir
+-- si otra BD del mismo Postgres los creó antes (p.ej. main → aprentix
+-- crea web_anon/web_user/autenticador; al bootstrapear aprentix_desa esos
+-- roles ya están). Usamos bloques DO idempotentes para no reventar.
 
-CREATE ROLE web_anon     NOLOGIN;
-CREATE ROLE web_user     NOLOGIN;
-CREATE ROLE autenticador LOGIN;
-GRANT web_anon, web_user TO autenticador;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'web_anon') THEN
+        CREATE ROLE web_anon NOLOGIN;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'web_user') THEN
+        CREATE ROLE web_user NOLOGIN;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'autenticador') THEN
+        CREATE ROLE autenticador LOGIN;
+    END IF;
+END $$;
+
+GRANT web_anon, web_user TO autenticador;   -- GRANT es idempotente en Postgres.
 
 -- La contraseña real de 'autenticador' se fija más abajo desde app.auth_pass.
 
