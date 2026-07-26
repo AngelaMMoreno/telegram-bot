@@ -258,28 +258,28 @@ async function comprobarSesion() {
 // paneles); aquí solo llamamos a la RPC correspondiente.
 
 document.addEventListener('ap-auth-login', async (e) => {
-  const { username, password } = e.detail;
+  const { email, password } = e.detail;
   try {
-    const r = await rpc('login_web', { p_username: username, p_password: password });
+    const r = await rpc('login_web', { p_email: email, p_password: password });
     if (!r || !r.token) throw new Error('Respuesta sin token');
     setCookie(COOKIE_NAME, r.token, COOKIE_HORAS);
     await comprobarSesion();
   } catch (err) {
     const raw = String(err.message || err);
     const humano = raw.includes('credenciales_invalidas')
-      ? 'Usuario o contraseña incorrectos.'
+      ? 'Email o contraseña incorrectos.'
       : raw;
     showError('login-error', humano);
   }
 });
 
 document.addEventListener('ap-auth-register', async (e) => {
-  const { username, password, email } = e.detail;
+  const { email, username, password } = e.detail;
   try {
     const r = await rpc('registrar_web', {
+      p_email: email,
       p_username: username,
       p_password: password,
-      p_email: email || null,
     });
     if (!r || !r.token) throw new Error('Respuesta sin token');
     setCookie(COOKIE_NAME, r.token, COOKIE_HORAS);

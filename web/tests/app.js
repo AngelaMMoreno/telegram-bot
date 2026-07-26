@@ -303,8 +303,8 @@ function applySession() {
   }
 }
 
-async function login(username, password) {
-  const r = await rpc("login_web", { p_username: username, p_password: password });
+async function login(email, password) {
+  const r = await rpc("login_web", { p_email: email, p_password: password });
   state.jwt  = r.token;
   state.user = { user_id: r.user_id, username: r.username, puede_gestionar: r.puede_gestionar, roles: r.roles };
   persistSession();
@@ -315,10 +315,9 @@ async function login(username, password) {
 
 async function register(form) {
   const r = await rpc("registrar_web", {
+    p_email:    form.email,
     p_username: form.username,
     p_password: form.password,
-    p_email:    form.email || null,
-    p_chat_id:  null,
   });
   state.jwt  = r.token;
   state.user = { user_id: r.user_id, username: r.username, puede_gestionar: r.puede_gestionar, roles: r.roles };
@@ -425,15 +424,15 @@ function inicializarInputsTiempo() {
  * llamamos a las funciones login() / register() que ya existen.
  */
 on("ap-auth-form", "ap-auth-login", async e => {
-  const { username, password } = e.detail;
-  try { await login(username, password); }
+  const { email, password } = e.detail;
+  try { await login(email, password); }
   catch (err) { toast(err.message); }
 });
 
 on("ap-auth-form", "ap-auth-register", async e => {
-  const { username, password, email } = e.detail;
+  const { email, username, password } = e.detail;
   try {
-    await register({ username, password, email });
+    await register({ email, username, password });
   } catch (err) { toast(err.message); }
 });
 

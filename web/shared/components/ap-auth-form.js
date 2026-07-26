@@ -3,7 +3,7 @@
  *
  * Reemplaza el HTML inline que estaba duplicado entre landing y tests.
  * Usa light DOM para que shared/auth.css controle el aspecto y los IDs
- * globales (`login-user`, `reg-pass`, ...) sigan siendo accesibles desde
+ * globales (`login-email`, `reg-pass`, ...) sigan siendo accesibles desde
  * el resto de la SPA si algún flujo antiguo los usa.
  *
  * Uso:
@@ -12,8 +12,8 @@
  *                 error-register-id="reg-error"></ap-auth-form>
  *
  * Eventos:
- *   - 'ap-auth-login'   detail: { username, password }
- *   - 'ap-auth-register' detail: { username, password, email }
+ *   - 'ap-auth-login'   detail: { email, password }
+ *   - 'ap-auth-register' detail: { email, username, password }
  *
  * Métodos:
  *   - showError(msg, kind = 'login' | 'register')
@@ -40,8 +40,9 @@ class ApAuthForm extends HTMLElement {
 
         <form class="auth-panel" data-panel="login" autocomplete="on">
           <h2 class="auth-panel-title">Iniciar sesión</h2>
-          <label>Usuario
-            <input id="login-user" name="username" autocomplete="username" required>
+          <label>Email
+            <input id="login-email" name="email" type="email"
+                   autocomplete="email" required>
           </label>
           <label>Contraseña
             <input id="login-pass" name="password" type="password"
@@ -57,11 +58,13 @@ class ApAuthForm extends HTMLElement {
 
         <form class="auth-panel" data-panel="register" autocomplete="off">
           <h2 class="auth-panel-title">Crear cuenta</h2>
-          <label>Usuario
-            <input id="reg-user" name="username" autocomplete="username" minlength="3" required>
+          <label>Email
+            <input id="reg-email" name="email" type="email"
+                   autocomplete="email" required>
           </label>
-          <label>Email (opcional)
-            <input id="reg-email" name="email" type="email" autocomplete="email">
+          <label>Usuario
+            <input id="reg-user" name="username" autocomplete="username"
+                   minlength="3" pattern="[A-Za-z0-9._-]+" required>
           </label>
           <label>Contraseña
             <input id="reg-pass" name="password" type="password"
@@ -109,24 +112,24 @@ class ApAuthForm extends HTMLElement {
 
     this.querySelector('[data-panel="login"]').addEventListener('submit', (e) => {
       e.preventDefault();
-      const username = this.querySelector('#login-user').value.trim();
+      const email    = this.querySelector('#login-email').value.trim();
       const password = this.querySelector('#login-pass').value;
       this.dispatchEvent(new CustomEvent('ap-auth-login', {
-        bubbles: true, detail: { username, password },
+        bubbles: true, detail: { email, password },
       }));
     });
 
     this.querySelector('[data-panel="register"]').addEventListener('submit', (e) => {
       e.preventDefault();
+      const email    = this.querySelector('#reg-email').value.trim();
       const username = this.querySelector('#reg-user').value.trim();
-      const email    = this.querySelector('#reg-email').value.trim() || null;
       const p1       = this.querySelector('#reg-pass').value;
       const p2       = this.querySelector('#reg-pass2').value;
       if (p1 !== p2) return this.showError('Las contraseñas no coinciden', 'register');
       const { nivel } = calcularFortaleza(p1);
       if (nivel < 2) return this.showError('Elige una contraseña más fuerte', 'register');
       this.dispatchEvent(new CustomEvent('ap-auth-register', {
-        bubbles: true, detail: { username, password: p1, email },
+        bubbles: true, detail: { email, username, password: p1 },
       }));
     });
   }
