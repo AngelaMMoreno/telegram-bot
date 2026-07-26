@@ -1,0 +1,70 @@
+-- =============================================================================
+-- bootstrap_aprentix_desa.sql
+-- Crea la BD `aprentix_desa` en el mismo Postgres que ya sirve `aprentix`
+-- (main) y aplica el esquema del rediseño encima. Pensado para pegarse
+-- una sola vez en pgAdmin.
+--
+-- Cómo usarlo:
+--
+-- 1. Conéctate a pgAdmin como `aprentix` y elige la BD `postgres`
+--    (o `aprentix`, cualquiera menos la que vas a crear).
+--
+-- 2. Ejecuta SOLO este bloque:
+--
+--        CREATE DATABASE aprentix_desa OWNER aprentix;
+--
+--    (Nota: `CREATE DATABASE` no se puede envolver en una transacción y
+--    tiene que ir en su propia ejecución. Por eso vive aquí en un
+--    comentario y NO dentro del script principal.)
+--
+-- 3. Cambia la conexión de pgAdmin a la BD `aprentix_desa` recién creada.
+--
+-- 4. RELLENA los tres valores de más abajo con los que YA usas en el .env
+--    del stack `core` (tienes que copiarlos tal cual — el rol
+--    `autenticador` ya existe globalmente, sólo actualizamos su password
+--    con el mismo valor para que no cambie nada):
+--
+--        SET app.jwt_secret  = '…';
+--        SET app.auth_pass   = '…';
+--        SET app.admin_pass  = '…';   -- mínimo 10 caracteres
+--
+--    (`SET` sin `LOCAL` deja los valores para el resto de la sesión pgAdmin.)
+--
+-- 5. Abre `db/init/01_esquema.sql` y pega TODO su contenido a continuación
+--    de los SET. Ejecuta. Debería terminar sin errores dejando:
+--        * 32 tablas creadas (usuarios, sesiones, temas, secciones, …)
+--        * 75+ funciones RPC
+--        * Seed de roles/permisos/config y del usuario admin
+--          `admin@aprentix.local` con la contraseña que pusiste en
+--          app.admin_pass.
+--
+-- 6. Verifica con:
+--        SELECT count(*) FROM usuarios;              -- 1 (el admin)
+--        SELECT id FROM roles;                       -- admin/editor/tests/teoria
+--        SELECT count(*) FROM permisos;              -- 16
+--        SELECT clave FROM config ORDER BY clave;    -- password_min_len, jwt_iss, …
+--
+-- 7. Para activar el rediseño en las URLs de producción:
+--        En Dokploy, en el stack `core`: añade la variable
+--            POSTGRES_DB=aprentix_desa
+--        (mantén POSTGRES_USER=aprentix). Redeploy.
+--        Repite en los stacks `app`, `notificador` y `backups`.
+--        Los contenedores se reinician apuntando a la BD nueva; el
+--        contenedor `db` sigue vivo y sirviendo AMBAS BDs.
+--
+-- 8. Rollback: quita `POSTGRES_DB` de los .env (o pon `aprentix`) y
+--    redeploy los 4 stacks. La BD `aprentix_desa` se queda ahí por si
+--    quieres re-probar más tarde.
+--
+-- ------------------------------------------------------------------
+-- Comprobaciones útiles antes de pegar 01_esquema.sql:
+-- ------------------------------------------------------------------
+
+-- La BD debe ser aprentix_desa (no aprentix). Si esto sale 'aprentix',
+-- ¡PARA! Estás a punto de reescribir la BD de producción.
+SELECT current_database();
+
+-- Confirma que los SET están vivos en la sesión actual.
+SELECT current_setting('app.jwt_secret', true) IS NOT NULL  AS jwt_secret_ok,
+       current_setting('app.auth_pass',  true) IS NOT NULL  AS auth_pass_ok,
+       current_setting('app.admin_pass', true) IS NOT NULL  AS admin_pass_ok;
