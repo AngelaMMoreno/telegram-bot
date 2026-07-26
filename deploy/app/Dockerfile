@@ -43,6 +43,7 @@ COPY teoria/app.py .
 COPY web/landing              /srv
 COPY web/tests                /srv/tests
 COPY web/teoria               ./site
+COPY web/estudio              /srv/estudio
 COPY web/service-worker.js    /srv/service-worker.js
 
 # Una sola copia física de web/shared. El Caddyfile intercepta

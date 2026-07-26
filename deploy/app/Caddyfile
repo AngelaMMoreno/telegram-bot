@@ -27,6 +27,8 @@
     redir @tests_no_slash /tests/ 301
     @teoria_no_slash path /teoria
     redir @teoria_no_slash /teoria/ 301
+    @estudio_no_slash path /estudio
+    redir @estudio_no_slash /estudio/ 301
 
     # ── Assets compartidos: una sola copia física en /srv/shared ─────
     # Los tres SPAs los piden con paths diferentes (/shared/, /tests/shared/,
@@ -37,6 +39,10 @@
         file_server
     }
     handle_path /teoria/shared/* {
+        root * /srv/shared
+        file_server
+    }
+    handle_path /estudio/shared/* {
         root * /srv/shared
         file_server
     }
@@ -62,6 +68,16 @@
     # ── App de tests (SPA estática) ───────────────────────────────────
     handle_path /tests/* {
         root * /srv/tests
+        try_files {path} /index.html
+        file_server
+    }
+
+    # ── SPA nueva /estudio (rediseño). Usa <base href="/estudio/"> y hace
+    # sus RPCs contra /api/rpc/… (ruta absoluta), así que aquí sólo hay
+    # que servir estáticos. No necesita handle_path /estudio/api/* porque
+    # el fetch va directo a /api/*.
+    handle_path /estudio/* {
+        root * /srv/estudio
         try_files {path} /index.html
         file_server
     }
