@@ -596,3 +596,64 @@ body:not(.puede-gestionar):not(.es-admin) .sheet-row.admin-row {
 
 /* Cuando hay un sheet abierto, congela el scroll del body. */
 body.sheet-open { overflow: hidden; }
+
+
+/* =========================================================================
+ * REDISEÑO — layout nuevo de la cabecera (`/estudio/`).
+ * Sustituye al brand + tabs Tests/Teoría de las apps viejas por:
+ *   .hdr-left    → <xp-ring>
+ *   .hdr-center  → <streak-flame>
+ *   .hdr-right   → botón avatar (abre sheet de cuenta)
+ * ========================================================================= */
+
+.topbar .hdr-left,
+.topbar .hdr-center,
+.topbar .hdr-right {
+  display: flex; align-items: center;
+}
+.topbar .hdr-left    { justify-content: flex-start; }
+.topbar .hdr-center  { flex: 1; justify-content: center; }
+.topbar .hdr-right   { justify-content: flex-end; }
+
+/* XP ring: contenedor mínimo — el SVG ya trae su tamaño y transición. */
+xp-ring { display: inline-flex; align-items: center; }
+
+/* Fueguito de racha. */
+streak-flame { display: inline-flex; align-items: center; }
+.flame {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  font-weight: 700; font-size: .95em;
+}
+.flame.on  { color: var(--coral-d, #b0432b); }
+.flame.off { color: var(--muted); opacity: .7; }
+.flame .flame-emoji { font-size: 1.1em; line-height: 1; }
+.flame .flame-days  { min-width: 1ch; text-align: center; }
+
+/* Botón avatar (versión rediseñada — sólo la inicial). */
+.topbar .user-btn {
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  border-radius: 999px;
+  padding: 3px;
+  cursor: pointer;
+  transition: background .12s ease, transform .12s ease;
+}
+.topbar .user-btn:hover { background: var(--accent-soft); transform: translateY(-1px); }
+.topbar .user-btn .avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), #4a6b16);
+  color: white;
+  font-weight: 800;
+}
+.topbar .user-btn .user-name { display: none; }
+
+/* En la Home nueva no queremos overshoot de padding en desktop. */
+@media (min-width: 900px) {
+  .topbar { padding: 0 1.25rem; gap: 1rem; }
+}

@@ -1,0 +1,254 @@
+/* Aprentix · SPA /estudio ─ estilos mínimos (MVP).
+ * Se apoya en tokens.css / base.css / components.css de shared. Aquí sólo
+ * lo específico del árbol Oposición → Tema → Módulo → Sección y flujo test.
+ */
+
+main#root {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1rem;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0));
+}
+
+@media (max-width: 900px) {
+  main#root {
+    /* Deja hueco para el bottom-nav de la cabecera móvil. */
+    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0));
+  }
+}
+
+.loading, .empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 3rem 1rem;
+}
+
+/* ── Cabecera de vista ──────────────────────────────────────────────── */
+.view-head {
+  display: flex; align-items: center; gap: .75rem;
+  margin-bottom: 1rem;
+}
+.view-head .breadcrumbs {
+  color: var(--muted);
+  font-size: .9em;
+}
+.view-head .breadcrumbs a { color: inherit; text-decoration: none; }
+.view-head .breadcrumbs a:hover { text-decoration: underline; }
+
+/* ── Selector de oposición actual ──────────────────────────────────── */
+.oposicion-picker {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .6rem 1rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  cursor: pointer;
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+.oposicion-picker:hover { background: var(--accent-soft); }
+.oposicion-picker .caret { margin-left: auto; opacity: .5; }
+
+/* ── Tarjeta de tema (lista vertical) ──────────────────────────────── */
+.tema-card {
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--card-border, var(--glass-border));
+  border-radius: 14px;
+  padding: 1rem 1.2rem;
+  margin-bottom: .8rem;
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.tema-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.06); }
+
+.tema-card .tema-head {
+  display: flex; align-items: baseline; gap: .5rem;
+}
+.tema-card .tema-titulo { font-weight: 700; font-size: 1.05em; flex: 1; }
+.tema-card .tema-pct    { color: var(--accent); font-weight: 700; }
+
+.tema-card .barra {
+  height: 8px; border-radius: 4px;
+  background: var(--glass-border);
+  margin-top: .5rem;
+  overflow: hidden;
+}
+.tema-card .barra > i {
+  display: block; height: 100%;
+  background: linear-gradient(90deg, #6B8E23, #9db94a);
+  transition: width .3s ease;
+}
+
+.tema-card .modulos {
+  margin-top: .6rem;
+  color: var(--muted);
+  font-size: .9em;
+}
+
+/* ── Vista tema (módulos + esquema) ────────────────────────────────── */
+.modulo-row {
+  padding: .8rem 1rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  margin-bottom: .5rem;
+  cursor: pointer;
+  display: flex; align-items: center; gap: .8rem;
+}
+.modulo-row:hover { background: var(--accent-soft); }
+.modulo-row .modulo-titulo { flex: 1; font-weight: 600; }
+.modulo-row .modulo-progreso { color: var(--muted); font-size: .9em; }
+
+/* ── Vista módulo (secciones) ──────────────────────────────────────── */
+.seccion-item {
+  padding: .8rem 1rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  margin-bottom: .5rem;
+  display: flex; align-items: center; gap: .8rem;
+}
+.seccion-item .seccion-titulo { flex: 1; font-weight: 600; }
+.seccion-item .seccion-badge {
+  padding: .15rem .55rem; border-radius: 999px;
+  font-size: .75em; font-weight: 700;
+  background: var(--glass-border);
+}
+.seccion-item.completada .seccion-badge { background: #6B8E23; color: white; }
+.seccion-item .btn-mini {
+  padding: .3rem .7rem; font-size: .85em;
+}
+
+/* ── Botón "Repasar" destacado ─────────────────────────────────────── */
+.btn-repasar {
+  display: block;
+  width: 100%;
+  padding: 1rem;
+  background: linear-gradient(135deg, #6B8E23, #4a6b16);
+  color: white;
+  border: none;
+  border-radius: 14px;
+  font-size: 1.1em;
+  font-weight: 700;
+  cursor: pointer;
+  margin: 1rem 0;
+  box-shadow: 0 4px 12px rgba(107,142,35,.3);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.btn-repasar:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(107,142,35,.4);
+}
+
+/* ── Vista test ────────────────────────────────────────────────────── */
+.test-progreso {
+  display: flex; align-items: center; gap: .6rem;
+  margin-bottom: 1rem;
+  color: var(--muted);
+}
+.test-progreso .barra {
+  flex: 1; height: 6px; border-radius: 3px;
+  background: var(--glass-border);
+  overflow: hidden;
+}
+.test-progreso .barra > i {
+  display: block; height: 100%;
+  background: var(--accent);
+  transition: width .3s ease;
+}
+
+.pregunta {
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--card-border, var(--glass-border));
+  border-radius: 14px;
+  padding: 1.2rem;
+  margin-bottom: 1rem;
+}
+.pregunta .enunciado {
+  font-size: 1.05em; font-weight: 600;
+  margin-bottom: 1rem;
+  white-space: pre-wrap;
+}
+.pregunta .opciones {
+  display: flex; flex-direction: column; gap: .4rem;
+}
+.opcion {
+  padding: .7rem 1rem;
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  cursor: pointer;
+  background: var(--glass-bg);
+  text-align: left;
+  transition: background .12s ease, border-color .12s ease;
+}
+.opcion:hover:not([disabled]) { background: var(--accent-soft); }
+.opcion.elegida  { border-color: var(--accent); background: var(--accent-soft); }
+.opcion.correcta { border-color: #4a8f2a; background: #d4edc7; }
+.opcion.mala     { border-color: #b83a3a; background: #f5cccc; }
+.opcion[disabled] { cursor: default; }
+
+.explicacion {
+  margin-top: .8rem;
+  padding: .8rem 1rem;
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  font-size: .95em;
+}
+
+/* ── Teoría (markdown) ─────────────────────────────────────────────── */
+.teoria-body {
+  line-height: 1.6;
+  padding: 1rem;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--card-border, var(--glass-border));
+  border-radius: 14px;
+}
+.teoria-body h1, .teoria-body h2, .teoria-body h3 {
+  margin-top: 1.5em; margin-bottom: .4em;
+}
+.teoria-body pre {
+  background: var(--code-bg, #f6f6f6);
+  padding: .8rem; border-radius: 6px;
+  overflow-x: auto;
+}
+.teoria-body code {
+  font-family: ui-monospace, monospace;
+  font-size: .95em;
+}
+
+.teoria-cta {
+  display: flex; gap: .5rem; flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+/* ── Toast ─────────────────────────────────────────────────────────── */
+.toast {
+  position: fixed; bottom: calc(80px + env(safe-area-inset-bottom, 0)); left: 50%;
+  transform: translateX(-50%);
+  background: var(--accent);
+  color: white;
+  padding: .8rem 1.2rem;
+  border-radius: 999px;
+  font-weight: 600;
+  z-index: 100;
+  transition: opacity .3s ease;
+  max-width: 90vw;
+}
+.toast.hidden { opacity: 0; pointer-events: none; }
+
+/* ── Resultados del test ───────────────────────────────────────────── */
+.resultado-card {
+  text-align: center;
+  padding: 2rem;
+  background: var(--card-bg, #fff);
+  border-radius: 14px;
+  margin-bottom: 1rem;
+}
+.resultado-card .nota {
+  font-size: 3em; font-weight: 900;
+  margin: .5rem 0;
+}
+.resultado-card .nota.pasa { color: #4a8f2a; }
+.resultado-card .nota.falla { color: #b83a3a; }
+.resultado-card .subt { color: var(--muted); }
