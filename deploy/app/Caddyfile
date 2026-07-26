@@ -71,13 +71,20 @@
 
     # Las rutas anteriores no mantienen implementaciones duplicadas. Los
     # bloques `handle` aseguran que /teoria/api/* se resuelva antes.
+    #
+    # Ojo: `redir <to> <code>` sin matcher no funciona aquí porque Caddy
+    # interpreta el primer argumento con `/` inicial como *matcher* de path
+    # y trata el 3xx como URL de destino → genera Location: "308", status
+    # 302 y matcher inservible /estudio/. Efecto observado: aprentix.es
+    # devuelve 200 con cuerpo vacío (pantalla en blanco). El `*` explícito
+    # consume la posición del matcher y deja que 308 sea el código.
     handle /tests/* {
-        redir /estudio/ 308
+        redir * /estudio/ 308
     }
     handle /teoria/* {
-        redir /estudio/ 308
+        redir * /estudio/ 308
     }
     handle / {
-        redir /estudio/ 308
+        redir * /estudio/ 308
     }
 }
