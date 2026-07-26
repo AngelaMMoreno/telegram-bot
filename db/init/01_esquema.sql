@@ -2536,13 +2536,31 @@ BEGIN
     v_drop := CASE WHEN p_keep = 'a' THEN p_b_id ELSE p_a_id END;
 
     -- Mueve marcadores y repasos que apunten a la pregunta que se elimina.
-    UPDATE marcadores SET pregunta_id = v_keep
-      WHERE pregunta_id = v_drop AND pregunta_id IS NOT NULL
-     ON CONFLICT DO NOTHING;
+    -- `ON CONFLICT` sólo aplica a INSERT: para evitar chocar con la PK
+    -- (usuario_id, tipo, pregunta_id) mueve sólo las filas del usuario que
+    -- NO tenga ya un marcador del mismo tipo apuntando a v_keep, y borra
+    -- las duplicadas al final. Mismo patrón para `repasos` (PK usuario_id,
+    -- pregunta_id). `respuestas` no tiene unique compuesta, así que su
+    -- UPDATE no puede fallar y va directo.
+    UPDATE marcadores m SET pregunta_id = v_keep
+     WHERE m.pregunta_id = v_drop
+       AND NOT EXISTS (
+           SELECT 1 FROM marcadores m2
+            WHERE m2.usuario_id = m.usuario_id
+              AND m2.tipo       = m.tipo
+              AND m2.pregunta_id = v_keep
+       );
     DELETE FROM marcadores WHERE pregunta_id = v_drop;
-    UPDATE repasos SET pregunta_id = v_keep WHERE pregunta_id = v_drop
-     ON CONFLICT DO NOTHING;
+
+    UPDATE repasos r SET pregunta_id = v_keep
+     WHERE r.pregunta_id = v_drop
+       AND NOT EXISTS (
+           SELECT 1 FROM repasos r2
+            WHERE r2.usuario_id  = r.usuario_id
+              AND r2.pregunta_id = v_keep
+       );
     DELETE FROM repasos WHERE pregunta_id = v_drop;
+
     UPDATE respuestas SET pregunta_id = v_keep WHERE pregunta_id = v_drop;
 
     -- Borra la pregunta descartada (los intentos siguen apuntando a la
