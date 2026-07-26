@@ -17,8 +17,11 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: aprentix
-      POSTGRES_USER: aprentix
+      # Nombre de la BD: default 'aprentix' (producción). En la rama de
+      # rediseño se sobrescribe con POSTGRES_DB=aprentix_desa en el .env
+      # del stack para no chocar con producción cuando ambos convivan.
+      POSTGRES_DB: ${POSTGRES_DB:-aprentix}
+      POSTGRES_USER: ${POSTGRES_USER:-aprentix}
       POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS requerida}
     command:
       - postgres
@@ -73,7 +76,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      PGRST_DB_URI: postgres://autenticador@db:5432/aprentix
+      PGRST_DB_URI: postgres://autenticador@db:5432/${POSTGRES_DB:-aprentix}
       PGPASSWORD: ${AUTH_PASS:?AUTH_PASS requerida}
       PGRST_DB_ANON_ROLE: web_anon
       PGRST_DB_SCHEMAS: public
@@ -88,6 +91,15 @@ services:
       - "traefik.http.routers.api.tls=true"
       - "traefik.http.routers.api.tls.certresolver=letsencrypt"
       - "traefik.http.services.api.loadbalancer.server.port=3000"
+      # Rate limit global (Traefik middleware in-memory, sin persistir IPs).
+      # Protege login/refresh/registro sin necesidad de tabla histórica de
+      # intentos: el contador vive en memoria del proxy y se pierde en el
+      # reinicio. Suficiente para bloquear brute-force. El propio backend
+      # además bloquea la cuenta a los 5 fallos (usuarios.bloqueado_hasta).
+      - "traefik.http.middlewares.api-rl.ratelimit.average=100"
+      - "traefik.http.middlewares.api-rl.ratelimit.burst=50"
+      - "traefik.http.middlewares.api-rl.ratelimit.period=1m"
+      - "traefik.http.routers.api.middlewares=api-rl"
 
   embeddings:
     build: ../../embeddings
@@ -95,11 +107,34 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://aprentix@db:5432/aprentix
+      DATABASE_URL: postgres://${POSTGRES_USER:-aprentix}@db:5432/${POSTGRES_DB:-aprentix}
       PGPASSWORD: ${DB_PASS}
       EMB_LOTE: "32"
     volumes:
       - /mnt/data/embeddings_cache:/cache
+    restart: unless-stopped
+    networks: [dokploy-network]
+
+  # Servicio de emails transaccionales (verificación de email, reset de
+  # contraseña). Escucha `LISTEN email_enviar` sobre Postgres y envía por
+  # SMTP genérico configurable con SMTP_HOST/PORT/USER/PASS/FROM/TLS.
+  # En arranque sin SMTP puedes fijar DEV_LOG_ONLY=1: los correos se
+  # imprimen en los logs en lugar de enviarse.
+  mailer:
+    build: ../../mailer
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-aprentix}@db:5432/${POSTGRES_DB:-aprentix}
+      PGPASSWORD:  ${DB_PASS}
+      SMTP_HOST:   ${SMTP_HOST:-}
+      SMTP_PORT:   ${SMTP_PORT:-587}
+      SMTP_USER:   ${SMTP_USER:-}
+      SMTP_PASS:   ${SMTP_PASS:-}
+      SMTP_FROM:   ${SMTP_FROM:-Aprentix <hola@aprentix.es>}
+      SMTP_TLS:    ${SMTP_TLS:-starttls}
+      DEV_LOG_ONLY: ${MAILER_DEV_LOG_ONLY:-0}
     restart: unless-stopped
     networks: [dokploy-network]
 
