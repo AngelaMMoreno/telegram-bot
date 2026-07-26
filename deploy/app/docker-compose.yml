@@ -1,9 +1,10 @@
-# Stack APP — todo el frontend + backend de teoría en un solo contenedor.
+# Stack APP — SPA rediseñada /estudio/ + backend FastAPI de contenidos
+# en un solo contenedor.
 #
 # Es el único modo soportado ya. Los stacks segmentados de landing/, web/
-# y teoria/ se retiraron al unificar el frontend bajo web/: hoy hay un
-# único Dockerfile que empaqueta las tres SPAs y el backend de teoría en
-# una sola imagen.
+# y teoria/ se retiraron al unificar el frontend bajo /estudio/: hoy hay
+# un único Dockerfile que empaqueta la SPA y el backend en una sola
+# imagen.
 #
 # Habla con PostgREST (stack core) por http://postgrest:3000 en la red
 # externa dokploy-network.

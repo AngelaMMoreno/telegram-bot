@@ -19,7 +19,7 @@
  *   en el siguiente refresh.
  * ==========================================================================*/
 
-const CACHE_VERSION = "aprentix-v18";
+const CACHE_VERSION = "aprentix-v19";
 const SHELL_CACHE   = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -112,6 +112,14 @@ self.addEventListener("fetch", (event) => {
 
   // Navegaciones: network-first con fallback a un HTML cacheado.
   if (isNavigation(req)) {
+    // La raíz siempre va a /estudio/ — sin pasar por caché. Blindaje contra
+    // SWs viejos que precachearon la landing borrada y que, en el primer
+    // load tras actualizar, servirían HTML que carga scripts inexistentes
+    // (síntoma: aprentix.es en blanco).
+    if (url.pathname === "/" || url.pathname === "/index.html") {
+      event.respondWith(Response.redirect(urlAt("/estudio/"), 308));
+      return;
+    }
     event.respondWith(
       (async () => {
         try {

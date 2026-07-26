@@ -1,9 +1,9 @@
 /*
  * Aprentix · design tokens compartidos (Solarpunk).
  *
- * Único origen para paleta, tipografía y radios. Se incluye en las tres
- * apps (landing, tests, teoría) para que cualquier cambio de marca se
- * haga en un solo sitio.
+ * Único origen para paleta, tipografía y radios. Lo consume la SPA
+ * /estudio/ y el header compartido, para que cualquier cambio de marca
+ * se haga en un solo sitio.
  *
  * Paleta de día:  "Un día soleado en el invernadero". Marfil luminoso
  *                 con toques de miel, coral melocotón, verde salvia,
@@ -12,9 +12,7 @@
  *                 luces LED bajo consumo: cian aguamarina, luciérnaga,
  *                 magenta de setas y verde neón musgo.
  *
- * Los nombres canónicos son --txt/--txt-soft/--bg-panel/--bg-alt. Los
- * alias --text/--sub/--card/--card-alt existen porque el CSS histórico
- * de landing y teoría todavía los usa.
+ * Los nombres canónicos son --txt/--txt-soft/--bg-panel/--bg-alt.
  */
 
 :root {
@@ -109,12 +107,6 @@
     radial-gradient(55% 45% at 88% 92%, rgba(242, 126, 98, 0.16) 0%, transparent 60%),
     radial-gradient(55% 40% at 6% 96%,  rgba(155, 197, 61, 0.20) 0%, transparent 60%),
     radial-gradient(60% 50% at 50% 55%, rgba(183, 155, 217, 0.10) 0%, transparent 65%);
-
-  /* Alias legado (landing y teoría lo usan hoy) */
-  --text: var(--txt);
-  --sub: var(--txt-soft);
-  --card: var(--bg-panel);
-  --card-alt: var(--bg-alt);
 }
 
 [data-theme="dark"] {

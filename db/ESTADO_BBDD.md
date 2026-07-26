@@ -560,12 +560,12 @@ Auxiliares invisibles al cliente pero clave para el resto del sistema.
 
 ### 4.11 Teoría (vistas)
 
-El backend Python del servicio de teoría se encarga del disco (listar,
+El backend Python del servicio de contenidos se encarga del disco (listar,
 subir, mover, borrar). Estas RPCs solo tocan `ficheros_vistas` y la
-lógica de permisos que consume la landing.
+lógica de permisos que consume la SPA `/estudio/`.
 
 - **`puede_ver_teoria() → boolean`** — atajo `tiene_permiso('teoria.acceder') OR es_admin()`.
-  La landing lo llama tras el login para decidir si mostrar la tarjeta
+  La SPA lo llama tras el login para decidir si mostrar la sección
   de teoría.
 - **`marcar_fichero_visto(ruta) → void`** — upsert en `ficheros_vistas`.
 - **`marcar_fichero_no_visto(ruta) → void`** — quita la marca.

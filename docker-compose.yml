@@ -5,13 +5,13 @@
 # separado. Aquí incluimos los composes que interesen para poder
 # levantar todo el stack de una tacada.
 #
-# Modo único (unificado). Un solo contenedor con Caddy + uvicorn
-# sirve landing + tests + teoría desde web/. Se despliega desde deploy/app/.
-# Es más simple: menos partes móviles y un solo redeploy tras cualquier
-# cambio de frontend.
+# Modo único (unificado). Un solo contenedor con Caddy + uvicorn sirve la
+# SPA rediseñada /estudio/ y la API de contenidos, todo desde web/. Se
+# despliega desde deploy/app/. Es más simple: menos partes móviles y un
+# solo redeploy tras cualquier cambio de frontend.
 #
-# El modo segmentado (un stack por SPA) se retiró junto con las carpetas
-# landing/ y teoria/site/ al unificar el frontend bajo web/.
+# El modo segmentado (un stack por SPA) y las SPAs legacy landing/tests/
+# teoría se retiraron al unificar el frontend bajo /estudio/.
 #
 # Requiere Docker Compose 2.20 o superior (por `include:`).
 
