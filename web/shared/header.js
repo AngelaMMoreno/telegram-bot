@@ -1,228 +1,153 @@
 /*
- * <aprentix-header active="tests|teoria" [nav-items='[...]'] [more-items='[...]']>
+ * Aprentix · cabecera compartida (rediseño 2026-07).
  *
- * Custom element que pinta el chasis común de las apps de tests y teoría.
- * En light DOM (sin Shadow) para que el CSS compartido y los
- * `document.getElementById(...)` de cada app sigan funcionando con IDs de
- * siempre:
- *   #topbar #btn-user-menu #user-avatar #user-name
- *   #btn-config #btn-logout #nav-teoria
+ * Reescrita para el nuevo modelo. Diferencias clave respecto al legado:
+ *   - Sin brand (ni logo ni "Aprentix"). El home ya no es un botón.
+ *   - Sin tabs Tests/Teoría: la app es única (`/estudio/`).
+ *   - Izquierda: <xp-ring> (nivel + progreso XP como circunferencia).
+ *   - Centro:   <streak-flame> (fueguito con días de racha).
+ *   - Derecha:  <user-chip> (avatar). Abre el sheet de cuenta.
+ *   - Bottom-nav: Inicio · Estadísticas · Tablón.
+ *   - Sheet del avatar: Cambiar oposición · Mi cuenta · Panel admin · Salir.
  *
- * Además renderiza:
- *   - Una barra inferior de navegación (solo móvil) con hasta 5 slots
- *     descritos por el atributo JSON `nav-items`.
- *   - Un sheet del avatar con switch Tests⇄Teoría + Configuración +
- *     Cerrar sesión. Es la única vía para acceder a config/logout.
- *   - Un sheet "Más" con items secundarios (los admin/gestión salen
- *     resaltados) descritos por el atributo JSON `more-items`.
+ * `<aprentix-header active="estudio" nav-items='[…]'>` es el único tag
+ * que la SPA usa. Al conectar dispara `_bootstrap()` que:
+ *   1) Pinta el chasis en light DOM.
+ *   2) Registra listeners (avatar → sheet, sheet → callbacks, bottom-nav).
+ *   3) Rellena XP/racha desde `AprentixSession.rpc('mi_gamificacion')`.
  *
- * Formato de cada item (nav-items y more-items):
- *   { "id": "…", "label": "…", "icon": "home|tests|search|star|target|
- *      trophy|more|book|folder|upload|tag|users|chart|book-mark|logout|
- *      gear|sun|moon|monitor",
- *     // acción — una de estas:
- *     "view":  "home",                 → dispara click con data-view=home
- *     "href":  "/tests/?atajo=retos",  → enlace
- *     "event": "buscar",               → dispara CustomEvent aprentix:nav
- *                                        con detail = { id: "buscar" }
- *     "more":  true,                   → abre el sheet "Más"
- *     // visibilidad opcional:
- *     "gestion": true  → solo si body.puede-gestionar
- *     "admin":   true  → solo si body.es-admin
- *   }
- *
- * Atributos:
- *   active         "tests" | "teoria" (pestaña marcada como activa).
- *   nav-items      JSON del bottom-nav móvil.
- *   more-items     JSON del sheet secundario.
- *   admin-items    JSON del sheet de administración. Solo visible para
- *                  usuarios con permiso de gestión o admin. Es común a
- *                  todas las apps: cada item declara su acción (view
- *                  local o href cross-app tipo /tests/?atajo=…).
- *   teoria-hidden  Oculta el link a Teoría hasta saber si el usuario
- *                  tiene el permiso (lo levanta el app.js).
- *   start-hidden   Empieza oculto (el app.js lo revela tras login).
+ * La SPA escucha `aprentix:nav` (CustomEvent con detail.id) para navegar.
  */
+'use strict';
+
 (function () {
-  'use strict';
+  if (customElements.get('aprentix-header')) return;
 
-  const LANDING_URL = '/';
-  const TESTS_URL   = '/tests/';
-  const TEORIA_URL  = '/teoria/';
+  const S = window.AprentixSession;
 
-  // Diccionario de iconos SVG. Se usan en bottom-nav y en el user sheet.
   const ICONS = {
     home:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-9 9 9"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>',
-    tests:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h6M8 12h8M8 16h5"/><circle cx="16.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/></svg>',
-    search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
-    star:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15 8.5 22 9.3 17 14 18.5 21 12 17.5 5.5 21 7 14 2 9.3 9 8.5"/></svg>',
-    target: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>',
-    trophy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.5 12.5L17 22l-5-3-5 3 1.5-9.5"/></svg>',
-    more:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>',
-    book:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16a2 2 0 0 0 2 2h14V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2z"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="16" y2="10"/></svg>',
-    folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
-    upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
-    tag:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/><circle cx="7" cy="7" r="1.5" fill="currentColor" stroke="none"/></svg>',
-    users:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
     chart:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="10" width="3" height="10"/><rect x="11" y="6" width="3" height="14"/><rect x="16" y="13" width="3" height="7"/></svg>',
-    bookmark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12a1 1 0 0 1 1 1v18l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg>',
-    logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
+    bookmark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12a1 1 0 0 1 1 1v18l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg>',
     gear:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
-    swap:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 3 21 7 17 11"/><path d="M3 7h18"/><polyline points="7 21 3 17 7 13"/><path d="M21 17H3"/></svg>',
-    shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L4 5v7c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V5l-8-3z"/><polyline points="9 12 11 14 15 10"/></svg>',
+    logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
+    folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+    user:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+    shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L4 5v7c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V5l-8-3z"/></svg>',
+  };
+  const icon = (n) => ICONS[n] || ICONS.user;
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  const parseJson = (raw) => {
+    if (!raw) return [];
+    try { return JSON.parse(raw) || []; } catch { return []; }
   };
 
-  function icon(name) { return ICONS[name] || ICONS.more; }
 
-  function esc(s) {
-    return String(s ?? '').replace(/[&<>"']/g, c => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-    }[c]));
-  }
-
-  function parseItems(attr) {
-    if (!attr) return [];
-    try { return JSON.parse(attr) || []; }
-    catch { return []; }
-  }
-
-  function tab(kind, active, hidden) {
-    const isActive = active === kind;
-    const label = kind === 'tests' ? 'Tests' : 'Teoría';
-    const url = kind === 'tests' ? TESTS_URL : TEORIA_URL;
-    const idAttr = kind === 'teoria' ? ' id="nav-teoria"' : '';
-    if (isActive) {
-      return `<span class="nav-tab active" data-nav="${kind}" aria-current="page"${idAttr}>${label}</span>`;
+  // ── <xp-ring level xp xp-nivel-ini xp-nivel-sig> ────────────────────
+  // Círculo SVG cuyo borde se rellena con la fracción de XP dentro del
+  // nivel actual. Muestra el nivel como número en el centro.
+  class XpRing extends HTMLElement {
+    static get observedAttributes() { return ['level','xp','xp-nivel-ini','xp-nivel-sig']; }
+    connectedCallback() { this.render(); }
+    attributeChangedCallback() { this.render(); }
+    render() {
+      const nivel = +(this.getAttribute('level') || 1);
+      const xp    = +(this.getAttribute('xp')    || 0);
+      const ini   = +(this.getAttribute('xp-nivel-ini') || 0);
+      const sig   = +(this.getAttribute('xp-nivel-sig') || Math.max(50, ini + 50));
+      const denom = Math.max(1, sig - ini);
+      const frac  = Math.min(1, Math.max(0, (xp - ini) / denom));
+      const R = 18, C = 2 * Math.PI * R;
+      const off = C * (1 - frac);
+      this.innerHTML = `
+        <svg viewBox="0 0 44 44" width="40" height="40" aria-label="Nivel ${nivel}">
+          <circle cx="22" cy="22" r="${R}" fill="none"
+                  stroke="var(--xp-track, rgba(0,0,0,.12))" stroke-width="4"/>
+          <circle cx="22" cy="22" r="${R}" fill="none"
+                  stroke="var(--xp-fill, #6B8E23)" stroke-width="4"
+                  stroke-linecap="round"
+                  stroke-dasharray="${C}" stroke-dashoffset="${off}"
+                  transform="rotate(-90 22 22)"
+                  style="transition: stroke-dashoffset .4s ease"/>
+          <text x="22" y="26" text-anchor="middle"
+                font-size="13" font-weight="700"
+                fill="var(--txt, currentColor)">${nivel}</text>
+        </svg>`;
     }
-    return `<a href="${url}" class="nav-tab" data-nav="${kind}"${idAttr}${hidden ? ' hidden' : ''}>${label}</a>`;
   }
+  if (!customElements.get('xp-ring')) customElements.define('xp-ring', XpRing);
 
-  function itemVisibilityClass(it) {
-    const cls = [];
-    if (it.gestion) cls.push('gestion');
-    if (it.admin)   cls.push('solo-admin');
-    if (it.special) cls.push('special');
-    return cls.join(' ');
+
+  // ── <streak-flame days> ────────────────────────────────────────────
+  // Fuego + contador. Se apaga (gris) si days=0.
+  class StreakFlame extends HTMLElement {
+    static get observedAttributes() { return ['days']; }
+    connectedCallback() { this.render(); }
+    attributeChangedCallback() { this.render(); }
+    render() {
+      const d = +(this.getAttribute('days') || 0);
+      const on = d > 0;
+      this.innerHTML = `
+        <span class="flame ${on ? 'on' : 'off'}" title="${on ? d+' días de racha' : 'Sin racha activa'}">
+          <span class="flame-emoji" aria-hidden="true">${on ? '🔥' : '🕯️'}</span>
+          <span class="flame-days">${d}</span>
+        </span>`;
+    }
   }
+  if (!customElements.get('streak-flame')) customElements.define('streak-flame', StreakFlame);
 
-  function itemAttrs(it) {
-    // Devuelve los atributos del <a>/<button> según la acción.
-    if (it.view)  return { tag: 'button', attrs: `type="button" data-view="${esc(it.view)}"` };
-    if (it.href)  return { tag: 'a',      attrs: `href="${esc(it.href)}"` };
-    if (it.event) return { tag: 'button', attrs: `type="button" data-nav-event="${esc(it.event)}"` };
-    if (it.more)  return { tag: 'button', attrs: `type="button" data-more="1"` };
-    return { tag: 'button', attrs: 'type="button"' };
-  }
 
-  function renderNavItem(it, activeKey) {
-    const { tag, attrs } = itemAttrs(it);
-    const isActive = activeKey && it.id === activeKey;
-    const cls = ['bnav-item', itemVisibilityClass(it), isActive ? 'active' : ''].filter(Boolean).join(' ');
-    return `<${tag} class="${cls}" ${attrs} data-nav-id="${esc(it.id)}">
-      <span class="bnav-ico" aria-hidden="true">${icon(it.icon)}</span>
-      <span class="bnav-label">${esc(it.label)}</span>
-    </${tag}>`;
-  }
-
-  function renderMoreItem(it) {
-    const { tag, attrs } = itemAttrs(it);
-    const cls = ['more-item', itemVisibilityClass(it)].filter(Boolean).join(' ');
-    return `<${tag} class="${cls}" ${attrs} data-nav-id="${esc(it.id)}">
-      <span class="more-ico" aria-hidden="true">${icon(it.icon)}</span>
-      <span class="more-label">${esc(it.label)}</span>
-    </${tag}>`;
-  }
-
+  // ── <aprentix-header> ──────────────────────────────────────────────
   class AprentixHeader extends HTMLElement {
     connectedCallback() {
-      const active = this.getAttribute('active') || 'tests';
-      const teoriaHidden = this.hasAttribute('teoria-hidden');
-      const startsHidden = this.hasAttribute('start-hidden');
-
-      const navItems = parseItems(this.getAttribute('nav-items'));
-      const moreItems = parseItems(this.getAttribute('more-items'));
-      const adminItems = parseItems(this.getAttribute('admin-items'));
-      const activeKey = this.getAttribute('active-key') || (active === 'tests' ? 'home' : null);
+      const navItems = parseJson(this.getAttribute('nav-items'));
+      const activeKey = this.getAttribute('active-key') || 'home';
 
       this.innerHTML = `
-        <header class="topbar${startsHidden ? ' hidden' : ''}" id="topbar">
-          <a href="${LANDING_URL}" class="brand" title="Volver al inicio">
-            <span class="brand-logo" aria-hidden="true"></span>
-            <span class="brand-name">Aprentix</span>
-          </a>
-          <nav class="hdr-nav" aria-label="Secciones">
-            ${tab('tests', active, false)}
-            ${tab('teoria', active, teoriaHidden)}
-          </nav>
-          <div class="hdr-spacer"></div>
-          <div class="user-chip">
-            <button class="user-btn" id="btn-user-menu" title="Cuenta" aria-haspopup="dialog" aria-expanded="false">
-              <span class="avatar" id="user-avatar"></span>
-              <span class="user-name" id="user-name"></span>
+        <header class="topbar" id="topbar">
+          <div class="hdr-left"><xp-ring level="1" xp="0"></xp-ring></div>
+          <div class="hdr-center"><streak-flame days="0"></streak-flame></div>
+          <div class="hdr-right">
+            <button class="user-btn" id="btn-user-menu" aria-haspopup="dialog" aria-expanded="false" title="Cuenta">
+              <span class="avatar" id="user-avatar">?</span>
             </button>
           </div>
         </header>
 
-        <!-- Bottom-nav móvil (oculta en desktop) -->
-        <nav class="bottom-nav${startsHidden ? ' hidden' : ''}" id="bottom-nav" aria-label="Navegación principal">
-          ${navItems.map(it => renderNavItem(it, activeKey)).join('')}
+        <nav class="bottom-nav" id="bottom-nav" aria-label="Navegación principal">
+          ${navItems.map(it => `
+            <button type="button" class="bnav-item ${it.id === activeKey ? 'active' : ''}"
+                    data-view="${esc(it.view || '')}" data-nav-id="${esc(it.id)}">
+              <span class="bnav-ico" aria-hidden="true">${icon(it.icon)}</span>
+              <span class="bnav-label">${esc(it.label)}</span>
+            </button>
+          `).join('')}
         </nav>
 
-        <!-- Sheet del avatar: switch app + config + logout -->
         <div class="aprentix-sheet hidden" id="user-sheet" role="dialog" aria-label="Cuenta">
           <div class="aprentix-sheet-backdrop" data-sheet-close="1"></div>
           <div class="aprentix-sheet-card" role="document">
             <header class="sheet-head">
-              <span class="avatar sheet-avatar" id="sheet-avatar"></span>
+              <span class="avatar sheet-avatar" id="sheet-avatar">?</span>
               <div class="sheet-head-txt">
                 <strong id="sheet-username">—</strong>
-                <span class="sheet-mode-label" id="sheet-mode-label">${active === 'tests' ? 'Modo Tests' : 'Modo Teoría'}</span>
+                <span class="sheet-mode-label" id="sheet-email"></span>
               </div>
               <button class="sheet-close" data-sheet-close="1" aria-label="Cerrar">✕</button>
             </header>
 
             <div class="sheet-section">
-              <div class="sheet-section-title">Modo</div>
-              <div class="mode-switch" role="tablist" aria-label="Cambiar de sección">
-                <a class="mode-opt ${active === 'tests' ? 'active' : ''}" ${active === 'tests' ? 'aria-current="page"' : `href="${TESTS_URL}"`}>
-                  <span class="mode-ico">${icon('tests')}</span>
-                  <span>Tests</span>
-                </a>
-                <a class="mode-opt ${active === 'teoria' ? 'active' : ''}" id="sheet-mode-teoria" ${active === 'teoria' ? 'aria-current="page"' : `href="${TEORIA_URL}"`}>
-                  <span class="mode-ico">${icon('book')}</span>
-                  <span>Teoría</span>
-                </a>
-              </div>
-            </div>
-
-            <div class="sheet-section">
-              <!-- Retos: común a tests y teoría, así que vive en el sheet.
-                   En tests navega a la vista local; en teoría abre el
-                   apartado de retos de la app de tests. -->
-              ${active === 'tests'
-                ? `<button class="sheet-row" id="btn-retos" type="button" data-view="retos">
-                     <span class="sheet-row-ico">${icon('trophy')}</span>
-                     <span class="sheet-row-label">Retos y logros</span>
-                   </button>`
-                : `<a class="sheet-row" id="btn-retos" href="${TESTS_URL}?atajo=retos">
-                     <span class="sheet-row-ico">${icon('trophy')}</span>
-                     <span class="sheet-row-label">Retos y logros</span>
-                   </a>`}
-              <!-- Cambiar oposición: opcional, cada app lo activa levantando
-                   la clase .has-oposiciones en el body cuando el usuario
-                   tiene más de una accesible. Fila oculta por defecto. -->
-              <button class="sheet-row sheet-oposicion" id="btn-cambiar-oposicion" type="button">
+              <button class="sheet-row" id="btn-cambiar-oposicion" type="button">
                 <span class="sheet-row-ico">${icon('folder')}</span>
                 <span class="sheet-row-label">Cambiar oposición</span>
-                <span class="sheet-row-hint" id="sheet-oposicion-actual"></span>
               </button>
-              <button class="sheet-row" id="btn-config" type="button">
-                <span class="sheet-row-ico">${icon('gear')}</span>
-                <span class="sheet-row-label">Configuración</span>
+              <button class="sheet-row" id="btn-mi-cuenta" type="button" data-view="mi-cuenta">
+                <span class="sheet-row-ico">${icon('user')}</span>
+                <span class="sheet-row-label">Mi cuenta</span>
               </button>
-              <!-- Fila destacada de admin: sólo si el usuario tiene permiso
-                   (body.puede-gestionar o body.es-admin). Ver CSS. -->
-              <button class="sheet-row admin-row" id="btn-admin-panel" type="button" data-more-sheet="admin-sheet">
+              <button class="sheet-row admin-row" id="btn-admin-panel" type="button" data-view="admin-usuarios">
                 <span class="sheet-row-ico">${icon('shield')}</span>
                 <span class="sheet-row-label">Panel de administración</span>
                 <span class="sheet-row-badge">ADMIN</span>
@@ -234,253 +159,111 @@
             </div>
           </div>
         </div>
-
-        <!-- Sheet Admin: solo con permiso. Común a tests y teoría. -->
-        <div class="aprentix-sheet hidden" id="admin-sheet" role="dialog" aria-label="Panel de administración">
-          <div class="aprentix-sheet-backdrop" data-sheet-close="1"></div>
-          <div class="aprentix-sheet-card admin-card" role="document">
-            <header class="sheet-head">
-              <div class="sheet-head-txt">
-                <strong>Panel de administración</strong>
-                <span class="sheet-mode-label">Herramientas restringidas por rol</span>
-              </div>
-              <button class="sheet-close" data-sheet-close="1" aria-label="Cerrar">✕</button>
-            </header>
-            <div class="sheet-section more-list admin-list">
-              ${adminItems.length
-                ? adminItems.map(renderMoreItem).join('')
-                : '<p class="muted small" style="grid-column:1/-1; margin:0">Sin herramientas disponibles.</p>'}
-            </div>
-          </div>
-        </div>
-
-        <!-- Sheet "Más": opciones secundarias -->
-        <div class="aprentix-sheet hidden" id="more-sheet" role="dialog" aria-label="Más opciones">
-          <div class="aprentix-sheet-backdrop" data-sheet-close="1"></div>
-          <div class="aprentix-sheet-card" role="document">
-            <header class="sheet-head">
-              <div class="sheet-head-txt">
-                <strong>Más opciones</strong>
-                <span class="sheet-mode-label">Herramientas y gestión</span>
-              </div>
-              <button class="sheet-close" data-sheet-close="1" aria-label="Cerrar">✕</button>
-            </header>
-            <div class="sheet-section more-list">
-              ${moreItems.map(renderMoreItem).join('')}
-            </div>
-          </div>
-        </div>
       `;
-
       this._wire();
-      this._hideEmptyMore();
-      this._prefetchOtherMode(active);
-    }
-
-    /*
-     * Prepara la navegación a la OTRA app para que se sienta como una
-     * SPA sin tener que fusionar los dos app.js. Tres capas de menor a
-     * mayor agresividad, todas se dejan de forma acumulativa (si el
-     * navegador ignora la fuerte, cae a la siguiente):
-     *
-     *  1) Speculation Rules → prerender de /tests/ o /teoria/. Chrome
-     *     (y otros basados en Chromium) cargan el destino en una vista
-     *     oculta y al pulsar el switch simplemente lo "activan"; la
-     *     transición es 0 ms, sin flash de recarga.
-     *  2) <link rel="prefetch"> como plan B para Firefox/Safari.
-     *  3) Combinado con @view-transition { navigation: auto } de
-     *     header.css, en Chrome el cambio se ve como un cross-fade.
-     *
-     * Skip en conexiones data-saver o 2g para no gastar datos del móvil.
-     */
-    _prefetchOtherMode(active) {
-      try {
-        const conn = navigator.connection;
-        if (conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))) return;
-      } catch (_) { /* no soportado, adelante */ }
-      const otro = active === 'tests' ? TEORIA_URL : TESTS_URL;
-
-      // (1) Speculation Rules API — Chromium 121+.
-      if (HTMLScriptElement.supports && HTMLScriptElement.supports('speculationrules')) {
-        const s = document.createElement('script');
-        s.type = 'speculationrules';
-        s.textContent = JSON.stringify({
-          prerender: [{
-            source: 'list',
-            urls: [otro],
-            // "moderate" solo prerenderiza si hay indicios de que el
-            // usuario va a navegar; en nuestra app SIEMPRE queremos que
-            // esté listo, así que "eager".
-            eagerness: 'eager',
-          }],
-        });
-        document.head.appendChild(s);
-      }
-
-      // (2) Prefetch clásico como fallback.
-      const link = document.createElement('link');
-      link.rel = 'prefetch';
-      link.as = 'document';
-      link.href = otro;
-      document.head.appendChild(link);
-    }
-
-    /*
-     * Oculta el botón "Más" del bottom-nav si, con los permisos actuales,
-     * no hay ninguna acción disponible detrás. Se ejecuta al montar y en
-     * cada mutación de las clases del <body> (puede-gestionar, es-admin).
-     */
-    _hideEmptyMore() {
-      const btn = this.querySelector('.bnav-item[data-more="1"], .bnav-item[data-nav-id="more"]');
-      const sheet = this.querySelector('#more-sheet .more-list');
-      if (!btn || !sheet) return;
-      const evalMore = () => {
-        const puedeGestionar = document.body.classList.contains('puede-gestionar');
-        const esAdmin = document.body.classList.contains('es-admin');
-        const items = Array.from(sheet.querySelectorAll('.more-item'));
-        const visibles = items.filter(el => {
-          if (el.classList.contains('gestion')   && !(puedeGestionar || esAdmin)) return false;
-          if (el.classList.contains('solo-admin') && !esAdmin) return false;
-          return true;
-        });
-        const hasItems = visibles.length > 0;
-        btn.hidden = !hasItems;
-        btn.classList.toggle('hidden', !hasItems);
-      };
-      evalMore();
-      if ('MutationObserver' in window) {
-        const mo = new MutationObserver(evalMore);
-        mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-        this._moreObserver = mo;
-      }
+      this._refreshGamif();     // XP/racha
+      this._refreshUser();      // avatar/nombre
+      // Cada cambio de sesión repinta la cabecera.
+      window.addEventListener('aprentix:session', () => {
+        this._refreshUser();
+        this._refreshGamif();
+      });
     }
 
     _wire() {
+      const $ = (s) => this.querySelector(s);
       const openSheet = (id) => {
         const s = this.querySelector('#' + id);
         if (!s) return;
         s.classList.remove('hidden');
         s.classList.add('open');
         document.body.classList.add('sheet-open');
-        const btn = id === 'user-sheet' ? this.querySelector('#btn-user-menu') : null;
-        if (btn) btn.setAttribute('aria-expanded', 'true');
       };
-      const closeSheet = (s) => {
-        s.classList.remove('open');
-        s.classList.add('hidden');
-        // Cierra "todos" quiere decir solo si no queda ninguno abierto.
-        if (!this.querySelector('.aprentix-sheet.open')) {
-          document.body.classList.remove('sheet-open');
-        }
-        const btn = this.querySelector('#btn-user-menu');
-        if (btn) btn.setAttribute('aria-expanded', 'false');
-      };
-
-      // Toggle del avatar → sheet del usuario.
-      const userBtn = this.querySelector('#btn-user-menu');
-      userBtn?.addEventListener('click', (e) => {
-        e.preventDefault();
-        const s = this.querySelector('#user-sheet');
-        if (s.classList.contains('open')) closeSheet(s); else openSheet('user-sheet');
-      });
-
-      // Cerrar sheets: click en backdrop, botón ✕ o Esc.
-      this.querySelectorAll('.aprentix-sheet').forEach(s => {
-        s.addEventListener('click', (e) => {
-          if (e.target.closest('[data-sheet-close]')) {
-            e.preventDefault();
-            closeSheet(s);
-          }
+      const closeAll = () => {
+        this.querySelectorAll('.aprentix-sheet.open').forEach(s => {
+          s.classList.remove('open'); s.classList.add('hidden');
         });
-      });
+        document.body.classList.remove('sheet-open');
+      };
+
+      $('#btn-user-menu').onclick = () => openSheet('user-sheet');
+      this.querySelectorAll('[data-sheet-close]').forEach(el =>
+        el.addEventListener('click', closeAll));
       document.addEventListener('keydown', (e) => {
-        if (e.key !== 'Escape') return;
-        this.querySelectorAll('.aprentix-sheet.open').forEach(closeSheet);
+        if (e.key === 'Escape') closeAll();
       });
 
-      // Botón "Más" del bottom-nav → sheet secundaria. Cerramos cualquier
-      // otro sheet abierto antes de abrir "más" para que la transición
-      // sea limpia.
-      this.querySelectorAll('[data-more]').forEach(b => {
-        b.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          this.querySelectorAll('.aprentix-sheet.open').forEach(closeSheet);
-          openSheet('more-sheet');
-        });
-      });
+      // Cierra la sheet al pulsar cualquier fila (excepto las que abren otra).
+      this.querySelectorAll('.sheet-row').forEach(b =>
+        b.addEventListener('click', () => setTimeout(closeAll, 0)));
 
-      // Fila "Panel de admin" en el sheet del usuario → sheet admin.
-      // Cerramos primero el sheet del usuario para transición limpia.
-      this.querySelector('#btn-admin-panel')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        const userSheet = this.querySelector('#user-sheet');
-        if (userSheet) closeSheet(userSheet);
-        openSheet('admin-sheet');
-      });
-
-      // Items con data-nav-event → CustomEvent para el app.
-      this.addEventListener('click', (e) => {
-        const el = e.target.closest('[data-nav-event]');
-        if (!el) return;
-        e.preventDefault();
-        const detail = { id: el.dataset.navEvent, from: el };
-        this.dispatchEvent(new CustomEvent('aprentix:nav', { detail, bubbles: true }));
-        // Cierra sheets abiertas para que la nueva vista quede visible.
-        this.querySelectorAll('.aprentix-sheet.open').forEach(closeSheet);
-      });
-
-      // Al pulsar cualquier item del bottom-nav, del sheet "Más" o una
-      // fila del sheet del avatar (excepto los que ABREN otro sheet),
-      // cerramos las sheets abiertas — el routing lo hace el app.
-      this.querySelectorAll('.bnav-item, .more-item, .sheet-row').forEach(b => {
-        if (b.id === 'btn-admin-panel') return;   // abre otro sheet
-        if (b.hasAttribute('data-more')) return;  // el propio botón "Más" abre el more-sheet
-        b.addEventListener('click', () => {
-          setTimeout(() => {
-            this.querySelectorAll('.aprentix-sheet.open').forEach(closeSheet);
-          }, 0);
-        });
-      });
-
-      // Espejo: sincroniza avatar/username del sheet con los del topbar.
-      const syncAvatar = () => {
-        const av = this.querySelector('#user-avatar');
-        const nm = this.querySelector('#user-name');
-        const shAv = this.querySelector('#sheet-avatar');
-        const shNm = this.querySelector('#sheet-username');
-        if (shAv) shAv.textContent = av?.textContent || '?';
-        if (shNm) shNm.textContent = nm?.textContent || '—';
+      // Cambiar oposición: dispara evento para que la SPA lo maneje.
+      $('#btn-cambiar-oposicion').onclick = () => {
+        this.dispatchEvent(new CustomEvent('aprentix:nav', {
+          detail: { id: 'cambiar-oposicion' }, bubbles: true,
+        }));
       };
-      // Observa cambios de contenido en el chip del topbar.
-      const av = this.querySelector('#user-avatar');
-      if (av && 'MutationObserver' in window) {
-        const mo = new MutationObserver(syncAvatar);
-        mo.observe(av, { childList: true, characterData: true, subtree: true });
-        const nm = this.querySelector('#user-name');
-        if (nm) mo.observe(nm, { childList: true, characterData: true, subtree: true });
-        this._avatarObserver = mo;
-      }
-      syncAvatar();
 
-      // Si el atributo teoria-hidden se levanta más tarde por app.js
-      // (al saber si tiene permiso), refleja el cambio en el switch del
-      // sheet: si no puede acceder a teoría, se oculta la opción.
-      const navT = this.querySelector('#nav-teoria');
-      const modeT = this.querySelector('#sheet-mode-teoria');
-      if (navT && modeT && 'MutationObserver' in window) {
-        const applyModeT = () => {
-          modeT.hidden = !!navT.hidden;
-        };
-        applyModeT();
-        const mo = new MutationObserver(applyModeT);
-        mo.observe(navT, { attributes: true, attributeFilter: ['hidden'] });
-        this._navTObserver = mo;
+      // Cerrar sesión.
+      $('#btn-logout').onclick = async () => {
+        if (S) await S.logout();
+        location.href = '/estudio/#/login';
+      };
+
+      // Oculta la fila de admin si el usuario no es admin.
+      const applyAdmin = () => {
+        const u = S?.getUser?.();
+        const esAdmin = u && Array.isArray(u.roles) && u.roles.includes('admin');
+        $('#btn-admin-panel').hidden = !esAdmin;
+      };
+      applyAdmin();
+      window.addEventListener('aprentix:session', applyAdmin);
+
+      // Delega los clicks del bottom-nav como CustomEvent.
+      this.querySelectorAll('[data-view]').forEach(el => {
+        el.addEventListener('click', (e) => {
+          const id = el.dataset.view;
+          if (!id) return;
+          this.dispatchEvent(new CustomEvent('aprentix:nav', {
+            detail: { id }, bubbles: true,
+          }));
+        });
+      });
+    }
+
+    async _refreshGamif() {
+      if (!S || !S.getUser()) return;
+      try {
+        const g = await S.rpc('mi_gamificacion');
+        const ring = this.querySelector('xp-ring');
+        if (ring) {
+          ring.setAttribute('level', g.nivel);
+          ring.setAttribute('xp', g.xp_total);
+          ring.setAttribute('xp-nivel-ini', g.xp_nivel_ini);
+          ring.setAttribute('xp-nivel-sig', g.xp_nivel_sig);
+        }
+        const fl = this.querySelector('streak-flame');
+        if (fl) fl.setAttribute('days', g.racha_actual || 0);
+      } catch (_) { /* silencioso */ }
+    }
+
+    async _refreshUser() {
+      if (!S || !S.getUser()) {
+        this.querySelector('#user-avatar').textContent = '?';
+        this.querySelector('#sheet-username').textContent = '—';
+        this.querySelector('#sheet-email').textContent = '';
+        return;
       }
+      try {
+        const me = await S.rpc('mi_cuenta');
+        const inicial = (me.nombre_visible || me.email || '?').trim()[0].toUpperCase();
+        this.querySelector('#user-avatar').textContent  = inicial;
+        this.querySelector('#sheet-avatar').textContent = inicial;
+        this.querySelector('#sheet-username').textContent = me.nombre_visible || '';
+        this.querySelector('#sheet-email').textContent    = me.email || '';
+      } catch (_) { /* silencioso */ }
     }
   }
 
-  if (!customElements.get('aprentix-header')) {
-    customElements.define('aprentix-header', AprentixHeader);
-  }
+  customElements.define('aprentix-header', AprentixHeader);
 })();

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Aprentix · Estudio</title>
+  <base href="/estudio/">
+
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="application-name" content="Aprentix">
+  <meta name="theme-color" content="#6B8E23" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#101E1A" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Aprentix">
+  <link rel="apple-touch-icon" href="/shared/pwa-icons/apple-touch-icon.png">
+  <link rel="icon" type="image/svg+xml" href="/shared/pwa-icons/icon-any.svg">
+
+  <link rel="stylesheet" href="/shared/tokens.css">
+  <link rel="stylesheet" href="/shared/base.css">
+  <link rel="stylesheet" href="/shared/components.css">
+  <link rel="stylesheet" href="/shared/modal.css">
+  <link rel="stylesheet" href="/shared/header.css">
+  <link rel="stylesheet" href="/estudio/style.css">
+
+  <script>
+    // Tema oscuro antes del primer render.
+    (function () {
+      var m = document.cookie.match(/(?:^|;\s*)aprentix_theme=(dark|light)/);
+      var theme = m ? m[1] : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    })();
+  </script>
+
+  <!-- Sesión + auth. Deben cargarse ANTES de app.js (no defer). -->
+  <script src="/shared/auth/session.js"></script>
+
+  <!-- Cabecera reescrita: <xp-ring>, <streak-flame>, sin brand/tabs. -->
+  <script src="/shared/header.js" defer></script>
+
+  <!-- Markdown para renderizar teoría. -->
+  <script src="/shared/vendor/marked.min.js" defer></script>
+  <script src="/shared/vendor/purify.min.js" defer></script>
+</head>
+<body>
+  <!-- Cabecera compartida: XP ring + racha + avatar. Sin brand. -->
+  <aprentix-header active="estudio"
+    nav-items='[
+      {"id":"home","label":"Inicio","icon":"home","view":"home"},
+      {"id":"estadisticas","label":"Estadísticas","icon":"chart","view":"estadisticas"},
+      {"id":"tablon","label":"Tablón","icon":"bookmark","view":"tablon"}
+    ]'></aprentix-header>
+
+  <main id="root">
+    <!-- El router hash mete aquí la vista activa. -->
+    <div class="loading">Cargando…</div>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/estudio/app.js"></script>
+</body>
+</html>
