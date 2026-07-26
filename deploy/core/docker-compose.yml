@@ -1,11 +1,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Stack CORE — el estado y la API.
 #
-# Servicios: db (Postgres+pgvector), postgrest, embeddings, pgadmin.
+# Servicios: db (Postgres+pgvector), postgrest, mailer, pgadmin.
+# (El worker de embeddings está desactivado — ver bloque comentado abajo.)
 # Redespliega esto cuando cambien:
 #   - db/init/01_esquema.sql       (esquema, funciones, RLS, seed)
 #   - la versión de PostgREST
-#   - el worker de embeddings
+#   - el mailer
 #   - el servers.json de pgAdmin
 #
 # Los demás stacks (app/notificador) se conectan a estos servicios por
@@ -101,19 +102,37 @@ services:
       - "traefik.http.middlewares.api-rl.ratelimit.period=1m"
       - "traefik.http.routers.api.middlewares=api-rl"
 
-  embeddings:
-    build: ../../embeddings
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-aprentix}@db:5432/${POSTGRES_DB:-aprentix}
-      PGPASSWORD: ${DB_PASS}
-      EMB_LOTE: "32"
-    volumes:
-      - /mnt/data/embeddings_cache:/cache
-    restart: unless-stopped
-    networks: [dokploy-network]
+  # Worker de embeddings — DESACTIVADO.
+  #
+  # Tras el rediseño del esquema (commit 7cb0e26) el auto-tagger y el
+  # catálogo de etiquetas desaparecieron, así que los vectores de
+  # `preguntas.embedding` ya no alimentan ninguna funcionalidad viva y el
+  # worker sólo consumía CPU/RAM (modelo sentence-transformers) sin
+  # aportar nada. Se comenta hasta que le demos un nuevo uso.
+  #
+  # Posible reactivación futura: deduplicación semántica de preguntas
+  # muy parecidas dentro de una misma sección. El script
+  # `embeddings/detectar_duplicados.py` ya existe y usa similitud coseno
+  # > 0.90 para poblar `propuestas_fusion`, que un admin revisa y
+  # fusiona/descarta. Si se retoma, hará falta:
+  #   1. Descomentar este servicio y redeployar el stack core.
+  #   2. Aplicar el barrido inicial: `UPDATE preguntas SET embedding=NULL`
+  #      y encolar todas en `cola_embeddings` para revectorizar.
+  #   3. Programar `detectar_duplicados.py` (cron o servicio residente).
+  #
+  # embeddings:
+  #   build: ../../embeddings
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   environment:
+  #     DATABASE_URL: postgres://${POSTGRES_USER:-aprentix}@db:5432/${POSTGRES_DB:-aprentix}
+  #     PGPASSWORD: ${DB_PASS}
+  #     EMB_LOTE: "32"
+  #   volumes:
+  #     - /mnt/data/embeddings_cache:/cache
+  #   restart: unless-stopped
+  #   networks: [dokploy-network]
 
   # Servicio de emails transaccionales (verificación de email, reset de
   # contraseña). Escucha `LISTEN email_enviar` sobre Postgres y envía por
