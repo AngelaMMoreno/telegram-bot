@@ -72,6 +72,7 @@ def _procesar_lote(conn: psycopg.Connection) -> int:
         )
         filas = cur.fetchall()
         if not filas:
+            conn.rollback()
             return 0
 
         preguntas_ids = [r[2] for r in filas if r[1] == "pregunta"]
