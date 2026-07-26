@@ -1,0 +1,65 @@
+{
+  "id": "/",
+  "name": "Aprentix — Tu oposición, a tu ritmo",
+  "short_name": "Aprentix",
+  "description": "Tests, teoría y repasos personalizados para tu oposición.",
+  "start_url": "/?src=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "lang": "es-ES",
+  "dir": "ltr",
+  "theme_color": "#6B8E23",
+  "background_color": "#FBF9F0",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/shared/pwa-icons/icon-any-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/shared/pwa-icons/icon-any-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/shared/pwa-icons/icon-any.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/shared/pwa-icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/shared/pwa-icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Hacer un test",
+      "short_name": "Tests",
+      "description": "Ir directamente a la app de tests",
+      "url": "/tests/?src=pwa",
+      "icons": [{ "src": "/shared/pwa-icons/icon-any-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Ver teoría",
+      "short_name": "Teoría",
+      "description": "Ir directamente a la app de teoría",
+      "url": "/teoria/?src=pwa",
+      "icons": [{ "src": "/shared/pwa-icons/icon-any-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
+  "prefer_related_applications": false
+}

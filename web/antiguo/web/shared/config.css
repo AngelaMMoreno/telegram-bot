@@ -1,0 +1,191 @@
+/*
+ * Aprentix · modal de configuración.
+ *
+ * Estilos comunes del selector de tema, agrupador por secciones y del
+ * bloque "reset repasos". Se comparten entre landing, tests y teoría.
+ */
+
+/*
+ * Grupos plegables (Sistema, Tests). Usamos <details>/<summary> nativos
+ * — el usuario decide qué sección abrir. En móvil esto evita que "Ritmo
+ * de repaso" y "Resetear repaso" ocupen toda la pantalla siempre.
+ */
+.config-group {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius, 12px);
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+.config-group + .config-group { margin-top: 10px; }
+.config-group[open] { border-color: var(--pri); }
+
+.config-group-title {
+  list-style: none;
+  cursor: pointer;
+  padding: 14px 16px;
+  display: flex; align-items: center; gap: 10px;
+  font-size: 13px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--pri-d);
+  user-select: none;
+}
+.config-group-title::-webkit-details-marker { display: none; }
+.config-group-title::before {
+  content: ""; display: inline-block;
+  width: 4px; height: 16px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--grad-a), var(--grad-b));
+  flex: 0 0 auto;
+}
+.config-group-label { flex: 1 1 auto; }
+.config-chevron {
+  width: 18px; height: 18px;
+  color: var(--txt-soft);
+  transition: transform 0.2s ease;
+  flex: 0 0 auto;
+}
+.config-group[open] > .config-group-title .config-chevron {
+  transform: rotate(180deg);
+}
+.config-group-title:hover { background: var(--bg-soft); }
+.config-group-body {
+  padding: 4px 16px 16px;
+  border-top: 1px solid var(--border);
+}
+[data-theme="dark"] .config-group-title { color: var(--pri); }
+.config-section h5 {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--txt-soft);
+  margin: 0 0 10px;
+}
+.config-section + .config-section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+}
+.config-section.danger-section h5 { color: var(--danger); }
+
+.theme-toggle { display: flex; gap: 8px; flex-wrap: wrap; }
+.theme-option {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px;
+  background: var(--bg-soft);
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px; font-weight: 500;
+  color: var(--txt); cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+/* En tests, `.modal input { display: block; width: 100% }` pisaría el input
+ * si sólo cualificáramos por `.theme-option input`. Reforzamos con el modal
+ * de configuración y anulamos width/padding/border. */
+#aprentix-config-modal .theme-option input,
+.theme-option input[type="radio"] {
+  display: none !important;
+  width: 0; height: 0;
+  padding: 0; margin: 0; border: 0;
+}
+.theme-option:has(input:checked) {
+  background: var(--pri-soft);
+  border-color: var(--pri);
+  color: var(--pri-d);
+  font-weight: 700;
+}
+
+.link-pri { color: var(--pri); font-weight: 600; text-decoration: none; }
+.link-pri:hover { text-decoration: underline; }
+
+/* Reset repasos: bien diferenciado del resto */
+.reset-repasos {
+  padding: 16px;
+  border: 1.5px dashed var(--danger);
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.reset-repasos-copy {
+  display: flex; flex-direction: column; gap: 4px;
+  flex: 1 1 220px; min-width: 0;
+}
+.reset-repasos-copy strong { font-size: 14px; color: var(--danger); }
+
+/* Ritmo de repaso cards */
+.ritmo-opciones {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+.ritmo-card {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.9rem 1.1rem;
+  cursor: pointer;
+  background: var(--bg-panel);
+  color: var(--txt);
+  transition: border-color 0.15s, background 0.15s;
+}
+.ritmo-card:hover { border-color: var(--pri); }
+.ritmo-card.active {
+  border-color: var(--pri);
+  background: var(--pri-soft);
+}
+.ritmo-card .titulo {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.ritmo-card .curva {
+  font-size: 0.8rem;
+  color: var(--txt-soft);
+  margin-top: 0.3rem;
+}
+
+/*
+ * Modal común de configuración: la landing, tests y teoría tienen
+ * cada uno su propio `.modal`, pero el modal que inyecta shared/config.js
+ * debe verse igual siempre. Cualifica por #aprentix-config-modal e
+ * #aprentix-reset-modal para no pisar los estilos locales de otros
+ * modales de la app.
+ */
+#aprentix-config-modal.modal,
+#aprentix-reset-modal.modal {
+  position: fixed; inset: 0;
+  background: rgba(20, 36, 29, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  z-index: 500;
+}
+#aprentix-config-modal.modal.hidden,
+#aprentix-reset-modal.modal.hidden { display: none; }
+#aprentix-config-modal .modal-card,
+#aprentix-reset-modal .modal-card {
+  background: var(--card, var(--bg-panel));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl, 18px);
+  width: 100%; max-width: 560px;
+  max-height: 92vh; overflow-y: auto;
+  box-shadow: var(--shadow-lg, 0 12px 40px rgba(0, 0, 0, 0.25));
+  color: var(--text, var(--txt));
+}
+#aprentix-config-modal .modal-header,
+#aprentix-reset-modal .modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+#aprentix-config-modal .modal-header h3,
+#aprentix-reset-modal .modal-header h3 { margin: 0; font-size: 17px; }
+#aprentix-config-modal .modal-body,
+#aprentix-reset-modal .modal-body {
+  padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+#aprentix-config-modal .modal-actions,
+#aprentix-reset-modal .modal-actions {
+  display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;
+}
+.push-actions { display: flex; gap: 8px; flex-wrap: wrap; }

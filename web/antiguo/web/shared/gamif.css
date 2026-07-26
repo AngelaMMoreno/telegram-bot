@@ -1,0 +1,83 @@
+/*
+ * Aprentix · gamificación (tarjeta de nivel + racha + reto + progress-bar).
+ *
+ * Compartido entre tests y teoría. Antes vivía duplicado en
+ * web/site/style.css y teoria/site/style.css; ahora es la única fuente.
+ */
+
+.gamif-card {
+  background: linear-gradient(135deg,
+    var(--pri-soft) 0%,
+    var(--accent-soft) 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  margin: 0.5rem 0 1.2rem;
+  box-shadow: var(--shadow);
+}
+.gamif-card:empty { display: none; }
+
+.gamif-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+.gamif-level {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+.gamif-nivel-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 50%;
+  background: var(--pri);
+  color: var(--bg-panel);
+  font-weight: 800;
+  font-size: 1.05rem;
+  box-shadow: 0 0 0 3px var(--pri-soft);
+}
+[data-theme="dark"] .gamif-nivel-num { color: var(--bg); }
+
+.gamif-level > div { display: flex; flex-direction: column; }
+.gamif-level strong { font-size: 1.05rem; }
+.gamif-level .small { font-size: 0.85rem; }
+
+.gamif-racha { font-size: 0.98rem; }
+.gamif-racha strong { color: var(--coral-d); }
+[data-theme="dark"] .gamif-racha strong { color: var(--coral); }
+
+.gamif-reto {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--border);
+}
+.gamif-reto-icono { font-size: 1.6rem; line-height: 1; }
+.gamif-reto-body { flex: 1; display: flex; flex-direction: column; gap: 0.3rem; }
+.gamif-reto-body strong { font-size: 1rem; }
+
+.progress-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+}
+[data-theme="dark"] .progress-bar { background: rgba(255, 255, 255, 0.08); }
+.progress-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--grad-a), var(--grad-b));
+  transition: width .3s ease;
+}
+.progress-bar.level { height: 10px; }

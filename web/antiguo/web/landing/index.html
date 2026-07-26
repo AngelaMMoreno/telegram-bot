@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Aprentix</title>
+
+  <!-- Manifest único de la app. Todo (landing, /tests/, /teoria/) vive
+       en aprentix.es, así que scope "/" cubre toda la navegación como
+       una sola PWA instalada. -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="application-name" content="Aprentix">
+  <meta name="theme-color" content="#6B8E23" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#101E1A" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Aprentix">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="/shared/pwa-icons/apple-touch-icon.png">
+
+  <link rel="stylesheet" href="/shared/tokens.css">
+  <link rel="stylesheet" href="/shared/base.css">
+  <link rel="stylesheet" href="/shared/components.css">
+  <link rel="stylesheet" href="/shared/modal.css">
+  <link rel="stylesheet" href="/shared/config.css">
+  <link rel="stylesheet" href="/shared/auth.css">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" type="image/svg+xml" href="/shared/pwa-icons/icon-any.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="/shared/pwa-icons/icon-any-192.png">
+  <script>
+    // Aplica el tema oscuro antes del primer render para evitar el flash.
+    (function () {
+      var m = document.cookie.match(/(?:^|;\s*)aprentix_theme=(dark|light)/);
+      var theme = m ? m[1] : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    })();
+  </script>
+  <script>
+    // Registro del service worker en la raíz (scope "/"): cubre landing,
+    // tests y teoría como una única PWA.  Antes solo lo registraba tests,
+    // así que la instalación desde la landing quedaba sin SW.
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker
+          .register("/service-worker.js", { scope: "/" })
+          .then(function (reg) {
+            if (reg.waiting) reg.waiting.postMessage("SKIP_WAITING");
+            reg.addEventListener("updatefound", function () {
+              var nw = reg.installing;
+              if (!nw) return;
+              nw.addEventListener("statechange", function () {
+                if (nw.state === "installed" && navigator.serviceWorker.controller) {
+                  nw.postMessage("SKIP_WAITING");
+                }
+              });
+            });
+          })
+          .catch(function () { /* silent */ });
+      });
+    }
+  </script>
+  <!-- Sesión compartida (cookies, JWT, rpc): sin defer para que app.js
+       pueda usar window.AprentixSession desde su primer tick. -->
+  <script src="/shared/auth/session.js"></script>
+  <script src="/shared/components/ap-modal.js" defer></script>
+  <script src="/shared/components/ap-op-selector.js" defer></script>
+  <script src="/shared/components/ap-auth-form.js" defer></script>
+  <script src="/shared/config.js" defer></script>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <div class="brand">
+        <span class="brand-logo" aria-hidden="true"></span>
+        <span class="brand-name">Aprentix</span>
+      </div>
+      <p class="lead">Tu oposición, a tu ritmo.</p>
+      <p class="sub-lead">Tests y teoría, en un mismo sitio.</p>
+    </header>
+
+    <!-- Login / registro (mientras no hay sesión). El formulario y la
+         lógica (fortaleza, coincidencia, alternar paneles) vive en
+         shared/components/ap-auth-form.js — así los cambios en el flujo
+         de auth se reflejan a la vez en la landing y en la SPA de tests. -->
+    <section id="login" class="auth-section">
+      <ap-auth-form mode="login"
+                    error-login-id="login-error"
+                    error-register-id="reg-error"></ap-auth-form>
+    </section>
+
+    <!-- Selector (una vez logueado). Sólo se muestra si el usuario NO
+         tiene un último modo elegido o no ha hecho onboarding — en el
+         caso normal, tras el login la landing redirige directamente al
+         último modo (tests o teoría). -->
+    <section id="chooser" class="chooser" hidden>
+      <div class="welcome">
+        <button id="btn-user-menu" class="user-menu-btn" title="Configuración" data-open-config>
+          <span class="avatar" id="user-avatar"></span>
+          <span>Hola, <strong id="who"></strong></span>
+        </button>
+        <div class="welcome-actions">
+          <button id="btn-config" class="btn btn-ghost-dark" title="Configuración" data-open-config>⚙️ Configuración</button>
+          <button id="btn-logout" class="btn btn-ghost-dark">Salir</button>
+        </div>
+      </div>
+      <div class="apps">
+        <a class="app-card tests" href="/tests/">
+          <div class="app-icon icon-test" aria-hidden="true"></div>
+          <div class="app-title">Tests</div>
+          <div class="app-desc">Cuestionarios, simulacros, repasos espaciados y estadísticas.</div>
+          <div class="app-cta">Entrar →</div>
+        </a>
+        <a class="app-card teoria" id="tarjeta-teoria" href="/teoria/" hidden>
+          <div class="app-icon icon-teoria" aria-hidden="true"></div>
+          <div class="app-title">Teoría</div>
+          <div class="app-desc">Apuntes, PDFs y material de estudio organizado por temas.</div>
+          <div class="app-cta">Entrar →</div>
+        </a>
+        <div class="app-card locked" id="tarjeta-teoria-bloqueada" hidden>
+          <div class="app-icon icon-lock" aria-hidden="true"></div>
+          <div class="app-title">Teoría</div>
+          <div class="app-desc">Habla con el administrador para activar el acceso al material.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Onboarding: selección de oposiciones (primer login).
+         El usuario ve la lista de oposiciones activas y elige hasta 3
+         (o todas si es administrador). -->
+    <section id="onboarding" class="card-panel" hidden>
+      <div class="welcome">
+        <button class="user-menu-btn" title="Cuenta">
+          <span class="avatar" id="onboarding-avatar"></span>
+          <span>Hola, <strong id="onboarding-who"></strong></span>
+        </button>
+        <div class="welcome-actions">
+          <button id="onboarding-salir" class="btn btn-ghost-dark">Salir</button>
+        </div>
+      </div>
+      <h2 style="margin-bottom:.2rem">Bienvenida a Aprentix</h2>
+      <p class="muted">
+        Elige <strong>hasta 3 oposiciones</strong> para empezar a estudiar.
+        Podrás cambiarlas en cualquier momento desde el menú del avatar.
+      </p>
+      <ul id="onboarding-lista" class="onboarding-list"></ul>
+      <div class="modal-actions">
+        <span id="onboarding-contador" class="muted small">0 / 3 seleccionadas</span>
+        <span style="flex:1"></span>
+        <button id="onboarding-guardar" class="btn btn-pri" disabled>Continuar</button>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <span>© Aprentix · Tu oposición, a tu ritmo.</span>
+    </footer>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
