@@ -8,7 +8,7 @@
 #   - el worker de embeddings
 #   - el servers.json de pgAdmin
 #
-# Los demás stacks (landing/web/teoria) se conectan a estos servicios por
+# Los demás stacks (app/notificador) se conectan a estos servicios por
 # nombre en la red externa dokploy-network. Levanta este stack primero.
 # ─────────────────────────────────────────────────────────────────────────────
 

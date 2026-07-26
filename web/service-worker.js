@@ -1,18 +1,15 @@
 /* ============================================================================
  * Aprentix · Service Worker (root)
  *
- * Se sirve en aprentix.es/service-worker.js con scope "/". Cubre landing
- * (/), tests (/tests/*) y teoría (/teoria/*) como una única PWA.
- *
- * Ahora, con la app unificada bajo web/, el SW controla todo el origin.
+ * Se sirve en aprentix.es/service-worker.js con scope "/" y cubre la SPA
+ * remodelada de estudio.
  *
  * Responsabilidades:
- *   - Precachear el "app shell" de la landing (arranque offline mínimo).
- *   - Cachear estáticos con stale-while-revalidate (tests y teoría se
- *     rellenan bajo demanda la primera vez que el usuario navega ahí).
+ *   - Precachear el esqueleto de la aplicación de estudio.
+ *   - Cachear estáticos con stale-while-revalidate.
  *   - Nunca tocar /api/*  (siempre red, para no servir datos rancios).
  *   - Fallback SPA: si la navegación offline no encuentra un HTML,
- *     servir el index cacheado que corresponda (o el de la landing).
+ *     servir el índice cacheado de estudio.
  *
  * Push notifications: mismo comportamiento que antes.
  *
@@ -22,9 +19,7 @@
  *   en el siguiente refresh.
  * ==========================================================================*/
 
-// Reorganización: el SW se ha movido de /tests/ a /. Bumpeamos versión para
-// invalidar cachés antiguas que apuntaban a /tests/*.
-const CACHE_VERSION = "aprentix-v17";
+const CACHE_VERSION = "aprentix-v18";
 const SHELL_CACHE   = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -33,28 +28,21 @@ const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const BASE = new URL("/", self.location.href);
 function urlAt(p) { return new URL(p, BASE).toString(); }
 
-// Precache mínimo: la landing (arranque offline y pantalla de login).
-// Tests y teoría se cachean vía stale-while-revalidate la primera vez que
-// el usuario los abre — así evitamos precachear ~200 KB de SPAs que quizá
-// no use.
+// Esqueleto mínimo de la única SPA desplegada.
 const SHELL_ASSETS = [
-  "/",
-  "/index.html",
-  "/app.js",
-  "/style.css",
+  "/estudio/",
+  "/estudio/index.html",
+  "/estudio/app.js",
+  "/estudio/style.css",
   "/manifest.webmanifest",
   "/shared/tokens.css",
   "/shared/base.css",
   "/shared/components.css",
-  "/shared/modal.css",
-  "/shared/config.css",
-  "/shared/auth.css",
+  "/shared/header.css",
   "/shared/auth/session.js",
-  "/shared/components/ap-auth-form.js",
-  "/shared/components/ap-modal.js",
-  "/shared/components/ap-op-selector.js",
-  "/shared/config.js",
-  "/shared/logo.svg",
+  "/shared/header.js",
+  "/shared/vendor/marked.min.js",
+  "/shared/vendor/purify.min.js",
   "/shared/pwa-icons/icon-any-192.png",
   "/shared/pwa-icons/icon-any-512.png",
   "/shared/pwa-icons/icon-any.svg",
@@ -94,9 +82,8 @@ self.addEventListener("activate", (event) => {
 });
 
 /* ── Estrategias por tipo de request ───────────────────────────────────── */
-// El SW cubre todo el origin. La API vive bajo /api/ (landing → postgrest),
-// /tests/api/ (proxy de tests) y /teoria/api/ (uvicorn); las tres las
-// cubre includes("/api/") para no cachear nunca datos dinámicos.
+// El SW cubre todo el origen. PostgREST y el servicio de contenidos se
+// publican bajo rutas que contienen /api/.
 function isApi(url)      { return url.pathname.includes("/api/"); }
 function isNavigation(r) { return r.mode === "navigate"; }
 function isStatic(url) {
@@ -105,15 +92,8 @@ function isStatic(url) {
   );
 }
 
-// Fallback HTML apropiado según la ruta de la navegación offline:
-// /tests/... → index de tests si está cacheado, si no landing.
-// /teoria/... → ídem para teoría.
-// Resto → landing.
-async function navigationFallback(pathname) {
-  const candidates = [];
-  if (pathname.startsWith("/tests/"))  candidates.push("/tests/index.html", "/tests/");
-  if (pathname.startsWith("/teoria/")) candidates.push("/teoria/index.html", "/teoria/");
-  candidates.push("/index.html", "/");
+async function navigationFallback() {
+  const candidates = ["/estudio/index.html", "/estudio/"];
   for (const path of candidates) {
     const hit = await caches.match(urlAt(path));
     if (hit) return hit;
@@ -140,7 +120,7 @@ self.addEventListener("fetch", (event) => {
           cache.put(req, fresh.clone());
           return fresh;
         } catch (_) {
-          return navigationFallback(url.pathname);
+          return navigationFallback();
         }
       })()
     );

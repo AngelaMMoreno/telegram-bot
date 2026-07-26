@@ -380,24 +380,20 @@ Auxiliares invisibles al cliente pero clave para el resto del sistema.
 
 ### 4.2 Auth (accesible a `web_anon`)
 
-- **`registrarse(username, password, email?) → uuid`** — crea usuario
-  con rol `tests`. Valida longitud mínima.
-- **`iniciar_sesion(username, password) → text`** — devuelve un JWT
-  firmado (12h de expiración).
-- **`login_web(username, password) → jsonb`** — envuelve
-  `iniciar_sesion` y devuelve `{token, user_id, username, roles,
-  puede_gestionar}` para el frontend.
-- **`registrar_web(username, password, email?, chat_id?) → jsonb`** —
-  registrarse + `login_web` en un viaje. Vincula chat_id si viene.
-- **`generar_codigo_telegram() → text`** — código de 6 dígitos que
-  expira a los 10 min.
-- **`canjear_codigo_telegram(codigo, chat_id) → uuid`** — vincula el
-  chat de Telegram al usuario dueño del código.
+- **`registrar(email, password, nombre_visible) → jsonb`** — crea la cuenta,
+  asigna los roles básicos y envía el correo de verificación.
+- **`verificar_email(token) → jsonb`** — verifica el correo mediante un token
+  de un solo uso.
+- **`login(email, password, totp?) → jsonb`** — emite access token y refresh
+  token con sesiones revocables.
+- **`refresh(refresh) → jsonb`** — rota el refresh token y emite una sesión
+  de acceso nueva.
+- **`logout(refresh) → jsonb`** — revoca la sesión correspondiente.
+- **`solicitar_reset_password(email) → jsonb`** y
+  **`resetear_password(token, nueva) → jsonb`** — recuperación de contraseña.
 
 ### 4.3 Sesión y progreso
 
-- **`mi_sesion() → jsonb`** — `{user_id, username, roles,
-  puede_gestionar}` del usuario del token.
 - **`mi_progreso() → jsonb`** — respondidas hoy, nota media, nº
   falladas, nº favoritas, total respondidas.
 - **`mi_progreso_detallado() → jsonb`** — igual que `mi_progreso` +

@@ -192,7 +192,7 @@ def payload_repaso(n_vencidas: int) -> dict:
         "body":  (f"Tienes {n_vencidas} preguntas listas para repasar. "
                   "¡Vamos a por ellas!"),
         "tag":   "repaso",
-        "url":   "/tests/?atajo=repasar",
+        "url":   "/estudio/#/",
     }
 
 
@@ -207,7 +207,7 @@ def payload_inactividad(dias: int) -> dict:
         "title": "🔥 Tu racha te espera",
         "body":  cuerpo,
         "tag":   "inactividad",
-        "url":   "/tests/?atajo=home",
+        "url":   "/estudio/#/",
     }
 
 
