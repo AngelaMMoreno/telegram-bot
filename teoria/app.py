@@ -25,7 +25,6 @@ from fastapi import (
     FastAPI, File, Form, HTTPException, Request, UploadFile,
 )
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 
 # ── Configuración ───────────────────────────────────────────────────────────
@@ -676,6 +675,5 @@ async def http_exc_handler(request: Request, exc: HTTPException):
     return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
 
 
-# ── SPA estática ────────────────────────────────────────────────────────────
-# Va al final para no ensombrecer /api/*.
-app.mount("/", StaticFiles(directory="site", html=True), name="spa")
+# La SPA de teoría se retiró: /estudio la sustituye y lee la teoría
+# vía fetch a /teoria/api/leer. Este servicio ya sólo expone /api/*.

@@ -1,9 +1,9 @@
 {
-  "id": "/",
+  "id": "/estudio/",
   "name": "Aprentix — Tu oposición, a tu ritmo",
   "short_name": "Aprentix",
-  "description": "Tests, teoría y repasos personalizados para tu oposición.",
-  "start_url": "/?src=pwa",
+  "description": "Estudio, tests y repasos personalizados para tu oposición.",
+  "start_url": "/estudio/?src=pwa",
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
@@ -43,22 +43,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "Hacer un test",
-      "short_name": "Tests",
-      "description": "Ir directamente a la app de tests",
-      "url": "/tests/?src=pwa",
-      "icons": [{ "src": "/shared/pwa-icons/icon-any-192.png", "sizes": "192x192", "type": "image/png" }]
-    },
-    {
-      "name": "Ver teoría",
-      "short_name": "Teoría",
-      "description": "Ir directamente a la app de teoría",
-      "url": "/teoria/?src=pwa",
-      "icons": [{ "src": "/shared/pwa-icons/icon-any-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ],
   "prefer_related_applications": false

@@ -1,18 +1,16 @@
 /* ============================================================================
  * Aprentix · Service Worker (root)
  *
- * Se sirve en aprentix.es/service-worker.js con scope "/". Cubre landing
- * (/), tests (/tests/*) y teoría (/teoria/*) como una única PWA.
- *
- * Ahora, con la app unificada bajo web/, el SW controla todo el origin.
+ * Se sirve en aprentix.es/service-worker.js con scope "/". La única SPA es
+ * /estudio/*; la raíz redirige ahí. El SW cubre todo el origin para que la
+ * PWA quede instalable desde aprentix.es y desde /estudio/ indistintamente.
  *
  * Responsabilidades:
- *   - Precachear el "app shell" de la landing (arranque offline mínimo).
- *   - Cachear estáticos con stale-while-revalidate (tests y teoría se
- *     rellenan bajo demanda la primera vez que el usuario navega ahí).
+ *   - Precachear el "app shell" de /estudio (arranque offline mínimo).
+ *   - Cachear estáticos con stale-while-revalidate.
  *   - Nunca tocar /api/*  (siempre red, para no servir datos rancios).
  *   - Fallback SPA: si la navegación offline no encuentra un HTML,
- *     servir el index cacheado que corresponda (o el de la landing).
+ *     servir el index de /estudio cacheado.
  *
  * Push notifications: mismo comportamiento que antes.
  *
@@ -22,9 +20,9 @@
  *   en el siguiente refresh.
  * ==========================================================================*/
 
-// Reorganización: el SW se ha movido de /tests/ a /. Bumpeamos versión para
-// invalidar cachés antiguas que apuntaban a /tests/*.
-const CACHE_VERSION = "aprentix-v17";
+// Retirada de landing y /tests: v18 invalida cachés que apuntaban a esas
+// rutas para que los clientes existentes se limpien en el siguiente arranque.
+const CACHE_VERSION = "aprentix-v18";
 const SHELL_CACHE   = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -33,28 +31,22 @@ const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const BASE = new URL("/", self.location.href);
 function urlAt(p) { return new URL(p, BASE).toString(); }
 
-// Precache mínimo: la landing (arranque offline y pantalla de login).
-// Tests y teoría se cachean vía stale-while-revalidate la primera vez que
-// el usuario los abre — así evitamos precachear ~200 KB de SPAs que quizá
-// no use.
+// Precache: la SPA de estudio + el manifest + los assets compartidos que
+// arrancan en el primer render. Todo lo demás (vendor, css secundarios) se
+// cachea al vuelo con stale-while-revalidate.
 const SHELL_ASSETS = [
-  "/",
-  "/index.html",
-  "/app.js",
-  "/style.css",
+  "/estudio/",
+  "/estudio/index.html",
+  "/estudio/app.js",
+  "/estudio/style.css",
   "/manifest.webmanifest",
   "/shared/tokens.css",
   "/shared/base.css",
   "/shared/components.css",
   "/shared/modal.css",
-  "/shared/config.css",
-  "/shared/auth.css",
+  "/shared/header.css",
   "/shared/auth/session.js",
-  "/shared/components/ap-auth-form.js",
-  "/shared/components/ap-modal.js",
-  "/shared/components/ap-op-selector.js",
-  "/shared/config.js",
-  "/shared/logo.svg",
+  "/shared/header.js",
   "/shared/pwa-icons/icon-any-192.png",
   "/shared/pwa-icons/icon-any-512.png",
   "/shared/pwa-icons/icon-any.svg",
@@ -94,9 +86,9 @@ self.addEventListener("activate", (event) => {
 });
 
 /* ── Estrategias por tipo de request ───────────────────────────────────── */
-// El SW cubre todo el origin. La API vive bajo /api/ (landing → postgrest),
-// /tests/api/ (proxy de tests) y /teoria/api/ (uvicorn); las tres las
-// cubre includes("/api/") para no cachear nunca datos dinámicos.
+// El SW cubre todo el origin. La API vive bajo /api/ (postgrest) y
+// /teoria/api/ (uvicorn); las dos las cubre includes("/api/") para no
+// cachear nunca datos dinámicos.
 function isApi(url)      { return url.pathname.includes("/api/"); }
 function isNavigation(r) { return r.mode === "navigate"; }
 function isStatic(url) {
@@ -105,16 +97,9 @@ function isStatic(url) {
   );
 }
 
-// Fallback HTML apropiado según la ruta de la navegación offline:
-// /tests/... → index de tests si está cacheado, si no landing.
-// /teoria/... → ídem para teoría.
-// Resto → landing.
-async function navigationFallback(pathname) {
-  const candidates = [];
-  if (pathname.startsWith("/tests/"))  candidates.push("/tests/index.html", "/tests/");
-  if (pathname.startsWith("/teoria/")) candidates.push("/teoria/index.html", "/teoria/");
-  candidates.push("/index.html", "/");
-  for (const path of candidates) {
+// Fallback HTML offline: siempre el index de /estudio (la única SPA).
+async function navigationFallback() {
+  for (const path of ["/estudio/index.html", "/estudio/"]) {
     const hit = await caches.match(urlAt(path));
     if (hit) return hit;
   }
@@ -140,7 +125,7 @@ self.addEventListener("fetch", (event) => {
           cache.put(req, fresh.clone());
           return fresh;
         } catch (_) {
-          return navigationFallback(url.pathname);
+          return navigationFallback();
         }
       })()
     );
@@ -197,7 +182,7 @@ self.addEventListener("push", (event) => {
     tag:   data.tag   || "aprentix",
     icon:  data.icon  || ICON_DEFAULT,
     badge: data.badge || BADGE_DEFAULT,
-    data:  { url: data.url || "/" },
+    data:  { url: data.url || "/estudio/" },
     renotify: true,      // vibra aunque haya una con el mismo tag
     requireInteraction: false,
   };
@@ -207,7 +192,7 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "/";
+  const url = (event.notification.data && event.notification.data.url) || "/estudio/";
 
   event.waitUntil((async () => {
     const clients = await self.clients.matchAll({

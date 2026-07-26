@@ -1,18 +1,20 @@
-# Contenedor unificado de Aprentix: landing + tests + teoría en una sola
-# imagen. Caddy actúa como gateway público y sirve los estáticos de
-# landing y tests; FastAPI/uvicorn corre en 127.0.0.1:8000 y sirve la
-# SPA de teoría junto con sus endpoints dinámicos (uploads, PDFs con
-# JWT, marcar_visto, etc.).
+# Contenedor unificado de Aprentix: SPA /estudio + backend de teoría en una
+# sola imagen. Caddy actúa como gateway público y sirve los estáticos de
+# /estudio; FastAPI/uvicorn corre en 127.0.0.1:8000 y expone los endpoints
+# de /teoria/api/* (leer markdown, subir PDFs, etc.) usados por /estudio
+# para pintar la teoría.
 #
-# Tras la reorganización todo el frontend vive bajo web/:
-#   web/landing/  → landing SPA
-#   web/tests/    → SPA de tests
-#   web/teoria/   → SPA de teoría (uvicorn la sirve como StaticFiles)
-#   web/shared/   → assets compartidos, UNA sola copia física en /srv/shared
-#                    (Caddy reescribe /tests/shared/* y /teoria/shared/*)
+# Tras la retirada de la app legacy (/landing y /tests) todo el frontend
+# vive bajo:
+#   web/estudio/          → SPA única servida en aprentix.es/estudio/
+#                             (la raíz `/` redirige aquí)
+#   web/shared/           → assets compartidos en /srv/shared
+#                             (Caddy reescribe /estudio/shared/*)
 #   web/service-worker.js → SW en la raíz con scope "/"
+#   web/manifest.webmanifest → manifest PWA en la raíz
 #
-# La API sigue en teoria/app.py (backend FastAPI) y en postgrest.
+# El backend de teoría sigue siendo teoria/app.py (FastAPI), pero ya no
+# sirve ninguna SPA propia: sólo sus endpoints /api/*.
 
 FROM python:3.11-slim
 
@@ -35,21 +37,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY teoria/app.py .
 
 # ── Estáticos ────────────────────────────────────────────────────────
-# Landing en /srv, tests bajo /srv/tests, y la SPA de teoría bajo ./site
-# (uvicorn la sirve como StaticFiles).
-#
-# El SW se copia también en /srv para que se sirva en
-# aprentix.es/service-worker.js con scope "/" y cubra toda la app.
-COPY web/landing              /srv
-COPY web/tests                /srv/tests
-COPY web/teoria               ./site
-COPY web/estudio              /srv/estudio
-COPY web/service-worker.js    /srv/service-worker.js
+# Sólo la SPA nueva. Assets del origin (SW, manifest, iconos) en /srv;
+# la SPA en /srv/estudio (Caddy la sirve bajo aprentix.es/estudio/ y
+# redirige `/` a ese path).
+COPY web/estudio             /srv/estudio
+COPY web/service-worker.js   /srv/service-worker.js
+COPY web/manifest.webmanifest /srv/manifest.webmanifest
 
 # Una sola copia física de web/shared. El Caddyfile intercepta
-# /tests/shared/* y /teoria/shared/* y los sirve directamente de aquí,
-# así que no hace falta duplicar dentro de la imagen.
-COPY web/shared               /srv/shared
+# /estudio/shared/* y lo sirve directamente de aquí, así que no hace
+# falta duplicar dentro de la imagen.
+COPY web/shared              /srv/shared
 
 # ── Config Caddy + script de arranque ────────────────────────────────
 COPY deploy/app/Caddyfile /etc/caddy/Caddyfile

@@ -1,5 +1,5 @@
 /*
- * Aprentix · modales unificados (landing, tests y teoría).
+ * Aprentix · modales unificados.
  *
  * API única:
  *
@@ -8,9 +8,6 @@
  *       <header class="modal-header">…    ← opcional (título + X)
  *       <div class="modal-body">…         ← opcional (contenido)
  *       <div class="modal-actions">…      ← opcional (botones)
- *
- * El modal de configuración (shared/config.js → #aprentix-config-modal)
- * usa selectores calificados en shared/config.css para no colisionar.
  */
 
 
