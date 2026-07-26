@@ -10,7 +10,7 @@
     # ── Service worker en la raíz (scope "/") ─────────────────────────
     # Debe servirse desde el path exacto en el que se registra
     # (aprentix.es/service-worker.js).  Este bloque va ANTES de los
-    # `handle` genéricos para no caer en el file_server de la landing
+    # `handle` genéricos para que las cabeceras se apliquen tal cual
     # con cabeceras equivocadas.
     @sw path /service-worker.js
     header @sw Cache-Control "no-cache"

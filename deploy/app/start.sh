@@ -3,9 +3,9 @@
 # contenedor si cualquiera de los dos se cae (Docker lo reiniciará
 # gracias a restart: unless-stopped).
 #
-# - uvicorn en 127.0.0.1:8000  → SPA + API de teoría (no expuesto fuera)
-# - caddy en 0.0.0.0:80        → gateway público, sirve landing/tests
-#                                 y hace reverse_proxy al uvicorn de teoría
+# - uvicorn en 127.0.0.1:8000  → API de contenidos (no expuesto fuera)
+# - caddy en 0.0.0.0:80        → gateway público, sirve la SPA /estudio/
+#                                 y hace reverse_proxy al uvicorn de contenidos
 set -eu
 
 # El uvicorn NO debe escuchar en 0.0.0.0 para no exponerse por fuera;
