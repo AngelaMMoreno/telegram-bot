@@ -1,8 +1,7 @@
 /*
  * Aprentix · cabecera unificada (Solarpunk).
  *
- * Estilo compartido entre la app de tests y la de teoría. La landing usa
- * un layout distinto (hero + apps grid) y no incluye esta hoja.
+ * Estilo de cabecera de la aplicación remodelada de estudio.
  *
  * Móvil (< 900 px): topbar reducida con avatar a la derecha + bottom-nav
  * fijado en la parte inferior. Sheets deslizantes para el usuario y para
@@ -13,18 +12,11 @@
 
 aprentix-header { display: contents; }
 
-/* View Transitions API entre documentos (Chrome 126+, cross-document).
- * Al navegar de /tests/ a /teoria/ (o al revés) el navegador congela un
- * screenshot de la cabecera y el bottom-nav, los identifica como el
- * MISMO elemento en la página destino (por su view-transition-name) y
- * hace cross-fade del contenido intermedio en lugar de un flash de
- * recarga. En navegadores sin soporte se cae al comportamiento normal.
- * Requiere que ambas páginas estén en el mismo origen (aprentix.es) y
- * declaren la misma regla @view-transition. */
+/* View Transitions API para suavizar las navegaciones de la SPA. */
 @view-transition { navigation: auto; }
 .topbar     { view-transition-name: aprentix-topbar; }
 .bottom-nav { view-transition-name: aprentix-bottomnav; }
-/* Cross-fade suave y gradual entre tests y teoría. El contenido central
+/* Cross-fade suave y gradual. El contenido central
  * (root) hace fade-out/in encabalgado; la topbar y la bottom-nav son
  * elementos persistentes que morfan de estilo, así que llevan una
  * duración un poco más corta y la misma curva para que todo el conjunto

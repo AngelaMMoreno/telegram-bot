@@ -1,15 +1,7 @@
-# Contenedor unificado de Aprentix: landing + tests + teoría en una sola
-# imagen. Caddy actúa como gateway público y sirve los estáticos de
-# landing y tests; FastAPI/uvicorn corre en 127.0.0.1:8000 y sirve la
-# SPA de teoría junto con sus endpoints dinámicos (uploads, PDFs con
-# JWT, marcar_visto, etc.).
+# Contenedor unificado de Aprentix. Caddy sirve la SPA remodelada de estudio
+# y FastAPI/uvicorn expone únicamente la API de contenidos.
 #
-# Tras la reorganización todo el frontend vive bajo web/:
-#   web/landing/  → landing SPA
-#   web/tests/    → SPA de tests
-#   web/teoria/   → SPA de teoría (uvicorn la sirve como StaticFiles)
-#   web/shared/   → assets compartidos, UNA sola copia física en /srv/shared
-#                    (Caddy reescribe /tests/shared/* y /teoria/shared/*)
+# El frontend vive bajo web/estudio y los recursos comunes bajo web/shared.
 #   web/service-worker.js → SW en la raíz con scope "/"
 #
 # La API sigue en teoria/app.py (backend FastAPI) y en postgrest.
@@ -35,20 +27,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY teoria/app.py .
 
 # ── Estáticos ────────────────────────────────────────────────────────
-# Landing en /srv, tests bajo /srv/tests, y la SPA de teoría bajo ./site
-# (uvicorn la sirve como StaticFiles).
-#
-# El SW se copia también en /srv para que se sirva en
-# aprentix.es/service-worker.js con scope "/" y cubra toda la app.
-COPY web/landing              /srv
-COPY web/tests                /srv/tests
-COPY web/teoria               ./site
+# La SPA remodelada es el único frontend incluido en la imagen.
 COPY web/estudio              /srv/estudio
+COPY web/estudio/manifest.webmanifest /srv/manifest.webmanifest
 COPY web/service-worker.js    /srv/service-worker.js
 
-# Una sola copia física de web/shared. El Caddyfile intercepta
-# /tests/shared/* y /teoria/shared/* y los sirve directamente de aquí,
-# así que no hace falta duplicar dentro de la imagen.
 COPY web/shared               /srv/shared
 
 # ── Config Caddy + script de arranque ────────────────────────────────

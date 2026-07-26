@@ -7,7 +7,7 @@ Application** distinta que apunta a su propio fichero:
 ```
 deploy/
 ├── core/docker-compose.yml         ← db + postgrest + embeddings + pgadmin
-├── app/docker-compose.yml          ← landing + tests + teoría (frontend) + backend teoría, todo en un contenedor
+├── app/docker-compose.yml          ← SPA remodelada de estudio + API de contenidos, todo en un contenedor
 ├── notificador/docker-compose.yml  ← worker de Web Push (sin dominio propio)
 └── backups/docker-compose.yml      ← snapshots automáticos a Google Drive (restic + rclone)
 ```
@@ -21,26 +21,21 @@ El `docker-compose.yml` raíz **solo es para desarrollo local**: usa
 
 ## Estructura del frontend
 
-Todo el código de front vive bajo `web/`:
+La interfaz remodelada es la única SPA desplegada:
 
 ```
 web/
-├── landing/            ← SPA de landing (aprentix.es/)
-├── tests/              ← SPA de tests (aprentix.es/tests/)
-├── teoria/             ← SPA de teoría (aprentix.es/teoria/)
-├── shared/             ← componentes y CSS compartidos (una copia)
-│   ├── auth/session.js       ← cookies + JWT + rpc
-│   ├── auth.css              ← estilos de <ap-auth-form>
-│   ├── components/
-│   │   ├── ap-auth-form.js   ← formulario login+registro compartido
-│   │   ├── ap-modal.js
-│   │   └── ap-op-selector.js
-│   └── header.js, config.js, tokens.css, ...
-└── service-worker.js   ← SW en la raíz con scope "/"
+├── estudio/            ← SPA unificada de estudio (tests + teoría)
+│   └── manifest.webmanifest
+├── shared/             ← sesión, cabecera, estilos e iconos comunes
+│   └── auth/session.js ← access token, refresh token y cliente RPC
+└── service-worker.js   ← service worker en la raíz con scope "/"
 ```
 
-El backend de teoría vive en `teoria/app.py` (FastAPI), y se empaqueta
-junto al frontend en `deploy/app/`.
+El backend de contenidos vive en `teoria/app.py` (FastAPI), sin servir una
+segunda SPA, y se empaqueta junto al frontend en `deploy/app/`. Las rutas
+antiguas `/tests/` y `/teoria/` redirigen a `/estudio/`; `/teoria/api/` se
+reserva para la API de contenidos.
 
 ## 0. Preparar el servidor
 
@@ -58,7 +53,7 @@ junto al frontend en `deploy/app/`.
    `aprentix.es`, `www.aprentix.es`, `api.aprentix.es`,
    `pgadmin.aprentix.es`.
    Los dominios legacy `test.aprentix.es` y `teoria.aprentix.es`
-   redirigen a `aprentix.es/tests/` y `aprentix.es/teoria/`; sus DNS
+   redirigen a `aprentix.es/estudio/`; sus DNS
    siguen siendo necesarios mientras existan.
 
 ## 1. Orden de despliegue
@@ -96,16 +91,16 @@ En Dokploy, para cada una:
 | `DOMINIO_API`      | Host de PostgREST (por defecto `api.aprentix.es`).             |
 | `DOMINIO_PGADMIN`  | Host de pgAdmin (por defecto `pgadmin.aprentix.es`).           |
 
-### `app` (aprentix.es — landing + tests + teoría en un contenedor)
+### `app` (aprentix.es — estudio + API de contenidos)
 
 | Clave                 | Uso                                                                             |
 |-----------------------|---------------------------------------------------------------------------------|
 | `JWT_SECRET`          | Igual que el de `core` (el backend de teoría verifica los JWT).                 |
 | `DOMINIO_LANDING`     | Host principal (por defecto `aprentix.es`).                                     |
 | `DOMINIO_LANDING_ALT` | Host alternativo (por defecto `www.aprentix.es`).                               |
-| `DOMINIO_WEB`         | Host legacy redirigido a `aprentix.es/tests/` (por defecto `test.aprentix.es`). |
+| `DOMINIO_WEB`         | Host legacy redirigido a `aprentix.es/estudio/` (por defecto `test.aprentix.es`). |
 | `DOMINIO_WEB_ALT`     | Host legacy alternativo (por defecto `www.test.aprentix.es`).                   |
-| `DOMINIO_TEORIA`      | Host legacy redirigido a `aprentix.es/teoria/` (por defecto `teoria.aprentix.es`). |
+| `DOMINIO_TEORIA`      | Host legacy redirigido a `aprentix.es/estudio/` (por defecto `teoria.aprentix.es`). |
 | `DOMINIO_TEORIA_ALT`  | Host legacy alternativo (por defecto `www.teoria.aprentix.es`).                 |
 
 > **Importante:** `JWT_SECRET` aparece en `core` y `app`; los dos deben
@@ -132,11 +127,11 @@ docker compose -f deploy/notificador/docker-compose.yml logs notificador --tail=
 
 En el navegador:
 
-- `https://aprentix.es` → landing con login/registro.
-- `https://aprentix.es/tests/` → SPA de tests.
-- `https://aprentix.es/teoria/` → navegador de ficheros.
-- `https://test.aprentix.es` y `https://teoria.aprentix.es` → 301 a las
-  rutas anteriores (dominios legacy conservados).
+- `https://aprentix.es` → redirección a la aplicación de estudio.
+- `https://aprentix.es/estudio/` → SPA remodelada con login, tests y teoría.
+- `https://aprentix.es/tests/`, `https://aprentix.es/teoria/`,
+  `https://test.aprentix.es` y `https://teoria.aprentix.es` → redirección a
+  `/estudio/` (rutas legacy conservadas sin desplegar sus aplicaciones).
 - `https://api.aprentix.es` → OpenAPI de PostgREST.
 - `https://pgadmin.aprentix.es` → panel de administración.
 
@@ -146,8 +141,7 @@ En el navegador:
   solo `core`. La BBDD reejecuta scripts de `docker-entrypoint-initdb.d`
   solo si el volumen está vacío; para BBDD viva, aplica el `ALTER` /
   `CREATE OR REPLACE` desde pgAdmin.
-- **Cambio en cualquier SPA (landing, tests, teoría) o en el backend de
-  teoría** → redeploy solo `app`.
+- **Cambio en la SPA de estudio o en la API de contenidos** → redeploy solo `app`.
 - **Cambio en el notificador de push** → redeploy solo `notificador`.
 
 Los stacks son independientes: reiniciar `app` no toca a `db`.

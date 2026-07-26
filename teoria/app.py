@@ -25,7 +25,6 @@ from fastapi import (
     FastAPI, File, Form, HTTPException, Request, UploadFile,
 )
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 
 # ── Configuración ───────────────────────────────────────────────────────────
@@ -674,8 +673,3 @@ def api_arbol_carpetas(request: Request):
 @app.exception_handler(HTTPException)
 async def http_exc_handler(request: Request, exc: HTTPException):
     return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
-
-
-# ── SPA estática ────────────────────────────────────────────────────────────
-# Va al final para no ensombrecer /api/*.
-app.mount("/", StaticFiles(directory="site", html=True), name="spa")
