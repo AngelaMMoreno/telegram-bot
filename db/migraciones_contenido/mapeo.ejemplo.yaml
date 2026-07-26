@@ -1,0 +1,26 @@
+# Plantilla de mapeo etiquetas → sección. Cópiala a `mapeo.yaml` y edita.
+#
+# Cada regla es una entrada del array `reglas`. La primera cuyo conjunto
+# de etiquetas esté INCLUIDO en las etiquetas del test importado, gana.
+# Recomendación: pon las reglas MÁS ESPECÍFICAS primero, y deja al final
+# los catch-all "sin_clasificar" por oposición.
+#
+# Los slugs deben existir ya en la BD: crea la oposición y su árbol
+# (oposicion → temas → modulos → secciones) desde el panel admin antes
+# de correr este script.
+
+reglas:
+  # Ejemplo con Constitución Española asignada a una oposición 'auxiliar-admin':
+  - etiquetas: ["constitución española", "título preliminar"]
+    seccion:   auxiliar-admin/tema-1-constitucion/modulo-1/seccion-1-titulo-preliminar
+
+  - etiquetas: ["constitución española", "derechos y deberes"]
+    seccion:   auxiliar-admin/tema-1-constitucion/modulo-2/seccion-1-derechos
+
+  - etiquetas: ["ley 39/2015"]
+    seccion:   auxiliar-admin/tema-3-procedimiento/modulo-1/seccion-1-generalidades
+
+  # Catch-all por oposición: cualquier etiqueta 'auxiliar-admin' que no
+  # haya casado, cae en la sección 'sin_clasificar' de esa oposición.
+  - etiquetas: ["auxiliar-admin"]
+    seccion:   auxiliar-admin/sin_clasificar/modulo-1/seccion-unica
