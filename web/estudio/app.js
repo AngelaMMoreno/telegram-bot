@@ -1595,6 +1595,7 @@
 
       <div class="admin-toolbar">
         <h3 style="margin:0; flex:1">Temas</h3>
+        <button class="btn btn-sm" id="btn-importar-temas">📥 Importar temas</button>
         <button class="btn btn-sm" id="btn-vincular">🔗 Vincular tema existente</button>
         <button class="btn btn-pri btn-sm" id="btn-nuevo-tema">➕ Nuevo tema</button>
       </div>
@@ -1618,6 +1619,8 @@
     `;
 
     root.querySelector('#btn-nuevo-tema').onclick = () => _editarTema(null, opId);
+    root.querySelector('#btn-importar-temas').onclick = () =>
+      _importarTemasJSON(opId, () => viewAdminOposicion([opId]));
     root.querySelector('#btn-vincular').onclick = () =>
       _vincularTemaAOposicion(opId, todosTemas, temasOp.map(t => t.id));
 
@@ -1853,6 +1856,7 @@
       <div class="view-head"><h2>${modulo.nombre}</h2></div>
       <div class="admin-toolbar">
         <h3 style="margin:0; flex:1">Secciones</h3>
+        <button class="btn btn-sm" id="btn-importar-secciones">📥 Importar secciones</button>
         <button class="btn btn-pri btn-sm" id="btn-nueva-sec">➕ Nueva sección</button>
       </div>
       ${raw(secciones.length === 0
@@ -1877,6 +1881,8 @@
     `;
 
     root.querySelector('#btn-nueva-sec').onclick = () => _editarSeccion(null, mid);
+    root.querySelector('#btn-importar-secciones').onclick = () =>
+      _importarSeccionesJSON(mid, () => viewAdminModulo([mid]));
     root.querySelectorAll('.list-item[data-sid]').forEach(item => {
       const sid = item.dataset.sid;
       const sec = secciones.find(x => x.id === sid);
@@ -2285,9 +2291,9 @@
           <span id="fp-json-label">📁 Elegir fichero <code>.json</code> o pegar debajo</span>
           <input id="fp-json" type="file" accept=".json,application/json">
         </label>
-        <div class="field" style="margin-top:.75rem">
-          <label>O pega el JSON aquí</label>
-          <textarea id="ta-json" rows="8"
+        <div class="campo-json">
+          <label for="ta-json">O pega el JSON aquí</label>
+          <textarea id="ta-json" rows="8" spellcheck="false"
             placeholder='[
   {"pregunta": "…", "opciones": ["Correcta", "Op2", "Op3", "Op4"], "explicacion": "…"}
 ]'></textarea>
@@ -2368,6 +2374,222 @@
           }
           viewAdminSeccion([seccionId]);
         };
+      },
+    });
+  }
+
+  function _normalizarSecciones(datos, ruta = 'seccion') {
+    if (!Array.isArray(datos)) throw new Error('secciones_debe_ser_array');
+    return datos.map((seccion, indice) => {
+      const nombre = String(seccion?.nombre || '').trim();
+      if (!nombre) throw new Error(`${ruta}_${indice + 1}_sin_nombre`);
+      return {
+        nombre,
+        orden: (seccion.orden != null ? +seccion.orden : indice + 1) || null,
+        min_aprobado: seccion.min_aprobado != null ? +seccion.min_aprobado : 70,
+        n_preg_test: seccion.n_preg_test != null ? +seccion.n_preg_test : 10,
+      };
+    });
+  }
+
+  function _normalizarModulos(datos, ruta = 'modulo') {
+    if (!Array.isArray(datos)) throw new Error('modulos_debe_ser_array');
+    return datos.map((modulo, indice) => {
+      const nombre = String(modulo?.nombre || '').trim();
+      if (!nombre) throw new Error(`${ruta}_${indice + 1}_sin_nombre`);
+      return {
+        nombre,
+        orden: (modulo.orden != null ? +modulo.orden : indice + 1) || null,
+        secciones: _normalizarSecciones(
+          Array.isArray(modulo.secciones) ? modulo.secciones : [],
+          `${ruta}_${indice + 1}_seccion`),
+      };
+    });
+  }
+
+  function _normalizarTemas(datos) {
+    if (!Array.isArray(datos)) throw new Error('temas_debe_ser_array');
+    return datos.map((tema, indice) => {
+      const nombre = String(tema?.nombre || '').trim();
+      if (!nombre) throw new Error(`tema_${indice + 1}_sin_nombre`);
+      return {
+        nombre,
+        descripcion: tema.descripcion ? String(tema.descripcion).trim() : null,
+        modulos: _normalizarModulos(
+          Array.isArray(tema.modulos) ? tema.modulos : [],
+          `tema_${indice + 1}_modulo`),
+      };
+    });
+  }
+
+  async function _crearSeccionesAusentes(moduloId, secciones) {
+    const existentes = await S.rpc('admin_listar_secciones', { p_modulo_id: moduloId }) || [];
+    const nombres = new Set(existentes.map(s => String(s.nombre).trim().toLowerCase()));
+    let creadas = 0;
+    for (const seccion of secciones) {
+      if (nombres.has(seccion.nombre.toLowerCase())) continue;
+      await S.rpc('admin_crear_seccion', {
+        p_modulo_id: moduloId,
+        p_nombre: seccion.nombre,
+        p_orden: seccion.orden,
+        p_min_aprobado: seccion.min_aprobado,
+        p_n_preg_test: seccion.n_preg_test,
+      });
+      nombres.add(seccion.nombre.toLowerCase());
+      creadas++;
+    }
+    return creadas;
+  }
+
+  function _mostrarImportadorEstructura({ titulo, ayuda, ejemplo, validar, confirmar, procesar }) {
+    let datos = null;
+    _mostrarModal({
+      titulo,
+      contenido: html`
+        <p class="muted small ayuda-importacion">${ayuda}</p>
+        <label class="json-drop" for="fichero-estructura-json">
+          <span id="etiqueta-fichero-estructura">📁 Elegir fichero <code>.json</code> o pegar debajo</span>
+          <input id="fichero-estructura-json" type="file" accept=".json,application/json">
+        </label>
+        <div class="campo-json">
+          <label for="texto-estructura-json">O pega el JSON aquí</label>
+          <textarea id="texto-estructura-json" rows="10" spellcheck="false"
+            placeholder="${ejemplo}"></textarea>
+          <span class="campo-json__ayuda">Se valida automáticamente y no se importan nombres duplicados.</span>
+        </div>
+        <div class="json-preview__summary" id="resumen-estructura-json" hidden></div>
+        <div class="form-err" hidden></div>
+        <div class="form-row acciones-importacion">
+          <button class="btn btn-cancel btn-sm" type="button" data-cancel>Cancelar</button>
+          <button class="btn btn-pri btn-sm" type="button" id="confirmar-estructura-json" disabled>${confirmar}</button>
+        </div>`,
+      onMount(modal) {
+        const texto = modal.querySelector('#texto-estructura-json');
+        const error = modal.querySelector('.form-err');
+        const resumen = modal.querySelector('#resumen-estructura-json');
+        const boton = modal.querySelector('#confirmar-estructura-json');
+        const etiqueta = modal.querySelector('#etiqueta-fichero-estructura');
+        const actualizar = () => {
+          datos = null;
+          error.hidden = true;
+          resumen.hidden = true;
+          boton.disabled = true;
+          if (!texto.value.trim()) return;
+          try {
+            datos = validar(texto.value);
+            resumen.textContent = datos.resumen;
+            resumen.hidden = false;
+            boton.disabled = false;
+          } catch (e) {
+            error.textContent = _msgError(e.message);
+            error.hidden = false;
+          }
+        };
+        texto.oninput = actualizar;
+        modal.querySelector('#fichero-estructura-json').onchange = async (evento) => {
+          const fichero = evento.target.files?.[0];
+          if (!fichero) return;
+          try {
+            texto.value = await _leerFicheroTexto(fichero);
+            etiqueta.textContent = `📄 ${fichero.name}`;
+            actualizar();
+          } catch (e) {
+            error.textContent = _msgError(e.message);
+            error.hidden = false;
+          }
+        };
+        modal.querySelector('[data-cancel]').onclick = _cerrarModal;
+        boton.onclick = async () => {
+          if (!datos) return;
+          boton.disabled = true;
+          error.hidden = true;
+          try {
+            boton.textContent = 'Importando…';
+            const mensaje = await procesar(datos.valor);
+            _cerrarModal();
+            showToast(mensaje);
+          } catch (e) {
+            boton.disabled = false;
+            boton.textContent = confirmar;
+            error.textContent = _msgError(e.message || String(e));
+            error.hidden = false;
+          }
+        };
+      },
+    });
+  }
+
+  function _importarTemasJSON(oposicionId, refrescar) {
+    _mostrarImportadorEstructura({
+      titulo: 'Importar temas desde JSON',
+      ayuda: 'Añade temas a esta oposición junto con sus módulos y secciones. Los elementos existentes con el mismo nombre se reutilizan.',
+      ejemplo: '[\n  {\n    "nombre": "Constitución",\n    "modulos": [\n      {"nombre": "Título preliminar", "secciones": [{"nombre": "Artículos 1-9"}]}\n    ]\n  }\n]',
+      confirmar: 'Importar temas',
+      validar(texto) {
+        let json;
+        try { json = JSON.parse(texto); } catch { throw new Error('json_invalido'); }
+        const temas = _normalizarTemas(Array.isArray(json) ? json : json?.temas);
+        const modulos = temas.reduce((total, tema) => total + tema.modulos.length, 0);
+        const secciones = temas.reduce((total, tema) =>
+          total + tema.modulos.reduce((subtotal, modulo) => subtotal + modulo.secciones.length, 0), 0);
+        return { valor: temas, resumen: `${temas.length} tema(s) · ${modulos} módulo(s) · ${secciones} sección(es)` };
+      },
+      async procesar(temas) {
+        const catalogo = await S.rpc('admin_listar_temas', { p_oposicion_id: null }) || [];
+        const porNombre = new Map(catalogo.map(t => [String(t.nombre).trim().toLowerCase(), t]));
+        let temasNuevos = 0, modulosNuevos = 0, seccionesNuevas = 0;
+        for (const tema of temas) {
+          const existente = porNombre.get(tema.nombre.toLowerCase());
+          let temaId;
+          if (existente) {
+            temaId = existente.id;
+            await S.rpc('admin_asignar_tema_a_oposicion', {
+              p_oposicion_id: oposicionId, p_tema_id: temaId,
+            }).catch(() => {});
+          } else {
+            const creado = await S.rpc('admin_crear_tema', {
+              p_nombre: tema.nombre, p_descripcion: tema.descripcion, p_oposicion_id: oposicionId,
+            });
+            temaId = creado?.id || creado?.tema_id || creado;
+            temasNuevos++;
+          }
+          const modulos = await S.rpc('admin_listar_modulos', { p_tema_id: temaId }) || [];
+          const modulosPorNombre = new Map(modulos.map(m => [String(m.nombre).trim().toLowerCase(), m]));
+          for (const modulo of tema.modulos) {
+            const moduloExistente = modulosPorNombre.get(modulo.nombre.toLowerCase());
+            let moduloId = moduloExistente?.id;
+            if (!moduloId) {
+              const creado = await S.rpc('admin_crear_modulo', {
+                p_tema_id: temaId, p_nombre: modulo.nombre, p_orden: modulo.orden,
+              });
+              moduloId = creado?.id || creado?.modulo_id || creado;
+              modulosNuevos++;
+            }
+            seccionesNuevas += await _crearSeccionesAusentes(moduloId, modulo.secciones);
+          }
+        }
+        if (typeof refrescar === 'function') refrescar();
+        return `${temasNuevos} tema(s), ${modulosNuevos} módulo(s) y ${seccionesNuevas} sección(es) creados.`;
+      },
+    });
+  }
+
+  function _importarSeccionesJSON(moduloId, refrescar) {
+    _mostrarImportadorEstructura({
+      titulo: 'Importar secciones desde JSON',
+      ayuda: 'Añade varias secciones a este módulo. Puedes incluir orden, mínimo de aprobado y número de preguntas por test.',
+      ejemplo: '[\n  {"nombre": "Artículos 1-9", "orden": 1, "min_aprobado": 70, "n_preg_test": 10}\n]',
+      confirmar: 'Importar secciones',
+      validar(texto) {
+        let json;
+        try { json = JSON.parse(texto); } catch { throw new Error('json_invalido'); }
+        const secciones = _normalizarSecciones(Array.isArray(json) ? json : json?.secciones);
+        return { valor: secciones, resumen: `${secciones.length} sección(es) válidas` };
+      },
+      async procesar(secciones) {
+        const creadas = await _crearSeccionesAusentes(moduloId, secciones);
+        if (typeof refrescar === 'function') refrescar();
+        return `${creadas} sección(es) creadas; las duplicadas se han omitido.`;
       },
     });
   }
@@ -2457,9 +2679,9 @@
           <span id="fp-op-json-label">📁 Elegir fichero <code>.json</code> o pegar debajo</span>
           <input id="fp-op-json" type="file" accept=".json,application/json">
         </label>
-        <div class="field" style="margin-top:.75rem">
-          <label>O pega el JSON aquí</label>
-          <textarea id="ta-op-json" rows="10"
+        <div class="campo-json">
+          <label for="ta-op-json">O pega el JSON aquí</label>
+          <textarea id="ta-op-json" rows="10" spellcheck="false"
             placeholder='{
   "nombre": "Auxilio Judicial",
   "descripcion": "…",
