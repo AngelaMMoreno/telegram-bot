@@ -3,8 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>Aprentix · Estudio</title>
-  <base href="/estudio/">
+  <title>Aprentix</title>
 
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="application-name" content="Aprentix">
@@ -21,6 +20,7 @@
   <link rel="stylesheet" href="/shared/base.css">
   <link rel="stylesheet" href="/shared/components.css">
   <link rel="stylesheet" href="/shared/header.css">
+  <link rel="stylesheet" href="/shared/auth.css">
   <link rel="stylesheet" href="/estudio/style.css">
 
   <script>
@@ -32,8 +32,36 @@
     })();
   </script>
 
+  <script>
+    // Registro del service worker en la raíz (scope "/"), para que la PWA
+    // pueda cachear el shell y funcionar offline. Aprovechamos el load para
+    // no bloquear la primera pintura.
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker
+          .register("/service-worker.js", { scope: "/" })
+          .then(function (reg) {
+            if (reg.waiting) reg.waiting.postMessage("SKIP_WAITING");
+            reg.addEventListener("updatefound", function () {
+              var nw = reg.installing;
+              if (!nw) return;
+              nw.addEventListener("statechange", function () {
+                if (nw.state === "installed" && navigator.serviceWorker.controller) {
+                  nw.postMessage("SKIP_WAITING");
+                }
+              });
+            });
+          })
+          .catch(function () { /* silent */ });
+      });
+    }
+  </script>
+
   <!-- Sesión + auth. Deben cargarse ANTES de app.js (no defer). -->
   <script src="/shared/auth/session.js"></script>
+
+  <!-- Componentes web reusables (login/registro con estética solarpunk). -->
+  <script src="/shared/components/ap-auth-form.js" defer></script>
 
   <!-- Cabecera reescrita: <xp-ring>, <streak-flame>, sin brand/tabs. -->
   <script src="/shared/header.js" defer></script>
@@ -41,15 +69,25 @@
   <!-- Markdown para renderizar teoría. -->
   <script src="/shared/vendor/marked.min.js" defer></script>
   <script src="/shared/vendor/purify.min.js" defer></script>
+
+  <!-- app.js con defer garantiza que se ejecute DESPUÉS de que
+       <ap-auth-form> y <aprentix-header> hayan sido definidos por sus
+       scripts diferidos correspondientes; un script sync al final del body
+       correría antes y crearía elementos "unknown" sin métodos. -->
+  <script src="/estudio/app.js" defer></script>
 </head>
 <body>
-  <!-- Cabecera compartida: XP ring + racha + avatar. Sin brand. -->
-  <aprentix-header active="estudio"
-    nav-items='[
-      {"id":"home","label":"Inicio","icon":"home","view":"home"},
-      {"id":"estadisticas","label":"Estadísticas","icon":"chart","view":"estadisticas"},
-      {"id":"tablon","label":"Tablón","icon":"bookmark","view":"tablon"}
-    ]'></aprentix-header>
+  <!-- La cabecera vive dentro del contenedor #app-header para poder ocultarla
+       durante el login/verify/reset. Sin sesión no queremos mostrar XP ni
+       avatar; sólo la tarjeta de login. -->
+  <div id="app-header">
+    <aprentix-header active="estudio"
+      nav-items='[
+        {"id":"home","label":"Inicio","icon":"home","view":"home"},
+        {"id":"estadisticas","label":"Estadísticas","icon":"chart","view":"estadisticas"},
+        {"id":"tablon","label":"Tablón","icon":"bookmark","view":"tablon"}
+      ]'></aprentix-header>
+  </div>
 
   <main id="root">
     <!-- El router hash mete aquí la vista activa. -->
@@ -57,7 +95,5 @@
   </main>
 
   <div id="toast" class="toast hidden"></div>
-
-  <script src="/estudio/app.js"></script>
 </body>
 </html>

@@ -204,10 +204,11 @@
         }));
       };
 
-      // Cerrar sesión.
+      // Cerrar sesión. La SPA vive en la raíz (con /estudio/ como alias),
+      // así que redirigimos al login sin forzar el prefijo antiguo.
       $('#btn-logout').onclick = async () => {
         if (S) await S.logout();
-        location.href = '/estudio/#/login';
+        location.href = '/#/login';
       };
 
       // Oculta la fila de admin si el usuario no es admin.

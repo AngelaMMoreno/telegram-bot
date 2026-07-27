@@ -19,7 +19,7 @@
  *   en el siguiente refresh.
  * ==========================================================================*/
 
-const CACHE_VERSION = "aprentix-v19";
+const CACHE_VERSION = "aprentix-v20";
 const SHELL_CACHE   = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -28,8 +28,10 @@ const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const BASE = new URL("/", self.location.href);
 function urlAt(p) { return new URL(p, BASE).toString(); }
 
-// Esqueleto mínimo de la única SPA desplegada.
+// Esqueleto mínimo de la única SPA desplegada. Ahora la SPA se sirve
+// también desde la raíz (rewrite en Caddy), por eso "/" está en el shell.
 const SHELL_ASSETS = [
+  "/",
   "/estudio/",
   "/estudio/index.html",
   "/estudio/app.js",
@@ -39,8 +41,11 @@ const SHELL_ASSETS = [
   "/shared/base.css",
   "/shared/components.css",
   "/shared/header.css",
+  "/shared/auth.css",
   "/shared/auth/session.js",
+  "/shared/components/ap-auth-form.js",
   "/shared/header.js",
+  "/shared/logo.svg",
   "/shared/vendor/marked.min.js",
   "/shared/vendor/purify.min.js",
   "/shared/pwa-icons/icon-any-192.png",
@@ -93,7 +98,7 @@ function isStatic(url) {
 }
 
 async function navigationFallback() {
-  const candidates = ["/estudio/index.html", "/estudio/"];
+  const candidates = ["/", "/estudio/index.html", "/estudio/"];
   for (const path of candidates) {
     const hit = await caches.match(urlAt(path));
     if (hit) return hit;
@@ -111,15 +116,10 @@ self.addEventListener("fetch", (event) => {
   if (isApi(url)) return;
 
   // Navegaciones: network-first con fallback a un HTML cacheado.
+  // Ya no forzamos redirects internos: la SPA vive tanto en `/` como en
+  // `/estudio/` (Caddy sirve ambas con el mismo index) y queremos respetar
+  // la URL que el usuario o el navegador han pedido.
   if (isNavigation(req)) {
-    // La raíz siempre va a /estudio/ — sin pasar por caché. Blindaje contra
-    // SWs viejos que precachearon la landing borrada y que, en el primer
-    // load tras actualizar, servirían HTML que carga scripts inexistentes
-    // (síntoma: aprentix.es en blanco).
-    if (url.pathname === "/" || url.pathname === "/index.html") {
-      event.respondWith(Response.redirect(urlAt("/estudio/"), 308));
-      return;
-    }
     event.respondWith(
       (async () => {
         try {

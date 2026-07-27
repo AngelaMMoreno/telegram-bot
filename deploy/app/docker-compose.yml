@@ -44,7 +44,7 @@ services:
       - "traefik.http.routers.web-legacy.tls.certresolver=letsencrypt"
       - "traefik.http.routers.web-legacy.middlewares=web-legacy-redirect"
       - "traefik.http.middlewares.web-legacy-redirect.redirectregex.regex=^https?://[^/]+/(.*)"
-      - "traefik.http.middlewares.web-legacy-redirect.redirectregex.replacement=https://${DOMINIO_LANDING:-aprentix.es}/estudio/"
+      - "traefik.http.middlewares.web-legacy-redirect.redirectregex.replacement=https://${DOMINIO_LANDING:-aprentix.es}/"
       - "traefik.http.middlewares.web-legacy-redirect.redirectregex.permanent=true"
 
       # ── Redirect legacy: teoria.aprentix.es → aplicación remodelada
@@ -54,7 +54,7 @@ services:
       - "traefik.http.routers.teoria-legacy.tls.certresolver=letsencrypt"
       - "traefik.http.routers.teoria-legacy.middlewares=teoria-legacy-redirect"
       - "traefik.http.middlewares.teoria-legacy-redirect.redirectregex.regex=^https?://[^/]+/(.*)"
-      - "traefik.http.middlewares.teoria-legacy-redirect.redirectregex.replacement=https://${DOMINIO_LANDING:-aprentix.es}/estudio/"
+      - "traefik.http.middlewares.teoria-legacy-redirect.redirectregex.replacement=https://${DOMINIO_LANDING:-aprentix.es}/"
       - "traefik.http.middlewares.teoria-legacy-redirect.redirectregex.permanent=true"
 
 networks:

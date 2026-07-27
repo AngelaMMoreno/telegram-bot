@@ -3,6 +3,19 @@
  * lo específico del árbol Oposición → Tema → Módulo → Sección y flujo test.
  */
 
+/* Fondo ambiental solarpunk: los tokens definen --bg-ambient (radiales de
+ * ámbar, cielo, coral, lima y lavanda). Sin esta capa la app se ve gris. */
+html, body { min-height: 100%; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--txt);
+  background: var(--bg);
+  background-image: var(--bg-ambient);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  margin: 0;
+}
+
 main#root {
   max-width: 960px;
   margin: 0 auto;
@@ -16,6 +29,18 @@ main#root {
     padding-bottom: calc(72px + env(safe-area-inset-bottom, 0));
   }
 }
+
+/* Cuando el usuario aún no ha iniciado sesión (login / verify / reset)
+ * ocultamos la cabecera y el bottom-nav; el contenido ocupa toda la
+ * altura de la ventana centrado, para dar protagonismo al formulario. */
+body.no-header main#root {
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0));
+  min-height: 100dvh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+body.no-header main#root > .auth-section { width: 100%; }
 
 .loading, .empty {
   text-align: center;
