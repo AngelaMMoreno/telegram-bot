@@ -896,3 +896,35 @@ streak-flame { display: inline-flex; align-items: center; max-width: 100%; flex:
   .topbar { padding: 0 2rem; gap: 1.5rem; }
   .topbar .hdr-center { justify-content: center; }
 }
+
+/* ─── Toque gamificado ──────────────────────────────────────────────────
+ * El anillo de XP recibe un halo suave, el número del nivel se refuerza y
+ * la copia "Nivel 3" se hace protagonista dentro del chip (antes se leía
+ * como sub-texto). Ligero, sin cargar la barra. */
+.level-chip xp-ring {
+  --xp-fill: var(--pri);
+  --xp-track: color-mix(in srgb, var(--pri) 20%, transparent);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 3px var(--pri-soft),
+    0 2px 8px rgba(107, 142, 35, .18);
+}
+[data-theme="dark"] .level-chip xp-ring {
+  box-shadow:
+    0 0 0 3px rgba(92, 229, 213, .18),
+    0 2px 10px rgba(92, 229, 213, .22);
+}
+.level-chip xp-ring svg text {
+  font-size: 14px;
+  font-weight: 900;
+}
+.level-chip .level-meta small strong {
+  color: var(--pri-d);
+  font-weight: 900;
+}
+[data-theme="dark"] .level-chip .level-meta small strong { color: var(--pri); }
+.level-chip .level-meta small {
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
