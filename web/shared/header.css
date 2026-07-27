@@ -570,10 +570,12 @@ body:not(.has-oposiciones) .sheet-row.sheet-oposicion { display: none; }
 
 /* Fila "Panel de admin" en el sheet del usuario: destacada con acento
  * cálido para diferenciarla del resto y aviso ADMIN a la derecha.
- * Se oculta si el usuario no es gestor ni admin. */
-body:not(.puede-gestionar):not(.es-admin) .sheet-row.admin-row {
-  display: none;
-}
+ * La visibilidad la controla el propio componente <aprentix-header> vía
+ * el atributo HTML `hidden` (JS), no una clase en <body>. Antes había una
+ * regla `body:not(.puede-gestionar):not(.es-admin) .sheet-row.admin-row
+ * { display: none }` heredada del sistema viejo — nadie añadía esas
+ * clases al body en la SPA remodelada, así que el CSS ocultaba las filas
+ * siempre por más que el JS hiciera hidden=false. Retirada. */
 .sheet-row.admin-row {
   background: linear-gradient(90deg, var(--accent-soft), var(--pri-soft));
   border: 1.5px dashed var(--accent);
