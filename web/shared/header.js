@@ -108,11 +108,15 @@
       this.innerHTML = `
         <header class="topbar" id="topbar">
           <div class="hdr-left">
-            <xp-ring level="1" xp="0"></xp-ring>
-            <span class="metric-copy"><small>Nivel</small><strong id="nivel-actual">1</strong></span>
+            <div class="hdr-chip level-chip" title="Nivel y experiencia">
+              <xp-ring level="1" xp="0"></xp-ring>
+              <span class="level-meta">
+                <small>Nivel <strong id="nivel-actual">1</strong></small>
+                <b id="xp-actual">0 XP</b>
+              </span>
+            </div>
           </div>
           <div class="hdr-center">
-            <span class="xp-resumen"><small>Experiencia</small><strong id="xp-actual">0 XP</strong><i><span id="xp-progreso"></span></i></span>
             <streak-flame days="0"></streak-flame>
           </div>
           <div class="hdr-right">
@@ -259,14 +263,15 @@
         }
         const nivel = this.querySelector('#nivel-actual');
         const experiencia = this.querySelector('#xp-actual');
-        const progreso = this.querySelector('#xp-progreso');
         if (nivel) nivel.textContent = g.nivel || 1;
-        if (experiencia) experiencia.textContent = `${g.xp_total || 0} XP`;
-        if (progreso) {
-          const inicio = Number(g.xp_nivel_ini) || 0;
-          const siguiente = Math.max(inicio + 1, Number(g.xp_nivel_sig) || inicio + 1);
-          const porcentaje = Math.min(100, Math.max(0, ((Number(g.xp_total) - inicio) / (siguiente - inicio)) * 100));
-          progreso.style.width = `${porcentaje}%`;
+        if (experiencia) {
+          // La barra visual la lleva el propio <xp-ring>; aquí sólo pintamos
+          // el total (con el "de X" del nivel siguiente en desktop, donde
+          // hay hueco). En móvil la CSS oculta la parte del `/ N`.
+          const total = Number(g.xp_total) || 0;
+          const sig   = Number(g.xp_nivel_sig) || total;
+          experiencia.innerHTML = `${total.toLocaleString('es-ES')}` +
+            ` XP<span class="of">&nbsp;/&nbsp;${sig.toLocaleString('es-ES')}</span>`;
         }
         const fl = this.querySelector('streak-flame');
         if (fl) fl.setAttribute('days', g.racha_actual || 0);
