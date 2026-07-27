@@ -40,7 +40,7 @@ COPY deploy/app/start.sh  /start.sh
 RUN chmod +x /start.sh
 
 ENV BASE_DIR=/ficheros \
-    POSTGREST_URL=http://postgrest:3000
+    POSTGREST_URL=http://postgrest_desa:3000
 
 EXPOSE 80
 CMD ["/start.sh"]

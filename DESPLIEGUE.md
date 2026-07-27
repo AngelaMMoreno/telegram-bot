@@ -1,5 +1,11 @@
 # Despliegue en Dokploy
 
+> **Rama `desa` / entorno `desarrollo` de Dokploy.** Este README describe
+> el despliegue de PRODUCCIÓN (rama `main`, entorno `produccion`). Para el
+> despliegue paralelo de esta misma rama en el entorno `desarrollo`, ver
+> la sección **[Entorno `desarrollo` en paralelo](#entorno-desarrollo-en-paralelo-rama-desa)**
+> al final.
+
 El proyecto está partido en **tres stacks independientes** para poder
 redesplegarlos por separado desde Dokploy. Cada stack es una **Compose
 Application** distinta que apunta a su propio fichero:
@@ -303,3 +309,195 @@ recoge.
 | `push_inactividad_cooldown_horas` |   `48`  | Cooldown entre avisos de inactividad              |
 | `push_min_vencidas`               |    `5`  | Mínimo de preguntas vencidas para lanzar aviso    |
 | `push_tz`                         | `Europe/Madrid` | Zona horaria de la ventana                 |
+
+## Entorno `desarrollo` en paralelo (rama `desa`)
+
+Este bloque documenta cómo desplegar la rama `desa` en un **entorno
+Dokploy independiente** que corre EN PARALELO al entorno `produccion`
+(rama `main`), sin pisarse. El entorno `desarrollo` se apoya en la
+infraestructura ya levantada por producción (Postgres, pgAdmin, red
+Traefik) y sólo despliega sus propios `postgrest`/`mailer`/`app`.
+
+### Arquitectura resumida
+
+```
+                 ┌───────── Entorno `produccion` (rama main) ─────────┐
+                 │                                                    │
+                 │  core-prod:  db  ·  pgadmin  ·  postgrest  · mailer│
+                 │  app-prod:   app (aprentix.es)                     │
+                 │  notificador-prod                                  │
+                 │  backups-prod                                      │
+                 └────────────┬───────────────────────────────────────┘
+                              │  dokploy-network (compartida)
+                              │  · alias `db`   → único postgres
+                              │  · alias `pgadmin` → único pgAdmin
+                              ▼
+                 ┌───────── Entorno `desarrollo` (rama desa) ─────────┐
+                 │                                                    │
+                 │  core-desa:  postgrest_desa  ·  mailer_desa        │
+                 │              (NO db, NO pgadmin)                   │
+                 │  app-desa:   app (desa.aprentix.es)                │
+                 │  (sin notificador, sin backups)                    │
+                 └────────────────────────────────────────────────────┘
+```
+
+Un único Postgres en el host (`/mnt/data/pg`) con DOS bases de datos
+dentro: `aprentix` (la usa prod) y `aprentix_desa` (la usa desa). Un
+único pgAdmin en `pgadmin.aprentix.es` desde el que se ven ambas.
+
+### Qué crea el entorno `desarrollo` en Dokploy
+
+En Dokploy, dentro del entorno `desarrollo`, se crean SÓLO dos Compose
+Applications, ambas apuntando a la rama `desa`:
+
+| Stack       | Compose path                          | .env de referencia            |
+|-------------|---------------------------------------|-------------------------------|
+| `core-desa` | `deploy/core/docker-compose.yml`      | `deploy/core/.env.example`    |
+| `app-desa`  | `deploy/app/docker-compose.yml`       | `deploy/app/.env.example`     |
+
+**NO crear en desa** las Compose Applications de `notificador` ni
+`backups` — corren sólo en producción y ya cubren el sistema entero.
+
+### Diferencias respecto a los ficheros de producción
+
+Los composes de esta rama están recortados/renombrados a propósito:
+
+- `deploy/core/docker-compose.yml` **no define `db` ni `pgadmin`**.
+  Dos motivos:
+    - `db` de prod usa bind mount `/mnt/data/pg`. Levantar otro `db` en
+      la misma máquina lo pisaría → corrupción segura.
+    - El pgAdmin de prod ya alcanza `aprentix_desa` porque vive en el
+      mismo cluster.
+- `postgrest` y `mailer` se llaman **`postgrest_desa`** y
+  **`mailer_desa`**. El alias DNS de un servicio en `dokploy-network`
+  coincide con su nombre de servicio y no se puede suprimir: si en la
+  red compartida hubiera dos alias `postgrest`, los clientes recibirían
+  round-robin entre prod y desa → bug silencioso apuntando a la BD
+  equivocada.
+- Los router names y middlewares de Traefik (`api`, `app`,
+  `web-legacy`, `teoria-legacy`, `api-rl`, …) llevan sufijo **`-desa`**
+  por la misma razón: Traefik dedupe routers por nombre y sólo
+  sobrevive uno.
+- `deploy/app/Dockerfile` y `deploy/app/Caddyfile` apuntan a
+  `postgrest_desa:3000` (no a `postgrest:3000`). Como cada rama
+  construye su propia imagen, no hay conflicto entre las imágenes de
+  prod y desa.
+
+### Preparativos (una sola vez)
+
+1. **Crear la BD `aprentix_desa` en el cluster Postgres de prod.** Si
+   aún no existe, seguir `db/bootstrap_aprentix_desa.sql`
+   (`CREATE DATABASE aprentix_desa OWNER aprentix;` + aplicar
+   `db/init/01_esquema.sql` con los mismos `app.jwt_secret`,
+   `app.auth_pass`, `app.admin_pass` que en prod).
+2. **Añadir la entrada de `aprentix_desa` en pgAdmin.** Como el
+   volumen `pgadmin_data` de prod ya está inicializado, editar
+   `pgadmin/servers.json` NO añade retroactivamente el nuevo server.
+   Opciones:
+     - **Recomendado**: en el panel de pgAdmin de prod, click derecho
+       sobre `Servers` → `Register` → `Server…`, con Host `db`, Port
+       `5432`, Maintenance database `aprentix_desa`, Username
+       `aprentix`. La entrada se persiste en `pgadmin_data`.
+     - Alternativa: parar pgAdmin, borrar el volumen `pgadmin_data`, y
+       redeployar prod → pgAdmin reseedará desde el `servers.json`
+       actualizado (que ya trae ambas entradas en esta rama).
+3. **A record DNS**: `desa.aprentix.es` y `api.desa.aprentix.es`
+   apuntando a la IP del VPS. Let's Encrypt emitirá los certs al primer
+   request TLS.
+
+### Variables por stack en el entorno `desarrollo`
+
+#### `core-desa`
+
+| Clave                | Valor típico               | Notas                                        |
+|----------------------|----------------------------|----------------------------------------------|
+| `POSTGRES_DB`        | `aprentix_desa`            | La BD de desarrollo en el cluster compartido.|
+| `POSTGRES_USER`      | `aprentix`                 | Rol global (mismo que prod).                 |
+| `DB_PASS`            | *el mismo que en prod*     | Rol global, una sola password real.          |
+| `AUTH_PASS`          | *el mismo que en prod*     | Rol global `autenticador`.                   |
+| `JWT_SECRET`         | *el mismo que en prod*     | GUC cluster-wide; no se puede tener otro.    |
+| `MAILER_DEV_LOG_ONLY`| `1`                        | Recomendado en desa (no envía SMTP real).    |
+| `SMTP_*`             | los que quieras            | Sólo se usan si `MAILER_DEV_LOG_ONLY=0`.     |
+| `DOMINIO_API`        | `api.desa.aprentix.es`     | Host propio de desa; no pisa `api.aprentix.es`. |
+
+#### `app-desa`
+
+| Clave                 | Valor típico               | Notas                                        |
+|-----------------------|----------------------------|----------------------------------------------|
+| `JWT_SECRET`          | *el mismo que en `core-desa` (y que en prod)* | Cluster-wide, no negociable. |
+| `DOMINIO_LANDING`     | `desa.aprentix.es`         | Obligatorio; no pisa `aprentix.es`.          |
+| `DOMINIO_LANDING_ALT` | vacío o `www.desa.aprentix.es` | Alias opcional.                          |
+| `DOMINIO_WEB*`, `DOMINIO_TEORIA*` | **dejar vacías** | Los hosts legacy los declara sólo prod.  |
+
+### Verificación
+
+Desde el VPS, sólo deben existir UN `db` y UN `pgadmin`, y DOS grupos
+paralelos de `postgrest`/`mailer`/`app`:
+
+```bash
+docker ps --format '{{.Names}}\t{{.Image}}' | sort
+# esperado (nombres reales llevarán prefijos del proyecto Dokploy):
+#   ...-core-prod-db-1              pgvector/pgvector:pg16
+#   ...-core-prod-pgadmin-1         dpage/pgadmin4:9
+#   ...-core-prod-postgrest-1       postgrest/postgrest:v12.2.3
+#   ...-core-prod-mailer-1          ...
+#   ...-core-desa-postgrest_desa-1  postgrest/postgrest:v12.2.3
+#   ...-core-desa-mailer_desa-1     ...
+#   ...-app-prod-app-1              ...
+#   ...-app-desa-app-1              ...
+```
+
+En el navegador:
+- `https://aprentix.es` → prod.
+- `https://api.aprentix.es` → PostgREST prod (BD `aprentix`).
+- `https://desa.aprentix.es` → desa.
+- `https://api.desa.aprentix.es` → PostgREST desa (BD `aprentix_desa`).
+- `https://pgadmin.aprentix.es` → único pgAdmin, ve las dos BDs.
+
+### Limitaciones de compartir el cluster Postgres
+
+Los GUCs `app.jwt_secret`, `app.auth_pass`, `app.admin_pass` los fija
+Postgres cluster-wide desde el `command` del contenedor `db` de prod.
+Consecuencia: prod y desa comparten OBLIGATORIAMENTE esos tres valores.
+Un token emitido por PostgREST-prod se valida en PostgREST-desa y
+viceversa (aceptable para dev; si algún día molesta, se pueden fijar
+por-BD con `ALTER DATABASE aprentix_desa SET app.jwt_secret = ...`).
+
+### MERGE NOTE para cuando esta rama vuelva a `main`
+
+**No propagar tal cual estos cambios a producción.** Los ficheros de
+`deploy/core/` y `deploy/app/` en esta rama están adaptados al entorno
+`desarrollo` (sin `db`/`pgadmin`, con sufijos `-desa`). Producción
+sigue necesitando el `core` completo (con `db` y `pgadmin`) y los
+routers/servicios sin sufijo.
+
+Al preparar el merge, elegir una de estas dos formas de mantener las
+dos variantes coexistiendo en `main`:
+
+1. **Dos ficheros por stack** (más simple):
+   ```
+   deploy/core/docker-compose.prod.yml   ← el actual de main
+   deploy/core/docker-compose.desa.yml   ← el de esta rama
+   deploy/app/docker-compose.prod.yml
+   deploy/app/docker-compose.desa.yml
+   ```
+   Cada entorno de Dokploy apunta al que le toca en "Compose path".
+
+2. **Un único fichero con `profiles`**: `db` y `pgadmin` con
+   `profiles: ["prod"]`, `postgrest`/`postgrest_desa` con perfiles
+   `prod`/`desa` respectivos, etc. El entorno de prod arranca con
+   `COMPOSE_PROFILES=prod`, el de desa con `COMPOSE_PROFILES=desa`.
+   Más compacto pero duplica definiciones dentro del mismo YAML.
+
+En cualquier caso, revisar también:
+- `deploy/app/Dockerfile`: el `ENV POSTGREST_URL` debe seguir siendo
+  `http://postgrest:3000` en la imagen de prod. En este branch se ha
+  cambiado a `postgrest_desa` para desa.
+- `deploy/app/Caddyfile`: idem, `reverse_proxy postgrest:3000` en prod.
+- `pgadmin/servers.json`: el añadido de `aprentix_desa` en esta rama
+  es correcto para prod post-merge (pgAdmin de prod ve las dos BDs);
+  se puede propagar tal cual.
+- Si en el futuro se quiere desplegar `notificador` o `backups` también
+  en desa, hay que renombrarlos (`notificador_desa`, `backups_desa`) y
+  separar sus keys VAPID / repo restic para no pisar los de prod.
+

@@ -1,164 +1,101 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Stack CORE — el estado y la API.
+# Stack CORE — variante para el ENTORNO `desarrollo` de Dokploy.
 #
-# Servicios: db (Postgres+pgvector), postgrest, mailer, pgadmin.
-# (El worker de embeddings está desactivado — ver bloque comentado abajo.)
-# Redespliega esto cuando cambien:
-#   - db/init/01_esquema.sql       (esquema, funciones, RLS, seed)
-#   - la versión de PostgREST
-#   - el mailer
-#   - el servers.json de pgAdmin
+# Convivencia con producción
+# ---------------------------
+# Este fichero vive en la rama `desa` y sólo lo despliega el entorno
+# `desarrollo` de Dokploy. Producción (entorno `produccion`, rama `main`)
+# usa SU PROPIO fichero de la rama `main`, que incluye `db` y `pgadmin`.
 #
-# Los demás stacks (app/notificador) se conectan a estos servicios por
-# nombre en la red externa dokploy-network. Levanta este stack primero.
+# En desarrollo NO desplegamos ni `db` ni `pgadmin`:
+#   - Hay UN único cluster Postgres (el del stack `core` de producción)
+#     con dos BDs dentro: `aprentix` (prod) y `aprentix_desa` (desa).
+#     Levantar aquí un segundo `db` intentaría escribir en el mismo
+#     bind mount `/mnt/data/pg` y corromper los datos.
+#   - Sólo hay UN pgAdmin (el de producción). Ese pgAdmin ya ve ambas
+#     BDs porque están en el mismo cluster; sólo hay que darlas de alta
+#     como dos servers dentro del panel (ver pgadmin/servers.json).
+#
+# Además renombramos `postgrest` → `postgrest_desa` y `mailer` → `mailer_desa`.
+# La razón es que el alias DNS de un servicio en la red externa
+# `dokploy-network` coincide con su nombre de servicio, y no se puede
+# suprimir: si dos stacks tuviesen un servicio llamado `postgrest`, los
+# clientes que hicieran `postgrest:3000` recibirían round-robin entre
+# los dos → bug silencioso apuntando a la BD equivocada.
+#
+# MERGE NOTE (cuando esta rama vuelva a `main`):
+#   Producción sigue necesitando `db` y `pgadmin` en su compose. La forma
+#   más limpia al mergear es NO propagar la eliminación de estos servicios
+#   al fichero de `main`, y en su lugar dejar dos ficheros distintos:
+#     - `deploy/core/docker-compose.prod.yml` (con db, pgadmin, postgrest, mailer)
+#     - `deploy/core/docker-compose.desa.yml` (este mismo fichero)
+#   Cada entorno de Dokploy apunta al que le toca en el campo "Compose path".
+#   Alternativa: usar `profiles: ["prod"]` en db/pgadmin dentro de un único
+#   fichero y activar `COMPOSE_PROFILES=prod` sólo en el entorno de producción.
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
 
-  db:
-    image: pgvector/pgvector:pg16
-    environment:
-      # Nombre de la BD: default 'aprentix' (producción). En la rama de
-      # rediseño se sobrescribe con POSTGRES_DB=aprentix_desa en el .env
-      # del stack para no chocar con producción cuando ambos convivan.
-      POSTGRES_DB: ${POSTGRES_DB:-aprentix}
-      POSTGRES_USER: ${POSTGRES_USER:-aprentix}
-      POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS requerida}
-    command:
-      - postgres
-      - -c
-      - app.jwt_secret=${JWT_SECRET:?JWT_SECRET requerida}
-      - -c
-      - app.admin_pass=${ADMIN_PASS:?ADMIN_PASS requerida}
-      - -c
-      - app.auth_pass=${AUTH_PASS:?AUTH_PASS requerida}
-    volumes:
-      - /mnt/data/pg:/var/lib/postgresql/data
-      - ../../db/init:/docker-entrypoint-initdb.d:ro
-      - ../../db/backups:/backups
-    restart: unless-stopped
-    networks: [dokploy-network]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aprentix -d aprentix"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+  # NOTA: El servicio `db` NO se define aquí a propósito. En el entorno
+  # `desarrollo` los servicios de abajo se conectan por la red externa
+  # `dokploy-network` al `db` levantado por el stack `core` de producción
+  # (misma red compartida). El compose de producción sigue teniendo el
+  # servicio `db` en su versión de la rama `main`.
 
-  pgadmin:
-    image: dpage/pgadmin4:9
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      PGADMIN_DEFAULT_EMAIL:    ${PGADMIN_EMAIL:?PGADMIN_EMAIL requerido}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASS:?PGADMIN_PASS requerida}
-      PGADMIN_CONFIG_PROXY_X_FOR_COUNT:    "1"
-      PGADMIN_CONFIG_PROXY_X_PROTO_COUNT:  "1"
-      PGADMIN_CONFIG_PROXY_X_HOST_COUNT:   "1"
-      PGADMIN_CONFIG_PROXY_X_PORT_COUNT:   "1"
-      PGADMIN_CONFIG_PROXY_X_PREFIX_COUNT: "1"
-      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
-      - ../../pgadmin/servers.json:/pgadmin4/servers.json:ro
-    restart: unless-stopped
-    networks: [dokploy-network]
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.pgadmin.rule=Host(`${DOMINIO_PGADMIN:-pgadmin.aprentix.es}`)"
-      - "traefik.http.routers.pgadmin.entrypoints=websecure"
-      - "traefik.http.routers.pgadmin.tls=true"
-      - "traefik.http.routers.pgadmin.tls.certresolver=letsencrypt"
-      - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
+  # NOTA: El servicio `pgadmin` tampoco se define aquí. El pgAdmin de
+  # producción es el único, y ya alcanza AMBAS BDs (aprentix y
+  # aprentix_desa) porque viven en el mismo cluster Postgres.
 
-  postgrest:
+  postgrest_desa:
     image: postgrest/postgrest:v12.2.3
-    depends_on:
-      db:
-        condition: service_healthy
     environment:
-      PGRST_DB_URI: postgres://autenticador@db:5432/${POSTGRES_DB:-aprentix}
+      # Conecta al `db` de producción por su alias DNS en dokploy-network.
+      # POSTGRES_DB debe ser `aprentix_desa` en las variables de este stack.
+      PGRST_DB_URI: postgres://autenticador@db:5432/${POSTGRES_DB:-aprentix_desa}
       PGPASSWORD: ${AUTH_PASS:?AUTH_PASS requerida}
       PGRST_DB_ANON_ROLE: web_anon
       PGRST_DB_SCHEMAS: public
+      # JWT_SECRET obligatoriamente el MISMO que el del stack `core` de
+      # producción: los GUCs `app.jwt_secret`/`app.auth_pass`/`app.admin_pass`
+      # los fija el postgres de prod en su `command` y son cluster-wide;
+      # PostgREST de desa firma/valida contra ese mismo secreto.
       PGRST_JWT_SECRET: ${JWT_SECRET}
-      PGRST_OPENAPI_SERVER_PROXY_URI: https://${DOMINIO_API:-api.aprentix.es}
+      PGRST_OPENAPI_SERVER_PROXY_URI: https://${DOMINIO_API:-api.desa.aprentix.es}
     restart: unless-stopped
     networks: [dokploy-network]
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.api.rule=Host(`${DOMINIO_API:-api.aprentix.es}`)"
-      - "traefik.http.routers.api.entrypoints=websecure"
-      - "traefik.http.routers.api.tls=true"
-      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
-      - "traefik.http.services.api.loadbalancer.server.port=3000"
-      # Rate limit global (Traefik middleware in-memory, sin persistir IPs).
-      # Protege login/refresh/registro sin necesidad de tabla histórica de
-      # intentos: el contador vive en memoria del proxy y se pierde en el
-      # reinicio. Suficiente para bloquear brute-force. El propio backend
-      # además bloquea la cuenta a los 5 fallos (usuarios.bloqueado_hasta).
-      - "traefik.http.middlewares.api-rl.ratelimit.average=100"
-      - "traefik.http.middlewares.api-rl.ratelimit.burst=50"
-      - "traefik.http.middlewares.api-rl.ratelimit.period=1m"
-      - "traefik.http.routers.api.middlewares=api-rl"
+      # Router y middleware llevan sufijo `-desa` para no colisionar con
+      # los del stack `core` de producción (Traefik dedupe routers por
+      # nombre y sólo se queda con uno).
+      - "traefik.http.routers.api-desa.rule=Host(`${DOMINIO_API:?DOMINIO_API requerido (p.ej. api.desa.aprentix.es)}`)"
+      - "traefik.http.routers.api-desa.entrypoints=websecure"
+      - "traefik.http.routers.api-desa.tls=true"
+      - "traefik.http.routers.api-desa.tls.certresolver=letsencrypt"
+      - "traefik.http.services.api-desa.loadbalancer.server.port=3000"
+      - "traefik.http.middlewares.api-rl-desa.ratelimit.average=100"
+      - "traefik.http.middlewares.api-rl-desa.ratelimit.burst=50"
+      - "traefik.http.middlewares.api-rl-desa.ratelimit.period=1m"
+      - "traefik.http.routers.api-desa.middlewares=api-rl-desa"
 
-  # Worker de embeddings — DESACTIVADO.
-  #
-  # Tras el rediseño del esquema (commit 7cb0e26) el auto-tagger y el
-  # catálogo de etiquetas desaparecieron, así que los vectores de
-  # `preguntas.embedding` ya no alimentan ninguna funcionalidad viva y el
-  # worker sólo consumía CPU/RAM (modelo sentence-transformers) sin
-  # aportar nada. Se comenta hasta que le demos un nuevo uso.
-  #
-  # Posible reactivación futura: deduplicación semántica de preguntas
-  # muy parecidas dentro de una misma sección. El script
-  # `embeddings/detectar_duplicados.py` ya existe y usa similitud coseno
-  # > 0.90 para poblar `propuestas_fusion`, que un admin revisa y
-  # fusiona/descarta. Si se retoma, hará falta:
-  #   1. Descomentar este servicio y redeployar el stack core.
-  #   2. Aplicar el barrido inicial: `UPDATE preguntas SET embedding=NULL`
-  #      y encolar todas en `cola_embeddings` para revectorizar.
-  #   3. Programar `detectar_duplicados.py` (cron o servicio residente).
-  #
-  # embeddings:
-  #   build: ../../embeddings
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
-  #   environment:
-  #     DATABASE_URL: postgres://${POSTGRES_USER:-aprentix}@db:5432/${POSTGRES_DB:-aprentix}
-  #     PGPASSWORD: ${DB_PASS}
-  #     EMB_LOTE: "32"
-  #   volumes:
-  #     - /mnt/data/embeddings_cache:/cache
-  #   restart: unless-stopped
-  #   networks: [dokploy-network]
-
-  # Servicio de emails transaccionales (verificación de email, reset de
-  # contraseña). Escucha `LISTEN email_enviar` sobre Postgres y envía por
-  # SMTP genérico configurable con SMTP_HOST/PORT/USER/PASS/FROM/TLS.
-  # En arranque sin SMTP puedes fijar DEV_LOG_ONLY=1: los correos se
-  # imprimen en los logs en lugar de enviarse.
-  mailer:
+  # Mailer de desarrollo. Escucha el canal LISTEN `email_enviar` sobre
+  # `aprentix_desa` (per-conexión → no compite con el mailer de prod, que
+  # escucha sobre `aprentix`). Recomendado: en desa dejar
+  # MAILER_DEV_LOG_ONLY=1 y ver los correos en logs sin enviar de verdad.
+  mailer_desa:
     build: ../../mailer
-    depends_on:
-      db:
-        condition: service_healthy
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-aprentix}@db:5432/${POSTGRES_DB:-aprentix}
+      DATABASE_URL: postgres://${POSTGRES_USER:-aprentix}@db:5432/${POSTGRES_DB:-aprentix_desa}
       PGPASSWORD:  ${DB_PASS}
       SMTP_HOST:   ${SMTP_HOST:-}
       SMTP_PORT:   ${SMTP_PORT:-587}
       SMTP_USER:   ${SMTP_USER:-}
       SMTP_PASS:   ${SMTP_PASS:-}
-      SMTP_FROM:   ${SMTP_FROM:-Aprentix <hola@aprentix.es>}
+      SMTP_FROM:   ${SMTP_FROM:-Aprentix DESA <hola@aprentix.es>}
       SMTP_TLS:    ${SMTP_TLS:-starttls}
-      DEV_LOG_ONLY: ${MAILER_DEV_LOG_ONLY:-0}
+      DEV_LOG_ONLY: ${MAILER_DEV_LOG_ONLY:-1}
     restart: unless-stopped
     networks: [dokploy-network]
-
-volumes:
-  pgadmin_data:
 
 networks:
   dokploy-network:
