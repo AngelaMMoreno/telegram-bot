@@ -451,34 +451,40 @@
     return Array.isArray(list) ? list : [];
   }
 
-  // Abre el picker "cambiar oposición". Si el usuario está en varias, le
-  // deja escoger; si no tiene más de una, va al selector de alta.
+  // Abre el picker "cambiar oposición". Siempre modal — así el botón
+  // "Añadir otra oposición" queda visible aunque el usuario solo tenga una;
+  // antes le mandábamos directo a #/elegir-oposicion y, si terminaba
+  // apuntándose a la misma que ya tenía, parecía que "no había pasado nada"
+  // (volvía a home sin feedback).
   async function _abrirSelectorOposicion() {
     const list = await _misOposiciones();
-    if (list.length <= 1) {
-      // También puede querer sumar otra oposición.
+    if (list.length === 0) {
       navigate('#/elegir-oposicion');
       return;
     }
+    const actual = getCtx().oposicion_id;
     _mostrarModal({
-      titulo: 'Cambiar oposición',
+      titulo: 'Tus oposiciones',
       contenido: html`
         <div class="form-grid">
           ${raw(list.map(o => html`
-            <button class="op-tile ${getCtx().oposicion_id === o.id ? 'selected' : ''}"
+            <button class="op-tile ${actual === o.id ? 'selected' : ''}"
                     type="button" data-opid="${o.id}">
               <span class="ico">📚</span>
               <strong>${o.nombre}</strong>
+              ${raw(actual === o.id ? '<div class="desc"><em>✓ Activa</em></div>' : '')}
               ${o.descripcion ? html`<div class="desc">${o.descripcion}</div>` : ''}
             </button>
           `).join(''))}
-          <button class="btn" id="btn-add-op" type="button">➕ Añadir otra oposición</button>
+          <button class="btn btn-pri" id="btn-add-op" type="button">➕ Añadir otra oposición</button>
         </div>`,
       onMount(modal) {
         modal.querySelectorAll('[data-opid]').forEach(b => {
           b.onclick = () => {
-            setCtx({ oposicion_id: b.dataset.opid });
+            const nueva = b.dataset.opid;
             _cerrarModal();
+            if (nueva === actual) return;                // sin cambios reales
+            setCtx({ oposicion_id: nueva });
             navigate('#/');
           };
         });
@@ -495,10 +501,25 @@
   async function viewElegirOposicion() {
     loading();
     const disp = await S.rpc('listar_oposiciones_disponibles')
-      .catch(() => []);
+      .catch((e) => {
+        console.error('listar_oposiciones_disponibles falló:', e);
+        return [];
+      });
     const list = Array.isArray(disp) ? disp : [];
     const mias = await _misOposiciones();
     const misIds = new Set(mias.map(o => o.id));
+
+    // Solo pedimos el solapamiento para oposiciones que el usuario NO tiene ya
+    // asignadas. Ninguna de estas llamadas es crítica: si fallan, el tile
+    // sigue apareciendo, solo sin la banda "tienes X% estudiado".
+    const solapadas = new Map();
+    if (mias.length > 0) {
+      await Promise.all(list
+        .filter(o => !misIds.has(o.id))
+        .map(o => S.rpc('sugerir_solapamiento', { p_oposicion_id: o.id })
+          .then(r => { if (r && r.total > 0 && r.pct > 0) solapadas.set(o.id, r); })
+          .catch(() => {})));
+    }
 
     root.innerHTML = html`
       <div class="view-head">
@@ -510,19 +531,27 @@
           : 'Selecciona cualquier oposición del catálogo para sumarla a tu plan.'}
       </p>
       ${raw(list.length === 0
-        ? '<div class="empty">Aún no hay oposiciones publicadas.</div>'
+        ? '<div class="empty">Aún no hay oposiciones publicadas. Si eres admin, créalas desde el panel de contenido.</div>'
         : html`
           <div class="op-grid">
-            ${raw(list.map(o => html`
-              <button class="op-tile ${misIds.has(o.id) ? 'selected' : ''}"
+            ${raw(list.map(o => {
+              const yaLaTiene = misIds.has(o.id);
+              const sol = solapadas.get(o.id);
+              return html`
+              <button class="op-tile ${yaLaTiene ? 'selected disabled' : ''}"
                       type="button" data-opid="${o.id}"
-                      ${raw(misIds.has(o.id) ? 'aria-current="true"' : '')}>
+                      data-yatiene="${yaLaTiene ? '1' : ''}"
+                      ${raw(yaLaTiene ? 'aria-current="true"' : '')}>
                 <span class="ico">📚</span>
                 <strong>${o.nombre}</strong>
                 ${raw(o.descripcion ? html`<div class="desc">${o.descripcion}</div>` : '')}
-                ${raw(misIds.has(o.id) ? '<div class="desc" style="margin-top:.4rem"><em>✓ Ya la tienes</em></div>' : '')}
-              </button>
-            `).join(''))}
+                ${raw(yaLaTiene
+                  ? '<div class="desc" style="margin-top:.4rem"><em>✓ Ya la tienes</em></div>'
+                  : (sol
+                      ? html`<div class="desc" style="margin-top:.4rem"><em>Tienes estudiado un ${sol.pct}% del temario. ¡Apúntate!</em></div>`
+                      : ''))}
+              </button>`;
+            }).join(''))}
           </div>`)}
       ${raw(mias.length > 0
         ? '<div style="margin-top:1rem"><button class="btn" id="btn-volver">← Volver al inicio</button></div>'
@@ -530,12 +559,23 @@
     `;
     root.querySelectorAll('[data-opid]').forEach(b => {
       b.onclick = async () => {
+        if (b.dataset.yatiene) {
+          // Al reclicar una que ya tienes, la fijamos como activa y volvemos
+          // al home sin llamar al RPC. Sin este atajo el flujo se veía como
+          // "click → toast → home" y parecía que no había hecho nada nuevo.
+          setCtx({ oposicion_id: b.dataset.opid });
+          showToast('Esta oposición ya está en tu plan.');
+          navigate('#/');
+          return;
+        }
         try {
           await S.rpc('elegir_oposicion', { p_oposicion_id: b.dataset.opid });
           setCtx({ oposicion_id: b.dataset.opid });
           showToast('¡Oposición añadida!');
           navigate('#/');
-        } catch (e) { showToast(_msgError(e.message)); }
+        } catch (e) {
+          showToast('No se pudo añadir la oposición: ' + _msgError(e.message), 4000);
+        }
       };
     });
     const bv = root.querySelector('#btn-volver');
