@@ -1,34 +1,14 @@
 {
   "Servers": {
     "1": {
-      "Name": "aprentix (prod)",
-      "Group": "Servers",
-      "Host": "db-prod",
-      "Port": 5432,
-      "MaintenanceDB": "aprentix",
-      "Username": "aprentix",
-      "SSLMode": "prefer",
-      "Comment": "Postgres del stack core de la rama main (alias DB_ALIAS=db-prod)"
-    },
-    "2": {
-      "Name": "aprentix (desa)",
-      "Group": "Servers",
-      "Host": "db-desa",
-      "Port": 5432,
-      "MaintenanceDB": "aprentix_desa",
-      "Username": "aprentix",
-      "SSLMode": "prefer",
-      "Comment": "Postgres del stack core de la rama desa (alias DB_ALIAS=db-desa)"
-    },
-    "3": {
-      "Name": "aprentix (local)",
+      "Name": "aprentix",
       "Group": "Servers",
       "Host": "db",
       "Port": 5432,
       "MaintenanceDB": "aprentix",
       "Username": "aprentix",
       "SSLMode": "prefer",
-      "Comment": "Postgres levantado con docker compose up en desarrollo (alias por defecto)"
+      "Comment": "Postgres del stack Aprentix (intra-red dokploy)"
     }
   }
 }

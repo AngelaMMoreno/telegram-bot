@@ -1,9 +1,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Stack CORE — el estado y la API.
 #
-# Servicios: db (Postgres+pgvector), postgrest, mailer.
-# pgAdmin vive en su propio stack (deploy/pgadmin/) para no duplicarse
-# cuando se despliegan varios `core` en paralelo (prod + desa).
+# Servicios: db (Postgres+pgvector), postgrest, mailer, pgadmin.
 # (El worker de embeddings está desactivado — ver bloque comentado abajo.)
 # Redespliega esto cuando cambien:
 #   - db/init/01_esquema.sql       (esquema, funciones, RLS, seed)
@@ -39,21 +37,39 @@ services:
       - ../../db/init:/docker-entrypoint-initdb.d:ro
       - ../../db/backups:/backups
     restart: unless-stopped
-    # Alias de red por rama para que un único pgAdmin (stack `pgadmin`,
-    # desplegado aparte) pueda distinguir las dos Postgres al haber
-    # varios stacks `core` conviviendo en `dokploy-network`. Prod usa
-    # `db-prod`, desa `db-desa`; sin definir, cae a `db` (dev local).
-    # Los servicios del propio stack siguen accediendo por `db:5432`
-    # porque Compose añade el nombre de servicio como alias automático.
-    networks:
-      dokploy-network:
-        aliases:
-          - ${DB_ALIAS:-db}
+    networks: [dokploy-network]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U aprentix -d aprentix"]
       interval: 10s
       timeout: 5s
       retries: 10
+
+  pgadmin:
+    image: dpage/pgadmin4:9
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    ${PGADMIN_EMAIL:?PGADMIN_EMAIL requerido}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASS:?PGADMIN_PASS requerida}
+      PGADMIN_CONFIG_PROXY_X_FOR_COUNT:    "1"
+      PGADMIN_CONFIG_PROXY_X_PROTO_COUNT:  "1"
+      PGADMIN_CONFIG_PROXY_X_HOST_COUNT:   "1"
+      PGADMIN_CONFIG_PROXY_X_PORT_COUNT:   "1"
+      PGADMIN_CONFIG_PROXY_X_PREFIX_COUNT: "1"
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ../../pgadmin/servers.json:/pgadmin4/servers.json:ro
+    restart: unless-stopped
+    networks: [dokploy-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pgadmin.rule=Host(`${DOMINIO_PGADMIN:-pgadmin.aprentix.es}`)"
+      - "traefik.http.routers.pgadmin.entrypoints=websecure"
+      - "traefik.http.routers.pgadmin.tls=true"
+      - "traefik.http.routers.pgadmin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
 
   postgrest:
     image: postgrest/postgrest:v12.2.3
@@ -140,6 +156,9 @@ services:
       DEV_LOG_ONLY: ${MAILER_DEV_LOG_ONLY:-0}
     restart: unless-stopped
     networks: [dokploy-network]
+
+volumes:
+  pgadmin_data:
 
 networks:
   dokploy-network:

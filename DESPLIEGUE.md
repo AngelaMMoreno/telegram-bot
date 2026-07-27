@@ -1,24 +1,16 @@
 # Despliegue en Dokploy
 
-El proyecto está partido en **stacks independientes** para poder
+El proyecto está partido en **tres stacks independientes** para poder
 redesplegarlos por separado desde Dokploy. Cada stack es una **Compose
 Application** distinta que apunta a su propio fichero:
 
 ```
 deploy/
-├── core/docker-compose.yml         ← db + postgrest + mailer (una instancia POR RAMA)
-├── pgadmin/docker-compose.yml      ← panel pgAdmin único que ve las Postgres de todas las ramas
+├── core/docker-compose.yml         ← db + postgrest + embeddings + pgadmin
 ├── app/docker-compose.yml          ← SPA remodelada de estudio + API de contenidos, todo en un contenedor
 ├── notificador/docker-compose.yml  ← worker de Web Push (sin dominio propio)
 └── backups/docker-compose.yml      ← snapshots automáticos a Google Drive (restic + rclone)
 ```
-
-> **Convivencia prod + desa.** `core` y `app` se despliegan **una vez por
-> rama** (prod usa `main`, desa usa la rama de desarrollo), cada uno con
-> su Postgres, su dominio y su `DB_ALIAS` (`db-prod` / `db-desa`).
-> `pgadmin` se despliega **una sola vez** y gestiona ambas BBDDs desde
-> `pgadmin/servers.json`. Si desplegaras pgAdmin dentro de `core`
-> tendrías dos pgAdmins peleándose por el mismo router de Traefik.
 
 Los tres comparten la red externa `dokploy-network` y se ven entre sí
 por nombre de servicio (`db:5432`, `postgrest:3000`).
@@ -71,31 +63,24 @@ reserva para la API de contenidos.
 Crea las Compose Applications en Dokploy en este orden:
 
 1. **core** — imprescindible; el resto depende de que la BBDD esté viva.
-   Se despliega una vez por rama (prod y desa) con distintos
-   `DB_ALIAS`, `POSTGRES_DB` y volumen.
-2. **app** — necesita compartir el `JWT_SECRET` con `core` de su rama.
-   También una instancia por rama.
-3. **pgadmin** — se despliega **una sola vez** en todo el servidor;
-   sirve las Postgres de todas las ramas a través de sus alias de red.
+2. **app** — necesita compartir el `JWT_SECRET` con `core`.
 
 En Dokploy, para cada una:
 
 1. **Create Compose Application**.
-2. Source: este repositorio, rama correspondiente (prod → `main`, desa →
-   la rama de desarrollo). El stack `pgadmin` puede apuntar a `main`.
+2. Source: este repositorio, rama por defecto.
 3. **Compose path**: el fichero correspondiente (ver tabla más abajo).
 4. Variables de entorno: copiar del `.env.example` de la carpeta.
 5. Deploy.
 
-| Stack     | Compose path                          | Instancias         | .env de referencia            |
-|-----------|---------------------------------------|--------------------|-------------------------------|
-| `core`    | `deploy/core/docker-compose.yml`      | Una por rama       | `deploy/core/.env.example`    |
-| `app`     | `deploy/app/docker-compose.yml`       | Una por rama       | (usa `JWT_SECRET` de `core`)  |
-| `pgadmin` | `deploy/pgadmin/docker-compose.yml`   | Una en el servidor | `PGADMIN_EMAIL`/`PGADMIN_PASS`/`DOMINIO_PGADMIN` |
+| Stack     | Compose path                          | .env de referencia            |
+|-----------|---------------------------------------|-------------------------------|
+| `core`    | `deploy/core/docker-compose.yml`      | `deploy/core/.env.example`    |
+| `app`     | `deploy/app/docker-compose.yml`       | (usa `JWT_SECRET` de `core`)  |
 
 ## 2. Variables de entorno por stack
 
-### `core` (db + postgrest + mailer)
+### `core` (db + postgrest + embeddings + pgadmin)
 
 | Clave              | Uso                                                            |
 |--------------------|----------------------------------------------------------------|
@@ -103,23 +88,10 @@ En Dokploy, para cada una:
 | `AUTH_PASS`        | Contraseña del rol `autenticador` (con el que conecta PostgREST). |
 | `JWT_SECRET`       | HMAC HS256 con el que Postgres firma los JWT. **Debe coincidir con el de `app`.** |
 | `ADMIN_PASS`       | Contraseña inicial del usuario `admin` de la app (solo se aplica en el primer init). |
-| `POSTGRES_DB`      | Nombre de la BBDD. Prod → `aprentix`; desa → `aprentix_desa`.  |
-| `DB_ALIAS`         | Alias adicional del contenedor `db` dentro de `dokploy-network` para que un pgAdmin único pueda distinguir las Postgres de varias ramas. Prod → `db-prod`; desa → `db-desa`. Sin definir cae a `db` (dev local). |
-| `DOMINIO_API`      | Host de PostgREST (por defecto `api.aprentix.es`).             |
-
-### `pgadmin` (panel único para todas las ramas)
-
-| Clave              | Uso                                                            |
-|--------------------|----------------------------------------------------------------|
 | `PGADMIN_EMAIL`    | Login de pgAdmin.                                              |
 | `PGADMIN_PASS`     | Contraseña de pgAdmin.                                         |
+| `DOMINIO_API`      | Host de PostgREST (por defecto `api.aprentix.es`).             |
 | `DOMINIO_PGADMIN`  | Host de pgAdmin (por defecto `pgadmin.aprentix.es`).           |
-
-Los servidores precargados en la barra lateral se declaran en
-`pgadmin/servers.json`: hay una entrada para prod (`db-prod`), otra para
-desa (`db-desa`) y una tercera para dev local (`db`). Si añades una
-rama más, mete un `DB_ALIAS` distinto en su `core` y añade la entrada
-correspondiente al JSON.
 
 ### `app` (SPA de estudio + API de contenidos)
 
@@ -136,11 +108,9 @@ correspondiente al JSON.
 > **Un stack por dominio.** Para tener a la vez la app de producción en
 > `aprentix.es` y la de la rama de desarrollo en `desa.aprentix.es`, crea
 > DOS Compose Applications en Dokploy (una por rama) con distintos valores
-> de `DOMINIO_LANDING`. Cada rama tiene su propio `core` (con su
-> Postgres y su `DB_ALIAS`); todos comparten Traefik y el único
-> stack `pgadmin`. Los hosts legacy (`test.*`, `teoria.*`) sólo se
-> declaran en el stack de producción para que el de dev no intente
-> registrarlos también.
+> de `DOMINIO_LANDING`. Ambas comparten el mismo Traefik y `core`; los
+> hosts legacy (`test.*`, `teoria.*`) sólo se declaran en el stack de
+> producción para que el de dev no intente registrarlos también.
 
 > **Importante:** `JWT_SECRET` aparece en `core` y `app`; los dos deben
 > tener EXACTAMENTE el mismo valor, si no, las cookies emitidas por

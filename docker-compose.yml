@@ -17,7 +17,6 @@
 
 include:
   - deploy/core/docker-compose.yml
-  - deploy/pgadmin/docker-compose.yml
   - deploy/app/docker-compose.yml
   - deploy/notificador/docker-compose.yml
   - deploy/backups/docker-compose.yml
