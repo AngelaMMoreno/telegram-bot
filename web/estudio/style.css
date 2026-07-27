@@ -75,13 +75,24 @@ body.no-header main#root > .auth-section { width: 100%; }
   padding: .6rem 1rem;
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
-  border-radius: 12px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  color: var(--txt);
   cursor: pointer;
+  font: inherit;
   margin-bottom: 1rem;
   font-weight: 600;
+  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease,
+              transform .1s ease;
 }
-.oposicion-picker:hover { background: var(--accent-soft); }
-.oposicion-picker .caret { margin-left: auto; opacity: .5; }
+.oposicion-picker:hover {
+  background: var(--pri-soft);
+  border-color: var(--pri);
+  box-shadow: var(--shadow);
+}
+.oposicion-picker:active { transform: translateY(1px); }
+.oposicion-picker .caret { margin-left: auto; color: var(--pri-d); }
+[data-theme="dark"] .oposicion-picker .caret { color: var(--pri); }
 
 /* ── Tarjeta de tema (lista vertical) ──────────────────────────────── */
 .tema-card {
