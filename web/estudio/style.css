@@ -2186,6 +2186,87 @@ input[type="number"]::-webkit-inner-spin-button:hover {
 }
 .empty.small { padding: 1rem; font-size: .9rem; color: var(--txt-soft); }
 
+/* ── Plan personal de estudio ─────────────────────────────────────── */
+.plan-home-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+  margin: 0 0 1rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--sky);
+  border-left: 4px solid var(--sky);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.plan-home-icono {
+  display: grid;
+  place-items: center;
+  flex: 0 0 52px;
+  height: 52px;
+  border-radius: var(--radius);
+  background: var(--sky-soft);
+  font-size: 1.65rem;
+}
+.plan-home-copy { display: flex; flex: 1; flex-direction: column; line-height: 1.35; }
+.plan-home-copy small { color: var(--txt-soft); font-size: .78rem; font-weight: 700; }
+.plan-home-copy strong { margin: .1rem 0; color: var(--txt); }
+.plan-home-copy > span { color: var(--txt-soft); font-size: .86rem; }
+
+.plan-cabecera {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: .4rem 0 1.25rem;
+}
+.plan-cabecera-icono {
+  display: grid;
+  place-items: center;
+  flex: 0 0 72px;
+  height: 72px;
+  border-radius: var(--radius-lg);
+  background: var(--sky-soft);
+  border: 1px solid var(--sky);
+  font-size: 2.2rem;
+}
+.plan-cabecera h1 { margin: .15rem 0; font-size: 1.7rem; }
+.plan-cabecera p { margin: 0; color: var(--txt-soft); }
+.plan-presentacion > p { color: var(--txt-soft); }
+.plan-pasos { display: grid; grid-template-columns: repeat(3, 1fr); gap: .65rem; }
+.plan-pasos > div {
+  display: flex;
+  flex-direction: column;
+  padding: .9rem;
+  background: var(--bg-alt);
+  border-radius: var(--radius);
+}
+.plan-pasos > div > span { font-size: 1.4rem; }
+.plan-pasos small { color: var(--txt-soft); line-height: 1.35; }
+.plan-vista-previa { display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: center; }
+.plan-semana { display: grid; grid-template-columns: repeat(7, 34px); gap: .3rem; }
+.plan-semana span { color: var(--txt-soft); font-size: .7rem; font-weight: 700; text-align: center; }
+.plan-semana em {
+  display: block;
+  height: 34px;
+  margin-top: .2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--pri-soft);
+}
+.plan-semana span:nth-child(3n) em { background: var(--sky-soft); }
+.plan-semana span:nth-child(6) em, .plan-semana span:nth-child(7) em { background: var(--lavender-soft); }
+.plan-accion { width: 100%; }
+
+@media (max-width: 620px) {
+  .plan-home-card { align-items: flex-start; flex-wrap: wrap; }
+  .plan-home-copy { min-width: calc(100% - 72px); }
+  .plan-home-card .btn { width: 100%; }
+  .plan-pasos { grid-template-columns: 1fr; }
+  .plan-vista-previa { grid-template-columns: 1fr; }
+  .plan-semana { grid-template-columns: repeat(7, 1fr); }
+  .plan-cabecera-icono { flex-basis: 58px; height: 58px; font-size: 1.7rem; }
+}
+
 /* Grid de medallas (más compacto que .logros-grid original). Cabe siempre
  * en 2 columnas en móvil sin que se vea agobiante. */
 .medallas-grid {
