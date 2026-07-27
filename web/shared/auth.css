@@ -20,6 +20,12 @@
   margin: 1.5rem auto;
   color: var(--txt);
 }
+@media (min-width: 900px) {
+  .auth-card {
+    max-width: 540px;
+    padding: 2rem 2.5rem;
+  }
+}
 .auth-hero {
   text-align: center;
   margin-bottom: 1.25rem;
