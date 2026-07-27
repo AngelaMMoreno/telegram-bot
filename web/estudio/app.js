@@ -2842,11 +2842,34 @@
         </div>
       </div>
 
-      ${raw(['diario', 'semanal', 'mensual'].map(p => {
+      <div class="logros-tabs" role="tablist" aria-label="Retos y logros">
+        ${raw(['diario', 'semanal', 'mensual'].map((periodo, indice) => {
+          const meta = etiquetaPeriodo[periodo];
+          const cantidad = (retosPorPeriodo[periodo] || []).length;
+          return `<button type="button" class="logros-tab ${indice === 0 ? 'is-active' : ''}"
+                    role="tab" id="tab-${periodo}" aria-selected="${indice === 0}"
+                    aria-controls="panel-${periodo}" tabindex="${indice === 0 ? '0' : '-1'}"
+                    data-panel-logros="${periodo}">
+                    <span aria-hidden="true">${meta.icono}</span>
+                    <span>${meta.titulo.replace('Retos ', '')}</span>
+                    <span class="logros-tab-count">${cantidad}</span>
+                  </button>`;
+        }).join(''))}
+        <button type="button" class="logros-tab" role="tab" id="tab-logros"
+                aria-selected="false" aria-controls="panel-logros" tabindex="-1"
+                data-panel-logros="logros">
+          <span aria-hidden="true">🏅</span><span>Logros</span>
+          <span class="logros-tab-count">${obtenidos}/${totalLogros}</span>
+        </button>
+      </div>
+
+      <div class="logros-tab-panels panel-card">
+      ${raw(['diario', 'semanal', 'mensual'].map((p, indice) => {
         const items = retosPorPeriodo[p] || [];
         const meta = etiquetaPeriodo[p];
         return html`
-          <section class="logros-block">
+          <section class="logros-block logros-tab-panel" id="panel-${p}"
+                   role="tabpanel" aria-labelledby="tab-${p}" ${indice === 0 ? '' : 'hidden'}>
             <h3 class="panel-section-title">
               <span aria-hidden="true">${raw(meta.icono)}</span>
               ${meta.titulo}
@@ -2858,7 +2881,8 @@
           </section>`;
       }).join(''))}
 
-      <section class="logros-block">
+      <section class="logros-block logros-tab-panel" id="panel-logros"
+               role="tabpanel" aria-labelledby="tab-logros" hidden>
         <h3 class="panel-section-title">
           <span aria-hidden="true">🏅</span>
           Logros
@@ -2868,7 +2892,31 @@
           ? '<div class="empty">Todavía no hay logros en el catálogo.</div>'
           : `<div class="logros-grid">${logros.map(logroCard).join('')}</div>`)}
       </section>
+      </div>
     `;
+
+    const pestanas = [...root.querySelectorAll('[data-panel-logros]')];
+    function activarPestana(pestana) {
+      pestanas.forEach(boton => {
+        const activa = boton === pestana;
+        boton.classList.toggle('is-active', activa);
+        boton.setAttribute('aria-selected', String(activa));
+        boton.tabIndex = activa ? 0 : -1;
+        const panel = root.querySelector(`#panel-${boton.dataset.panelLogros}`);
+        if (panel) panel.hidden = !activa;
+      });
+    }
+    pestanas.forEach((pestana, indice) => {
+      pestana.addEventListener('click', () => activarPestana(pestana));
+      pestana.addEventListener('keydown', evento => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(evento.key)) return;
+        evento.preventDefault();
+        let siguiente = evento.key === 'Home' ? 0 : evento.key === 'End' ? pestanas.length - 1
+          : (indice + (evento.key === 'ArrowRight' ? 1 : -1) + pestanas.length) % pestanas.length;
+        activarPestana(pestanas[siguiente]);
+        pestanas[siguiente].focus();
+      });
+    });
   }
 
 

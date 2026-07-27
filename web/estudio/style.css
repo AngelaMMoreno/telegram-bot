@@ -932,7 +932,60 @@ input[type="number"]::-webkit-inner-spin-button:hover {
 }
 [data-theme="dark"] .logros-hero-tile strong { color: var(--pri); }
 
-.logros-block { margin-bottom: 1.5rem; }
+.logros-tabs {
+  display: flex;
+  gap: .5rem;
+  padding: .35rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(140%);
+}
+.logros-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  flex: 1 0 auto;
+  min-height: 44px;
+  padding: .55rem .8rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--txt-soft);
+  background: transparent;
+  font: inherit;
+  font-size: .88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease, border-color .15s ease, transform .12s ease;
+}
+.logros-tab:hover { background: var(--bg-alt); color: var(--txt); }
+.logros-tab.is-active {
+  color: var(--pri-d);
+  background: var(--pri-light);
+  border-color: var(--pri-soft);
+  box-shadow: var(--shadow-sm);
+}
+[data-theme="dark"] .logros-tab.is-active { color: var(--pri); background: var(--pri-soft); }
+.logros-tab-count {
+  padding: .05rem .4rem;
+  border-radius: 999px;
+  color: var(--txt-soft);
+  background: var(--bg-panel);
+  font-size: .72rem;
+  font-variant-numeric: tabular-nums;
+}
+.logros-tab-panels { padding: 1rem; border-top-left-radius: 0; }
+.logros-block { margin: 0; }
+.logros-tab-panel[hidden] { display: none; }
+@media (max-width: 540px) {
+  .logros-tabs { border-radius: var(--radius); }
+  .logros-tab { padding-inline: .65rem; }
+  .logros-tab-panels { padding: .75rem; border-top-left-radius: var(--radius); }
+  .panel-section-title-hint { flex-basis: 100%; }
+}
 .panel-section-title { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
 .panel-section-title-hint {
   font-weight: 500;
