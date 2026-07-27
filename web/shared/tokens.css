@@ -83,6 +83,15 @@
   --radius-lg: 22px;
   --radius-xl: 28px;
 
+  /* ─── Tarjetas / superficies elevadas (usadas en /estudio) ───
+   * `--card-bg` y `--card-border` viven aquí para que las tarjetas
+   * (tema, pregunta, teoría, resultado) hereden automáticamente el
+   * marfil claro en día y el panel bosque en noche — sin fallback a
+   * blanco puro que rompía el dark mode. */
+  --card-bg: var(--bg-panel);
+  --card-border: var(--border);
+  --code-bg: var(--bg-alt);
+
   /* ─── Layout ─── */
   --topbar-h: 56px;
   --sidebar-w: 240px;

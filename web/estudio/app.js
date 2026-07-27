@@ -1127,7 +1127,7 @@
               </div>
               <div class="form-err" id="err-borrar" hidden></div>
               <div class="form-row" style="justify-content:flex-end">
-                <button class="btn btn-sm" type="button" id="cancelar-borrar">Cancelar</button>
+                <button class="btn btn-cancel btn-sm" type="button" id="cancelar-borrar">Cancelar</button>
                 <button class="btn btn-danger btn-sm" type="submit">Sí, borrar</button>
               </div>
             </form>`,
@@ -1163,7 +1163,7 @@
       contenido: html`
         <p style="margin:0 0 1rem">${mensaje}</p>
         <div class="form-row" style="justify-content:flex-end">
-          <button class="btn btn-sm" type="button" id="conf-cancel">Cancelar</button>
+          <button class="btn btn-cancel btn-sm" type="button" id="conf-cancel">Cancelar</button>
           <button class="btn btn-sm ${peligroso ? 'btn-danger' : 'btn-pri'}" type="button" id="conf-ok">${confirmar}</button>
         </div>`,
       onMount(modal) {
@@ -1330,7 +1330,7 @@
           `).join(''))}
           <div class="form-err" hidden></div>
           <div class="form-row" style="justify-content:flex-end; margin-top:.75rem">
-            <button class="btn btn-sm" type="button" data-cancel>Cancelar</button>
+            <button class="btn btn-cancel btn-sm" type="button" data-cancel>Cancelar</button>
             <button class="btn btn-pri btn-sm" type="submit">Guardar</button>
           </div>
         </form>`,
@@ -1437,20 +1437,23 @@
   }
 
   function _adminNav(crumbs) {
-    // crumbs: [{label, href?}, ...]  — el último se pinta como <strong>.
+    // crumbs: [{label, href?}, ...]  — el último se pinta como chip activo,
+    // el resto como pastilla salvia con separador solarpunk (›). Nada de
+    // <a> azules subrayados: el estilo lo aporta .admin-crumbs.
     return html`
       <div class="admin-tabs">
         <a class="tab" href="#/admin/usuarios">Usuarios</a>
         <a class="tab active" href="#/admin/contenido">Contenido</a>
         <a class="tab" href="#/admin/duplicados">Duplicados</a>
       </div>
-      <div class="breadcrumbs" style="margin-bottom:.75rem; color:var(--txt-soft)">
+      <nav class="admin-crumbs" aria-label="Ruta de navegación">
         ${raw(crumbs.map((c, i) => {
           const last = i === crumbs.length - 1;
-          if (last) return `<strong>${esc(c.label)}</strong>`;
-          return `<a href="${c.href || '#/'}">${esc(c.label)}</a> / `;
+          const sep = last ? '' : '<span class="admin-crumbs__sep" aria-hidden="true">›</span>';
+          if (last) return `<span class="admin-crumbs__crumb is-current" aria-current="page">${esc(c.label)}</span>`;
+          return `<a class="admin-crumbs__crumb" href="${c.href || '#/'}">${esc(c.label)}</a>${sep}`;
         }).join(''))}
-      </div>`;
+      </nav>`;
   }
 
   // Vista: listado de oposiciones (admin).
@@ -1462,6 +1465,7 @@
       ${raw(_adminNav([{ label: 'Oposiciones' }]))}
       <div class="admin-toolbar">
         <h2 style="margin:0; flex:1">Oposiciones</h2>
+        <button class="btn btn-sm" id="btn-importar-op">📥 Importar desde JSON</button>
         <button class="btn btn-pri btn-sm" id="btn-crear-op">➕ Nueva oposición</button>
       </div>
 
@@ -1486,6 +1490,8 @@
     `;
 
     root.querySelector('#btn-crear-op').onclick = () => _editarOposicion(null);
+    root.querySelector('#btn-importar-op').onclick = () =>
+      _importarOposicionJSON(() => viewAdminOposiciones());
 
     root.querySelectorAll('.list-item[data-opid]').forEach(item => {
       const id = item.dataset.opid;
@@ -1525,7 +1531,7 @@
             </label>` : ''}
           <div class="form-err" hidden></div>
           <div class="form-row" style="justify-content:flex-end">
-            <button class="btn btn-sm" type="button" data-cancel>Cancelar</button>
+            <button class="btn btn-cancel btn-sm" type="button" data-cancel>Cancelar</button>
             <button class="btn btn-pri btn-sm" type="submit">${op ? 'Guardar' : 'Crear'}</button>
           </div>
         </form>`,
@@ -1640,7 +1646,7 @@
           </div>
           <div class="form-err" hidden></div>
           <div class="form-row" style="justify-content:flex-end">
-            <button class="btn btn-sm" type="button" data-cancel>Cancelar</button>
+            <button class="btn btn-cancel btn-sm" type="button" data-cancel>Cancelar</button>
             <button class="btn btn-pri btn-sm" type="submit">${tema ? 'Guardar' : 'Crear'}</button>
           </div>
         </form>`,
@@ -1786,7 +1792,7 @@
           </div>
           <div class="form-err" hidden></div>
           <div class="form-row" style="justify-content:flex-end">
-            <button class="btn btn-sm" type="button" data-cancel>Cancelar</button>
+            <button class="btn btn-cancel btn-sm" type="button" data-cancel>Cancelar</button>
             <button class="btn btn-pri btn-sm" type="submit">${mod ? 'Guardar' : 'Crear'}</button>
           </div>
         </form>`,
@@ -1909,7 +1915,7 @@
           </div>
           <div class="form-err" hidden></div>
           <div class="form-row" style="justify-content:flex-end">
-            <button class="btn btn-sm" type="button" data-cancel>Cancelar</button>
+            <button class="btn btn-cancel btn-sm" type="button" data-cancel>Cancelar</button>
             <button class="btn btn-pri btn-sm" type="submit">${sec ? 'Guardar' : 'Crear'}</button>
           </div>
         </form>`,
@@ -2005,7 +2011,7 @@
 
       <div class="admin-toolbar">
         <h3 style="margin:0; flex:1">Preguntas <span class="kv-badge">${preguntas.length}</span></h3>
-        <button class="btn btn-pri btn-sm" id="btn-nueva-preg">➕ Nueva pregunta</button>
+        <button class="btn btn-pri btn-sm" id="btn-subir-preg">📥 Subir JSON de preguntas</button>
       </div>
 
       ${raw(preguntas.length === 0
@@ -2085,8 +2091,9 @@
       },
     });
 
-    // Preguntas.
-    root.querySelector('#btn-nueva-preg').onclick = () => _editarPregunta(null, sid);
+    // Preguntas — sólo subida por JSON: descartamos "nueva a mano" para
+    // que el flujo de creación pase siempre por un fichero validable.
+    root.querySelector('#btn-subir-preg').onclick = () => _subirPreguntasJSON(sid);
     root.querySelectorAll('.list-item[data-pid]').forEach(item => {
       const pid = item.dataset.pid;
       const p = preguntas.find(x => x.id === pid);
@@ -2157,7 +2164,7 @@
           </div>
           <div class="form-err" hidden></div>
           <div class="form-row" style="justify-content:flex-end">
-            <button class="btn btn-sm" type="button" data-cancel>Cancelar</button>
+            <button class="btn btn-cancel btn-sm" type="button" data-cancel>Cancelar</button>
             <button class="btn btn-pri btn-sm" type="submit">${preg ? 'Guardar' : 'Crear'}</button>
           </div>
         </form>`,
@@ -2205,6 +2212,397 @@
             viewAdminSeccion([seccionId]);
           } catch (er) {
             err.textContent = _msgError(er.message);
+            err.hidden = false;
+          }
+        };
+      },
+    });
+  }
+
+
+  // ── Utilidad: lee un fichero <input type=file> y devuelve su texto ─
+  function _leerFicheroTexto(file) {
+    return new Promise((resolve, reject) => {
+      const rd = new FileReader();
+      rd.onerror = () => reject(new Error('no_se_pudo_leer'));
+      rd.onload = () => resolve(String(rd.result || ''));
+      rd.readAsText(file, 'utf-8');
+    });
+  }
+
+  // Subir preguntas de una sección desde un fichero JSON.
+  // Formato aceptado (array):
+  //   [{
+  //     "pregunta": "enunciado",
+  //     "opciones": ["Correcta", "Opción 2", "Opción 3", "Opción 4"],
+  //     "explicacion": "…"
+  //   }, ...]
+  // La PRIMERA opción es la correcta (convención acordada); el resto se
+  // marcan como incorrectas. `admin_crear_pregunta` es UPSERT por hash
+  // de contenido, así que reintentar la misma subida no duplica.
+  function _subirPreguntasJSON(seccionId) {
+    let parsed = null;   // array normalizado listo para enviar
+    let raw = '';        // texto original para la vista de previsualización
+
+    function _validar(text) {
+      let data;
+      try { data = JSON.parse(text); }
+      catch (e) { throw new Error('json_invalido'); }
+      if (!Array.isArray(data)) throw new Error('debe_ser_array');
+      if (data.length === 0)    throw new Error('array_vacio');
+      return data.map((p, i) => {
+        const enunciado = String(p?.pregunta ?? '').trim();
+        const ops = Array.isArray(p?.opciones) ? p.opciones : [];
+        const explicacion = (p?.explicacion == null)
+          ? null
+          : String(p.explicacion).trim() || null;
+        if (!enunciado) throw new Error(`pregunta_${i+1}_sin_enunciado`);
+        if (ops.length < 2) throw new Error(`pregunta_${i+1}_pocas_opciones`);
+        const opciones = ops.map((t, j) => ({
+          texto: String(t ?? '').trim(),
+          correcta: j === 0,
+        }));
+        if (opciones.some(o => !o.texto)) throw new Error(`pregunta_${i+1}_opcion_vacia`);
+        return { enunciado, opciones, explicacion };
+      });
+    }
+
+    _mostrarModal({
+      titulo: 'Subir preguntas desde JSON',
+      contenido: html`
+        <p class="muted small" style="margin:0 0 .75rem">
+          Formato esperado (array). La <strong>primera opción</strong> de cada
+          pregunta es la correcta.
+        </p>
+        <label class="json-drop" for="fp-json">
+          <span id="fp-json-label">📁 Elegir fichero <code>.json</code> o pegar debajo</span>
+          <input id="fp-json" type="file" accept=".json,application/json">
+        </label>
+        <div class="field" style="margin-top:.75rem">
+          <label>O pega el JSON aquí</label>
+          <textarea id="ta-json" rows="8"
+            placeholder='[
+  {"pregunta": "…", "opciones": ["Correcta", "Op2", "Op3", "Op4"], "explicacion": "…"}
+]'></textarea>
+        </div>
+        <div class="json-preview__summary" id="sum-json" hidden></div>
+        <div class="form-err" hidden></div>
+        <div class="form-row" style="justify-content:flex-end; margin-top:.75rem">
+          <button class="btn btn-cancel btn-sm" type="button" data-cancel>Cancelar</button>
+          <button class="btn btn-pri btn-sm" type="button" id="btn-subir-ok" disabled>Subir preguntas</button>
+        </div>`,
+      onMount(modal) {
+        const ta    = modal.querySelector('#ta-json');
+        const err   = modal.querySelector('.form-err');
+        const sum   = modal.querySelector('#sum-json');
+        const btnOk = modal.querySelector('#btn-subir-ok');
+        const label = modal.querySelector('#fp-json-label');
+
+        function _refresh() {
+          err.hidden = true;
+          sum.hidden = true;
+          btnOk.disabled = true;
+          parsed = null;
+          const text = ta.value.trim();
+          if (!text) return;
+          try {
+            parsed = _validar(text);
+            sum.innerHTML =
+              `<span class="kv-badge ok">${parsed.length} pregunta(s) válidas</span>`;
+            sum.hidden = false;
+            btnOk.disabled = false;
+          } catch (e) {
+            err.textContent = _msgError(e.message);
+            err.hidden = false;
+          }
+        }
+        ta.oninput = _refresh;
+
+        modal.querySelector('#fp-json').onchange = async (ev) => {
+          const f = ev.target.files && ev.target.files[0];
+          if (!f) return;
+          try {
+            raw = await _leerFicheroTexto(f);
+            ta.value = raw;
+            label.textContent = '📄 ' + f.name;
+            _refresh();
+          } catch (e) {
+            err.textContent = _msgError(e.message);
+            err.hidden = false;
+          }
+        };
+
+        modal.querySelector('[data-cancel]').onclick = _cerrarModal;
+        btnOk.onclick = async () => {
+          if (!parsed) return;
+          btnOk.disabled = true;
+          err.hidden = true;
+          const total = parsed.length;
+          let creadas = 0, falladas = 0;
+          for (const p of parsed) {
+            try {
+              await S.rpc('admin_crear_pregunta', {
+                p_seccion_id: seccionId,
+                p_enunciado: p.enunciado,
+                p_opciones: p.opciones,
+                p_explicacion: p.explicacion,
+              });
+              creadas++;
+              btnOk.textContent = `Subiendo ${creadas}/${total}…`;
+            } catch (e) {
+              falladas++;
+            }
+          }
+          _cerrarModal();
+          if (falladas === 0) {
+            showToast(`${creadas} pregunta(s) subidas.`);
+          } else {
+            showToast(`${creadas} subidas · ${falladas} fallaron`);
+          }
+          viewAdminSeccion([seccionId]);
+        };
+      },
+    });
+  }
+
+  // Importa una oposición completa (o sólo la estructura) desde un JSON.
+  // Formato aceptado:
+  //   {
+  //     "nombre": "Nombre de la oposición",
+  //     "descripcion": "…" (opcional),
+  //     "temas": [
+  //       {
+  //         "nombre": "Tema 1",
+  //         "descripcion": "…" (opcional),
+  //         "modulos": [
+  //           {
+  //             "nombre": "Módulo A",
+  //             "secciones": [
+  //               {"nombre": "Sección Z", "min_aprobado": 70, "n_preg_test": 10}
+  //             ]
+  //           }
+  //         ]
+  //       }
+  //     ]
+  //   }
+  //
+  // Reglas de reutilización:
+  //   · Si ya existe un tema con el mismo `nombre` en el catálogo global,
+  //     se REUTILIZA (se vincula a la oposición nueva con sus módulos y
+  //     secciones existentes) — nunca se crea otro tema con nombre igual.
+  //   · Módulos y secciones dentro de un tema existente se comparan por
+  //     `nombre`: si ya existe, se conserva; si es nuevo, se crea.
+  function _importarOposicionJSON(refresh) {
+    let parsed = null;
+
+    function _validar(text) {
+      let data;
+      try { data = JSON.parse(text); }
+      catch (e) { throw new Error('json_invalido'); }
+      if (!data || typeof data !== 'object') throw new Error('json_debe_ser_objeto');
+      const nombre = String(data.nombre || '').trim();
+      if (!nombre) throw new Error('oposicion_sin_nombre');
+      const descripcion = data.descripcion ? String(data.descripcion).trim() : null;
+      const temas = Array.isArray(data.temas) ? data.temas : [];
+      const temasN = temas.map((t, i) => {
+        const tnom = String(t?.nombre || '').trim();
+        if (!tnom) throw new Error(`tema_${i+1}_sin_nombre`);
+        const modulos = Array.isArray(t?.modulos) ? t.modulos : [];
+        const modulosN = modulos.map((m, j) => {
+          const mnom = String(m?.nombre || '').trim();
+          if (!mnom) throw new Error(`tema_${i+1}_modulo_${j+1}_sin_nombre`);
+          const secs = Array.isArray(m?.secciones) ? m.secciones : [];
+          const secsN = secs.map((s, k) => {
+            const snom = String(s?.nombre || '').trim();
+            if (!snom) throw new Error(`tema_${i+1}_modulo_${j+1}_seccion_${k+1}_sin_nombre`);
+            return {
+              nombre: snom,
+              orden: (s.orden != null ? +s.orden : (k + 1)) || null,
+              min_aprobado: (s.min_aprobado != null ? +s.min_aprobado : 70),
+              n_preg_test:  (s.n_preg_test  != null ? +s.n_preg_test  : 10),
+            };
+          });
+          return {
+            nombre: mnom,
+            orden: (m.orden != null ? +m.orden : (j + 1)) || null,
+            secciones: secsN,
+          };
+        });
+        return {
+          nombre: tnom,
+          descripcion: t.descripcion ? String(t.descripcion).trim() : null,
+          modulos: modulosN,
+        };
+      });
+      return { nombre, descripcion, temas: temasN };
+    }
+
+    _mostrarModal({
+      titulo: 'Importar oposición desde JSON',
+      contenido: html`
+        <p class="muted small" style="margin:0 0 .75rem">
+          Crea una oposición con sus temas, módulos y secciones. Si ya
+          existe un <strong>tema con el mismo nombre</strong>, se reutiliza
+          con sus módulos y secciones. La teoría y las preguntas se
+          añaden después, sección por sección.
+        </p>
+        <label class="json-drop" for="fp-op-json">
+          <span id="fp-op-json-label">📁 Elegir fichero <code>.json</code> o pegar debajo</span>
+          <input id="fp-op-json" type="file" accept=".json,application/json">
+        </label>
+        <div class="field" style="margin-top:.75rem">
+          <label>O pega el JSON aquí</label>
+          <textarea id="ta-op-json" rows="10"
+            placeholder='{
+  "nombre": "Auxilio Judicial",
+  "descripcion": "…",
+  "temas": [
+    {
+      "nombre": "Constitución",
+      "modulos": [
+        {"nombre": "Título Preliminar", "secciones": [{"nombre": "Artículos 1-9"}]}
+      ]
+    }
+  ]
+}'></textarea>
+        </div>
+        <div class="json-preview__summary" id="sum-op-json" hidden></div>
+        <div class="form-err" hidden></div>
+        <div class="form-row" style="justify-content:flex-end; margin-top:.75rem">
+          <button class="btn btn-cancel btn-sm" type="button" data-cancel>Cancelar</button>
+          <button class="btn btn-pri btn-sm" type="button" id="btn-op-ok" disabled>Crear oposición</button>
+        </div>`,
+      onMount(modal) {
+        const ta    = modal.querySelector('#ta-op-json');
+        const err   = modal.querySelector('.form-err');
+        const sum   = modal.querySelector('#sum-op-json');
+        const btnOk = modal.querySelector('#btn-op-ok');
+        const label = modal.querySelector('#fp-op-json-label');
+
+        function _refresh() {
+          err.hidden = true;
+          sum.hidden = true;
+          btnOk.disabled = true;
+          parsed = null;
+          const text = ta.value.trim();
+          if (!text) return;
+          try {
+            parsed = _validar(text);
+            const nT = parsed.temas.length;
+            const nM = parsed.temas.reduce((s, t) => s + (t.modulos || []).length, 0);
+            const nS = parsed.temas.reduce((s, t) =>
+              s + (t.modulos || []).reduce((ss, m) => ss + (m.secciones || []).length, 0), 0);
+            sum.innerHTML =
+              `<span class="kv-badge ok">${esc(parsed.nombre)}</span>` +
+              `<span class="kv-badge">${nT} tema(s)</span>` +
+              `<span class="kv-badge">${nM} módulo(s)</span>` +
+              `<span class="kv-badge">${nS} sección(es)</span>`;
+            sum.hidden = false;
+            btnOk.disabled = false;
+          } catch (e) {
+            err.textContent = _msgError(e.message);
+            err.hidden = false;
+          }
+        }
+        ta.oninput = _refresh;
+
+        modal.querySelector('#fp-op-json').onchange = async (ev) => {
+          const f = ev.target.files && ev.target.files[0];
+          if (!f) return;
+          try {
+            const text = await _leerFicheroTexto(f);
+            ta.value = text;
+            label.textContent = '📄 ' + f.name;
+            _refresh();
+          } catch (e) {
+            err.textContent = _msgError(e.message);
+            err.hidden = false;
+          }
+        };
+
+        modal.querySelector('[data-cancel]').onclick = _cerrarModal;
+        btnOk.onclick = async () => {
+          if (!parsed) return;
+          btnOk.disabled = true;
+          err.hidden = true;
+          try {
+            btnOk.textContent = 'Creando oposición…';
+            const rOp = await S.rpc('admin_crear_oposicion', {
+              p_nombre: parsed.nombre,
+              p_descripcion: parsed.descripcion,
+            });
+            const opId = rOp?.id || rOp?.oposicion_id || rOp;
+            // Catálogo global de temas → para detectar reutilizables.
+            const catTemas = await S.rpc('admin_listar_temas', { p_oposicion_id: null }) || [];
+            const catByName = new Map(catTemas.map(t => [String(t.nombre).trim().toLowerCase(), t]));
+
+            let tOK = 0, tSKIP = 0, mNew = 0, sNew = 0;
+            for (let i = 0; i < parsed.temas.length; i++) {
+              const t = parsed.temas[i];
+              btnOk.textContent = `Tema ${i+1}/${parsed.temas.length}…`;
+              const key = t.nombre.trim().toLowerCase();
+              let temaId;
+              const existente = catByName.get(key);
+              if (existente) {
+                // Reutiliza el tema del catálogo (con sus módulos y secciones).
+                temaId = existente.id;
+                await S.rpc('admin_asignar_tema_a_oposicion', {
+                  p_oposicion_id: opId,
+                  p_tema_id: temaId,
+                }).catch(() => {}); // si ya está vinculado, ignora
+                tSKIP++;
+              } else {
+                const rT = await S.rpc('admin_crear_tema', {
+                  p_nombre: t.nombre,
+                  p_descripcion: t.descripcion,
+                  p_oposicion_id: opId,
+                });
+                temaId = rT?.id || rT?.tema_id || rT;
+                tOK++;
+              }
+
+              // Módulos y secciones: comparar por nombre dentro del tema.
+              const modsExist = await S.rpc('admin_listar_modulos', { p_tema_id: temaId }) || [];
+              const modByName = new Map(modsExist.map(m => [String(m.nombre).trim().toLowerCase(), m]));
+              for (const m of t.modulos) {
+                let modId;
+                const mExist = modByName.get(m.nombre.trim().toLowerCase());
+                if (mExist) {
+                  modId = mExist.id;
+                } else {
+                  const rM = await S.rpc('admin_crear_modulo', {
+                    p_tema_id: temaId,
+                    p_nombre: m.nombre,
+                    p_orden: m.orden,
+                  });
+                  modId = rM?.id || rM?.modulo_id || rM;
+                  mNew++;
+                }
+                const secsExist = await S.rpc('admin_listar_secciones', { p_modulo_id: modId }) || [];
+                const secByName = new Set(secsExist.map(s => String(s.nombre).trim().toLowerCase()));
+                for (const s of m.secciones) {
+                  if (secByName.has(s.nombre.trim().toLowerCase())) continue;
+                  await S.rpc('admin_crear_seccion', {
+                    p_modulo_id: modId,
+                    p_nombre: s.nombre,
+                    p_orden: s.orden,
+                    p_min_aprobado: s.min_aprobado,
+                    p_n_preg_test: s.n_preg_test,
+                  });
+                  sNew++;
+                }
+              }
+            }
+
+            _cerrarModal();
+            showToast(
+              `Oposición creada · ${tOK} tema(s) nuevos, ${tSKIP} reutilizados, ` +
+              `${mNew} módulo(s), ${sNew} sección(es).`);
+            if (typeof refresh === 'function') refresh();
+          } catch (e) {
+            btnOk.disabled = false;
+            btnOk.textContent = 'Crear oposición';
+            err.textContent = _msgError(e.message || String(e));
             err.hidden = false;
           }
         };
