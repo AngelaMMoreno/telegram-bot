@@ -178,6 +178,7 @@
     { re: /^\/modulo\/([0-9a-f-]+)$/,        view: viewModulo },
     { re: /^\/seccion\/([0-9a-f-]+)\/teoria$/,view: viewTeoria },
     { re: /^\/seccion\/([0-9a-f-]+)\/test$/, view: viewTestSeccion },
+    { re: /^\/esquema\/tema\/([0-9a-f-]+)$/, view: viewEsquemaTema },
     { re: /^\/repaso\/([0-9a-f-]+)$/,        view: viewRepaso },
     { re: /^\/tablon\/([0-9a-f-]+)$/,        view: viewTablon },
     { re: /^\/estadisticas$/,                view: viewEstadisticas },
@@ -847,7 +848,13 @@
   async function viewTema([temaId]) {
     loading();
     const opId = getCtx().oposicion_id;
-    const home = opId ? await S.rpc('mi_home_oposicion', { p_oposicion_id: opId }) : { temas: [] };
+    // El árbol de la oposición y el documento del tema se piden en paralelo
+    // — ambos son datos que necesita esta vista antes del primer render.
+    const [home, docTema] = await Promise.all([
+      opId ? S.rpc('mi_home_oposicion', { p_oposicion_id: opId })
+           : Promise.resolve({ temas: [] }),
+      S.rpc('documento_de_tema', { p_tema_id: temaId }).catch(() => null),
+    ]);
     const tema = (home.temas || []).find(t => t.id === temaId);
     if (!tema) return empty('Tema no encontrado en tu oposición actual.');
 
@@ -856,6 +863,8 @@
     const idxTema = (home.temas || []).findIndex(t => t.id === temaId);
     const pal = _paletaTema(idxTema < 0 ? 0 : idxTema);
     const iconoTema = _iconoTema(tema.nombre, idxTema);
+    const hayEsquema = !!(docTema && docTema.ruta);
+    const puedeSubirEsquema = _esAdmin();
 
     // Siempre listamos los módulos como tiles clickeables — aunque el tema
     // tenga un único módulo. Antes desplegábamos sus secciones aquí para
@@ -893,14 +902,24 @@
       </header>
 
       <div class="tema-actions">
-        <a class="tema-action" href="#/repaso/${opId}?tema=${tema.id}">
-          <span aria-hidden="true">📄</span>
-          <span>Ver esquema</span>
-        </a>
-        <button class="tema-action" type="button" id="btn-subir-esquema">
-          <span aria-hidden="true">⬆️</span>
-          <span>Subir esquema</span>
-        </button>
+        ${raw(hayEsquema
+          ? html`<a class="tema-action" href="#/esquema/tema/${tema.id}">
+                  <span aria-hidden="true">📄</span>
+                  <span>Ver esquema</span>
+                </a>`
+          : html`<button class="tema-action is-disabled" type="button"
+                        id="btn-ver-esquema-vacio"
+                        aria-disabled="true"
+                        title="Este tema aún no tiene esquema">
+                  <span aria-hidden="true">📄</span>
+                  <span>Ver esquema</span>
+                </button>`)}
+        ${raw(puedeSubirEsquema ? html`
+          <button class="tema-action" type="button" id="btn-subir-esquema">
+            <span aria-hidden="true">⬆️</span>
+            <span>${hayEsquema ? 'Cambiar esquema' : 'Subir esquema'}</span>
+          </button>
+        ` : '')}
       </div>
 
       <div class="modulo-lista">
@@ -953,7 +972,151 @@
       };
     }
     const btnSubir = root.querySelector('#btn-subir-esquema');
-    if (btnSubir) btnSubir.onclick = () => showToast('Subir esquema — próximamente.');
+    if (btnSubir) btnSubir.onclick = () => _subirEsquemaTema(tema, docTema, () => viewTema([temaId]));
+    const btnVerVacio = root.querySelector('#btn-ver-esquema-vacio');
+    if (btnVerVacio) btnVerVacio.onclick = () => showToast('Este tema aún no tiene esquema.');
+  }
+
+
+  // Sube un esquema de tema al microservicio de contenido y lo registra en
+  // la tabla `documentos` con nivel='tema', tipo='esquema'.  Sigue el mismo
+  // patrón que la subida de teoría desde `viewAdminSeccion`: primero
+  // asegura la carpeta destino, luego POST /teoria/api/subir con el
+  // fichero, y finalmente `admin_upsert_documento`. Sólo admin — el botón
+  // que abre este modal ya está protegido en `viewTema`.
+  function _subirEsquemaTema(tema, docPrevio, onDone) {
+    // Carpeta convención: /<slug-tema>/esquema/. El microservicio crea las
+    // subcarpetas al vuelo con /api/carpeta (idempotente).
+    const slug = (tema.slug || 'tema')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'tema';
+    const carpeta = `/${slug}/esquema`;
+
+    _mostrarModal({
+      titulo: docPrevio ? 'Cambiar esquema del tema' : 'Subir esquema del tema',
+      contenido: html`
+        <p class="muted" style="margin-top:0">
+          Sube un fichero markdown (<code>.md</code>) con el esquema del tema.
+          Se guarda en <code>${carpeta}/</code> y se enlaza como esquema de
+          <strong>${tema.nombre}</strong>. ${raw(docPrevio ? html`
+            <br>Reemplazará la ruta actual (<code>${docPrevio.ruta}</code>).
+          ` : '')}
+        </p>
+        <form id="form-subir-esquema" class="form-grid">
+          <div class="field">
+            <label>Fichero</label>
+            <input type="file" name="fichero" accept=".md,.markdown,.txt" required>
+          </div>
+          <div class="form-err" hidden></div>
+          <div class="form-row" style="justify-content:flex-end;gap:.5rem">
+            <button class="btn" type="button" id="btn-cancelar-esquema">Cancelar</button>
+            <button class="btn btn-pri" type="submit" id="btn-guardar-esquema">
+              ${docPrevio ? 'Cambiar' : 'Subir'}
+            </button>
+          </div>
+        </form>`,
+      onMount(modal) {
+        modal.querySelector('#btn-cancelar-esquema').onclick = () => _cerrarModal();
+        modal.querySelector('#form-subir-esquema').onsubmit = async (ev) => {
+          ev.preventDefault();
+          const err = modal.querySelector('.form-err');
+          const btn = modal.querySelector('#btn-guardar-esquema');
+          err.hidden = true;
+          const file = new FormData(ev.target).get('fichero');
+          if (!file || !file.name) {
+            err.textContent = 'Elige un fichero antes de subir.';
+            err.hidden = false;
+            return;
+          }
+          btn.disabled = true;
+          btn.textContent = 'Subiendo…';
+          try {
+            const tok = S.getAccess?.();
+            const headers = tok ? { Authorization: `Bearer ${tok}` } : {};
+            // 1) Crea la carpeta destino de forma idempotente.
+            await fetch('/teoria/api/carpeta', {
+              method: 'POST',
+              headers: { ...headers, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                padre: carpeta.replace(/\/[^/]+$/, '/') || '/',
+                nombre: carpeta.split('/').pop(),
+              }),
+            }).catch(() => {});
+            // 2) Sube el fichero al microservicio de contenido.
+            const fd = new FormData();
+            fd.append('ruta', carpeta);
+            fd.append('files', file);
+            const r = await fetch('/teoria/api/subir', {
+              method: 'POST', body: fd, headers,
+            });
+            if (!r.ok) throw new Error('upload_failed');
+            const d = await r.json();
+            const ruta = d.subidos && d.subidos[0] && d.subidos[0].ruta;
+            if (!ruta) throw new Error('no_se_pudo_registrar');
+            // 3) Registra la ruta como esquema del tema en `documentos`.
+            await S.rpc('admin_upsert_documento', {
+              p_nivel: 'tema',
+              p_entidad_id: tema.id,
+              p_tipo: 'esquema',
+              p_ruta: ruta,
+            });
+            _cerrarModal();
+            showToast(docPrevio ? 'Esquema actualizado.' : 'Esquema subido.');
+            if (typeof onDone === 'function') onDone();
+          } catch (e) {
+            err.textContent = _msgError(e.message || String(e));
+            err.hidden = false;
+            btn.disabled = false;
+            btn.textContent = docPrevio ? 'Cambiar' : 'Subir';
+          }
+        };
+      },
+    });
+  }
+
+
+  // ── Vista: esquema de un tema (markdown) ───────────────────────────
+  async function viewEsquemaTema([temaId]) {
+    loading();
+    try {
+      const opId = getCtx().oposicion_id;
+      const [home, doc] = await Promise.all([
+        opId ? S.rpc('mi_home_oposicion', { p_oposicion_id: opId })
+             : Promise.resolve({ temas: [] }),
+        S.rpc('documento_de_tema', { p_tema_id: temaId }).catch(() => null),
+      ]);
+      const tema = (home.temas || []).find(t => t.id === temaId);
+      if (!tema) return empty('Tema no encontrado.');
+      const idxTema = (home.temas || []).findIndex(t => t.id === temaId);
+      const pal = _paletaTema(idxTema < 0 ? 0 : idxTema);
+      const nombreOp = home.oposicion?.nombre || 'Inicio';
+
+      let md = '';
+      if (doc && doc.ruta) md = await fetchMarkdown(doc.ruta);
+      else md = '## Sin esquema todavía\n\nEste tema aún no tiene esquema subido.';
+
+      root.innerHTML = html`
+        <div class="view-head">
+          <div class="breadcrumbs">
+            <a href="#/">${nombreOp}</a> /
+            <a href="#/tema/${tema.id}">${tema.nombre}</a> /
+            <strong>Esquema</strong>
+          </div>
+        </div>
+
+        <header class="tema-hero teoria-hero"
+                style="--tema-border:${raw(pal.border)}; --tema-soft:${raw(pal.soft)}; --tema-strong:${raw(pal.strong)};">
+          <span class="tema-hero-icono teoria-hero-icono" aria-hidden="true">📄</span>
+          <div class="tema-hero-body">
+            <span class="teoria-hero-crumb">${tema.nombre}</span>
+            <h1 class="tema-hero-titulo">Esquema del tema</h1>
+          </div>
+        </header>
+
+        <div class="teoria-body">${raw(renderMarkdown(md))}</div>
+      `;
+    } catch (e) {
+      empty('No se pudo cargar el esquema: ' + e.message);
+    }
   }
 
 

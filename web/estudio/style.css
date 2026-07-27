@@ -1833,6 +1833,17 @@ input[type="number"]::-webkit-inner-spin-button:hover {
 }
 .tema-action:active { transform: translateY(1px); }
 [data-theme="dark"] .tema-action:hover { color: var(--pri); }
+.tema-action.is-disabled {
+  color: var(--txt-soft);
+  opacity: .65;
+  cursor: not-allowed;
+  border-style: dashed;
+}
+.tema-action.is-disabled:hover {
+  background: var(--bg-panel);
+  border-color: var(--border);
+  color: var(--txt-soft);
+}
 
 /* Bloque de módulo dentro de la vista tema. */
 .modulo-bloque {
