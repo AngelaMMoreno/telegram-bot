@@ -46,7 +46,10 @@
     # ── API PostgREST ─────────────────────────────────────────────────
     handle /api/* {
         uri strip_prefix /api
-        reverse_proxy postgrest:3000
+        # DESA: apunta al postgrest del stack core de esta rama, que se
+        # llama `postgrest_desa` para evitar colisión de alias DNS con
+        # el `postgrest` del stack core de producción en dokploy-network.
+        reverse_proxy postgrest_desa:3000
     }
 
     # MIME correcto para el manifest PWA.

@@ -1,13 +1,22 @@
 # Stack APP — SPA rediseñada /estudio/ + backend FastAPI de contenidos
 # en un solo contenedor.
 #
-# Es el único modo soportado ya. Los stacks segmentados de landing/, web/
-# y teoria/ se retiraron al unificar el frontend bajo /estudio/: hoy hay
-# un único Dockerfile que empaqueta la SPA y el backend en una sola
-# imagen.
+# VARIANTE DESA (rama `desa`, entorno Dokploy `desarrollo`):
+# Todos los identificadores públicos llevan sufijo `-desa` para no chocar
+# con el stack `app` de producción que corre en paralelo:
+#   - `POSTGREST_URL` apunta a `postgrest_desa:3000` (el postgrest del
+#     core-desa; ver deploy/core/docker-compose.yml en esta misma rama).
+#   - Router/middlewares de Traefik llevan sufijo `-desa` (los nombres
+#     de router son globales; dos con el mismo nombre se pisan y sólo
+#     sobrevive uno al azar).
+#   - El nombre de servicio `app` se deja como está: nadie lo resuelve
+#     por DNS desde otro stack, así que el alias duplicado en
+#     dokploy-network es inocuo.
 #
-# Habla con PostgREST (stack core) por http://postgrest:3000 en la red
-# externa dokploy-network.
+# MERGE NOTE (al mergear a `main`): NO propagar el sufijo `-desa` a los
+# routers de producción — mantener DOS ficheros distintos por entorno,
+# o usar `COMPOSE_PROFILES` para conmutar. Ver la nota más larga en
+# deploy/core/docker-compose.yml.
 
 services:
 
@@ -20,7 +29,8 @@ services:
       # para validar los tokens que emite PostgREST.
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET requerida}
       BASE_DIR: /ficheros
-      POSTGREST_URL: http://postgrest:3000
+      # DESA: apunta al postgrest de esta rama (core-desa), no al de prod.
+      POSTGREST_URL: http://postgrest_desa:3000
     volumes:
       # Los ficheros de teoría (PDFs, markdown, etc.) viven fuera del
       # contenedor para sobrevivir a redespliegues.
@@ -36,35 +46,35 @@ services:
       # desplegarse contra un host distinto sin colisionar con la otra.
       # `DOMINIO_LANDING_ALT` es opcional; si no se define, cae al mismo
       # valor que el principal (regla duplicada e inofensiva).
-      - "traefik.http.routers.app.rule=Host(`${DOMINIO_LANDING:?DOMINIO_LANDING requerido (p.ej. aprentix.es o desa.aprentix.es)}`) || Host(`${DOMINIO_LANDING_ALT:-${DOMINIO_LANDING}}`)"
-      - "traefik.http.routers.app.entrypoints=websecure"
-      - "traefik.http.routers.app.tls=true"
-      - "traefik.http.routers.app.tls.certresolver=letsencrypt"
-      - "traefik.http.services.app.loadbalancer.server.port=80"
+      - "traefik.http.routers.app-desa.rule=Host(`${DOMINIO_LANDING:?DOMINIO_LANDING requerido (p.ej. desa.aprentix.es)}`) || Host(`${DOMINIO_LANDING_ALT:-${DOMINIO_LANDING}}`)"
+      - "traefik.http.routers.app-desa.entrypoints=websecure"
+      - "traefik.http.routers.app-desa.tls=true"
+      - "traefik.http.routers.app-desa.tls.certresolver=letsencrypt"
+      - "traefik.http.services.app-desa.loadbalancer.server.port=80"
 
       # ── Redirect legacy: test.aprentix.es → aplicación remodelada ─
       # Los hosts legacy sólo se dan de alta si TÚ pones un valor real;
       # los defaults son `.invalid` (TLD reservada que nunca resuelve)
       # para que en despliegues nuevos —típicamente `desa.aprentix.es`—
       # no se pise el `test.aprentix.es` del despliegue de producción.
-      - "traefik.http.routers.web-legacy.rule=Host(`${DOMINIO_WEB:-legacy-web-desactivado.invalid}`) || Host(`${DOMINIO_WEB_ALT:-legacy-web-alt-desactivado.invalid}`)"
-      - "traefik.http.routers.web-legacy.entrypoints=websecure"
-      - "traefik.http.routers.web-legacy.tls=true"
-      - "traefik.http.routers.web-legacy.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.web-legacy.middlewares=web-legacy-redirect"
-      - "traefik.http.middlewares.web-legacy-redirect.redirectregex.regex=^https?://[^/]+/(.*)"
-      - "traefik.http.middlewares.web-legacy-redirect.redirectregex.replacement=https://${DOMINIO_LANDING}/"
-      - "traefik.http.middlewares.web-legacy-redirect.redirectregex.permanent=true"
+      - "traefik.http.routers.web-legacy-desa.rule=Host(`${DOMINIO_WEB:-legacy-web-desa-desactivado.invalid}`) || Host(`${DOMINIO_WEB_ALT:-legacy-web-alt-desa-desactivado.invalid}`)"
+      - "traefik.http.routers.web-legacy-desa.entrypoints=websecure"
+      - "traefik.http.routers.web-legacy-desa.tls=true"
+      - "traefik.http.routers.web-legacy-desa.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.web-legacy-desa.middlewares=web-legacy-redirect-desa"
+      - "traefik.http.middlewares.web-legacy-redirect-desa.redirectregex.regex=^https?://[^/]+/(.*)"
+      - "traefik.http.middlewares.web-legacy-redirect-desa.redirectregex.replacement=https://${DOMINIO_LANDING}/"
+      - "traefik.http.middlewares.web-legacy-redirect-desa.redirectregex.permanent=true"
 
       # ── Redirect legacy: teoria.aprentix.es → aplicación remodelada
-      - "traefik.http.routers.teoria-legacy.rule=Host(`${DOMINIO_TEORIA:-legacy-teoria-desactivado.invalid}`) || Host(`${DOMINIO_TEORIA_ALT:-legacy-teoria-alt-desactivado.invalid}`)"
-      - "traefik.http.routers.teoria-legacy.entrypoints=websecure"
-      - "traefik.http.routers.teoria-legacy.tls=true"
-      - "traefik.http.routers.teoria-legacy.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.teoria-legacy.middlewares=teoria-legacy-redirect"
-      - "traefik.http.middlewares.teoria-legacy-redirect.redirectregex.regex=^https?://[^/]+/(.*)"
-      - "traefik.http.middlewares.teoria-legacy-redirect.redirectregex.replacement=https://${DOMINIO_LANDING}/"
-      - "traefik.http.middlewares.teoria-legacy-redirect.redirectregex.permanent=true"
+      - "traefik.http.routers.teoria-legacy-desa.rule=Host(`${DOMINIO_TEORIA:-legacy-teoria-desa-desactivado.invalid}`) || Host(`${DOMINIO_TEORIA_ALT:-legacy-teoria-alt-desa-desactivado.invalid}`)"
+      - "traefik.http.routers.teoria-legacy-desa.entrypoints=websecure"
+      - "traefik.http.routers.teoria-legacy-desa.tls=true"
+      - "traefik.http.routers.teoria-legacy-desa.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.teoria-legacy-desa.middlewares=teoria-legacy-redirect-desa"
+      - "traefik.http.middlewares.teoria-legacy-redirect-desa.redirectregex.regex=^https?://[^/]+/(.*)"
+      - "traefik.http.middlewares.teoria-legacy-redirect-desa.redirectregex.replacement=https://${DOMINIO_LANDING}/"
+      - "traefik.http.middlewares.teoria-legacy-redirect-desa.redirectregex.permanent=true"
 
 networks:
   dokploy-network:

@@ -1,17 +1,16 @@
 # Compose maestro SOLO para desarrollo local.
 #
-# En producción (Dokploy) NO se usa: cada carpeta bajo deploy/ es una
-# Compose Application independiente que se puede redesplegar por
-# separado. Aquí incluimos los composes que interesen para poder
-# levantar todo el stack de una tacada.
+# En Dokploy NO se usa: cada carpeta bajo deploy/ es una Compose
+# Application independiente que se puede redesplegar por separado. Aquí
+# incluimos los composes que interesen para poder levantar todo el
+# stack de una tacada.
 #
-# Modo único (unificado). Un solo contenedor con Caddy + uvicorn sirve la
-# SPA rediseñada /estudio/ y la API de contenidos, todo desde web/. Se
-# despliega desde deploy/app/. Es más simple: menos partes móviles y un
-# solo redeploy tras cualquier cambio de frontend.
-#
-# El modo segmentado (un stack por SPA) y las SPAs legacy landing/tests/
-# teoría se retiraron al unificar el frontend bajo /estudio/.
+# NOTA IMPORTANTE (rama `desa`):
+# En esta rama, `deploy/core/docker-compose.yml` NO define `db` ni
+# `pgadmin`, porque el entorno `desarrollo` de Dokploy reutiliza los
+# de producción (ver DESPLIEGUE.md → "Entorno `desarrollo` en paralelo").
+# Para el dev local sí necesitamos un Postgres y un pgAdmin, así que
+# los añadimos AQUÍ mismo — este bloque no lo despliega Dokploy.
 #
 # Requiere Docker Compose 2.20 o superior (por `include:`).
 
@@ -20,3 +19,57 @@ include:
   - deploy/app/docker-compose.yml
   - deploy/notificador/docker-compose.yml
   - deploy/backups/docker-compose.yml
+
+services:
+
+  # ── DB local (sólo dev). En Dokploy prod lo aporta core-prod. ─────
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aprentix_desa}
+      POSTGRES_USER: ${POSTGRES_USER:-aprentix}
+      POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS requerida}
+    command:
+      - postgres
+      - -c
+      - app.jwt_secret=${JWT_SECRET:?JWT_SECRET requerida}
+      - -c
+      - app.admin_pass=${ADMIN_PASS:?ADMIN_PASS requerida}
+      - -c
+      - app.auth_pass=${AUTH_PASS:?AUTH_PASS requerida}
+    volumes:
+      - pg_local:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+    networks: [dokploy-network]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aprentix}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── pgAdmin local (sólo dev). En Dokploy prod lo aporta core-prod. ─
+  pgadmin:
+    image: dpage/pgadmin4:9
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    ${PGADMIN_EMAIL:-tu@correo.es}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASS:?PGADMIN_PASS requerida}
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+    volumes:
+      - pgadmin_local:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    ports:
+      - "5050:80"
+    restart: unless-stopped
+    networks: [dokploy-network]
+
+volumes:
+  pg_local:
+  pgadmin_local:
+
+networks:
+  dokploy-network:
+    external: true
