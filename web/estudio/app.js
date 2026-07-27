@@ -1463,6 +1463,28 @@
       </nav>`;
   }
 
+  function _oposicionDelTema(tema, oposiciones) {
+    const ids = Array.isArray(tema?.oposicion_ids) ? tema.oposicion_ids : [];
+    const idPreferido = getCtx().admin_oposicion_id;
+    const id = ids.includes(idPreferido) ? idPreferido : ids[0];
+    return (oposiciones || []).find(oposicion => oposicion.id === id) || null;
+  }
+
+  function _migasContenido(tema, oposicion, niveles = []) {
+    return [
+      { label: 'Oposiciones', href: '#/admin/contenido' },
+      ...(oposicion ? [{
+        label: oposicion.nombre,
+        href: `#/admin/contenido/oposicion/${oposicion.id}`,
+      }] : []),
+      {
+        label: tema.nombre,
+        ...(niveles.length ? { href: `#/admin/contenido/tema/${tema.id}` } : {}),
+      },
+      ...niveles,
+    ];
+  }
+
   // Vista: listado de oposiciones (admin).
   async function viewAdminOposiciones() {
     if (!_requireContenidoAdmin()) return;
@@ -1584,6 +1606,7 @@
     ]);
     const op = (ops || []).find(x => x.id === opId);
     if (!op) return empty('Oposición no encontrada.');
+    setCtx({ admin_oposicion_id: opId });
 
     root.innerHTML = html`
       ${raw(_adminNav([
@@ -1730,22 +1753,25 @@
   async function viewAdminTema([tid]) {
     if (!_requireContenidoAdmin()) return;
     loading();
-    const temas = await S.rpc('admin_listar_temas', { p_oposicion_id: null });
+    const [temas, oposiciones] = await Promise.all([
+      S.rpc('admin_listar_temas', { p_oposicion_id: null }),
+      S.rpc('admin_listar_oposiciones'),
+    ]);
     const tema = (temas || []).find(x => x.id === tid);
     if (!tema) return empty('Tema no encontrado.');
+    const oposicion = _oposicionDelTema(tema, oposiciones);
+    if (oposicion) setCtx({ admin_oposicion_id: oposicion.id });
     const modulos = await S.rpc('admin_listar_modulos', { p_tema_id: tid });
 
     root.innerHTML = html`
-      ${raw(_adminNav([
-        { label: 'Oposiciones', href: '#/admin/contenido' },
-        { label: tema.nombre },
-      ]))}
+      ${raw(_adminNav(_migasContenido(tema, oposicion)))}
       <div class="view-head"><h2>${tema.nombre}</h2></div>
       ${tema.descripcion ? html`<p class="muted">${tema.descripcion}</p>` : ''}
 
       <div class="admin-toolbar">
         <h3 style="margin:0; flex:1">Módulos</h3>
         <button class="btn btn-sm" id="btn-editar-tema">✏️ Editar tema</button>
+        <button class="btn btn-sm" id="btn-importar-modulos">📥 Importar módulos</button>
         <button class="btn btn-pri btn-sm" id="btn-nuevo-mod">➕ Nuevo módulo</button>
       </div>
 
@@ -1768,6 +1794,8 @@
     `;
 
     root.querySelector('#btn-editar-tema').onclick = () => _editarTema(tema, null);
+    root.querySelector('#btn-importar-modulos').onclick = () =>
+      _importarModulosJSON(tid, () => viewAdminTema([tid]));
     root.querySelector('#btn-nuevo-mod').onclick = () => _editarModulo(null, tid);
     root.querySelectorAll('.list-item[data-mid]').forEach(item => {
       const mid = item.dataset.mid;
@@ -1837,7 +1865,10 @@
     if (!_requireContenidoAdmin()) return;
     loading();
     // No hay una RPC "get_modulo"; buscamos entre los temas.
-    const temas = await S.rpc('admin_listar_temas', { p_oposicion_id: null });
+    const [temas, oposiciones] = await Promise.all([
+      S.rpc('admin_listar_temas', { p_oposicion_id: null }),
+      S.rpc('admin_listar_oposiciones'),
+    ]);
     let tema = null, modulo = null;
     for (const t of temas) {
       const mods = await S.rpc('admin_listar_modulos', { p_tema_id: t.id });
@@ -1845,14 +1876,13 @@
       if (m) { tema = t; modulo = m; break; }
     }
     if (!modulo) return empty('Módulo no encontrado.');
+    const oposicion = _oposicionDelTema(tema, oposiciones);
     const secciones = await S.rpc('admin_listar_secciones', { p_modulo_id: mid });
 
     root.innerHTML = html`
-      ${raw(_adminNav([
-        { label: 'Oposiciones', href: '#/admin/contenido' },
-        { label: tema.nombre,   href: `#/admin/contenido/tema/${tema.id}` },
+      ${raw(_adminNav(_migasContenido(tema, oposicion, [
         { label: modulo.nombre },
-      ]))}
+      ])))}
       <div class="view-head"><h2>${modulo.nombre}</h2></div>
       <div class="admin-toolbar">
         <h3 style="margin:0; flex:1">Secciones</h3>
@@ -1967,7 +1997,10 @@
     if (!_requireContenidoAdmin()) return;
     loading();
     // No hay RPC directa "get_seccion"; buscamos navegando temas→módulos→secc.
-    const temas = await S.rpc('admin_listar_temas', { p_oposicion_id: null });
+    const [temas, oposiciones] = await Promise.all([
+      S.rpc('admin_listar_temas', { p_oposicion_id: null }),
+      S.rpc('admin_listar_oposiciones'),
+    ]);
     let tema = null, modulo = null, seccion = null;
     outer: for (const t of temas) {
       const mods = await S.rpc('admin_listar_modulos', { p_tema_id: t.id });
@@ -1978,17 +2011,16 @@
       }
     }
     if (!seccion) return empty('Sección no encontrada.');
+    const oposicion = _oposicionDelTema(tema, oposiciones);
     const preguntas = await S.rpc('admin_preguntas_de_seccion', { p_seccion_id: sid });
     const docTeoria = await S.rpc('documento_de_seccion', { p_seccion_id: sid })
       .catch(() => null);
 
     root.innerHTML = html`
-      ${raw(_adminNav([
-        { label: 'Oposiciones', href: '#/admin/contenido' },
-        { label: tema.nombre,   href: `#/admin/contenido/tema/${tema.id}` },
+      ${raw(_adminNav(_migasContenido(tema, oposicion, [
         { label: modulo.nombre, href: `#/admin/contenido/modulo/${modulo.id}` },
         { label: seccion.nombre },
-      ]))}
+      ])))}
       <div class="view-head"><h2>${seccion.nombre}</h2></div>
 
       <div class="panel-card">
@@ -2570,6 +2602,48 @@
         }
         if (typeof refrescar === 'function') refrescar();
         return `${temasNuevos} tema(s), ${modulosNuevos} módulo(s) y ${seccionesNuevas} sección(es) creados.`;
+      },
+    });
+  }
+
+  function _importarModulosJSON(temaId, refrescar) {
+    _mostrarImportadorEstructura({
+      titulo: 'Importar módulos desde JSON',
+      ayuda: 'Añade módulos a este tema junto con sus secciones. Los módulos y secciones existentes con el mismo nombre se reutilizan.',
+      ejemplo: '[\n  {\n    "nombre": "Título I",\n    "orden": 1,\n    "secciones": [\n      {"nombre": "Sección 1", "orden": 1}\n    ]\n  }\n]',
+      confirmar: 'Importar módulos',
+      validar(texto) {
+        let json;
+        try { json = JSON.parse(texto); } catch { throw new Error('json_invalido'); }
+        const modulos = _normalizarModulos(Array.isArray(json) ? json : json?.modulos);
+        const secciones = modulos.reduce((total, modulo) => total + modulo.secciones.length, 0);
+        return {
+          valor: modulos,
+          resumen: `${modulos.length} módulo(s) · ${secciones} sección(es)`,
+        };
+      },
+      async procesar(modulos) {
+        const existentes = await S.rpc('admin_listar_modulos', { p_tema_id: temaId }) || [];
+        const porNombre = new Map(existentes.map(modulo =>
+          [String(modulo.nombre).trim().toLowerCase(), modulo]));
+        let modulosNuevos = 0;
+        let seccionesNuevas = 0;
+        for (const modulo of modulos) {
+          const existente = porNombre.get(modulo.nombre.toLowerCase());
+          let moduloId = existente?.id;
+          if (!moduloId) {
+            const creado = await S.rpc('admin_crear_modulo', {
+              p_tema_id: temaId,
+              p_nombre: modulo.nombre,
+              p_orden: modulo.orden,
+            });
+            moduloId = creado?.id || creado?.modulo_id || creado;
+            modulosNuevos++;
+          }
+          seccionesNuevas += await _crearSeccionesAusentes(moduloId, modulo.secciones);
+        }
+        if (typeof refrescar === 'function') refrescar();
+        return `${modulosNuevos} módulo(s) y ${seccionesNuevas} sección(es) creados; los duplicados se han omitido.`;
       },
     });
   }
