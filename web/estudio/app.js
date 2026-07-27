@@ -80,6 +80,56 @@
   function loading() { root.innerHTML = '<div class="loading">Cargando…</div>'; }
   function empty(msg = 'Sin datos.') { root.innerHTML = `<div class="empty">${esc(msg)}</div>`; }
 
+  // Modal ligero. `contenido` es HTML ya escapado (usa el template html``).
+  // `onMount(modalEl)` corre tras insertar; devuelve foco al primer input.
+  function _mostrarModal({ titulo, contenido, onMount, onClose }) {
+    _cerrarModal();
+    const back = document.createElement('div');
+    back.className = 'aprentix-modal-back';
+    back.innerHTML = `
+      <div class="aprentix-modal" role="dialog" aria-modal="true" aria-label="${esc(titulo || '')}">
+        <div class="modal-head">
+          <h3>${esc(titulo || '')}</h3>
+          <button class="modal-close" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="modal-body">${contenido || ''}</div>
+      </div>`;
+    document.body.appendChild(back);
+    const close = () => { _cerrarModal(); if (onClose) onClose(); };
+    back.querySelector('.modal-close').onclick = close;
+    back.addEventListener('click', (e) => { if (e.target === back) close(); });
+    document.addEventListener('keydown', _mostrarModal._esc = (e) => {
+      if (e.key === 'Escape') close();
+    });
+    if (onMount) onMount(back.querySelector('.aprentix-modal'));
+    // Foco al primer control focusable.
+    const first = back.querySelector('input,textarea,select,button:not(.modal-close)');
+    if (first) first.focus();
+  }
+  function _cerrarModal() {
+    document.querySelectorAll('.aprentix-modal-back').forEach(n => n.remove());
+    if (_mostrarModal._esc) {
+      document.removeEventListener('keydown', _mostrarModal._esc);
+      _mostrarModal._esc = null;
+    }
+  }
+
+  // Tema (light/dark). La cookie `aprentix_theme` la lee el pre-render en
+  // index.html para evitar el "flash" al cargar; aquí sólo la mantenemos.
+  const THEME_COOKIE = 'aprentix_theme';
+  function getTheme() {
+    const m = document.cookie.match(/(?:^|;\s*)aprentix_theme=(dark|light|system)/);
+    return m ? m[1] : 'system';
+  }
+  function setTheme(t) {
+    document.cookie = `${THEME_COOKIE}=${t}; path=/; max-age=${60*60*24*365}; SameSite=Lax`;
+    const effective = t === 'system'
+      ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : t;
+    if (effective === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    else document.documentElement.removeAttribute('data-theme');
+  }
+
   function renderMarkdown(md) {
     if (!window.marked || !window.DOMPurify) return `<pre>${esc(md)}</pre>`;
     return window.DOMPurify.sanitize(window.marked.parse(md || ''));
@@ -123,8 +173,14 @@
     { re: /^\/tablon\/([0-9a-f-]+)$/,        view: viewTablon },
     { re: /^\/estadisticas$/,                view: viewEstadisticas },
     { re: /^\/mi-cuenta$/,                   view: viewMiCuenta },
+    { re: /^\/elegir-oposicion$/,            view: viewElegirOposicion },
     { re: /^\/admin\/usuarios$/,             view: viewAdminUsuarios },
     { re: /^\/admin\/duplicados$/,           view: viewAdminDuplicados },
+    { re: /^\/admin\/contenido$/,                              view: viewAdminOposiciones },
+    { re: /^\/admin\/contenido\/oposicion\/([0-9a-f-]+)$/,     view: viewAdminOposicion },
+    { re: /^\/admin\/contenido\/tema\/([0-9a-f-]+)$/,          view: viewAdminTema },
+    { re: /^\/admin\/contenido\/modulo\/([0-9a-f-]+)$/,        view: viewAdminModulo },
+    { re: /^\/admin\/contenido\/seccion\/([0-9a-f-]+)$/,       view: viewAdminSeccion },
     { re: /^\/verify$/,                      view: viewVerify,     pub: true },
     { re: /^\/reset$/,                       view: viewReset,      pub: true },
     { re: /^\/login$/,                       view: viewLogin,      pub: true },
@@ -332,17 +388,14 @@
     loading();
     // Averigua la oposición activa: preferencia local, o la primera del usuario.
     let opId = getCtx().oposicion_id;
+    // Siempre pedimos la lista al backend para poder validar la preferida y
+    // detectar el caso "primer login sin oposición".
+    const list = await _misOposiciones();
+    if (opId && !list.some(o => o.id === opId)) opId = null;   // stale ctx
+    if (!opId && list.length) opId = list[0].id;
     if (!opId) {
-      const rs = await S.rpc('mis_oposiciones').catch(() => ({ oposiciones: [] }));
-      const list = rs.oposiciones || rs || [];
-      if (Array.isArray(list) && list.length) opId = list[0].id;
-    }
-    if (!opId) {
-      root.innerHTML = html`
-        <div class="empty">
-          <p>No tienes ninguna oposición asignada todavía.</p>
-          <p class="muted small">Habla con un administrador o revisa tu cuenta.</p>
-        </div>`;
+      // Primer login (o borrado de sus oposiciones): mandamos al picker.
+      navigate('#/elegir-oposicion');
       return;
     }
     setCtx({ oposicion_id: opId });
@@ -382,18 +435,102 @@
     root.querySelector('#btn-cambiar-op').onclick = () => _abrirSelectorOposicion();
   }
 
+  // Devuelve `mis_oposiciones` como un array simple.
+  async function _misOposiciones() {
+    const rs = await S.rpc('mis_oposiciones').catch(() => []);
+    const list = rs?.oposiciones || rs || [];
+    return Array.isArray(list) ? list : [];
+  }
+
+  // Abre el picker "cambiar oposición". Si el usuario está en varias, le
+  // deja escoger; si no tiene más de una, va al selector de alta.
   async function _abrirSelectorOposicion() {
-    const rs = await S.rpc('mis_oposiciones').catch(() => ({ oposiciones: [] }));
-    const list = rs.oposiciones || rs || [];
-    if (!list.length) return showToast('No tienes más oposiciones asignadas.');
-    // Modal muy simple con opciones.
-    const nombres = list.map((o, i) => `${i+1}. ${o.nombre}`).join('\n');
-    const sel = prompt(`Elige oposición:\n${nombres}\n\nEscribe el número:`);
-    const idx = parseInt(sel, 10) - 1;
-    if (!isNaN(idx) && list[idx]) {
-      setCtx({ oposicion_id: list[idx].id });
-      navigate('#/');
+    const list = await _misOposiciones();
+    if (list.length <= 1) {
+      // También puede querer sumar otra oposición.
+      navigate('#/elegir-oposicion');
+      return;
     }
+    _mostrarModal({
+      titulo: 'Cambiar oposición',
+      contenido: html`
+        <div class="form-grid">
+          ${raw(list.map(o => html`
+            <button class="op-tile ${getCtx().oposicion_id === o.id ? 'selected' : ''}"
+                    type="button" data-opid="${o.id}">
+              <span class="ico">📚</span>
+              <strong>${o.nombre}</strong>
+              ${o.descripcion ? html`<div class="desc">${o.descripcion}</div>` : ''}
+            </button>
+          `).join(''))}
+          <button class="btn" id="btn-add-op" type="button">➕ Añadir otra oposición</button>
+        </div>`,
+      onMount(modal) {
+        modal.querySelectorAll('[data-opid]').forEach(b => {
+          b.onclick = () => {
+            setCtx({ oposicion_id: b.dataset.opid });
+            _cerrarModal();
+            navigate('#/');
+          };
+        });
+        modal.querySelector('#btn-add-op').onclick = () => {
+          _cerrarModal();
+          navigate('#/elegir-oposicion');
+        };
+      },
+    });
+  }
+
+
+  // ── Vista: elegir oposición (primer login o "añadir otra") ────────
+  async function viewElegirOposicion() {
+    loading();
+    const disp = await S.rpc('listar_oposiciones_disponibles')
+      .catch(() => []);
+    const list = Array.isArray(disp) ? disp : [];
+    const mias = await _misOposiciones();
+    const misIds = new Set(mias.map(o => o.id));
+
+    root.innerHTML = html`
+      <div class="view-head">
+        <h2>${mias.length === 0 ? '¡Bienvenida!' : 'Añadir otra oposición'}</h2>
+      </div>
+      <p class="muted" style="margin-top:-.5rem">
+        ${mias.length === 0
+          ? '¿A qué oposición te presentas? Puedes cambiarla o añadir más desde tu cuenta.'
+          : 'Selecciona cualquier oposición del catálogo para sumarla a tu plan.'}
+      </p>
+      ${list.length === 0
+        ? '<div class="empty">Aún no hay oposiciones publicadas.</div>'
+        : html`
+          <div class="op-grid">
+            ${raw(list.map(o => html`
+              <button class="op-tile ${misIds.has(o.id) ? 'selected' : ''}"
+                      type="button" data-opid="${o.id}"
+                      ${misIds.has(o.id) ? 'aria-current="true"' : ''}>
+                <span class="ico">📚</span>
+                <strong>${o.nombre}</strong>
+                ${o.descripcion ? html`<div class="desc">${o.descripcion}</div>` : ''}
+                ${misIds.has(o.id) ? '<div class="desc" style="margin-top:.4rem"><em>✓ Ya la tienes</em></div>' : ''}
+              </button>
+            `).join(''))}
+          </div>`}
+      ${mias.length > 0
+        ? '<div style="margin-top:1rem"><button class="btn" id="btn-volver">← Volver al inicio</button></div>'
+        : ''}
+    `;
+    root.querySelectorAll('[data-opid]').forEach(b => {
+      b.onclick = async () => {
+        try {
+          await S.rpc('elegir_oposicion', { p_oposicion_id: b.dataset.opid });
+          setCtx({ oposicion_id: b.dataset.opid });
+          showToast('¡Oposición añadida!');
+          navigate('#/');
+        } catch (e) { showToast(_msgError(e.message)); }
+      };
+    });
+    const bv = root.querySelector('#btn-volver');
+    if (bv) bv.onclick = () => navigate('#/');
   }
 
 
@@ -701,66 +838,146 @@
     try {
       const me = await S.rpc('mi_cuenta');
       const ss = await S.rpc('mis_sesiones');
+      const mias = await _misOposiciones().catch(() => []);
+      const tema = getTheme();
+
       root.innerHTML = html`
         <div class="view-head"><h2>Mi cuenta</h2></div>
 
-        <div class="tema-card" style="cursor:default">
-          <div><strong>Email:</strong> ${me.email}
-            ${me.email_verificado ? '<span style="color:#4a8f2a">✓ verificado</span>'
-                                  : '<span style="color:#b83a3a">— sin verificar</span>'}</div>
-          <div><strong>Nombre:</strong> ${me.nombre_visible}</div>
-          <div><strong>Roles:</strong> ${(me.roles || []).join(', ') || '—'}</div>
-          <div><strong>2FA:</strong> ${me.totp_activo ? 'activo' : 'no configurado'}</div>
-          <div><strong>Último acceso:</strong> ${me.ultimo_login_en || '—'}</div>
+        <div class="panel-card">
+          <h3 class="card-title"><span class="ico">👤</span> Datos de la cuenta</h3>
+          <dl class="kv-list">
+            <dt>Email</dt>
+            <dd>${me.email}
+              ${me.email_verificado
+                ? '<span class="kv-badge ok">verificado</span>'
+                : '<span class="kv-badge warn">sin verificar</span>'}</dd>
+            <dt>Nombre</dt><dd>${me.nombre_visible || '—'}</dd>
+            <dt>Roles</dt><dd>${(me.roles || []).join(', ') || '—'}</dd>
+            <dt>2FA</dt><dd>${me.totp_activo
+              ? '<span class="kv-badge ok">activo</span>'
+              : 'no configurado'}</dd>
+            <dt>Último acceso</dt><dd>${me.ultimo_login_en
+              ? new Date(me.ultimo_login_en).toLocaleString()
+              : '—'}</dd>
+            <dt>Miembra desde</dt><dd>${me.creado_en
+              ? new Date(me.creado_en).toLocaleDateString()
+              : '—'}</dd>
+          </dl>
         </div>
 
-        <h3>Cambiar contraseña</h3>
-        <div class="tema-card" style="cursor:default">
-          <form id="form-pass">
-            <input class="input" name="actual" type="password" placeholder="Contraseña actual" required
-                   style="width:100%;margin:.3rem 0">
-            <input class="input" name="nueva" type="password" placeholder="Nueva contraseña (≥10 chars)" required
-                   style="width:100%;margin:.3rem 0">
-            <button class="btn btn-pri">Guardar</button>
-            <div class="muted small" id="err-pass" style="color:#b83a3a;margin-top:.4rem"></div>
-          </form>
-        </div>
-
-        <h3>Sesiones activas (${ss.length})</h3>
-        <div class="tema-card" style="cursor:default">
-          ${raw((ss || []).map(s => html`
-            <div style="display:flex; gap:.5rem; padding:.4rem 0; border-bottom:1px solid var(--glass-border)">
-              <div style="flex:1">
-                <div>Emitida: ${new Date(s.emitida_en).toLocaleString()}</div>
-                <div class="muted small">Expira: ${new Date(s.expira_en).toLocaleDateString()}</div>
-              </div>
-              ${s.actual ? '<span class="seccion-badge">Esta sesión</span>'
-                        : `<button class="btn btn-mini" data-jti="${s.jti}">Revocar</button>`}
-            </div>
-          `).join(''))}
-          <div style="margin-top:1rem; display:flex; gap:.5rem">
-            <button class="btn" id="btn-logout-global">Cerrar TODAS las sesiones</button>
+        <div class="panel-card">
+          <h3 class="card-title"><span class="ico">🎨</span> Apariencia</h3>
+          <p class="card-subtitle">Elige el aspecto de la aplicación.</p>
+          <div class="seg-group" role="radiogroup" aria-label="Tema visual">
+            <button type="button" data-theme="light"  class="${tema==='light'?'active':''}">☀️ Claro</button>
+            <button type="button" data-theme="dark"   class="${tema==='dark' ?'active':''}">🌙 Oscuro</button>
+            <button type="button" data-theme="system" class="${tema==='system'?'active':''}">🖥️ Sistema</button>
           </div>
         </div>
 
-        <h3 style="color:#b83a3a">Zona peligrosa</h3>
-        <div class="tema-card" style="cursor:default; border-color:#b83a3a">
-          <p class="muted small">Borrar tu cuenta es irreversible. Se anonimiza tu email y nombre; tu progreso se pierde.</p>
-          <button class="btn" id="btn-borrar" style="background:#b83a3a; color:white">Borrar mi cuenta</button>
+        <div class="panel-card">
+          <h3 class="card-title"><span class="ico">📚</span> Mis oposiciones</h3>
+          ${mias.length
+            ? html`
+              <div class="form-grid">
+                ${raw(mias.map(o => html`
+                  <div class="sesion-row" data-op-mine="${o.id}">
+                    <div class="grow">
+                      <div><strong>${o.nombre}</strong></div>
+                      ${o.descripcion ? html`<div class="small">${o.descripcion}</div>` : ''}
+                    </div>
+                    <button class="btn btn-sm" data-act="ir">Ir</button>
+                    <button class="btn btn-sm" data-act="quitar">Quitar</button>
+                  </div>
+                `).join(''))}
+              </div>`
+            : '<p class="card-subtitle">Aún no te has apuntado a ninguna oposición.</p>'}
+          <div class="form-row" style="margin-top:.75rem">
+            <button class="btn btn-pri btn-sm" id="btn-add-op">➕ Añadir oposición</button>
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <h3 class="card-title"><span class="ico">🔒</span> Cambiar contraseña</h3>
+          <form id="form-pass" class="form-grid" autocomplete="off">
+            <div class="field">
+              <label for="pw-actual">Contraseña actual</label>
+              <input id="pw-actual" name="actual" type="password" autocomplete="current-password" required>
+            </div>
+            <div class="field">
+              <label for="pw-nueva">Nueva contraseña</label>
+              <input id="pw-nueva" name="nueva" type="password" minlength="10"
+                     autocomplete="new-password" required>
+              <small class="small" style="color:var(--txt-soft)">Mínimo 10 caracteres.</small>
+            </div>
+            <div class="form-err" id="err-pass" hidden></div>
+            <div class="form-row">
+              <button class="btn btn-pri" type="submit">Guardar contraseña</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="panel-card">
+          <h3 class="card-title"><span class="ico">💻</span> Sesiones activas
+            <span class="kv-badge">${(ss || []).length}</span></h3>
+          ${raw((ss || []).map(s => html`
+            <div class="sesion-row">
+              <div class="grow">
+                <div>Emitida: ${new Date(s.emitida_en).toLocaleString()}</div>
+                <div class="small">Expira: ${new Date(s.expira_en).toLocaleDateString()}</div>
+              </div>
+              ${s.actual
+                ? '<span class="badge-actual">Esta sesión</span>'
+                : `<button class="btn btn-sm" data-jti="${s.jti}">Revocar</button>`}
+            </div>
+          `).join(''))}
+          <div class="form-row" style="margin-top:.75rem">
+            <button class="btn btn-danger-outline btn-sm" id="btn-logout-global">
+              Cerrar TODAS las sesiones
+            </button>
+          </div>
+        </div>
+
+        <h3 class="panel-section-title danger">Zona peligrosa</h3>
+        <div class="panel-card zona-peligro">
+          <h3 class="card-title"><span class="ico">⚠️</span> Borrar mi cuenta</h3>
+          <p class="small">Esta acción es irreversible. Anonimizamos tu email y nombre;
+             se cierran todas tus sesiones y se pierde tu progreso.</p>
+          <div class="form-row">
+            <button class="btn btn-danger btn-sm" id="btn-borrar">Borrar mi cuenta…</button>
+          </div>
         </div>
       `;
 
+      // Theme selector.
+      root.querySelectorAll('[data-theme]').forEach(b => {
+        b.onclick = () => {
+          setTheme(b.dataset.theme);
+          root.querySelectorAll('[data-theme]').forEach(x => x.classList.remove('active'));
+          b.classList.add('active');
+          showToast('Tema actualizado.');
+        };
+      });
+
+      // Cambiar contraseña.
       root.querySelector('#form-pass').onsubmit = async (e) => {
         e.preventDefault();
         const f = new FormData(e.target);
+        const err = root.querySelector('#err-pass');
+        err.hidden = true;
         try {
-          await S.rpc('cambiar_password', { p_actual: f.get('actual'), p_nueva: f.get('nueva') });
-          showToast('Contraseña actualizada. Se han cerrado las demás sesiones.');
+          await S.rpc('cambiar_password',
+            { p_actual: f.get('actual'), p_nueva: f.get('nueva') });
+          showToast('Contraseña actualizada. Se cerraron las demás sesiones.');
           viewMiCuenta();
-        } catch (err) {
-          root.querySelector('#err-pass').textContent = _msgError(err.message);
+        } catch (er) {
+          err.textContent = _msgError(er.message);
+          err.hidden = false;
         }
       };
+
+      // Sesiones.
       root.querySelectorAll('[data-jti]').forEach(b => {
         b.onclick = async () => {
           await S.rpc('revocar_sesion', { p_jti: b.dataset.jti });
@@ -768,24 +985,104 @@
         };
       });
       root.querySelector('#btn-logout-global').onclick = async () => {
-        if (!confirm('¿Cerrar TODAS las sesiones (incluida esta)?')) return;
-        await S.rpc('logout_global');
-        await S.logout();
-        navigate('#/login');
+        _confirmar({
+          titulo: 'Cerrar todas las sesiones',
+          mensaje: 'Se cerrarán TODAS tus sesiones, incluida esta. ¿Continuar?',
+          confirmar: 'Cerrar todas',
+          peligroso: true,
+          onOk: async () => {
+            await S.rpc('logout_global');
+            await S.logout();
+            navigate('#/login');
+          },
+        });
       };
-      root.querySelector('#btn-borrar').onclick = async () => {
-        const p = prompt('Escribe tu contraseña para confirmar el borrado:');
-        if (!p) return;
-        try {
-          await S.rpc('borrar_mi_cuenta', { p_password: p });
-          S.clear();
-          alert('Cuenta borrada.');
-          navigate('#/login');
-        } catch (err) { showToast(_msgError(err.message)); }
+
+      // Oposiciones.
+      root.querySelectorAll('[data-op-mine]').forEach(row => {
+        const opId = row.dataset.opMine;
+        row.querySelector('[data-act="ir"]').onclick = () => {
+          setCtx({ oposicion_id: opId });
+          navigate('#/');
+        };
+        row.querySelector('[data-act="quitar"]').onclick = () => {
+          _confirmar({
+            titulo: 'Quitar oposición',
+            mensaje: '¿Quitar esta oposición de tu plan? Se conserva tu progreso.',
+            confirmar: 'Quitar',
+            peligroso: true,
+            onOk: async () => {
+              await S.rpc('desasignar_oposicion', { p_oposicion_id: opId });
+              if (getCtx().oposicion_id === opId) setCtx({ oposicion_id: null });
+              viewMiCuenta();
+            },
+          });
+        };
+      });
+      root.querySelector('#btn-add-op').onclick = () => navigate('#/elegir-oposicion');
+
+      // Borrado.
+      root.querySelector('#btn-borrar').onclick = () => {
+        _mostrarModal({
+          titulo: 'Borrar mi cuenta',
+          contenido: html`
+            <p class="small" style="color:var(--txt-soft)">
+              Escribe tu contraseña para confirmar. Esta acción es <strong>irreversible</strong>.
+            </p>
+            <form id="form-borrar" class="form-grid">
+              <div class="field">
+                <label>Contraseña</label>
+                <input type="password" name="password" autocomplete="current-password" required>
+              </div>
+              <div class="form-err" id="err-borrar" hidden></div>
+              <div class="form-row" style="justify-content:flex-end">
+                <button class="btn btn-sm" type="button" id="cancelar-borrar">Cancelar</button>
+                <button class="btn btn-danger btn-sm" type="submit">Sí, borrar</button>
+              </div>
+            </form>`,
+          onMount(modal) {
+            modal.querySelector('#cancelar-borrar').onclick = _cerrarModal;
+            modal.querySelector('#form-borrar').onsubmit = async (e) => {
+              e.preventDefault();
+              const f = new FormData(e.target);
+              const err = modal.querySelector('#err-borrar');
+              try {
+                await S.rpc('borrar_mi_cuenta', { p_password: f.get('password') });
+                _cerrarModal();
+                S.clear();
+                showToast('Cuenta borrada.');
+                navigate('#/login');
+              } catch (er) {
+                err.textContent = _msgError(er.message);
+                err.hidden = false;
+              }
+            };
+          },
+        });
       };
     } catch (e) {
       empty(e.message);
     }
+  }
+
+  // Diálogo de confirmación reutilizable (reemplaza los `confirm()` nativos).
+  function _confirmar({ titulo, mensaje, confirmar='Aceptar', peligroso=false, onOk }) {
+    _mostrarModal({
+      titulo,
+      contenido: html`
+        <p style="margin:0 0 1rem">${mensaje}</p>
+        <div class="form-row" style="justify-content:flex-end">
+          <button class="btn btn-sm" type="button" id="conf-cancel">Cancelar</button>
+          <button class="btn btn-sm ${peligroso ? 'btn-danger' : 'btn-pri'}" type="button" id="conf-ok">${confirmar}</button>
+        </div>`,
+      onMount(modal) {
+        modal.querySelector('#conf-cancel').onclick = _cerrarModal;
+        modal.querySelector('#conf-ok').onclick = async () => {
+          _cerrarModal();
+          try { await onOk(); } catch (e) { showToast(_msgError(e.message)); }
+        };
+      },
+    });
   }
 
 
@@ -800,11 +1097,17 @@
     const [ROLES, ...restRoles] = [await S.rpc('listar_roles')];  // avoid var shadow
 
     root.innerHTML = html`
+      <div class="admin-tabs">
+        <a class="tab active" href="#/admin/usuarios">Usuarios</a>
+        <a class="tab" href="#/admin/contenido">Contenido</a>
+        <a class="tab" href="#/admin/duplicados">Duplicados</a>
+      </div>
       <div class="view-head"><h2>Administración de usuarios</h2></div>
-      <form id="form-search" style="margin-bottom:1rem; display:flex; gap:.5rem">
-        <input class="input" name="q" value="${q}" placeholder="Buscar por email o nombre"
-               style="flex:1">
-        <button class="btn btn-pri">Buscar</button>
+      <form id="form-search" class="form-grid" style="margin-bottom:1rem">
+        <div class="form-row">
+          <input name="q" value="${q}" placeholder="Buscar por email o nombre" style="flex:1">
+          <button class="btn btn-pri btn-sm">Buscar</button>
+        </div>
       </form>
       <div class="muted small">Total: ${rs.total} — página ${rs.page}/${rs.total_pages}</div>
       ${raw((rs.usuarios || []).map(u => html`
@@ -887,6 +1190,11 @@
     loading();
     const rs = await S.rpc('listar_propuestas_fusion', { p_page: 1, p_size: 30 });
     root.innerHTML = html`
+      <div class="admin-tabs">
+        <a class="tab" href="#/admin/usuarios">Usuarios</a>
+        <a class="tab" href="#/admin/contenido">Contenido</a>
+        <a class="tab active" href="#/admin/duplicados">Duplicados</a>
+      </div>
       <div class="view-head"><h2>Preguntas duplicadas — propuestas</h2></div>
       <div class="muted small">Pendientes: ${rs.total}</div>
       ${raw((rs.items || []).map(p => html`
@@ -923,6 +1231,802 @@
   }
 
 
+  // ── Admin · Contenido pedagógico ─────────────────────────────────────
+  // Panel jerárquico Oposición → Tema → Módulo → Sección → Preguntas.
+  // Todas las vistas comparten:
+  //   · `_requireContenidoAdmin()`  → cierra puerta si el usuario no tiene
+  //     permiso funcional. En el MVP exigimos rol `admin` (los permisos
+  //     granulares están definidos en el esquema por si se separan luego).
+  //   · `_adminNav(...)`            → migas de pan con enlaces a los niveles.
+  //   · `_editarEnModal(...)`       → helper para formularios de crear/editar
+  //     que respetan la estética de la app (labels, foco verde, botones).
+
+  function _requireContenidoAdmin() {
+    const u = S.getUser();
+    if (!u || !(u.roles || []).includes('admin')) {
+      empty('Acceso restringido.');
+      return false;
+    }
+    return true;
+  }
+
+  function _adminNav(crumbs) {
+    // crumbs: [{label, href?}, ...]  — el último se pinta como <strong>.
+    return html`
+      <div class="admin-tabs">
+        <a class="tab" href="#/admin/usuarios">Usuarios</a>
+        <a class="tab active" href="#/admin/contenido">Contenido</a>
+        <a class="tab" href="#/admin/duplicados">Duplicados</a>
+      </div>
+      <div class="breadcrumbs" style="margin-bottom:.75rem; color:var(--txt-soft)">
+        ${raw(crumbs.map((c, i) => {
+          const last = i === crumbs.length - 1;
+          if (last) return `<strong>${esc(c.label)}</strong>`;
+          return `<a href="${c.href || '#/'}">${esc(c.label)}</a> / `;
+        }).join(''))}
+      </div>`;
+  }
+
+  // Vista: listado de oposiciones (admin).
+  async function viewAdminOposiciones() {
+    if (!_requireContenidoAdmin()) return;
+    loading();
+    const oposiciones = await S.rpc('admin_listar_oposiciones').catch(() => []);
+    root.innerHTML = html`
+      ${raw(_adminNav([{ label: 'Oposiciones' }]))}
+      <div class="admin-toolbar">
+        <h2 style="margin:0; flex:1">Oposiciones</h2>
+        <button class="btn btn-pri btn-sm" id="btn-crear-op">➕ Nueva oposición</button>
+      </div>
+
+      ${oposiciones.length === 0
+        ? '<div class="empty">Aún no hay oposiciones creadas.</div>'
+        : raw(oposiciones.map(o => html`
+          <div class="list-item" data-opid="${o.id}">
+            <div class="li-body">
+              <div class="li-title">${o.nombre} ${!o.activa ? '<span class="kv-badge warn">inactiva</span>' : ''}</div>
+              <div class="li-meta">
+                ${o.n_temas} tema(s) · ${o.n_alumnos} alumn@s
+                ${o.descripcion ? html` · ${o.descripcion}` : ''}
+              </div>
+            </div>
+            <div class="li-actions">
+              <button class="btn" data-act="ver">Abrir</button>
+              <button class="btn" data-act="editar">Editar</button>
+              <button class="btn btn-danger-outline" data-act="borrar">Borrar</button>
+            </div>
+          </div>
+        `).join(''))}
+    `;
+
+    root.querySelector('#btn-crear-op').onclick = () => _editarOposicion(null);
+
+    root.querySelectorAll('.list-item[data-opid]').forEach(item => {
+      const id = item.dataset.opid;
+      const op = oposiciones.find(x => x.id === id);
+      item.querySelector('[data-act="ver"]').onclick = () =>
+        navigate(`#/admin/contenido/oposicion/${id}`);
+      item.querySelector('[data-act="editar"]').onclick = () => _editarOposicion(op);
+      item.querySelector('[data-act="borrar"]').onclick = () => _confirmar({
+        titulo: 'Borrar oposición',
+        mensaje: `¿Borrar la oposición "${op.nombre}"? Se pierden las asignaciones a alumn@s.`,
+        confirmar: 'Borrar', peligroso: true,
+        onOk: async () => {
+          await S.rpc('admin_borrar_oposicion', { p_id: id });
+          viewAdminOposiciones();
+        },
+      });
+    });
+  }
+
+  function _editarOposicion(op) {
+    _mostrarModal({
+      titulo: op ? 'Editar oposición' : 'Nueva oposición',
+      contenido: html`
+        <form id="form-op" class="form-grid">
+          <div class="field">
+            <label>Nombre</label>
+            <input name="nombre" required value="${op ? op.nombre : ''}">
+          </div>
+          <div class="field">
+            <label>Descripción (opcional)</label>
+            <textarea name="descripcion">${op ? (op.descripcion || '') : ''}</textarea>
+          </div>
+          ${op ? html`
+            <label class="field-inline">
+              <input type="checkbox" name="activa" ${op.activa ? 'checked' : ''}>
+              Activa (visible para los alumn@s)
+            </label>` : ''}
+          <div class="form-err" hidden></div>
+          <div class="form-row" style="justify-content:flex-end">
+            <button class="btn btn-sm" type="button" data-cancel>Cancelar</button>
+            <button class="btn btn-pri btn-sm" type="submit">${op ? 'Guardar' : 'Crear'}</button>
+          </div>
+        </form>`,
+      onMount(modal) {
+        modal.querySelector('[data-cancel]').onclick = _cerrarModal;
+        modal.querySelector('#form-op').onsubmit = async (e) => {
+          e.preventDefault();
+          const f = new FormData(e.target);
+          try {
+            if (op) {
+              await S.rpc('admin_actualizar_oposicion', {
+                p_id: op.id,
+                p_nombre: f.get('nombre'),
+                p_descripcion: f.get('descripcion') || null,
+                p_activa: f.has('activa'),
+              });
+            } else {
+              await S.rpc('admin_crear_oposicion', {
+                p_nombre: f.get('nombre'),
+                p_descripcion: f.get('descripcion') || null,
+              });
+            }
+            _cerrarModal();
+            viewAdminOposiciones();
+          } catch (er) {
+            const err = modal.querySelector('.form-err');
+            err.textContent = _msgError(er.message);
+            err.hidden = false;
+          }
+        };
+      },
+    });
+  }
+
+  // Vista: detalle de una oposición (lista sus temas y permite añadir/quitar).
+  async function viewAdminOposicion([opId]) {
+    if (!_requireContenidoAdmin()) return;
+    loading();
+    const [ops, temasOp, todosTemas] = await Promise.all([
+      S.rpc('admin_listar_oposiciones'),
+      S.rpc('admin_listar_temas', { p_oposicion_id: opId }),
+      S.rpc('admin_listar_temas', { p_oposicion_id: null }),
+    ]);
+    const op = (ops || []).find(x => x.id === opId);
+    if (!op) return empty('Oposición no encontrada.');
+
+    root.innerHTML = html`
+      ${raw(_adminNav([
+        { label: 'Oposiciones', href: '#/admin/contenido' },
+        { label: op.nombre },
+      ]))}
+      <div class="view-head"><h2>${op.nombre}</h2></div>
+      ${op.descripcion ? html`<p class="muted">${op.descripcion}</p>` : ''}
+
+      <div class="admin-toolbar">
+        <h3 style="margin:0; flex:1">Temas</h3>
+        <button class="btn btn-sm" id="btn-vincular">🔗 Vincular tema existente</button>
+        <button class="btn btn-pri btn-sm" id="btn-nuevo-tema">➕ Nuevo tema</button>
+      </div>
+
+      ${temasOp.length === 0
+        ? '<div class="empty">Esta oposición aún no tiene temas.</div>'
+        : raw(temasOp.map(t => html`
+          <div class="list-item" data-tid="${t.id}">
+            <div class="li-body">
+              <div class="li-title">${t.orden ?? '·'}. ${t.nombre}</div>
+              <div class="li-meta">
+                ${t.n_modulos} módulo(s) · ${t.n_secciones} sección(es) · ${t.n_preguntas} pregunta(s)
+              </div>
+            </div>
+            <div class="li-actions">
+              <button class="btn" data-act="abrir">Abrir</button>
+              <button class="btn btn-danger-outline" data-act="quitar">Desvincular</button>
+            </div>
+          </div>
+        `).join(''))}
+    `;
+
+    root.querySelector('#btn-nuevo-tema').onclick = () => _editarTema(null, opId);
+    root.querySelector('#btn-vincular').onclick = () =>
+      _vincularTemaAOposicion(opId, todosTemas, temasOp.map(t => t.id));
+
+    root.querySelectorAll('.list-item[data-tid]').forEach(item => {
+      const tid = item.dataset.tid;
+      item.querySelector('[data-act="abrir"]').onclick = () =>
+        navigate(`#/admin/contenido/tema/${tid}`);
+      item.querySelector('[data-act="quitar"]').onclick = () => _confirmar({
+        titulo: 'Desvincular tema',
+        mensaje: 'Se quita el tema de esta oposición (no se borra el tema).',
+        confirmar: 'Desvincular',
+        onOk: async () => {
+          await S.rpc('admin_quitar_tema_de_oposicion',
+            { p_oposicion_id: opId, p_tema_id: tid });
+          viewAdminOposicion([opId]);
+        },
+      });
+    });
+  }
+
+  function _editarTema(tema, opIdContexto) {
+    _mostrarModal({
+      titulo: tema ? 'Editar tema' : 'Nuevo tema',
+      contenido: html`
+        <form id="form-tema" class="form-grid">
+          <div class="field">
+            <label>Nombre</label>
+            <input name="nombre" required value="${tema ? tema.nombre : ''}">
+          </div>
+          <div class="field">
+            <label>Descripción</label>
+            <textarea name="descripcion">${tema ? (tema.descripcion || '') : ''}</textarea>
+          </div>
+          <div class="form-err" hidden></div>
+          <div class="form-row" style="justify-content:flex-end">
+            <button class="btn btn-sm" type="button" data-cancel>Cancelar</button>
+            <button class="btn btn-pri btn-sm" type="submit">${tema ? 'Guardar' : 'Crear'}</button>
+          </div>
+        </form>`,
+      onMount(modal) {
+        modal.querySelector('[data-cancel]').onclick = _cerrarModal;
+        modal.querySelector('#form-tema').onsubmit = async (e) => {
+          e.preventDefault();
+          const f = new FormData(e.target);
+          try {
+            if (tema) {
+              await S.rpc('admin_actualizar_tema', {
+                p_id: tema.id,
+                p_nombre: f.get('nombre'),
+                p_descripcion: f.get('descripcion') || null,
+              });
+            } else {
+              await S.rpc('admin_crear_tema', {
+                p_nombre: f.get('nombre'),
+                p_descripcion: f.get('descripcion') || null,
+                p_oposicion_id: opIdContexto || null,
+              });
+            }
+            _cerrarModal();
+            if (opIdContexto) viewAdminOposicion([opIdContexto]);
+            else viewAdminOposiciones();
+          } catch (er) {
+            const err = modal.querySelector('.form-err');
+            err.textContent = _msgError(er.message);
+            err.hidden = false;
+          }
+        };
+      },
+    });
+  }
+
+  function _vincularTemaAOposicion(opId, todosTemas, yaVinculados) {
+    const yaSet = new Set(yaVinculados);
+    const disponibles = (todosTemas || []).filter(t => !yaSet.has(t.id));
+    _mostrarModal({
+      titulo: 'Vincular tema existente',
+      contenido: disponibles.length === 0
+        ? '<p>Todos los temas del catálogo están ya vinculados a esta oposición.</p>'
+        : html`
+          <div class="form-grid">
+            ${raw(disponibles.map(t => html`
+              <button class="list-item" type="button" data-tid="${t.id}" style="cursor:pointer">
+                <div class="li-body">
+                  <div class="li-title">${t.nombre}</div>
+                  <div class="li-meta">${t.n_modulos} módulo(s) · ${t.n_secciones} sección(es)</div>
+                </div>
+                <div class="li-actions"><span class="btn btn-pri btn-sm">Vincular</span></div>
+              </button>
+            `).join(''))}
+          </div>`,
+      onMount(modal) {
+        modal.querySelectorAll('[data-tid]').forEach(b => {
+          b.onclick = async () => {
+            try {
+              await S.rpc('admin_asignar_tema_a_oposicion',
+                { p_oposicion_id: opId, p_tema_id: b.dataset.tid });
+              _cerrarModal();
+              viewAdminOposicion([opId]);
+            } catch (er) { showToast(_msgError(er.message)); }
+          };
+        });
+      },
+    });
+  }
+
+  // Vista: detalle de un tema (lista módulos).
+  async function viewAdminTema([tid]) {
+    if (!_requireContenidoAdmin()) return;
+    loading();
+    const temas = await S.rpc('admin_listar_temas', { p_oposicion_id: null });
+    const tema = (temas || []).find(x => x.id === tid);
+    if (!tema) return empty('Tema no encontrado.');
+    const modulos = await S.rpc('admin_listar_modulos', { p_tema_id: tid });
+
+    root.innerHTML = html`
+      ${raw(_adminNav([
+        { label: 'Oposiciones', href: '#/admin/contenido' },
+        { label: tema.nombre },
+      ]))}
+      <div class="view-head"><h2>${tema.nombre}</h2></div>
+      ${tema.descripcion ? html`<p class="muted">${tema.descripcion}</p>` : ''}
+
+      <div class="admin-toolbar">
+        <h3 style="margin:0; flex:1">Módulos</h3>
+        <button class="btn btn-sm" id="btn-editar-tema">✏️ Editar tema</button>
+        <button class="btn btn-pri btn-sm" id="btn-nuevo-mod">➕ Nuevo módulo</button>
+      </div>
+
+      ${modulos.length === 0
+        ? '<div class="empty">Este tema aún no tiene módulos.</div>'
+        : raw(modulos.map(m => html`
+          <div class="list-item" data-mid="${m.id}">
+            <div class="li-body">
+              <div class="li-title">${m.orden}. ${m.nombre}
+                ${m.es_unico ? '<span class="chip-modulo">único</span>' : ''}</div>
+              <div class="li-meta">${m.n_secciones} sección(es) · ${m.n_preguntas} pregunta(s)</div>
+            </div>
+            <div class="li-actions">
+              <button class="btn" data-act="abrir">Abrir</button>
+              <button class="btn" data-act="editar">Editar</button>
+              <button class="btn btn-danger-outline" data-act="borrar">Borrar</button>
+            </div>
+          </div>
+        `).join(''))}
+    `;
+
+    root.querySelector('#btn-editar-tema').onclick = () => _editarTema(tema, null);
+    root.querySelector('#btn-nuevo-mod').onclick = () => _editarModulo(null, tid);
+    root.querySelectorAll('.list-item[data-mid]').forEach(item => {
+      const mid = item.dataset.mid;
+      const m = modulos.find(x => x.id === mid);
+      item.querySelector('[data-act="abrir"]').onclick = () =>
+        navigate(`#/admin/contenido/modulo/${mid}`);
+      item.querySelector('[data-act="editar"]').onclick = () => _editarModulo(m, tid);
+      item.querySelector('[data-act="borrar"]').onclick = () => _confirmar({
+        titulo: 'Borrar módulo',
+        mensaje: `¿Borrar "${m.nombre}" y todas sus secciones/preguntas?`,
+        confirmar: 'Borrar', peligroso: true,
+        onOk: async () => {
+          await S.rpc('admin_borrar_modulo', { p_id: mid });
+          viewAdminTema([tid]);
+        },
+      });
+    });
+  }
+
+  function _editarModulo(mod, temaId) {
+    _mostrarModal({
+      titulo: mod ? 'Editar módulo' : 'Nuevo módulo',
+      contenido: html`
+        <form id="form-mod" class="form-grid">
+          <div class="field">
+            <label>Nombre</label>
+            <input name="nombre" required value="${mod ? mod.nombre : ''}">
+          </div>
+          <div class="field">
+            <label>Orden</label>
+            <input name="orden" type="number" min="1" value="${mod ? mod.orden : ''}">
+          </div>
+          <div class="form-err" hidden></div>
+          <div class="form-row" style="justify-content:flex-end">
+            <button class="btn btn-sm" type="button" data-cancel>Cancelar</button>
+            <button class="btn btn-pri btn-sm" type="submit">${mod ? 'Guardar' : 'Crear'}</button>
+          </div>
+        </form>`,
+      onMount(modal) {
+        modal.querySelector('[data-cancel]').onclick = _cerrarModal;
+        modal.querySelector('#form-mod').onsubmit = async (e) => {
+          e.preventDefault();
+          const f = new FormData(e.target);
+          const orden = f.get('orden') ? +f.get('orden') : null;
+          try {
+            if (mod) {
+              await S.rpc('admin_actualizar_modulo',
+                { p_id: mod.id, p_nombre: f.get('nombre'), p_orden: orden });
+            } else {
+              await S.rpc('admin_crear_modulo',
+                { p_tema_id: temaId, p_nombre: f.get('nombre'), p_orden: orden });
+            }
+            _cerrarModal();
+            viewAdminTema([temaId]);
+          } catch (er) {
+            const err = modal.querySelector('.form-err');
+            err.textContent = _msgError(er.message);
+            err.hidden = false;
+          }
+        };
+      },
+    });
+  }
+
+  // Vista: detalle de un módulo (lista secciones).
+  async function viewAdminModulo([mid]) {
+    if (!_requireContenidoAdmin()) return;
+    loading();
+    // No hay una RPC "get_modulo"; buscamos entre los temas.
+    const temas = await S.rpc('admin_listar_temas', { p_oposicion_id: null });
+    let tema = null, modulo = null;
+    for (const t of temas) {
+      const mods = await S.rpc('admin_listar_modulos', { p_tema_id: t.id });
+      const m = (mods || []).find(x => x.id === mid);
+      if (m) { tema = t; modulo = m; break; }
+    }
+    if (!modulo) return empty('Módulo no encontrado.');
+    const secciones = await S.rpc('admin_listar_secciones', { p_modulo_id: mid });
+
+    root.innerHTML = html`
+      ${raw(_adminNav([
+        { label: 'Oposiciones', href: '#/admin/contenido' },
+        { label: tema.nombre,   href: `#/admin/contenido/tema/${tema.id}` },
+        { label: modulo.nombre },
+      ]))}
+      <div class="view-head"><h2>${modulo.nombre}</h2></div>
+      <div class="admin-toolbar">
+        <h3 style="margin:0; flex:1">Secciones</h3>
+        <button class="btn btn-pri btn-sm" id="btn-nueva-sec">➕ Nueva sección</button>
+      </div>
+      ${secciones.length === 0
+        ? '<div class="empty">Este módulo aún no tiene secciones.</div>'
+        : raw(secciones.map(s => html`
+          <div class="list-item" data-sid="${s.id}">
+            <div class="li-body">
+              <div class="li-title">${s.orden}. ${s.nombre}
+                ${s.tiene_teoria ? '<span class="kv-badge ok">teoría</span>' : ''}
+              </div>
+              <div class="li-meta">
+                ${s.n_preguntas} pregunta(s) · aprobado ≥ ${s.min_aprobado}% · test ${s.n_preg_test} preg
+              </div>
+            </div>
+            <div class="li-actions">
+              <button class="btn" data-act="abrir">Abrir</button>
+              <button class="btn" data-act="editar">Editar</button>
+              <button class="btn btn-danger-outline" data-act="borrar">Borrar</button>
+            </div>
+          </div>
+        `).join(''))}
+    `;
+
+    root.querySelector('#btn-nueva-sec').onclick = () => _editarSeccion(null, mid);
+    root.querySelectorAll('.list-item[data-sid]').forEach(item => {
+      const sid = item.dataset.sid;
+      const sec = secciones.find(x => x.id === sid);
+      item.querySelector('[data-act="abrir"]').onclick = () =>
+        navigate(`#/admin/contenido/seccion/${sid}`);
+      item.querySelector('[data-act="editar"]').onclick = () => _editarSeccion(sec, mid);
+      item.querySelector('[data-act="borrar"]').onclick = () => _confirmar({
+        titulo: 'Borrar sección',
+        mensaje: `¿Borrar "${sec.nombre}" y todas sus preguntas?`,
+        confirmar: 'Borrar', peligroso: true,
+        onOk: async () => {
+          await S.rpc('admin_borrar_seccion', { p_id: sid });
+          viewAdminModulo([mid]);
+        },
+      });
+    });
+  }
+
+  function _editarSeccion(sec, moduloId) {
+    _mostrarModal({
+      titulo: sec ? 'Editar sección' : 'Nueva sección',
+      contenido: html`
+        <form id="form-sec" class="form-grid">
+          <div class="field">
+            <label>Nombre</label>
+            <input name="nombre" required value="${sec ? sec.nombre : ''}">
+          </div>
+          <div class="form-row">
+            <div class="field" style="flex:1">
+              <label>Orden</label>
+              <input name="orden" type="number" min="1" value="${sec ? sec.orden : ''}">
+            </div>
+            <div class="field" style="flex:1">
+              <label>Mínimo aprobado (%)</label>
+              <input name="min_aprobado" type="number" min="0" max="100"
+                     value="${sec ? sec.min_aprobado : 70}">
+            </div>
+            <div class="field" style="flex:1">
+              <label>Nº preguntas / test</label>
+              <input name="n_preg_test" type="number" min="1" max="100"
+                     value="${sec ? sec.n_preg_test : 10}">
+            </div>
+          </div>
+          <div class="form-err" hidden></div>
+          <div class="form-row" style="justify-content:flex-end">
+            <button class="btn btn-sm" type="button" data-cancel>Cancelar</button>
+            <button class="btn btn-pri btn-sm" type="submit">${sec ? 'Guardar' : 'Crear'}</button>
+          </div>
+        </form>`,
+      onMount(modal) {
+        modal.querySelector('[data-cancel]').onclick = _cerrarModal;
+        modal.querySelector('#form-sec').onsubmit = async (e) => {
+          e.preventDefault();
+          const f = new FormData(e.target);
+          const args = {
+            p_nombre: f.get('nombre'),
+            p_orden: f.get('orden') ? +f.get('orden') : null,
+            p_min_aprobado: f.get('min_aprobado') ? +f.get('min_aprobado') : null,
+            p_n_preg_test: f.get('n_preg_test') ? +f.get('n_preg_test') : null,
+          };
+          try {
+            if (sec) {
+              await S.rpc('admin_actualizar_seccion', { p_id: sec.id, ...args });
+            } else {
+              await S.rpc('admin_crear_seccion',
+                { p_modulo_id: moduloId, ...args });
+            }
+            _cerrarModal();
+            viewAdminModulo([moduloId]);
+          } catch (er) {
+            const err = modal.querySelector('.form-err');
+            err.textContent = _msgError(er.message);
+            err.hidden = false;
+          }
+        };
+      },
+    });
+  }
+
+  // Vista: sección — preguntas + teoría.
+  async function viewAdminSeccion([sid]) {
+    if (!_requireContenidoAdmin()) return;
+    loading();
+    // No hay RPC directa "get_seccion"; buscamos navegando temas→módulos→secc.
+    const temas = await S.rpc('admin_listar_temas', { p_oposicion_id: null });
+    let tema = null, modulo = null, seccion = null;
+    outer: for (const t of temas) {
+      const mods = await S.rpc('admin_listar_modulos', { p_tema_id: t.id });
+      for (const m of mods) {
+        const secs = await S.rpc('admin_listar_secciones', { p_modulo_id: m.id });
+        const s = (secs || []).find(x => x.id === sid);
+        if (s) { tema = t; modulo = m; seccion = s; break outer; }
+      }
+    }
+    if (!seccion) return empty('Sección no encontrada.');
+    const preguntas = await S.rpc('admin_preguntas_de_seccion', { p_seccion_id: sid });
+    const docTeoria = await S.rpc('documento_de_seccion', { p_seccion_id: sid })
+      .catch(() => null);
+
+    root.innerHTML = html`
+      ${raw(_adminNav([
+        { label: 'Oposiciones', href: '#/admin/contenido' },
+        { label: tema.nombre,   href: `#/admin/contenido/tema/${tema.id}` },
+        { label: modulo.nombre, href: `#/admin/contenido/modulo/${modulo.id}` },
+        { label: seccion.nombre },
+      ]))}
+      <div class="view-head"><h2>${seccion.nombre}</h2></div>
+
+      <div class="panel-card">
+        <h3 class="card-title"><span class="ico">📖</span> Teoría (markdown)</h3>
+        <p class="card-subtitle">
+          Ruta del fichero markdown asociado a esta sección. Súbelo primero al
+          microservicio de contenido y pega aquí la ruta relativa
+          (empezando por <code>/</code>).
+        </p>
+        <form id="form-teoria" class="form-grid">
+          <div class="field">
+            <label>Subir un fichero markdown</label>
+            <input type="file" name="fichero" accept=".md,.markdown,.txt">
+            <small class="small" style="color:var(--txt-soft)">
+              Se sube a <code>/${esc((tema.slug || 'tema')+'/'+ (seccion.orden || '') +'-'+ (seccion.nombre || ''))}/</code>
+              y se registra su ruta como teoría de esta sección.
+            </small>
+          </div>
+          <div class="field">
+            <label>O bien, ruta ya existente</label>
+            <input name="ruta" placeholder="/oposicion/tema/seccion/teoria.md"
+                   value="${docTeoria?.ruta || ''}">
+          </div>
+          <div class="form-err" hidden></div>
+          <div class="form-row" style="justify-content:flex-end">
+            ${docTeoria
+              ? '<button class="btn btn-danger-outline btn-sm" type="button" id="btn-quitar-teoria">Quitar vínculo</button>'
+              : ''}
+            <button class="btn btn-pri btn-sm" type="submit">Guardar teoría</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="admin-toolbar">
+        <h3 style="margin:0; flex:1">Preguntas <span class="kv-badge">${preguntas.length}</span></h3>
+        <button class="btn btn-pri btn-sm" id="btn-nueva-preg">➕ Nueva pregunta</button>
+      </div>
+
+      ${preguntas.length === 0
+        ? '<div class="empty">Aún no hay preguntas en esta sección.</div>'
+        : raw(preguntas.map(p => html`
+          <div class="list-item" data-pid="${p.id}" style="cursor:default">
+            <div class="li-body">
+              <div class="li-title" style="white-space:pre-wrap">${p.enunciado}</div>
+              <div class="li-meta">
+                ${(p.opciones || []).length} opciones ·
+                ${((p.opciones || []).filter(o => o.correcta).length)} correcta(s)
+              </div>
+            </div>
+            <div class="li-actions">
+              <button class="btn" data-act="editar">Editar</button>
+              <button class="btn btn-danger-outline" data-act="borrar">Borrar</button>
+            </div>
+          </div>
+        `).join(''))}
+    `;
+
+    // Teoría — form.
+    root.querySelector('#form-teoria').onsubmit = async (e) => {
+      e.preventDefault();
+      const err = root.querySelector('#form-teoria .form-err');
+      err.hidden = true;
+      try {
+        const f = new FormData(e.target);
+        let ruta = (f.get('ruta') || '').trim();
+        const file = f.get('fichero');
+        if (file && file.name) {
+          // Sube al microservicio contenido/. Carpeta por convención con el
+          // slug del tema y la sección (crea la subcarpeta al vuelo).
+          const carpeta = `/${(tema.slug || 'tema')}/${(seccion.orden || '') + '-' + (seccion.nombre || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+          const tok = S.getAccess?.();
+          // Crea carpeta destino de forma idempotente.
+          await fetch('/teoria/api/carpeta', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json',
+                       Authorization: `Bearer ${tok}` },
+            body: JSON.stringify({ padre: carpeta.replace(/\/[^/]+$/, '/') || '/',
+                                   nombre: carpeta.split('/').pop() }),
+          }).catch(() => {});
+          const fd = new FormData();
+          fd.append('ruta', carpeta);
+          fd.append('files', file);
+          const r = await fetch('/teoria/api/subir', {
+            method: 'POST', body: fd,
+            headers: tok ? { Authorization: `Bearer ${tok}` } : {},
+          });
+          if (!r.ok) throw new Error('upload_failed');
+          const d = await r.json();
+          if (d.subidos && d.subidos.length) ruta = d.subidos[0].ruta;
+        }
+        if (!ruta) throw new Error('ruta_o_fichero_requerido');
+        await S.rpc('admin_upsert_documento', {
+          p_nivel: 'seccion',
+          p_entidad_id: sid,
+          p_tipo: 'teoria',
+          p_ruta: ruta,
+        });
+        showToast('Teoría vinculada.');
+        viewAdminSeccion([sid]);
+      } catch (er) {
+        err.textContent = _msgError(er.message || String(er));
+        err.hidden = false;
+      }
+    };
+    const btnQ = root.querySelector('#btn-quitar-teoria');
+    if (btnQ) btnQ.onclick = () => _confirmar({
+      titulo: 'Quitar teoría',
+      mensaje: 'Se elimina el vínculo (el fichero markdown NO se borra del disco).',
+      confirmar: 'Quitar',
+      onOk: async () => {
+        await S.rpc('admin_borrar_documento', { p_id: docTeoria.id });
+        viewAdminSeccion([sid]);
+      },
+    });
+
+    // Preguntas.
+    root.querySelector('#btn-nueva-preg').onclick = () => _editarPregunta(null, sid);
+    root.querySelectorAll('.list-item[data-pid]').forEach(item => {
+      const pid = item.dataset.pid;
+      const p = preguntas.find(x => x.id === pid);
+      item.querySelector('[data-act="editar"]').onclick = () => _editarPregunta(p, sid);
+      item.querySelector('[data-act="borrar"]').onclick = () => _confirmar({
+        titulo: 'Borrar pregunta',
+        mensaje: 'Se borrará la pregunta y todas las respuestas asociadas.',
+        confirmar: 'Borrar', peligroso: true,
+        onOk: async () => {
+          await S.rpc('admin_borrar_pregunta', { p_id: pid });
+          viewAdminSeccion([sid]);
+        },
+      });
+    });
+  }
+
+  function _editarPregunta(preg, seccionId) {
+    const opciones = preg
+      ? preg.opciones.map(o => ({ texto: o.texto, correcta: !!o.correcta }))
+      : [
+          { texto: '', correcta: true },
+          { texto: '', correcta: false },
+          { texto: '', correcta: false },
+          { texto: '', correcta: false },
+        ];
+
+    function _renderOpciones(container) {
+      container.innerHTML = opciones.map((o, i) => `
+        <div class="opcion-editor">
+          <input type="radio" name="correcta" ${o.correcta ? 'checked' : ''} data-i="${i}"
+                 title="Marcar como correcta">
+          <input type="text" placeholder="Opción ${i+1}" value="${esc(o.texto)}" data-i="${i}">
+          <button type="button" class="btn-del" data-del="${i}" title="Quitar">✕</button>
+        </div>`).join('');
+      container.querySelectorAll('input[type=radio]').forEach(r => {
+        r.onchange = () => opciones.forEach((o, j) =>
+          o.correcta = (r.dataset.i == j && r.checked));
+      });
+      container.querySelectorAll('input[type=text]').forEach(t => {
+        t.oninput = () => { opciones[+t.dataset.i].texto = t.value; };
+      });
+      container.querySelectorAll('[data-del]').forEach(b => {
+        b.onclick = () => {
+          if (opciones.length <= 2) return showToast('Debe haber al menos 2 opciones.');
+          opciones.splice(+b.dataset.del, 1);
+          if (!opciones.some(o => o.correcta)) opciones[0].correcta = true;
+          _renderOpciones(container);
+        };
+      });
+    }
+
+    _mostrarModal({
+      titulo: preg ? 'Editar pregunta' : 'Nueva pregunta',
+      contenido: html`
+        <form id="form-preg" class="form-grid">
+          <div class="field">
+            <label>Enunciado</label>
+            <textarea name="enunciado" required rows="3">${preg ? preg.enunciado : ''}</textarea>
+          </div>
+          <div class="field">
+            <label>Opciones (marca la correcta con el radio)</label>
+            <div id="opciones-editor"></div>
+            <button class="btn btn-sm" type="button" id="btn-add-opcion">➕ Añadir opción</button>
+          </div>
+          <div class="field">
+            <label>Explicación (se muestra al responder)</label>
+            <textarea name="explicacion">${preg ? (preg.explicacion || '') : ''}</textarea>
+          </div>
+          <div class="form-err" hidden></div>
+          <div class="form-row" style="justify-content:flex-end">
+            <button class="btn btn-sm" type="button" data-cancel>Cancelar</button>
+            <button class="btn btn-pri btn-sm" type="submit">${preg ? 'Guardar' : 'Crear'}</button>
+          </div>
+        </form>`,
+      onMount(modal) {
+        const cont = modal.querySelector('#opciones-editor');
+        _renderOpciones(cont);
+        modal.querySelector('#btn-add-opcion').onclick = () => {
+          opciones.push({ texto: '', correcta: false });
+          _renderOpciones(cont);
+        };
+        modal.querySelector('[data-cancel]').onclick = _cerrarModal;
+        modal.querySelector('#form-preg').onsubmit = async (e) => {
+          e.preventDefault();
+          const f = new FormData(e.target);
+          const err = modal.querySelector('.form-err');
+          err.hidden = true;
+          const clean = opciones
+            .map(o => ({ texto: (o.texto || '').trim(), correcta: !!o.correcta }))
+            .filter(o => o.texto);
+          if (clean.length < 2) {
+            err.textContent = 'Necesitas al menos 2 opciones con texto.';
+            err.hidden = false; return;
+          }
+          if (!clean.some(o => o.correcta)) {
+            err.textContent = 'Marca cuál es la opción correcta.';
+            err.hidden = false; return;
+          }
+          try {
+            if (preg) {
+              await S.rpc('admin_actualizar_pregunta', {
+                p_id: preg.id,
+                p_enunciado: f.get('enunciado'),
+                p_opciones: clean,
+                p_explicacion: f.get('explicacion') || null,
+              });
+            } else {
+              await S.rpc('admin_crear_pregunta', {
+                p_seccion_id: seccionId,
+                p_enunciado: f.get('enunciado'),
+                p_opciones: clean,
+                p_explicacion: f.get('explicacion') || null,
+              });
+            }
+            _cerrarModal();
+            viewAdminSeccion([seccionId]);
+          } catch (er) {
+            err.textContent = _msgError(er.message);
+            err.hidden = false;
+          }
+        };
+      },
+    });
+  }
+
+
   // ── Vista: estadísticas (placeholder) ──────────────────────────────
   async function viewEstadisticas() {
     root.innerHTML = html`
@@ -938,8 +2042,9 @@
 
   window.addEventListener('aprentix:nav', (e) => {
     const id = e.detail?.id;
-    if (id === 'home')          navigate('#/');
-    if (id === 'estadisticas')  navigate('#/estadisticas');
+    if (id === 'home')                navigate('#/');
+    if (id === 'estadisticas')        navigate('#/estadisticas');
+    if (id === 'cambiar-oposicion')   _abrirSelectorOposicion();
     if (id === 'tablon') {
       const op = getCtx().oposicion_id;
       if (op) navigate(`#/tablon/${op}`);
@@ -956,6 +2061,7 @@
     if (v === 'estadisticas')     navigate('#/estadisticas');
     if (v === 'mi-cuenta')        navigate('#/mi-cuenta');
     if (v === 'admin-usuarios')   navigate('#/admin/usuarios');
+    if (v === 'admin-contenido')  navigate('#/admin/contenido');
     if (v === 'admin-duplicados') navigate('#/admin/duplicados');
   });
 

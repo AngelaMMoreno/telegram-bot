@@ -277,3 +277,368 @@ body.no-header main#root > .auth-section { width: 100%; }
 .resultado-card .nota.pasa { color: #4a8f2a; }
 .resultado-card .nota.falla { color: #b83a3a; }
 .resultado-card .subt { color: var(--muted); }
+
+
+/* ── Tarjetas de contenido reutilizables (Mi Cuenta, admin, pickers) ─────
+ * `.panel-card` es la tarjeta base: fondo elevado (--bg-panel), borde
+ * suave (--border), esquinas orgánicas y respiración interna. Sustituye
+ * a los `<div class="tema-card" style="cursor:default">` que la vista de
+ * cuenta usaba a modo de "caja" sin darle protagonismo.
+ */
+.panel-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.25rem;
+  margin: 0 0 1rem;
+  box-shadow: var(--shadow-sm);
+}
+.panel-card + .panel-card { margin-top: .75rem; }
+.panel-card .card-title {
+  margin: 0 0 .75rem;
+  font-size: 1.05rem; font-weight: 700;
+  color: var(--txt);
+  display: flex; align-items: center; gap: .5rem;
+}
+.panel-card .card-title .ico { font-size: 1.15rem; }
+.panel-card .card-subtitle {
+  color: var(--txt-soft); font-size: .9rem;
+  margin: -.5rem 0 .75rem;
+}
+
+.panel-section-title {
+  margin: 1.75rem 0 .6rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--txt);
+  letter-spacing: .01em;
+}
+.panel-section-title.danger { color: var(--danger); }
+
+/* Listado clave/valor dentro de una tarjeta. */
+.kv-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: .35rem 1rem;
+  align-items: baseline;
+  font-size: .95rem;
+}
+.kv-list dt { color: var(--txt-soft); font-weight: 600; }
+.kv-list dd { margin: 0; color: var(--txt); }
+.kv-badge {
+  display: inline-block;
+  padding: .1rem .55rem;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 700;
+  background: var(--pri-soft);
+  color: var(--pri-d);
+  margin-left: .35rem;
+}
+[data-theme="dark"] .kv-badge { color: var(--pri); }
+.kv-badge.warn { background: var(--danger-light); color: var(--danger); }
+.kv-badge.ok   { background: var(--success-light); color: var(--success); }
+[data-theme="dark"] .kv-badge.warn { color: var(--coral); }
+[data-theme="dark"] .kv-badge.ok   { color: var(--success); }
+
+/* Formulario dentro de una tarjeta. Coherente con el estilo de auth.css:
+ * label pequeño, input grande, foco marca en verde salvia. */
+.form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: .85rem;
+}
+.form-grid .field { display: flex; flex-direction: column; gap: .3rem; }
+.form-grid label,
+.form-grid .field > label {
+  color: var(--txt-soft);
+  font-size: .82rem;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+.form-grid input:not([type=checkbox]):not([type=radio]),
+.form-grid select,
+.form-grid textarea {
+  display: block; width: 100%;
+  padding: .7rem .9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  color: var(--txt);
+  font: inherit;
+  font-size: 1rem;
+  transition: border-color .15s, box-shadow .15s;
+}
+.form-grid input:focus,
+.form-grid select:focus,
+.form-grid textarea:focus {
+  outline: none;
+  border-color: var(--pri);
+  box-shadow: 0 0 0 3px var(--pri-glow, var(--pri-soft));
+}
+.form-grid textarea { min-height: 5.5rem; resize: vertical; }
+.form-grid .form-row {
+  display: flex;
+  gap: .6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.form-grid .form-err {
+  color: var(--danger);
+  font-size: .85rem;
+  background: var(--danger-light);
+  padding: .5rem .7rem;
+  border-radius: 10px;
+}
+
+.field-inline {
+  display: flex; align-items: center; gap: .5rem;
+  color: var(--txt-soft); font-size: .9rem;
+  padding: .35rem 0;
+}
+
+/* Segmented control (Tema claro/oscuro/sistema, filtros de admin, etc.) */
+.seg-group {
+  display: inline-flex;
+  padding: 4px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  gap: 2px;
+}
+.seg-group button {
+  border: 0;
+  background: transparent;
+  color: var(--txt-soft);
+  font: inherit;
+  font-weight: 700;
+  padding: .45rem 1rem;
+  border-radius: 999px;
+  cursor: pointer;
+  min-height: 36px;
+  transition: background .15s, color .15s;
+}
+.seg-group button:hover { color: var(--txt); }
+.seg-group button.active {
+  background: var(--pri);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(107, 142, 35, .25);
+}
+[data-theme="dark"] .seg-group button.active { color: #14241D; }
+
+/* Fila de sesión activa */
+.sesion-row {
+  display: flex;
+  gap: .75rem;
+  align-items: center;
+  padding: .75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.sesion-row:last-child { border-bottom: 0; }
+.sesion-row .grow { flex: 1; min-width: 0; }
+.sesion-row .small { font-size: .82rem; color: var(--txt-soft); }
+.sesion-row .badge-actual {
+  background: var(--success-light);
+  color: var(--success);
+  padding: .15rem .55rem;
+  border-radius: 999px;
+  font-size: .75rem;
+  font-weight: 700;
+}
+[data-theme="dark"] .sesion-row .badge-actual { color: var(--success); }
+
+.zona-peligro {
+  border: 1px solid var(--danger);
+  background: var(--danger-soft);
+}
+.zona-peligro .card-title { color: var(--danger); }
+.zona-peligro .small { color: var(--danger-d, var(--danger)); }
+
+
+/* ── Admin panel ─────────────────────────────────────────────────────── */
+.admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.admin-toolbar .grow { flex: 1; }
+.admin-tabs {
+  display: flex; flex-wrap: wrap;
+  gap: .35rem;
+  margin: 0 0 1rem;
+}
+.admin-tabs .tab {
+  padding: .5rem 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--txt);
+  font-weight: 600;
+  cursor: pointer;
+  font: inherit;
+  font-size: .92rem;
+  text-decoration: none;
+}
+.admin-tabs .tab:hover:not(.active) {
+  border-color: var(--pri);
+  background: var(--pri-soft);
+}
+.admin-tabs .tab.active {
+  background: var(--pri);
+  color: #fff;
+  border-color: var(--pri);
+}
+[data-theme="dark"] .admin-tabs .tab.active { color: #14241D; }
+
+.list-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: .5rem;
+  align-items: center;
+  padding: .85rem 1rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: .5rem;
+  cursor: pointer;
+  transition: transform .12s, border-color .15s, box-shadow .12s;
+}
+.list-item:hover {
+  transform: translateY(-1px);
+  border-color: var(--pri);
+  box-shadow: var(--shadow-sm);
+}
+.list-item .li-body { min-width: 0; }
+.list-item .li-title { font-weight: 700; }
+.list-item .li-meta {
+  color: var(--txt-soft);
+  font-size: .82rem;
+  margin-top: .2rem;
+}
+.list-item .li-actions {
+  display: flex;
+  gap: .3rem;
+}
+.list-item .li-actions .btn { min-height: 34px; padding: .35rem .7rem; font-size: .82rem; }
+
+/* Editor de pregunta (opciones + correcta radio) */
+.opcion-editor {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: .5rem;
+  align-items: center;
+  padding: .5rem;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: .5rem;
+}
+.opcion-editor input[type=radio] { accent-color: var(--pri); width: 20px; height: 20px; }
+.opcion-editor input[type=text] {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .5rem .65rem;
+  background: var(--bg-panel);
+  color: var(--txt);
+  font: inherit;
+  font-size: .95rem;
+}
+.opcion-editor .btn-del {
+  color: var(--danger);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 0 .3rem;
+}
+.opcion-editor .btn-del:hover { color: var(--danger); text-decoration: underline; }
+
+.chip-modulo {
+  display: inline-block;
+  padding: .1rem .55rem;
+  background: var(--sky-soft);
+  color: var(--sky-d);
+  border-radius: 999px;
+  font-size: .78rem;
+  font-weight: 700;
+  margin-right: .4rem;
+}
+[data-theme="dark"] .chip-modulo { color: var(--sky); }
+
+/* Overlay modal ligero para el editor de pregunta */
+.aprentix-modal-back {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 26, 22, .55);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200;
+  padding: 1rem;
+}
+.aprentix-modal-back.hidden { display: none; }
+.aprentix-modal {
+  background: var(--bg-panel);
+  color: var(--txt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  max-width: 640px;
+  width: 100%;
+  max-height: 90dvh;
+  overflow: auto;
+  padding: 1.25rem 1.4rem;
+}
+.aprentix-modal .modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.aprentix-modal .modal-head h3 { margin: 0; font-size: 1.1rem; }
+.aprentix-modal .modal-close {
+  background: none; border: 0;
+  font-size: 1.3rem; cursor: pointer;
+  color: var(--txt-soft);
+}
+.aprentix-modal .modal-close:hover { color: var(--txt); }
+
+/* Rejilla de oposiciones para el picker de bienvenida */
+.op-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: .8rem;
+}
+.op-tile {
+  padding: 1rem 1.1rem;
+  background: var(--bg-panel);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font: inherit;
+  color: var(--txt);
+  text-align: left;
+  transition: transform .12s, border-color .12s, background .15s, box-shadow .15s;
+}
+.op-tile:hover {
+  transform: translateY(-2px);
+  border-color: var(--pri);
+  background: linear-gradient(160deg, var(--pri-soft) 0%, var(--bg-panel) 70%);
+  box-shadow: var(--shadow);
+}
+.op-tile.selected {
+  border-color: var(--pri);
+  background: linear-gradient(160deg, var(--pri-soft) 0%, var(--bg-panel) 70%);
+}
+.op-tile strong { display: block; font-size: 1rem; }
+.op-tile .desc {
+  color: var(--txt-soft);
+  font-size: .85rem;
+  margin-top: .25rem;
+  line-height: 1.35;
+}
+.op-tile .ico {
+  font-size: 1.4rem;
+  margin-bottom: .35rem;
+  display: block;
+}
+

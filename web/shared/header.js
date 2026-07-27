@@ -149,7 +149,12 @@
               </button>
               <button class="sheet-row admin-row" id="btn-admin-panel" type="button" data-view="admin-usuarios">
                 <span class="sheet-row-ico">${icon('shield')}</span>
-                <span class="sheet-row-label">Panel de administración</span>
+                <span class="sheet-row-label">Usuarios (admin)</span>
+                <span class="sheet-row-badge">ADMIN</span>
+              </button>
+              <button class="sheet-row admin-row" id="btn-admin-contenido" type="button" data-view="admin-contenido">
+                <span class="sheet-row-ico">${icon('folder')}</span>
+                <span class="sheet-row-label">Gestión de contenido</span>
                 <span class="sheet-row-badge">ADMIN</span>
               </button>
               <button class="sheet-row danger" id="btn-logout" type="button">
@@ -211,11 +216,13 @@
         location.href = '/#/login';
       };
 
-      // Oculta la fila de admin si el usuario no es admin.
+      // Oculta las filas de admin si el usuario no es admin.
       const applyAdmin = () => {
         const u = S?.getUser?.();
         const esAdmin = u && Array.isArray(u.roles) && u.roles.includes('admin');
         $('#btn-admin-panel').hidden = !esAdmin;
+        const cont = $('#btn-admin-contenido');
+        if (cont) cont.hidden = !esAdmin;
       };
       applyAdmin();
       window.addEventListener('aprentix:session', applyAdmin);
