@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Stack PGADMIN — panel web único que gestiona las Postgres de todas las
+# ramas desplegadas en paralelo (prod, desa, …).
+#
+# Se despliega UNA SOLA VEZ en Dokploy como Compose Application propia.
+# Cada stack `core` (uno por rama) publica su Postgres bajo un alias de
+# red distinto (`DB_ALIAS`, p.ej. `db-prod`, `db-desa`); este pgAdmin los
+# lee de `pgadmin/servers.json` y aparecen como servidores separados en
+# la barra lateral.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  pgadmin:
+    image: dpage/pgadmin4:9
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    ${PGADMIN_EMAIL:?PGADMIN_EMAIL requerido}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASS:?PGADMIN_PASS requerida}
+      PGADMIN_CONFIG_PROXY_X_FOR_COUNT:    "1"
+      PGADMIN_CONFIG_PROXY_X_PROTO_COUNT:  "1"
+      PGADMIN_CONFIG_PROXY_X_HOST_COUNT:   "1"
+      PGADMIN_CONFIG_PROXY_X_PORT_COUNT:   "1"
+      PGADMIN_CONFIG_PROXY_X_PREFIX_COUNT: "1"
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ../../pgadmin/servers.json:/pgadmin4/servers.json:ro
+    restart: unless-stopped
+    networks: [dokploy-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.pgadmin.rule=Host(`${DOMINIO_PGADMIN:-pgadmin.aprentix.es}`)"
+      - "traefik.http.routers.pgadmin.entrypoints=websecure"
+      - "traefik.http.routers.pgadmin.tls=true"
+      - "traefik.http.routers.pgadmin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
+
+volumes:
+  pgadmin_data:
+
+networks:
+  dokploy-network:
+    external: true
