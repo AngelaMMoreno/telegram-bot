@@ -394,6 +394,91 @@
 
 
   // ── Vista: home ────────────────────────────────────────────────────
+  // Paleta cíclica para pintar cada tema con carácter propio. Un mismo tema
+  // conserva siempre su color porque el índice se calcula por posición dentro
+  // de la oposición. Los tokens (--pri, --accent, ...) están en tokens.css.
+  const TEMA_PALETA = [
+    { key: 'moss',     border: 'var(--pri)',      soft: 'var(--pri-soft)',      strong: 'var(--pri-d)'      },
+    { key: 'amber',    border: 'var(--accent)',   soft: 'var(--accent-soft)',   strong: 'var(--accent-d)'   },
+    { key: 'lavender', border: 'var(--lavender)', soft: 'var(--lavender-soft)', strong: 'var(--lavender-d)' },
+    { key: 'sky',      border: 'var(--sky)',      soft: 'var(--sky-soft)',      strong: 'var(--sky-d)'      },
+    { key: 'coral',    border: 'var(--coral)',    soft: 'var(--coral-soft)',    strong: 'var(--coral-d)'    },
+    { key: 'leaf',     border: 'var(--leaf)',     soft: 'var(--leaf-soft)',     strong: 'var(--pri-d)'      },
+  ];
+  function _paletaTema(idx) { return TEMA_PALETA[idx % TEMA_PALETA.length]; }
+
+  // Emoji-icono por defecto para cuando el tema no lo trae. Heurística barata
+  // sobre el nombre (constitución → 🏛️, derechos → ⚖️, etc.). Si no matchea,
+  // recae en un pequeño ciclo de iconos "de institución" para no dar siempre
+  // el mismo dibujo.
+  const ICON_FALLBACK = ['🏛️','⚖️','👑','🏛️','📜','🗳️','🌍','⚙️'];
+  function _iconoTema(nombre, idx) {
+    const n = String(nombre || '').toLowerCase();
+    if (/constituci/.test(n))        return '🏛️';
+    if (/derecho|libertad/.test(n))  return '⚖️';
+    if (/corona|jefatur/.test(n))    return '👑';
+    if (/cortes|parlament|senado|congreso|legislat/.test(n)) return '🏛️';
+    if (/gobierno|adminis/.test(n))  return '⚙️';
+    if (/judicial|juez|tribunal/.test(n)) return '⚖️';
+    if (/unión|europ|internacional/.test(n)) return '🌍';
+    if (/econom|hacienda|presupue/.test(n)) return '💰';
+    return ICON_FALLBACK[idx % ICON_FALLBACK.length];
+  }
+
+  // Estimación de duración de un tema. No tenemos el dato exacto en la RPC,
+  // así que asumimos ~15 min por sección estudiada. Devuelve una cadena
+  // legible ("~45 min", "~2h", "~3h 30 min").
+  function _duracionEstimada(minutos) {
+    const m = Math.max(0, Math.round(minutos || 0));
+    if (m < 60) return `~${m || 15} min`;
+    const h = Math.floor(m / 60), r = m - h * 60;
+    if (r === 0) return `~${h}h`;
+    return `~${h}h ${r} min`;
+  }
+
+  // Anillo de progreso SVG reutilizable (usado en tarjetas de tema, módulo,
+  // y en el resumen del home). `size` es el diámetro, `stroke` el grosor.
+  function _svgProgreso(pct, {
+    size = 44, stroke = 4, color = 'var(--pri)', track = 'var(--border)',
+  } = {}) {
+    const p = Math.max(0, Math.min(100, Number(pct) || 0));
+    const r = (size / 2) - stroke;
+    const c = 2 * Math.PI * r;
+    const off = c * (1 - p / 100);
+    return `
+      <svg class="ring" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}"
+           role="img" aria-label="Progreso ${p}%">
+        <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none"
+                stroke="${track}" stroke-width="${stroke}"/>
+        <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none"
+                stroke="${color}" stroke-width="${stroke}"
+                stroke-linecap="round"
+                stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${off.toFixed(2)}"
+                transform="rotate(-90 ${size/2} ${size/2})"/>
+        <text x="${size/2}" y="${size/2 + 4}" text-anchor="middle"
+              font-size="11" font-weight="800" fill="currentColor">${p}%</text>
+      </svg>`;
+  }
+
+  // Colección de consejos rotatorios para el pie del home. Se elige uno por
+  // día del año para que sea estable dentro de la misma jornada.
+  const CONSEJOS = [
+    'Estudia un poco cada día. ¡La constancia es la clave!',
+    '5 minutos de repaso valen más que 1 hora de agobio.',
+    'Explícate la teoría en voz alta: si sabes explicarla, la sabes.',
+    'Marca la sección más floja de hoy y empieza por ella.',
+    'Descansa 5 min entre tests: el cerebro consolida mejor.',
+    'Los fallos de hoy son los aciertos de mañana.',
+    'Repite un test antiguo antes de dormir. Es magia.',
+    'Cada racha suma. No la rompas hoy.',
+  ];
+  function _consejoDelDia() {
+    const d = new Date();
+    const doy = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
+    return CONSEJOS[doy % CONSEJOS.length];
+  }
+
+
   async function viewHome() {
     loading();
     // Averigua la oposición activa: preferencia local, o la primera del usuario.
@@ -414,28 +499,153 @@
     const op = home.oposicion || {};
     const temas = home.temas || [];
 
+    // Métricas agregadas para la franja de estadísticas del home. Todo se
+    // deriva del payload de `mi_home_oposicion` (secciones_ok/total por
+    // módulo) sin pedir más RPCs. El tiempo total es una estimación amable
+    // (~15 min por sección) para dar sensación de progreso longitudinal.
+    let seccOk = 0, seccTot = 0, modTot = 0;
+    for (const t of temas) {
+      for (const m of (t.modulos || [])) {
+        seccOk += Number(m.secciones_ok) || 0;
+        seccTot += Number(m.secciones_total) || 0;
+        modTot += 1;
+      }
+    }
+    const progresoGlobal = seccTot === 0 ? 0 : Math.round(100 * seccOk / seccTot);
+    const tiempoEstim = _duracionEstimada(seccTot * 15);
+
+    // Racha: la trae `mi_gamificacion`. Es la misma info que la cabecera; la
+    // duplicamos en el home para que la stat-strip esté completa aunque el
+    // usuario ya la vea arriba (refuerza el hábito).
+    const gm = await S.rpc('mi_gamificacion').catch(() => ({}));
+    const racha = Number(gm?.racha_actual) || 0;
+
+    // Tema "por donde lo dejaste": el primero con progreso parcial (> 0 y
+    // < 100). Si no hay ninguno con progreso, el primer tema pendiente. Si
+    // todo está al 100%, mostramos el primero (para poder repasar). Sin
+    // temas, esta card se oculta.
+    const temaContinuar = temas.find(t => t.pct > 0 && t.pct < 100)
+                        || temas.find(t => t.pct < 100)
+                        || temas[0]
+                        || null;
+
     const admin = _esAdmin();
+    const varsCont = temaContinuar
+      ? _paletaTema(temas.indexOf(temaContinuar))
+      : _paletaTema(0);
+
     root.innerHTML = html`
-      <button class="oposicion-picker" id="btn-cambiar-op">
-        <span>📚</span>
-        <span>${op.nombre || 'Elige una oposición'}</span>
-        <span class="caret">▾</span>
+      <button class="oposicion-chip" id="btn-cambiar-op"
+              title="Cambiar de oposición">
+        <span class="oposicion-chip-ico">📚</span>
+        <span class="oposicion-chip-nombre">${op.nombre || 'Elige una oposición'}</span>
+        <span class="oposicion-chip-caret" aria-hidden="true">▾</span>
       </button>
-      ${raw(temas.length > 0
-        ? '<button class="btn-repasar" id="btn-repasar-op">🔁 Repasar toda la oposición (40 preguntas)</button>'
-        : '')}
-      ${raw(temas.map(t => html`
-        <div class="tema-card" data-tema="${t.id}">
-          <div class="tema-head">
-            <span class="tema-titulo">${t.nombre}</span>
-            <span class="tema-pct">${t.pct}%</span>
-          </div>
-          <div class="barra"><i style="width:${t.pct}%"></i></div>
-          <div class="modulos">
-            ${(t.modulos || []).length} módulo(s)
-          </div>
+
+      <header class="home-head">
+        <span class="home-head-emoji" aria-hidden="true">📚</span>
+        <div>
+          <h1 class="home-title">Temas</h1>
+          <p class="home-subtitle">Explora todos los temas y sigue tu progreso</p>
         </div>
-      `).join(''))}
+        <button class="home-search" type="button" aria-label="Buscar tema" id="btn-buscar-tema">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round"
+               stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        </button>
+      </header>
+
+      ${raw(temaContinuar ? html`
+        <button class="continuar-card" id="btn-continuar"
+                data-tema="${temaContinuar.id}"
+                style="--tema-border:${raw(varsCont.border)}; --tema-soft:${raw(varsCont.soft)}; --tema-strong:${raw(varsCont.strong)};">
+          <span class="continuar-icono" aria-hidden="true">${_iconoTema(temaContinuar.nombre, temas.indexOf(temaContinuar))}</span>
+          <span class="continuar-copy">
+            <small>Continúa por donde lo dejaste</small>
+            <strong>${temaContinuar.nombre}</strong>
+            <span class="continuar-meta">
+              ${temaContinuar.pct}% completado · ${(temaContinuar.modulos || []).length} módulo${(temaContinuar.modulos || []).length === 1 ? '' : 's'}
+            </span>
+          </span>
+          <span class="continuar-cta">Continuar</span>
+        </button>
+      ` : '')}
+
+      ${raw(temas.length > 0 ? html`
+        <section class="stat-strip" aria-label="Resumen de tu progreso">
+          <div class="stat-cell">
+            <span class="stat-ico stat-ico-temas" aria-hidden="true">📗</span>
+            <strong>${temas.length}</strong>
+            <small>Temas</small>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-ico stat-ico-prog" aria-hidden="true">✓</span>
+            <strong>${progresoGlobal}%</strong>
+            <small>Progreso global</small>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-ico stat-ico-time" aria-hidden="true">⏱</span>
+            <strong>${tiempoEstim}</strong>
+            <small>Tiempo total</small>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-ico stat-ico-fire ${racha > 0 ? 'on' : ''}" aria-hidden="true">🔥</span>
+            <strong>${racha}</strong>
+            <small>Racha actual</small>
+          </div>
+        </section>
+      ` : '')}
+
+      ${raw(temas.length > 0 ? html`
+        <div class="section-head">
+          <h2>Todos los temas</h2>
+          <a class="section-head-link" href="#/logros">Ver todos <span aria-hidden="true">›</span></a>
+        </div>
+
+        <div class="tema-lista">
+          ${raw(temas.map((t, idx) => {
+            const pal = _paletaTema(idx);
+            const totalModulos = (t.modulos || []).length;
+            const totalSecc = (t.modulos || []).reduce((n, m) => n + (Number(m.secciones_total) || 0), 0);
+            const iconoTema = _iconoTema(t.nombre, idx);
+            return html`
+              <button class="tema-tile" data-tema="${t.id}"
+                      style="--tema-border:${raw(pal.border)}; --tema-soft:${raw(pal.soft)}; --tema-strong:${raw(pal.strong)};">
+                <span class="tema-tile-icono" aria-hidden="true">
+                  <span class="tema-tile-icono-emoji">${iconoTema}</span>
+                </span>
+                <span class="tema-tile-body">
+                  <strong class="tema-tile-titulo">${idx + 1}. ${t.nombre}</strong>
+                  <span class="tema-tile-chips">
+                    <span class="tema-tile-chip">${totalModulos} módulo${totalModulos === 1 ? '' : 's'}</span>
+                    <span class="tema-tile-chip muted">${totalSecc} sección${totalSecc === 1 ? '' : 'es'}</span>
+                  </span>
+                  ${op.descripcion ? '' : ''}
+                </span>
+                <span class="tema-tile-progreso" aria-hidden="true">
+                  ${raw(_svgProgreso(t.pct, { size: 44, stroke: 4, color: pal.border }))}
+                </span>
+                <span class="tema-tile-caret" aria-hidden="true">›</span>
+              </button>`;
+          }).join(''))}
+        </div>
+
+        <button class="repasar-mini" id="btn-repasar-op" type="button">
+          <span class="repasar-mini-ico" aria-hidden="true">🔁</span>
+          <span>Repasar oposición (40 preguntas)</span>
+          <span aria-hidden="true">›</span>
+        </button>
+
+        <aside class="consejo-card">
+          <span class="consejo-ico" aria-hidden="true">💡</span>
+          <div>
+            <strong>Consejo del día</strong>
+            <p>${_consejoDelDia()}</p>
+          </div>
+          <span class="consejo-caret" aria-hidden="true">›</span>
+        </aside>
+      ` : '')}
+
       ${raw(temas.length === 0
         ? (admin
             ? html`
@@ -449,14 +659,18 @@
         : '')}
     `;
 
-    root.querySelectorAll('.tema-card').forEach(c => {
+    root.querySelectorAll('.tema-tile').forEach(c => {
       c.onclick = () => navigate(`#/tema/${c.dataset.tema}`);
     });
+    const bc = root.querySelector('#btn-continuar');
+    if (bc) bc.onclick = () => navigate(`#/tema/${bc.dataset.tema}`);
     const btnR = root.querySelector('#btn-repasar-op');
     if (btnR) btnR.onclick = () => navigate(`#/repaso/${opId}`);
     root.querySelector('#btn-cambiar-op').onclick = () => _abrirSelectorOposicion();
     const btnG = root.querySelector('#btn-gestionar-op');
     if (btnG) btnG.onclick = () => navigate(`#/admin/contenido/oposicion/${opId}`);
+    const bs = root.querySelector('#btn-buscar-tema');
+    if (bs) bs.onclick = () => showToast('Búsqueda de temas — próximamente.');
   }
 
   // Devuelve `mis_oposiciones` como un array simple.
@@ -634,33 +848,126 @@
     const tema = (home.temas || []).find(t => t.id === temaId);
     if (!tema) return empty('Tema no encontrado en tu oposición actual.');
 
+    // Índice del tema dentro de la oposición → determina su color y su
+    // icono. Así el color se mantiene coherente con el que se ve en el home.
+    const idxTema = (home.temas || []).findIndex(t => t.id === temaId);
+    const pal = _paletaTema(idxTema < 0 ? 0 : idxTema);
+    const iconoTema = _iconoTema(tema.nombre, idxTema);
+
+    // Si el tema tiene un solo módulo, el "salto por módulos" no aporta
+    // — desplegamos sus secciones directamente en esta pantalla para
+    // ahorrar un click. Igualmente listamos los módulos como bloques para
+    // que la cabecera del bloque sirva de sub-título.
+    const modulos = tema.modulos || [];
+    const soloUnModulo = modulos.length === 1;
+
     root.innerHTML = html`
       <div class="view-head">
         <div class="breadcrumbs">
           <a href="#/">${home.oposicion?.nombre || 'Inicio'}</a> / <strong>${tema.nombre}</strong>
         </div>
       </div>
-      <h2>${tema.nombre}</h2>
-      <div class="barra" style="height:8px;margin-bottom:1rem">
-        <i style="display:block;height:100%;background:var(--accent);width:${tema.pct}%"></i>
-      </div>
-      <a class="btn" href="#/repaso/${opId}?tema=${tema.id}" style="margin-bottom:1rem;display:inline-block">
-        📄 Ver esquema del tema
-      </a>
-      ${raw((tema.modulos || []).map(m => html`
-        <div class="modulo-row" data-modulo="${m.id}">
-          <span class="modulo-titulo">${m.nombre}</span>
-          <span class="modulo-progreso">${m.secciones_ok}/${m.secciones_total} secciones</span>
-          <span>›</span>
+
+      <header class="tema-hero"
+              style="--tema-border:${raw(pal.border)}; --tema-soft:${raw(pal.soft)}; --tema-strong:${raw(pal.strong)};">
+        <span class="tema-hero-icono" aria-hidden="true">${iconoTema}</span>
+        <div class="tema-hero-body">
+          <h1 class="tema-hero-titulo">${tema.nombre}</h1>
+          <div class="tema-hero-meta">
+            <span>${modulos.length} módulo${modulos.length === 1 ? '' : 's'}</span>
+            <span aria-hidden="true">·</span>
+            <span>${tema.pct}% completado</span>
+          </div>
+          <div class="tema-hero-barra" role="progressbar"
+               aria-valuenow="${tema.pct}" aria-valuemin="0" aria-valuemax="100">
+            <span style="width:${tema.pct}%"></span>
+          </div>
         </div>
-      `).join(''))}
+      </header>
+
+      <div class="tema-actions">
+        <a class="tema-action" href="#/repaso/${opId}?tema=${tema.id}">
+          <span aria-hidden="true">📄</span>
+          <span>Ver esquema</span>
+        </a>
+        <button class="tema-action" type="button" id="btn-subir-esquema">
+          <span aria-hidden="true">⬆️</span>
+          <span>Subir esquema</span>
+        </button>
+      </div>
+
+      ${raw(modulos.map((m, i) => {
+        const compl = m.secciones_total > 0 && m.secciones_ok >= m.secciones_total;
+        const pctModulo = m.secciones_total === 0
+          ? 0
+          : Math.round(100 * m.secciones_ok / m.secciones_total);
+        return html`
+          <section class="modulo-bloque"
+                   style="--tema-border:${raw(pal.border)}; --tema-soft:${raw(pal.soft)}; --tema-strong:${raw(pal.strong)};">
+            ${raw(soloUnModulo ? '' : html`
+              <button class="modulo-bloque-head" data-modulo="${m.id}">
+                <span class="modulo-bloque-num">M${i + 1}</span>
+                <span class="modulo-bloque-titulo">${m.nombre}</span>
+                <span class="modulo-bloque-progreso" aria-hidden="true">
+                  ${raw(_svgProgreso(pctModulo, { size: 34, stroke: 3.5, color: pal.border }))}
+                </span>
+                <span class="modulo-bloque-caret" aria-hidden="true">›</span>
+              </button>
+            `)}
+
+            <ol class="seccion-lista">
+              ${raw((m.secciones || []).map((s, j) => html`
+                <li class="seccion-mini ${s.completada ? 'is-done' : ''}"
+                    data-seccion="${s.id}">
+                  <span class="seccion-mini-check" aria-hidden="true">
+                    ${s.completada ? '✓' : (j + 1)}
+                  </span>
+                  <span class="seccion-mini-titulo">${s.nombre}</span>
+                  ${s.nota_max != null
+                    ? html`<span class="seccion-mini-nota">${Math.round(s.nota_max)}</span>`
+                    : ''}
+                  <span class="seccion-mini-caret" aria-hidden="true">›</span>
+                </li>
+              `).join(''))}
+            </ol>
+
+            ${raw(compl ? html`
+              <button class="modulo-bloque-repaso" data-repaso-modulo="${m.id}">
+                🔁 Repasar módulo
+              </button>
+            ` : '')}
+          </section>`;
+      }).join(''))}
+
       ${tema.pct >= 100 ? html`
-        <button class="btn-repasar" id="btn-repaso-tema">🔁 Repasar tema completo</button>
+        <button class="repasar-mini" id="btn-repaso-tema" type="button">
+          <span class="repasar-mini-ico" aria-hidden="true">🔁</span>
+          <span>Repasar tema completo</span>
+          <span aria-hidden="true">›</span>
+        </button>
       ` : ''}
     `;
 
-    root.querySelectorAll('.modulo-row').forEach(r => {
-      r.onclick = () => navigate(`#/modulo/${r.dataset.modulo}`);
+    // Cabecera de módulo → navega al módulo (solo cuando hay >1).
+    root.querySelectorAll('.modulo-bloque-head').forEach(el => {
+      el.onclick = (ev) => {
+        ev.preventDefault();
+        navigate(`#/modulo/${el.dataset.modulo}`);
+      };
+    });
+    // Sección → abre teoría (con test al final). Un único CTA.
+    root.querySelectorAll('.seccion-mini').forEach(el => {
+      el.onclick = () => navigate(`#/seccion/${el.dataset.seccion}/teoria`);
+    });
+    // Repaso por módulo.
+    root.querySelectorAll('[data-repaso-modulo]').forEach(el => {
+      el.onclick = async (ev) => {
+        ev.stopPropagation();
+        try {
+          const r = await S.rpc('iniciar_intento_modulo', { p_modulo_id: el.dataset.repasoModulo });
+          _iniciarFlujoTest(r);
+        } catch (e) { showToast(_msgError(e.message)); }
+      };
     });
     const btnRT = root.querySelector('#btn-repaso-tema');
     if (btnRT) {
@@ -671,6 +978,8 @@
         } catch (e) { showToast(_msgError(e.message)); }
       };
     }
+    const btnSubir = root.querySelector('#btn-subir-esquema');
+    if (btnSubir) btnSubir.onclick = () => showToast('Subir esquema — próximamente.');
   }
 
 
@@ -689,6 +998,10 @@
     const totalT  = modulo.secciones_total || 0;
     const completado = totalOk >= totalT && totalT > 0;
 
+    const idxTema = (home.temas || []).findIndex(t => t.id === tema.id);
+    const pal = _paletaTema(idxTema < 0 ? 0 : idxTema);
+    const pctModulo = totalT === 0 ? 0 : Math.round(100 * totalOk / totalT);
+
     root.innerHTML = html`
       <div class="view-head">
         <div class="breadcrumbs">
@@ -697,29 +1010,67 @@
           <strong>${modulo.nombre}</strong>
         </div>
       </div>
-      <h2>${modulo.nombre}</h2>
-      <p class="muted">${totalOk}/${totalT} secciones completadas.</p>
 
-      ${raw((modulo.secciones || []).map(s => html`
-        <div class="seccion-item ${s.completada ? 'completada' : ''}">
-          <span class="seccion-titulo">${s.nombre}</span>
-          ${s.nota_max != null ? html`<span class="muted small">Nota: ${Math.round(s.nota_max)}</span>` : ''}
-          <span class="seccion-badge">${s.completada ? '✓ Completada' : 'Pendiente'}</span>
-          <button class="btn btn-mini" data-teoria="${s.id}">Teoría</button>
-          <button class="btn btn-pri btn-mini" data-test="${s.id}">Test</button>
+      <header class="tema-hero modulo-hero"
+              style="--tema-border:${raw(pal.border)}; --tema-soft:${raw(pal.soft)}; --tema-strong:${raw(pal.strong)};">
+        <span class="tema-hero-icono modulo-hero-icono" aria-hidden="true">📘</span>
+        <div class="tema-hero-body">
+          <h1 class="tema-hero-titulo">${modulo.nombre}</h1>
+          <div class="tema-hero-meta">
+            <span>${totalOk}/${totalT} sección${totalT === 1 ? '' : 'es'} completada${totalOk === 1 ? '' : 's'}</span>
+            <span aria-hidden="true">·</span>
+            <span>${pctModulo}%</span>
+          </div>
+          <div class="tema-hero-barra" role="progressbar"
+               aria-valuenow="${pctModulo}" aria-valuemin="0" aria-valuemax="100">
+            <span style="width:${pctModulo}%"></span>
+          </div>
         </div>
-      `).join(''))}
+      </header>
+
+      <ol class="seccion-lista modulo-seccion-lista"
+          style="--tema-border:${raw(pal.border)}; --tema-soft:${raw(pal.soft)}; --tema-strong:${raw(pal.strong)};">
+        ${raw((modulo.secciones || []).map((s, j) => html`
+          <li class="seccion-mini ${s.completada ? 'is-done' : ''}"
+              data-seccion="${s.id}">
+            <span class="seccion-mini-check" aria-hidden="true">
+              ${s.completada ? '✓' : (j + 1)}
+            </span>
+            <span class="seccion-mini-body">
+              <span class="seccion-mini-titulo">${s.nombre}</span>
+              ${s.nota_max != null
+                ? html`<span class="seccion-mini-sub">Última nota: ${Math.round(s.nota_max)}</span>`
+                : html`<span class="seccion-mini-sub">Pendiente de estudiar</span>`}
+            </span>
+            <span class="seccion-mini-cta" data-mini-test="${s.id}"
+                  role="button" aria-label="Hacer el test de esta sección"
+                  title="Solo test">📝</span>
+            <span class="seccion-mini-caret" aria-hidden="true">›</span>
+          </li>
+        `).join(''))}
+      </ol>
 
       ${completado ? html`
-        <button class="btn-repasar" id="btn-repaso-mod">🔁 Repasar todo el módulo</button>
+        <button class="repasar-mini" id="btn-repaso-mod" type="button">
+          <span class="repasar-mini-ico" aria-hidden="true">🔁</span>
+          <span>Repasar todo el módulo</span>
+          <span aria-hidden="true">›</span>
+        </button>
       ` : ''}
     `;
 
-    root.querySelectorAll('[data-teoria]').forEach(b => {
-      b.onclick = () => navigate(`#/seccion/${b.dataset.teoria}/teoria`);
+    // Al pulsar una sección arranca la teoría (con test al final). El icono
+    // pequeño 📝 permite ir directo al test, como acceso secundario para
+    // quien ya se lo sabe. Está dentro del <li> pero paramos la propagación
+    // para que la fila entera no interprete el click como "abrir teoría".
+    root.querySelectorAll('.seccion-mini').forEach(el => {
+      el.onclick = () => navigate(`#/seccion/${el.dataset.seccion}/teoria`);
     });
-    root.querySelectorAll('[data-test]').forEach(b => {
-      b.onclick = () => navigate(`#/seccion/${b.dataset.test}/test`);
+    root.querySelectorAll('[data-mini-test]').forEach(el => {
+      el.onclick = (ev) => {
+        ev.stopPropagation();
+        navigate(`#/seccion/${el.dataset.miniTest}/test`);
+      };
     });
     const btnRM = root.querySelector('#btn-repaso-mod');
     if (btnRM) {
@@ -3102,117 +3453,103 @@
     const obtenidos = (logros || []).filter(l => l.obtenido).length;
     const totalLogros = (logros || []).length;
 
+    // Nivel + progreso al siguiente nivel — sirve como cabecera "grande"
+    // de la vista (no un tile más), para dar aire y hacer de la vista de
+    // logros un espacio que "se sienta como progreso".
+    const nivel = Number(gm?.nivel) || 1;
+    const xpTot = Number(gm?.xp_total) || 0;
+    const xpIni = Number(gm?.xp_nivel_ini) || 0;
+    const xpSig = Number(gm?.xp_nivel_sig) || Math.max(50, xpIni + 50);
+    const xpDen = Math.max(1, xpSig - xpIni);
+    const pctNivel = Math.min(100, Math.max(0, Math.round(100 * (xpTot - xpIni) / xpDen)));
+    const restanteXP = Math.max(0, xpSig - xpTot);
+
+    // Render de una sección de retos por periodo. Se pinta como bloque
+    // abierto (diario) o desplegable (semanal/mensual) según `openByDefault`.
+    // No hay pestañas: todo cae en un scroll vertical natural.
+    function bloqueRetos(periodo, meta, items, openByDefault) {
+      const cuerpo = items.length === 0
+        ? '<div class="empty small">Aún no hay retos de este periodo.</div>'
+        : `<div class="retos-grid">${items.map(retoCard).join('')}</div>`;
+      return `
+        <details class="logros-seccion" ${openByDefault ? 'open' : ''}>
+          <summary class="logros-seccion-head">
+            <span class="logros-seccion-ico" aria-hidden="true">${esc(meta.icono)}</span>
+            <span class="logros-seccion-titulo">${esc(meta.titulo)}</span>
+            <span class="logros-seccion-count">${items.length}</span>
+            <span class="logros-seccion-caret" aria-hidden="true">▾</span>
+          </summary>
+          <div class="logros-seccion-body">
+            <p class="logros-seccion-desc">${esc(meta.desc)}</p>
+            ${cuerpo}
+          </div>
+        </details>`;
+    }
+
     root.innerHTML = html`
       <div class="view-head"><h2>Logros y retos</h2></div>
 
-      <div class="logros-hero panel-card">
-        <div class="logros-hero-grid">
-          <div class="logros-hero-tile">
-            <span class="tile-ico">✨</span>
-            <div>
-              <small>Nivel</small>
-              <strong>${gm?.nivel ?? 1}</strong>
-            </div>
-          </div>
-          <div class="logros-hero-tile">
-            <span class="tile-ico">💎</span>
-            <div>
-              <small>XP total</small>
-              <strong>${gm?.xp_total ?? 0}</strong>
-            </div>
-          </div>
-          <div class="logros-hero-tile">
-            <span class="tile-ico">🔥</span>
-            <div>
-              <small>Racha</small>
-              <strong>${gm?.racha_actual ?? 0} <span class="tile-unit">día(s)</span></strong>
-            </div>
-          </div>
-          <div class="logros-hero-tile">
-            <span class="tile-ico">🏆</span>
-            <div>
-              <small>Logros</small>
-              <strong>${obtenidos} / ${totalLogros}</strong>
-            </div>
+      <section class="logros-nivel-hero"
+               role="group" aria-label="Nivel y experiencia">
+        <div class="logros-nivel-ico">
+          <div class="logros-nivel-badge">
+            <span class="logros-nivel-num">${nivel}</span>
           </div>
         </div>
-      </div>
-
-      <div class="logros-tabs" role="tablist" aria-label="Retos y logros">
-        ${raw(['diario', 'semanal', 'mensual'].map((periodo, indice) => {
-          const meta = etiquetaPeriodo[periodo];
-          const cantidad = (retosPorPeriodo[periodo] || []).length;
-          return `<button type="button" class="logros-tab ${indice === 0 ? 'is-active' : ''}"
-                    role="tab" id="tab-${periodo}" aria-selected="${indice === 0}"
-                    aria-controls="panel-${periodo}" tabindex="${indice === 0 ? '0' : '-1'}"
-                    data-panel-logros="${periodo}">
-                    <span aria-hidden="true">${meta.icono}</span>
-                    <span>${meta.titulo.replace('Retos ', '')}</span>
-                    <span class="logros-tab-count">${cantidad}</span>
-                  </button>`;
-        }).join(''))}
-        <button type="button" class="logros-tab" role="tab" id="tab-logros"
-                aria-selected="false" aria-controls="panel-logros" tabindex="-1"
-                data-panel-logros="logros">
-          <span aria-hidden="true">🏅</span><span>Logros</span>
-          <span class="logros-tab-count">${obtenidos}/${totalLogros}</span>
-        </button>
-      </div>
-
-      <div class="logros-tab-panels panel-card">
-      ${raw(['diario', 'semanal', 'mensual'].map((p, indice) => {
-        const items = retosPorPeriodo[p] || [];
-        const meta = etiquetaPeriodo[p];
-        return html`
-          <section class="logros-block logros-tab-panel" id="panel-${p}"
-                   role="tabpanel" aria-labelledby="tab-${p}" ${indice === 0 ? '' : 'hidden'}>
-            <h3 class="panel-section-title">
-              <span aria-hidden="true">${raw(meta.icono)}</span>
-              ${meta.titulo}
-              <small class="panel-section-title-hint">${raw(meta.desc)}</small>
-            </h3>
-            ${raw(items.length === 0
-              ? '<div class="empty">Aún no hay retos de este periodo.</div>'
-              : `<div class="retos-grid">${items.map(retoCard).join('')}</div>`)}
-          </section>`;
-      }).join(''))}
-
-      <section class="logros-block logros-tab-panel" id="panel-logros"
-               role="tabpanel" aria-labelledby="tab-logros" hidden>
-        <h3 class="panel-section-title">
-          <span aria-hidden="true">🏅</span>
-          Logros
-          <small class="panel-section-title-hint">Hitos únicos que se desbloquean al progresar.</small>
-        </h3>
-        ${raw((logros || []).length === 0
-          ? '<div class="empty">Todavía no hay logros en el catálogo.</div>'
-          : `<div class="logros-grid">${logros.map(logroCard).join('')}</div>`)}
+        <div class="logros-nivel-body">
+          <small>Nivel actual</small>
+          <strong>Nivel ${nivel}</strong>
+          <div class="logros-nivel-barra" role="progressbar"
+               aria-valuenow="${xpTot - xpIni}" aria-valuemin="0"
+               aria-valuemax="${xpDen}">
+            <span style="width:${pctNivel}%"></span>
+          </div>
+          <span class="logros-nivel-hint">${xpTot} / ${xpSig} XP · ${restanteXP} para subir</span>
+        </div>
+        <div class="logros-nivel-racha ${(gm?.racha_actual || 0) > 0 ? 'on' : ''}">
+          <span class="logros-nivel-racha-ico" aria-hidden="true">🔥</span>
+          <strong>${gm?.racha_actual ?? 0}</strong>
+          <small>Racha</small>
+        </div>
       </section>
-      </div>
-    `;
 
-    const pestanas = [...root.querySelectorAll('[data-panel-logros]')];
-    function activarPestana(pestana) {
-      pestanas.forEach(boton => {
-        const activa = boton === pestana;
-        boton.classList.toggle('is-active', activa);
-        boton.setAttribute('aria-selected', String(activa));
-        boton.tabIndex = activa ? 0 : -1;
-        const panel = root.querySelector(`#panel-${boton.dataset.panelLogros}`);
-        if (panel) panel.hidden = !activa;
-      });
-    }
-    pestanas.forEach((pestana, indice) => {
-      pestana.addEventListener('click', () => activarPestana(pestana));
-      pestana.addEventListener('keydown', evento => {
-        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(evento.key)) return;
-        evento.preventDefault();
-        let siguiente = evento.key === 'Home' ? 0 : evento.key === 'End' ? pestanas.length - 1
-          : (indice + (evento.key === 'ArrowRight' ? 1 : -1) + pestanas.length) % pestanas.length;
-        activarPestana(pestanas[siguiente]);
-        pestanas[siguiente].focus();
-      });
-    });
+      <section class="logros-stats" aria-label="Resumen">
+        <div class="logros-stat">
+          <span aria-hidden="true">💎</span>
+          <strong>${xpTot}</strong>
+          <small>XP total</small>
+        </div>
+        <div class="logros-stat">
+          <span aria-hidden="true">🏆</span>
+          <strong>${obtenidos}/${totalLogros}</strong>
+          <small>Logros</small>
+        </div>
+        <div class="logros-stat">
+          <span aria-hidden="true">🎯</span>
+          <strong>${(retos || []).filter(r => r.completado).length}</strong>
+          <small>Retos hoy</small>
+        </div>
+      </section>
+
+      ${raw(bloqueRetos('diario',  etiquetaPeriodo.diario,  retosPorPeriodo.diario,  true))}
+      ${raw(bloqueRetos('semanal', etiquetaPeriodo.semanal, retosPorPeriodo.semanal, true))}
+      ${raw(bloqueRetos('mensual', etiquetaPeriodo.mensual, retosPorPeriodo.mensual, false))}
+
+      <details class="logros-seccion" open>
+        <summary class="logros-seccion-head">
+          <span class="logros-seccion-ico" aria-hidden="true">🏅</span>
+          <span class="logros-seccion-titulo">Medallas</span>
+          <span class="logros-seccion-count">${obtenidos}/${totalLogros}</span>
+          <span class="logros-seccion-caret" aria-hidden="true">▾</span>
+        </summary>
+        <div class="logros-seccion-body">
+          <p class="logros-seccion-desc">Hitos únicos que se desbloquean al progresar.</p>
+          ${raw((logros || []).length === 0
+            ? '<div class="empty small">Todavía no hay logros en el catálogo.</div>'
+            : `<div class="medallas-grid">${logros.map(logroCard).join('')}</div>`)}
+        </div>
+      </details>
+    `;
   }
 
 
