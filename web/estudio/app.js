@@ -446,9 +446,6 @@
               </div>`
             : '<div class="empty">Esta oposición aún no tiene temas asignados.</div>')
         : '')}
-      ${raw(admin
-        ? '<div class="admin-quick"><a class="btn btn-sm" href="#/admin/contenido">⚙️ Gestión de contenido</a></div>'
-        : '')}
     `;
 
     root.querySelectorAll('.tema-card').forEach(c => {
@@ -578,9 +575,6 @@
           </div>`)}
       ${raw(mias.length > 0
         ? '<div style="margin-top:1rem"><button class="btn" id="btn-volver">← Volver al inicio</button></div>'
-        : '')}
-      ${raw(_esAdmin()
-        ? '<div class="admin-quick"><a class="btn btn-sm" href="#/admin/contenido">⚙️ Gestión de contenido</a></div>'
         : '')}
     `;
     root.querySelectorAll('[data-opid]').forEach(b => {
@@ -1185,13 +1179,14 @@
 
   // ── Vista: admin/usuarios ──────────────────────────────────────────
   async function viewAdminUsuarios(_, params) {
-    const u = S.getUser();
-    if (!u || !(u.roles || []).includes('admin')) return empty('Acceso restringido.');
+    if (!_esAdmin()) return empty('Acceso restringido.');
     loading();
     const q = params.get('q') || '';
     const page = +(params.get('page') || 1);
-    const rs = await S.rpc('listar_usuarios', { p_q: q || null, p_page: page, p_size: 20 });
-    const [ROLES, ...restRoles] = [await S.rpc('listar_roles')];  // avoid var shadow
+    const [rs, roles] = await Promise.all([
+      S.rpc('listar_usuarios', { p_q: q || null, p_page: page, p_size: 20 }),
+      S.rpc('listar_roles'),
+    ]);
 
     root.innerHTML = html`
       <div class="admin-tabs">
@@ -1208,27 +1203,48 @@
       </form>
       <div class="muted small">Total: ${rs.total} — página ${rs.page}/${rs.total_pages}</div>
       ${raw((rs.usuarios || []).map(u => html`
-        <div class="tema-card" style="cursor:default" data-uid="${u.id}">
-          <div style="display:flex; align-items:baseline; gap:.5rem; flex-wrap:wrap">
+        <div class="user-card" data-uid="${u.id}">
+          <div class="user-head">
             <strong>${u.nombre_visible}</strong>
             <span class="muted small">${u.email}</span>
-            ${raw(u.email_verificado ? '<span style="color:#4a8f2a">✓</span>' : '<span style="color:#b83a3a">sin verificar</span>')}
-            ${raw(u.totp_activo ? '<span class="seccion-badge">2FA</span>' : '')}
-            ${raw(!u.activo ? '<span class="seccion-badge" style="background:#b83a3a;color:white">DESACTIVADO</span>' : '')}
+            ${raw(u.email_verificado
+              ? '<span class="kv-badge ok">verificado</span>'
+              : '<span class="kv-badge warn">sin verificar</span>')}
+            ${raw(u.totp_activo ? '<span class="kv-badge">2FA</span>' : '')}
+            ${raw(!u.activo ? '<span class="kv-badge danger">DESACTIVADO</span>' : '')}
           </div>
-          <div class="muted small" style="margin-top:.3rem">
-            Último login: ${u.ultimo_login_en || '—'} · Sesiones activas: ${u.sesiones_activas} ·
-            Roles: ${(u.roles || []).join(', ') || '—'}
+          <div class="user-roles">
+            ${raw((u.roles || []).length
+              ? (u.roles.map(r => `<span class="role-chip">${esc(r)}</span>`).join(''))
+              : '<span class="muted small">sin roles</span>')}
           </div>
-          <div style="margin-top:.6rem; display:flex; gap:.4rem; flex-wrap:wrap">
-            <button class="btn btn-mini" data-act="reset">Enviar reset pass</button>
-            <button class="btn btn-mini" data-act="logout">Forzar logout global</button>
-            <button class="btn btn-mini" data-act="toggle-activo">${u.activo ? 'Desactivar' : 'Activar'}</button>
-            <button class="btn btn-mini" data-act="roles">Editar roles</button>
-            <button class="btn btn-mini" data-act="borrar" style="color:#b83a3a">Borrar</button>
+          <div class="muted small user-meta">
+            Último login: ${u.ultimo_login_en ? new Date(u.ultimo_login_en).toLocaleString() : '—'}
+            · Sesiones activas: ${u.sesiones_activas}
+          </div>
+          <div class="user-actions">
+            <button class="btn btn-sm btn-pri" data-act="roles">Editar roles</button>
+            <button class="btn btn-sm" data-act="reset">Enviar reset pass</button>
+            <button class="btn btn-sm" data-act="logout">Cerrar sesiones</button>
+            <button class="btn btn-sm" data-act="toggle-activo">${u.activo ? 'Desactivar' : 'Activar'}</button>
+            <button class="btn btn-sm btn-danger-outline" data-act="borrar">Borrar</button>
           </div>
         </div>
       `).join(''))}
+      ${raw((rs.usuarios || []).length === 0
+        ? '<div class="empty">No hay usuarios que encajen con la búsqueda.</div>'
+        : '')}
+      ${raw(rs.total_pages > 1
+        ? html`<div class="form-row" style="justify-content:center; margin-top:1rem">
+            ${raw(page > 1
+              ? `<a class="btn btn-sm" href="#/admin/usuarios?q=${encodeURIComponent(q)}&page=${page-1}">← Anterior</a>`
+              : '')}
+            <span class="muted small" style="align-self:center">Página ${page} de ${rs.total_pages}</span>
+            ${raw(page < rs.total_pages
+              ? `<a class="btn btn-sm" href="#/admin/usuarios?q=${encodeURIComponent(q)}&page=${page+1}">Siguiente →</a>`
+              : '')}
+          </div>`
+        : '')}
     `;
 
     root.querySelector('#form-search').onsubmit = (e) => {
@@ -1237,44 +1253,117 @@
       navigate(`#/admin/usuarios?q=${encodeURIComponent(nq)}`);
     };
 
-    root.querySelectorAll('.tema-card[data-uid]').forEach(card => {
+    root.querySelectorAll('.user-card[data-uid]').forEach(card => {
       const uid = card.dataset.uid;
+      const user = (rs.usuarios || []).find(x => x.id === uid);
       card.querySelectorAll('[data-act]').forEach(btn => {
         btn.onclick = async () => {
           const act = btn.dataset.act;
           try {
             if (act === 'reset') {
-              await S.rpc('forzar_reset_password', { p_usuario_id: uid });
-              showToast('Reset enviado por email.');
+              _confirmar({
+                titulo: 'Enviar enlace de reset',
+                mensaje: `Se enviará a ${user.email} un enlace para restablecer su contraseña (válido 30 min).`,
+                confirmar: 'Enviar',
+                onOk: async () => {
+                  await S.rpc('forzar_reset_password', { p_usuario_id: uid });
+                  showToast('Reset enviado por email.');
+                },
+              });
             } else if (act === 'logout') {
-              await S.rpc('forzar_logout_global', { p_usuario_id: uid });
-              showToast('Sesiones revocadas.');
+              _confirmar({
+                titulo: 'Cerrar todas las sesiones',
+                mensaje: `Se cerrarán todas las sesiones activas de ${user.email}. Tendrá que volver a iniciar sesión.`,
+                confirmar: 'Cerrar sesiones', peligroso: true,
+                onOk: async () => {
+                  await S.rpc('forzar_logout_global', { p_usuario_id: uid });
+                  showToast('Sesiones revocadas.');
+                  viewAdminUsuarios(_, params);
+                },
+              });
             } else if (act === 'toggle-activo') {
-              const u = (rs.usuarios || []).find(x => x.id === uid);
-              await S.rpc('set_usuario_activo', { p_usuario_id: uid, p_activo: !u.activo });
+              await S.rpc('set_usuario_activo',
+                { p_usuario_id: uid, p_activo: !user.activo });
               viewAdminUsuarios(_, params);
             } else if (act === 'roles') {
-              const actuales = (rs.usuarios || []).find(x => x.id === uid)?.roles || [];
-              const nombres = (ROLES || []).map(r => r.id).join(', ');
-              const nuevos = prompt(
-                `Roles disponibles: ${nombres}\nActuales: ${actuales.join(', ') || '—'}\n\nEscribe la nueva lista separada por comas:`,
-                actuales.join(', '));
-              if (nuevos === null) return;
-              const setNuevos = new Set(nuevos.split(',').map(s => s.trim()).filter(Boolean));
-              const setActuales = new Set(actuales);
-              for (const r of setNuevos) if (!setActuales.has(r))
-                await S.rpc('asignar_rol', { p_usuario_id: uid, p_rol_id: r });
-              for (const r of setActuales) if (!setNuevos.has(r))
-                await S.rpc('quitar_rol', { p_usuario_id: uid, p_rol_id: r });
-              viewAdminUsuarios(_, params);
+              _editarRolesUsuario(user, roles || []);
             } else if (act === 'borrar') {
-              if (!confirm('¿Borrar la cuenta? Esta acción es irreversible (soft-delete).')) return;
-              await S.rpc('borrar_usuario_admin', { p_usuario_id: uid });
-              viewAdminUsuarios(_, params);
+              _confirmar({
+                titulo: 'Borrar cuenta',
+                mensaje: `¿Borrar a ${user.email}? Se anonimiza el email y el nombre; sus intentos y respuestas se conservan sin dueño. Acción irreversible.`,
+                confirmar: 'Borrar cuenta', peligroso: true,
+                onOk: async () => {
+                  await S.rpc('borrar_usuario_admin', { p_usuario_id: uid });
+                  showToast('Cuenta borrada.');
+                  viewAdminUsuarios(_, params);
+                },
+              });
             }
           } catch (e) { showToast(_msgError(e.message)); }
         };
       });
+    });
+  }
+
+
+  // Modal editor de roles. `catalogoRoles` viene de listar_roles(). Sale un
+  // checkbox por rol con la descripción a la derecha. Al guardar, calcula el
+  // diff y llama asignar_rol / quitar_rol solo para los que cambian.
+  function _editarRolesUsuario(user, catalogoRoles) {
+    const asignados = new Set(user.roles || []);
+    _mostrarModal({
+      titulo: `Roles de ${user.nombre_visible || user.email}`,
+      contenido: html`
+        <p class="muted small" style="margin:0 0 .75rem">
+          Marca los roles que quieres que tenga este usuario.
+        </p>
+        <form id="form-roles" class="roles-editor">
+          ${raw((catalogoRoles || []).map(r => `
+            <label class="role-row">
+              <input type="checkbox" name="rol" value="${esc(r.id)}"
+                     ${asignados.has(r.id) ? 'checked' : ''}>
+              <span class="role-info">
+                <strong>${esc(r.id)}</strong>
+                ${r.descripcion ? `<small class="muted">${esc(r.descripcion)}</small>` : ''}
+              </span>
+            </label>
+          `).join(''))}
+          <div class="form-err" hidden></div>
+          <div class="form-row" style="justify-content:flex-end; margin-top:.75rem">
+            <button class="btn btn-sm" type="button" data-cancel>Cancelar</button>
+            <button class="btn btn-pri btn-sm" type="submit">Guardar</button>
+          </div>
+        </form>`,
+      onMount(modal) {
+        modal.querySelector('[data-cancel]').onclick = _cerrarModal;
+        modal.querySelector('#form-roles').onsubmit = async (e) => {
+          e.preventDefault();
+          const seleccionados = new Set(
+            [...modal.querySelectorAll('input[name="rol"]:checked')]
+              .map(i => i.value));
+          const err = modal.querySelector('.form-err');
+          err.hidden = true;
+          try {
+            // Añadidos primero (menos riesgo de quedarse sin admin a mitad).
+            for (const r of seleccionados) {
+              if (!asignados.has(r)) {
+                await S.rpc('asignar_rol', { p_usuario_id: user.id, p_rol_id: r });
+              }
+            }
+            for (const r of asignados) {
+              if (!seleccionados.has(r)) {
+                await S.rpc('quitar_rol', { p_usuario_id: user.id, p_rol_id: r });
+              }
+            }
+            _cerrarModal();
+            showToast('Roles actualizados.');
+            viewAdminUsuarios(null, new URLSearchParams(location.hash.split('?')[1] || ''));
+          } catch (ex) {
+            err.textContent = _msgError(ex.message);
+            err.hidden = false;
+          }
+        };
+      },
     });
   }
 
