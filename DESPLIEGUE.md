@@ -49,12 +49,14 @@ reserva para la API de contenidos.
    ```
 
 4. Crear los registros DNS **A** apuntando a la IP del servidor para
-   los dominios (Let's Encrypt los necesita):
+   cada host que vayas a servir. En prod típicamente:
    `aprentix.es`, `www.aprentix.es`, `api.aprentix.es`,
-   `pgadmin.aprentix.es`.
-   Los dominios legacy `test.aprentix.es` y `teoria.aprentix.es`
-   redirigen a `aprentix.es/estudio/`; sus DNS
-   siguen siendo necesarios mientras existan.
+   `pgadmin.aprentix.es`. Los dominios legacy `test.aprentix.es` y
+   `teoria.aprentix.es` sólo son necesarios si los declaras en
+   `DOMINIO_WEB` / `DOMINIO_TEORIA`; redirigen a `${DOMINIO_LANDING}`.
+   Para desplegar además la rama de desarrollo en paralelo, añade un A
+   record extra (p.ej. `desa.aprentix.es`) y en el stack de esa rama
+   pon `DOMINIO_LANDING=desa.aprentix.es`.
 
 ## 1. Orden de despliegue
 
@@ -91,17 +93,24 @@ En Dokploy, para cada una:
 | `DOMINIO_API`      | Host de PostgREST (por defecto `api.aprentix.es`).             |
 | `DOMINIO_PGADMIN`  | Host de pgAdmin (por defecto `pgadmin.aprentix.es`).           |
 
-### `app` (aprentix.es — estudio + API de contenidos)
+### `app` (SPA de estudio + API de contenidos)
 
 | Clave                 | Uso                                                                             |
 |-----------------------|---------------------------------------------------------------------------------|
 | `JWT_SECRET`          | Igual que el de `core` (el backend de teoría verifica los JWT).                 |
-| `DOMINIO_LANDING`     | Host principal (por defecto `aprentix.es`).                                     |
-| `DOMINIO_LANDING_ALT` | Host alternativo (por defecto `www.aprentix.es`).                               |
-| `DOMINIO_WEB`         | Host legacy redirigido a `aprentix.es/estudio/` (por defecto `test.aprentix.es`). |
-| `DOMINIO_WEB_ALT`     | Host legacy alternativo (por defecto `www.test.aprentix.es`).                   |
-| `DOMINIO_TEORIA`      | Host legacy redirigido a `aprentix.es/estudio/` (por defecto `teoria.aprentix.es`). |
-| `DOMINIO_TEORIA_ALT`  | Host legacy alternativo (por defecto `www.teoria.aprentix.es`).                 |
+| `DOMINIO_LANDING`     | **Obligatorio.** Host de la SPA para este despliegue. Prod → `aprentix.es`; rama de desarrollo → `desa.aprentix.es`. |
+| `DOMINIO_LANDING_ALT` | Alias opcional (típicamente `www.<host principal>`). Si se deja vacío, cae al mismo valor que `DOMINIO_LANDING`. |
+| `DOMINIO_WEB`         | Host legacy opcional redirigido a `${DOMINIO_LANDING}`. Sin valor → placeholder `.invalid` inerte (recomendado en dev/preview). |
+| `DOMINIO_WEB_ALT`     | Alias opcional del legacy anterior.                                             |
+| `DOMINIO_TEORIA`      | Host legacy opcional redirigido a `${DOMINIO_LANDING}`. Sin valor → placeholder `.invalid` inerte. |
+| `DOMINIO_TEORIA_ALT`  | Alias opcional del legacy anterior.                                             |
+
+> **Un stack por dominio.** Para tener a la vez la app de producción en
+> `aprentix.es` y la de la rama de desarrollo en `desa.aprentix.es`, crea
+> DOS Compose Applications en Dokploy (una por rama) con distintos valores
+> de `DOMINIO_LANDING`. Ambas comparten el mismo Traefik y `core`; los
+> hosts legacy (`test.*`, `teoria.*`) sólo se declaran en el stack de
+> producción para que el de dev no intente registrarlos también.
 
 > **Importante:** `JWT_SECRET` aparece en `core` y `app`; los dos deben
 > tener EXACTAMENTE el mismo valor, si no, las cookies emitidas por

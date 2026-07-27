@@ -52,18 +52,27 @@
   }
 
   function html(strings, ...values) {
-    // Template helper: escapa valores por defecto salvo que sean HTMLElements.
+    // Template helper: escapa valores por defecto. Reconoce como HTML "en
+    // crudo" tanto los marcadores devueltos por raw() como los resultados
+    // de otro html`` anidado (String objeto con __raw = true), para que un
+    // `${x ? html`<i>…</i>` : ''}` no salga escapado a texto plano.
     let out = '';
     strings.forEach((s, i) => {
       out += s;
       if (i < values.length) {
         const v = values[i];
-        out += (v && v.__raw) ? v.value : esc(v);
+        if (v && v.__raw) {
+          out += (v.value !== undefined) ? v.value : String(v);
+        } else {
+          out += esc(v);
+        }
       }
     });
-    return out;
+    const result = new String(out);
+    result.__raw = true;
+    return result;
   }
-  const raw = (v) => ({ __raw: true, value: String(v ?? '') });
+  const raw = (v) => ({ __raw: true, value: (v && v.__raw) ? String(v) : String(v ?? '') });
 
   function parseHash() {
     const h = location.hash.replace(/^#/, '') || '/';
@@ -500,24 +509,24 @@
           ? '¿A qué oposición te presentas? Puedes cambiarla o añadir más desde tu cuenta.'
           : 'Selecciona cualquier oposición del catálogo para sumarla a tu plan.'}
       </p>
-      ${list.length === 0
+      ${raw(list.length === 0
         ? '<div class="empty">Aún no hay oposiciones publicadas.</div>'
         : html`
           <div class="op-grid">
             ${raw(list.map(o => html`
               <button class="op-tile ${misIds.has(o.id) ? 'selected' : ''}"
                       type="button" data-opid="${o.id}"
-                      ${misIds.has(o.id) ? 'aria-current="true"' : ''}>
+                      ${raw(misIds.has(o.id) ? 'aria-current="true"' : '')}>
                 <span class="ico">📚</span>
                 <strong>${o.nombre}</strong>
-                ${o.descripcion ? html`<div class="desc">${o.descripcion}</div>` : ''}
-                ${misIds.has(o.id) ? '<div class="desc" style="margin-top:.4rem"><em>✓ Ya la tienes</em></div>' : ''}
+                ${raw(o.descripcion ? html`<div class="desc">${o.descripcion}</div>` : '')}
+                ${raw(misIds.has(o.id) ? '<div class="desc" style="margin-top:.4rem"><em>✓ Ya la tienes</em></div>' : '')}
               </button>
             `).join(''))}
-          </div>`}
-      ${mias.length > 0
+          </div>`)}
+      ${raw(mias.length > 0
         ? '<div style="margin-top:1rem"><button class="btn" id="btn-volver">← Volver al inicio</button></div>'
-        : ''}
+        : '')}
     `;
     root.querySelectorAll('[data-opid]').forEach(b => {
       b.onclick = async () => {
@@ -878,21 +887,21 @@
 
         <div class="panel-card">
           <h3 class="card-title"><span class="ico">📚</span> Mis oposiciones</h3>
-          ${mias.length
+          ${raw(mias.length
             ? html`
               <div class="form-grid">
                 ${raw(mias.map(o => html`
                   <div class="sesion-row" data-op-mine="${o.id}">
                     <div class="grow">
                       <div><strong>${o.nombre}</strong></div>
-                      ${o.descripcion ? html`<div class="small">${o.descripcion}</div>` : ''}
+                      ${raw(o.descripcion ? html`<div class="small">${o.descripcion}</div>` : '')}
                     </div>
                     <button class="btn btn-sm" data-act="ir">Ir</button>
                     <button class="btn btn-sm" data-act="quitar">Quitar</button>
                   </div>
                 `).join(''))}
               </div>`
-            : '<p class="card-subtitle">Aún no te has apuntado a ninguna oposición.</p>'}
+            : '<p class="card-subtitle">Aún no te has apuntado a ninguna oposición.</p>')}
           <div class="form-row" style="margin-top:.75rem">
             <button class="btn btn-pri btn-sm" id="btn-add-op">➕ Añadir oposición</button>
           </div>
@@ -927,9 +936,9 @@
                 <div>Emitida: ${new Date(s.emitida_en).toLocaleString()}</div>
                 <div class="small">Expira: ${new Date(s.expira_en).toLocaleDateString()}</div>
               </div>
-              ${s.actual
+              ${raw(s.actual
                 ? '<span class="badge-actual">Esta sesión</span>'
-                : `<button class="btn btn-sm" data-jti="${s.jti}">Revocar</button>`}
+                : `<button class="btn btn-sm" data-jti="${esc(s.jti)}">Revocar</button>`)}
             </div>
           `).join(''))}
           <div class="form-row" style="margin-top:.75rem">
@@ -1115,9 +1124,9 @@
           <div style="display:flex; align-items:baseline; gap:.5rem; flex-wrap:wrap">
             <strong>${u.nombre_visible}</strong>
             <span class="muted small">${u.email}</span>
-            ${u.email_verificado ? '<span style="color:#4a8f2a">✓</span>' : '<span style="color:#b83a3a">sin verificar</span>'}
-            ${u.totp_activo ? '<span class="seccion-badge">2FA</span>' : ''}
-            ${!u.activo ? '<span class="seccion-badge" style="background:#b83a3a;color:white">DESACTIVADO</span>' : ''}
+            ${raw(u.email_verificado ? '<span style="color:#4a8f2a">✓</span>' : '<span style="color:#b83a3a">sin verificar</span>')}
+            ${raw(u.totp_activo ? '<span class="seccion-badge">2FA</span>' : '')}
+            ${raw(!u.activo ? '<span class="seccion-badge" style="background:#b83a3a;color:white">DESACTIVADO</span>' : '')}
           </div>
           <div class="muted small" style="margin-top:.3rem">
             Último login: ${u.ultimo_login_en || '—'} · Sesiones activas: ${u.sesiones_activas} ·
@@ -1209,7 +1218,7 @@
           </div>
         </div>
       `).join(''))}
-      ${(rs.items || []).length === 0 ? '<div class="empty">No hay duplicados pendientes.</div>' : ''}
+      ${raw((rs.items || []).length === 0 ? '<div class="empty">No hay duplicados pendientes.</div>' : '')}
     `;
 
     root.querySelectorAll('.tema-card[data-a]').forEach(card => {
@@ -1279,15 +1288,15 @@
         <button class="btn btn-pri btn-sm" id="btn-crear-op">➕ Nueva oposición</button>
       </div>
 
-      ${oposiciones.length === 0
+      ${raw(oposiciones.length === 0
         ? '<div class="empty">Aún no hay oposiciones creadas.</div>'
-        : raw(oposiciones.map(o => html`
+        : oposiciones.map(o => html`
           <div class="list-item" data-opid="${o.id}">
             <div class="li-body">
-              <div class="li-title">${o.nombre} ${!o.activa ? '<span class="kv-badge warn">inactiva</span>' : ''}</div>
+              <div class="li-title">${o.nombre} ${raw(!o.activa ? '<span class="kv-badge warn">inactiva</span>' : '')}</div>
               <div class="li-meta">
                 ${o.n_temas} tema(s) · ${o.n_alumnos} alumn@s
-                ${o.descripcion ? html` · ${o.descripcion}` : ''}
+                ${raw(o.descripcion ? html` · ${o.descripcion}` : '')}
               </div>
             </div>
             <div class="li-actions">
@@ -1400,9 +1409,9 @@
         <button class="btn btn-pri btn-sm" id="btn-nuevo-tema">➕ Nuevo tema</button>
       </div>
 
-      ${temasOp.length === 0
+      ${raw(temasOp.length === 0
         ? '<div class="empty">Esta oposición aún no tiene temas.</div>'
-        : raw(temasOp.map(t => html`
+        : temasOp.map(t => html`
           <div class="list-item" data-tid="${t.id}">
             <div class="li-body">
               <div class="li-title">${t.orden ?? '·'}. ${t.nombre}</div>
@@ -1547,13 +1556,13 @@
         <button class="btn btn-pri btn-sm" id="btn-nuevo-mod">➕ Nuevo módulo</button>
       </div>
 
-      ${modulos.length === 0
+      ${raw(modulos.length === 0
         ? '<div class="empty">Este tema aún no tiene módulos.</div>'
-        : raw(modulos.map(m => html`
+        : modulos.map(m => html`
           <div class="list-item" data-mid="${m.id}">
             <div class="li-body">
               <div class="li-title">${m.orden}. ${m.nombre}
-                ${m.es_unico ? '<span class="chip-modulo">único</span>' : ''}</div>
+                ${raw(m.es_unico ? '<span class="chip-modulo">único</span>' : '')}</div>
               <div class="li-meta">${m.n_secciones} sección(es) · ${m.n_preguntas} pregunta(s)</div>
             </div>
             <div class="li-actions">
@@ -1656,13 +1665,13 @@
         <h3 style="margin:0; flex:1">Secciones</h3>
         <button class="btn btn-pri btn-sm" id="btn-nueva-sec">➕ Nueva sección</button>
       </div>
-      ${secciones.length === 0
+      ${raw(secciones.length === 0
         ? '<div class="empty">Este módulo aún no tiene secciones.</div>'
-        : raw(secciones.map(s => html`
+        : secciones.map(s => html`
           <div class="list-item" data-sid="${s.id}">
             <div class="li-body">
               <div class="li-title">${s.orden}. ${s.nombre}
-                ${s.tiene_teoria ? '<span class="kv-badge ok">teoría</span>' : ''}
+                ${raw(s.tiene_teoria ? '<span class="kv-badge ok">teoría</span>' : '')}
               </div>
               <div class="li-meta">
                 ${s.n_preguntas} pregunta(s) · aprobado ≥ ${s.min_aprobado}% · test ${s.n_preg_test} preg
@@ -1809,9 +1818,9 @@
           </div>
           <div class="form-err" hidden></div>
           <div class="form-row" style="justify-content:flex-end">
-            ${docTeoria
+            ${raw(docTeoria
               ? '<button class="btn btn-danger-outline btn-sm" type="button" id="btn-quitar-teoria">Quitar vínculo</button>'
-              : ''}
+              : '')}
             <button class="btn btn-pri btn-sm" type="submit">Guardar teoría</button>
           </div>
         </form>
@@ -1822,9 +1831,9 @@
         <button class="btn btn-pri btn-sm" id="btn-nueva-preg">➕ Nueva pregunta</button>
       </div>
 
-      ${preguntas.length === 0
+      ${raw(preguntas.length === 0
         ? '<div class="empty">Aún no hay preguntas en esta sección.</div>'
-        : raw(preguntas.map(p => html`
+        : preguntas.map(p => html`
           <div class="list-item" data-pid="${p.id}" style="cursor:default">
             <div class="li-body">
               <div class="li-title" style="white-space:pre-wrap">${p.enunciado}</div>

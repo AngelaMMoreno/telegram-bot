@@ -30,31 +30,40 @@ services:
     labels:
       - "traefik.enable=true"
 
-      # ── Router principal: aprentix.es / www.aprentix.es ───────────
-      - "traefik.http.routers.app.rule=Host(`${DOMINIO_LANDING:-aprentix.es}`) || Host(`${DOMINIO_LANDING_ALT:-www.aprentix.es}`)"
+      # ── Router principal: dominio(s) donde vive la SPA ────────────
+      # `DOMINIO_LANDING` es OBLIGATORIO y no tiene default: así cada
+      # rama (prod → aprentix.es, dev → desa.aprentix.es, etc.) puede
+      # desplegarse contra un host distinto sin colisionar con la otra.
+      # `DOMINIO_LANDING_ALT` es opcional; si no se define, cae al mismo
+      # valor que el principal (regla duplicada e inofensiva).
+      - "traefik.http.routers.app.rule=Host(`${DOMINIO_LANDING:?DOMINIO_LANDING requerido (p.ej. aprentix.es o desa.aprentix.es)}`) || Host(`${DOMINIO_LANDING_ALT:-${DOMINIO_LANDING}}`)"
       - "traefik.http.routers.app.entrypoints=websecure"
       - "traefik.http.routers.app.tls=true"
       - "traefik.http.routers.app.tls.certresolver=letsencrypt"
       - "traefik.http.services.app.loadbalancer.server.port=80"
 
       # ── Redirect legacy: test.aprentix.es → aplicación remodelada ─
-      - "traefik.http.routers.web-legacy.rule=Host(`${DOMINIO_WEB:-test.aprentix.es}`) || Host(`${DOMINIO_WEB_ALT:-www.test.aprentix.es}`)"
+      # Los hosts legacy sólo se dan de alta si TÚ pones un valor real;
+      # los defaults son `.invalid` (TLD reservada que nunca resuelve)
+      # para que en despliegues nuevos —típicamente `desa.aprentix.es`—
+      # no se pise el `test.aprentix.es` del despliegue de producción.
+      - "traefik.http.routers.web-legacy.rule=Host(`${DOMINIO_WEB:-legacy-web-desactivado.invalid}`) || Host(`${DOMINIO_WEB_ALT:-legacy-web-alt-desactivado.invalid}`)"
       - "traefik.http.routers.web-legacy.entrypoints=websecure"
       - "traefik.http.routers.web-legacy.tls=true"
       - "traefik.http.routers.web-legacy.tls.certresolver=letsencrypt"
       - "traefik.http.routers.web-legacy.middlewares=web-legacy-redirect"
       - "traefik.http.middlewares.web-legacy-redirect.redirectregex.regex=^https?://[^/]+/(.*)"
-      - "traefik.http.middlewares.web-legacy-redirect.redirectregex.replacement=https://${DOMINIO_LANDING:-aprentix.es}/"
+      - "traefik.http.middlewares.web-legacy-redirect.redirectregex.replacement=https://${DOMINIO_LANDING}/"
       - "traefik.http.middlewares.web-legacy-redirect.redirectregex.permanent=true"
 
       # ── Redirect legacy: teoria.aprentix.es → aplicación remodelada
-      - "traefik.http.routers.teoria-legacy.rule=Host(`${DOMINIO_TEORIA:-teoria.aprentix.es}`) || Host(`${DOMINIO_TEORIA_ALT:-www.teoria.aprentix.es}`)"
+      - "traefik.http.routers.teoria-legacy.rule=Host(`${DOMINIO_TEORIA:-legacy-teoria-desactivado.invalid}`) || Host(`${DOMINIO_TEORIA_ALT:-legacy-teoria-alt-desactivado.invalid}`)"
       - "traefik.http.routers.teoria-legacy.entrypoints=websecure"
       - "traefik.http.routers.teoria-legacy.tls=true"
       - "traefik.http.routers.teoria-legacy.tls.certresolver=letsencrypt"
       - "traefik.http.routers.teoria-legacy.middlewares=teoria-legacy-redirect"
       - "traefik.http.middlewares.teoria-legacy-redirect.redirectregex.regex=^https?://[^/]+/(.*)"
-      - "traefik.http.middlewares.teoria-legacy-redirect.redirectregex.replacement=https://${DOMINIO_LANDING:-aprentix.es}/"
+      - "traefik.http.middlewares.teoria-legacy-redirect.redirectregex.replacement=https://${DOMINIO_LANDING}/"
       - "traefik.http.middlewares.teoria-legacy-redirect.redirectregex.permanent=true"
 
 networks:

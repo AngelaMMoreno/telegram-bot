@@ -629,10 +629,16 @@ body.sheet-open { overflow: hidden; }
 
 /* =========================================================================
  * REDISEÑO — layout nuevo de la cabecera (`/estudio/`).
- * Sustituye al brand + tabs Tests/Teoría de las apps viejas por:
- *   .hdr-left    → <xp-ring>
- *   .hdr-center  → <streak-flame>
- *   .hdr-right   → botón avatar (abre sheet de cuenta)
+ *
+ * Tres zonas fijas, siempre visibles: [nivel + XP] · [racha] · [avatar].
+ * Cada métrica va en su propio "chip" (pastilla) para que respire y para
+ * que se lea igual en móvil que en desktop. El anillo del nivel ya es la
+ * barra de progreso visual, así que aquí NO duplicamos la barra plana
+ * que había antes.
+ *
+ * Móvil (<640 px): las chips reducen padding y ocultan textos secundarios
+ * (subtítulos como "Nivel", "de X XP" o "días"). En pantallas
+ * ≤380 px la chip de nivel se contrae al mínimo (sólo el anillo).
  * ========================================================================= */
 
 .topbar .hdr-left,
@@ -640,42 +646,124 @@ body.sheet-open { overflow: hidden; }
 .topbar .hdr-right {
   display: flex; align-items: center;
 }
-.topbar .hdr-left    { justify-content: flex-start; }
-.topbar .hdr-center  { flex: 1; justify-content: center; }
-.topbar .hdr-right   { justify-content: flex-end; }
+.topbar .hdr-left    { justify-content: flex-start; min-width: 0; }
+.topbar .hdr-center  { flex: 1; justify-content: center; min-width: 0; }
+.topbar .hdr-right   { justify-content: flex-end; flex: 0 0 auto; }
 
-/* XP ring: contenedor mínimo — el SVG ya trae su tamaño y transición. */
-xp-ring { display: inline-flex; align-items: center; }
-.metric-copy,
-.xp-resumen { display: flex; flex-direction: column; }
-.metric-copy { margin-left: .45rem; line-height: 1.05; }
-.metric-copy small,
-.xp-resumen small,
-.flame-copy small { color: var(--txt-soft); font-size: .68rem; font-weight: 700; }
-.metric-copy strong { font-size: 1.05rem; }
-.xp-resumen { width: min(210px, 30vw); line-height: 1.1; }
-.xp-resumen strong { font-size: .9rem; }
-.xp-resumen i {
-  height: 5px; margin-top: 5px; overflow: hidden;
-  border-radius: 999px; background: var(--border);
-}
-.xp-resumen i span { display: block; width: 0; height: 100%; background: var(--pri); transition: width .4s ease; }
-
-/* Fueguito de racha. */
-streak-flame { display: inline-flex; align-items: center; }
-.flame {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 12px;
+/* Chip genérico de la topbar: superficie glass + halo suave.
+ * Mismo tamaño visual para nivel y racha → lectura tranquila. */
+.hdr-chip {
+  display: inline-flex; align-items: center; gap: .55rem;
+  padding: 4px 12px 4px 4px;
   border-radius: 999px;
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
-  font-weight: 700; font-size: .95em;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .05);
+  min-width: 0;
+  max-width: 100%;
+  line-height: 1.05;
 }
-.flame.on  { color: var(--coral-d, #b0432b); }
-.flame.off { color: var(--muted); opacity: .7; }
-.flame .flame-emoji { font-size: 1.1em; line-height: 1; }
-.flame .flame-days  { min-width: 1ch; text-align: center; }
+[data-theme="dark"] .hdr-chip { box-shadow: 0 1px 6px rgba(0, 0, 0, .35); }
+
+/* Chip de nivel: anillo con el número dentro + XP total al lado.
+ * En móviles muy estrechos escondemos el subtítulo "Nivel" y el
+ * "de N XP" del siguiente umbral para que el chip no invada el
+ * centro. */
+xp-ring { display: inline-flex; align-items: center; flex: 0 0 auto; }
+.level-chip .level-meta {
+  display: flex; flex-direction: column; min-width: 0;
+}
+.level-chip .level-meta small {
+  font-size: .7rem; font-weight: 600;
+  color: var(--txt-soft);
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+.level-chip .level-meta small strong {
+  color: var(--txt); font-weight: 800;
+}
+.level-chip .level-meta b {
+  font-size: .95rem; font-weight: 800;
+  color: var(--pri-d, var(--pri));
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+[data-theme="dark"] .level-chip .level-meta b { color: var(--pri); }
+.level-chip .level-meta b .of {
+  color: var(--txt-soft);
+  font-weight: 500;
+  font-size: .78rem;
+}
+
+@media (max-width: 640px) {
+  .level-chip { padding-right: 10px; }
+  .level-chip .level-meta small { display: none; }
+  .level-chip .level-meta b .of { display: none; }
+  .level-chip .level-meta b { font-size: .82rem; }
+}
+@media (max-width: 380px) {
+  .level-chip { padding: 3px; gap: 0; }
+  .level-chip .level-meta { display: none; }
+}
+
+/* Fueguito de racha — misma "cáscara" que el chip de nivel. */
+streak-flame { display: inline-flex; align-items: center; max-width: 100%; }
+.flame {
+  display: inline-flex; align-items: center; gap: .5rem;
+  padding: 4px 14px;
+  border-radius: 999px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .05);
+  font-weight: 700;
+  line-height: 1.05;
+  transition: background .2s ease, border-color .2s ease, transform .15s ease;
+}
+[data-theme="dark"] .flame { box-shadow: 0 1px 6px rgba(0, 0, 0, .35); }
+
+.flame .flame-emoji { font-size: 1.25rem; line-height: 1; filter: saturate(1.15); }
+.flame .flame-days  { min-width: 1ch; text-align: center; font-size: 1.05rem; font-weight: 800; }
 .flame-copy { display: flex; flex-direction: column; line-height: 1; }
+.flame-copy small {
+  font-size: .66rem; font-weight: 700; color: var(--txt-soft);
+  letter-spacing: .04em; text-transform: uppercase;
+}
+
+/* Activa: gradiente cálido tipo llama + halo. */
+.flame.on {
+  background: linear-gradient(135deg, var(--coral-soft, #ffe0dc) 0%, var(--accent-soft) 100%);
+  border-color: var(--coral, #ea7a63);
+  color: var(--coral-d, #b0432b);
+  box-shadow:
+    0 2px 10px rgba(234, 122, 99, .28),
+    0 0 0 3px rgba(234, 122, 99, .08);
+  animation: flame-pulse 2.4s ease-in-out infinite;
+}
+.flame.on .flame-copy small { color: var(--coral-d, #b0432b); opacity: .85; }
+[data-theme="dark"] .flame.on {
+  background: linear-gradient(135deg, rgba(234, 122, 99, .22), rgba(244, 183, 64, .18));
+  color: #ffd8cc;
+}
+[data-theme="dark"] .flame.on .flame-copy small { color: #ffd8cc; }
+
+/* Apagada: chip discreto. */
+.flame.off { color: var(--txt-soft); opacity: .8; }
+.flame.off .flame-emoji { filter: grayscale(1); opacity: .6; }
+
+@keyframes flame-pulse {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-1px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flame.on { animation: none; }
+}
+
+@media (max-width: 640px) {
+  .flame { padding: 4px 11px; gap: .35rem; }
+  .flame .flame-emoji { font-size: 1.15rem; }
+  .flame .flame-days { font-size: .95rem; }
+  .flame-copy small { display: none; }
+}
 
 /* Botón avatar (versión rediseñada — sólo la inicial). */
 .topbar .user-btn {
@@ -684,9 +772,14 @@ streak-flame { display: inline-flex; align-items: center; }
   border-radius: 999px;
   padding: 3px;
   cursor: pointer;
-  transition: background .12s ease, transform .12s ease;
+  transition: background .12s ease, transform .12s ease, box-shadow .12s ease;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .05);
 }
-.topbar .user-btn:hover { background: var(--accent-soft); transform: translateY(-1px); }
+.topbar .user-btn:hover {
+  background: var(--accent-soft);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 12px rgba(107, 142, 35, .22);
+}
 .topbar .user-btn .avatar {
   display: inline-flex; align-items: center; justify-content: center;
   width: 34px; height: 34px;
@@ -697,13 +790,8 @@ streak-flame { display: inline-flex; align-items: center; }
 }
 .topbar .user-btn .user-name { display: none; }
 
-/* En la Home nueva no queremos overshoot de padding en desktop. */
+/* Escritorio: más aire entre chips, sin cambiar su tamaño. */
 @media (min-width: 900px) {
   .topbar { padding: 0 2rem; gap: 1.5rem; }
-  .topbar .hdr-center { justify-content: flex-start; gap: 1.5rem; }
-  .topbar .hdr-left { min-width: 150px; }
-}
-@media (max-width: 520px) {
-  .xp-resumen { width: 120px; }
-  .metric-copy small { display: none; }
+  .topbar .hdr-center { justify-content: center; }
 }
