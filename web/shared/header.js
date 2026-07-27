@@ -235,9 +235,14 @@
         const jwtAdmin   = !!(u && Array.isArray(u.roles) && u.roles.includes('admin'));
         const freshAdmin = this._freshAdmin === true;
         const esAdmin = jwtAdmin || freshAdmin;
-        $('#btn-admin-panel').hidden = !esAdmin;
+        const bp = $('#btn-admin-panel');
         const cont = $('#btn-admin-contenido');
+        if (bp)   bp.hidden = !esAdmin;
         if (cont) cont.hidden = !esAdmin;
+        console.debug('[aprentix-header] applyAdmin', {
+          jwtAdmin, freshAdmin, esAdmin,
+          rolesJwt: u?.roles || [],
+        });
       };
       this._applyAdmin = applyAdmin;
       applyAdmin();
@@ -298,8 +303,11 @@
         // el rol admin). Si los roles frescos difieren del JWT, actualizamos
         // la visibilidad del panel admin sin esperar a que caduque el token.
         this._freshAdmin = roles.includes('admin');
+        console.debug('[aprentix-header] roles frescos de mi_cuenta:', roles);
         if (typeof this._applyAdmin === 'function') this._applyAdmin();
-      } catch (_) { /* silencioso */ }
+      } catch (e) {
+        console.warn('[aprentix-header] mi_cuenta falló:', e.message);
+      }
     }
   }
 
