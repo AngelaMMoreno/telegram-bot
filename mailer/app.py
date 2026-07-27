@@ -119,12 +119,16 @@ Si no fuiste tú, ignora este correo.</p>
 
 
 def _construir_url(web_url_base: str, tipo: str, token: str) -> str:
+    # La SPA usa hash-routing: /#/verify?token=…  Sin el `#` el navegador
+    # entra a /verify?token=…, el bootstrap no ve `location.hash` y redirige
+    # a #/login descartando el token, por lo que la RPC verificar_email nunca
+    # llega a ejecutarse y el usuario ve "email no verificado" al entrar.
     base = (web_url_base or "").rstrip("/")
     path = {
-        "verificar_email": "/verify",
-        "reset_password":  "/reset",
+        "verificar_email": "#/verify",
+        "reset_password":  "#/reset",
     }[tipo]
-    return f"{base}{path}?token={token}"
+    return f"{base}/{path}?token={token}"
 
 
 # ── Envío SMTP ─────────────────────────────────────────────────────────────

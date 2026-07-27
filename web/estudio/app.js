@@ -226,8 +226,8 @@
     try {
       await S.verificarEmail(token);
       root.innerHTML = _authCardHtml(
-        'Email verificado ✓',
-        `<p class="info" style="display:block">¡Perfecto! Tu correo ha sido confirmado.
+        'Cuenta confirmada correctamente',
+        `<p class="info" style="display:block">Tu correo ha quedado verificado.
          Ya puedes iniciar sesión con tu contraseña.</p>
          <button class="btn btn-primary" id="btn-goto-login" style="width:100%">Iniciar sesión</button>`
       );
@@ -964,6 +964,15 @@
     // "?" en el avatar mientras rehidrata: se reactiva en _render() según
     // la ruta y el estado de sesión.
     setHeaderVisible(false);
+
+    // Enlaces de email que llegan sin `#` (correos antiguos o clientes que
+    // reescriben el fragmento): /verify?token=… → /#/verify?token=…, para no
+    // perder el token en el bootstrap.
+    if (!location.hash && ['/verify', '/reset'].includes(location.pathname)) {
+      location.replace('/#' + location.pathname + location.search);
+      return;
+    }
+
     // Rehidratación silenciosa: si hay refresh, obtiene un access nuevo.
     await S.bootstrap();
     if (!location.hash) {
