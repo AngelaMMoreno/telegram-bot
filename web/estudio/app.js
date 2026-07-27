@@ -11,6 +11,7 @@
  *   #/seccion/:id/teoria           Render markdown + CTA "hacer test".
  *   #/seccion/:id/test             Flujo test (10 preguntas).
  *   #/repaso/:oposicion_id         40 preguntas repaso global.
+ *   #/plan                          Planificador personal de estudio.
  *   #/tablon/:oposicion_id         Enlaces útiles.
  *   #/estadisticas                 Placeholder.
  *   #/mi-cuenta                    Datos, cambiar pass, sesiones activas.
@@ -182,6 +183,7 @@
     { re: /^\/repaso\/([0-9a-f-]+)$/,        view: viewRepaso },
     { re: /^\/tablon\/([0-9a-f-]+)$/,        view: viewTablon },
     { re: /^\/estadisticas$/,                view: viewEstadisticas },
+    { re: /^\/plan$/,                        view: viewPlan },
     { re: /^\/logros$/,                      view: viewLogrosRetos },
     { re: /^\/mi-cuenta$/,                   view: viewMiCuenta },
     { re: /^\/elegir-oposicion$/,            view: viewElegirOposicion },
@@ -3738,6 +3740,48 @@
   }
 
 
+  // ── Vista: plan de estudio ─────────────────────────────────────────
+  // Primera base visual del planificador. La generación se conectará al
+  // backend cuando exista; mientras tanto explicamos qué datos solicitará
+  // sin guardar respuestas ni prometer un calendario que aún no se genera.
+  async function viewPlan() {
+    root.innerHTML = html`
+      <header class="plan-cabecera">
+        <span class="plan-cabecera-icono" aria-hidden="true">📅</span>
+        <div>
+          <span class="kv-badge">Próximamente</span>
+          <h1>Tu plan de estudio</h1>
+          <p>Un calendario personal para avanzar en tu oposición con constancia y sin agobios.</p>
+        </div>
+      </header>
+
+      <section class="panel-card plan-presentacion">
+        <h2 class="card-title">Un plan adaptado a tu día a día</h2>
+        <p>Te haremos unas preguntas breves y distribuiremos el temario en sesiones realistas.</p>
+        <div class="plan-pasos" aria-label="Cómo se creará tu plan">
+          <div><span aria-hidden="true">⏱️</span><strong>Tu tiempo</strong><small>Horas disponibles cada día</small></div>
+          <div><span aria-hidden="true">🎯</span><strong>Tu objetivo</strong><small>Fecha y ritmo de preparación</small></div>
+          <div><span aria-hidden="true">🌱</span><strong>Tu progreso</strong><small>Temas estudiados y descansos</small></div>
+        </div>
+      </section>
+
+      <section class="panel-card plan-vista-previa">
+        <div>
+          <h2 class="card-title">Aquí verás tu calendario</h2>
+          <p class="card-subtitle">Cada día mostrará la lección o el repaso que te toca. También podrás generar un plan nuevo cuando cambie tu disponibilidad.</p>
+        </div>
+        <div class="plan-semana" aria-hidden="true">
+          <span>L<em></em></span><span>M<em></em></span><span>X<em></em></span>
+          <span>J<em></em></span><span>V<em></em></span><span>S<em></em></span><span>D<em></em></span>
+        </div>
+      </section>
+
+      <button class="btn btn-primary plan-accion" type="button" disabled>
+        Crear mi plan · Disponible próximamente
+      </button>`;
+  }
+
+
   // ── Vista: estadísticas (placeholder) ──────────────────────────────
   async function viewEstadisticas() {
     root.innerHTML = html`
@@ -3754,6 +3798,7 @@
   window.addEventListener('aprentix:nav', (e) => {
     const id = e.detail?.id;
     if (id === 'home')                navigate('#/');
+    if (id === 'plan')                navigate('#/plan');
     if (id === 'estadisticas')        navigate('#/estadisticas');
     if (id === 'logros')              navigate('#/logros');
     if (id === 'cambiar-oposicion')   _abrirSelectorOposicion();
@@ -3776,6 +3821,7 @@
     if (!el) return;
     const v = el.dataset.view;
     if (v === 'home')             navigate('#/');
+    if (v === 'plan')             navigate('#/plan');
     if (v === 'estadisticas')     navigate('#/estadisticas');
     if (v === 'mi-cuenta')        navigate('#/mi-cuenta');
     if (v === 'admin-usuarios')   navigate('#/admin/usuarios');
