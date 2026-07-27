@@ -29,6 +29,15 @@
 
   const root = document.getElementById('root');
   const toast = document.getElementById('toast');
+  const appHeader = document.getElementById('app-header');
+
+  // Vistas "públicas" que se pintan sin cabecera (login, reset, verify): la
+  // XP, la racha y el avatar sólo tienen sentido con sesión iniciada.
+  function setHeaderVisible(visible) {
+    if (!appHeader) return;
+    appHeader.hidden = !visible;
+    document.body.classList.toggle('no-header', !visible);
+  }
 
   // ── Utilidades ─────────────────────────────────────────────────────
 
@@ -129,6 +138,12 @@
     // Rutas privadas: si no hay sesión, al login.
     if (!route.pub && !S.getUser()) { navigate('#/login'); return; }
 
+    // La cabecera con XP/racha/avatar sólo aparece cuando hay sesión y
+    // no estamos en una vista pública de auth. En login/reset/verify la
+    // ocultamos para dejar todo el foco en el formulario.
+    const publicView = ['/login', '/reset', '/verify'].includes(path);
+    setHeaderVisible(!!S.getUser() && !publicView);
+
     const m = path.match(route.re) || [];
     try {
       await route.view(m.slice(1), params);
@@ -141,88 +156,61 @@
 
 
   // ── Vista: login/registro ──────────────────────────────────────────
-  function viewLogin() {
-    root.innerHTML = html`
-      <div class="view-head"><h2>Aprentix — Estudio</h2></div>
-      <div class="tema-card" style="cursor:default">
-        <div style="display:flex; gap:.5rem; margin-bottom: 1rem">
-          <button class="btn btn-pri" id="tab-login">Iniciar sesión</button>
-          <button class="btn"          id="tab-reg">Crear cuenta</button>
-          <button class="btn"          id="tab-forgot" style="margin-left:auto">¿Olvidaste?</button>
-        </div>
-        <form id="form-login">
-          <input class="input" name="email"    type="email"    placeholder="Email"       required style="width:100%;margin:.3rem 0">
-          <input class="input" name="password" type="password" placeholder="Contraseña"  required style="width:100%;margin:.3rem 0">
-          <input class="input" name="totp"     type="text"     placeholder="Código 2FA (si tienes)" style="width:100%;margin:.3rem 0">
-          <button class="btn btn-pri" style="width:100%;margin-top:.6rem">Entrar</button>
-          <div class="muted small" id="err-login" style="color:#b83a3a;margin-top:.4rem"></div>
-        </form>
-        <form id="form-reg" hidden>
-          <input class="input" name="email"          type="email"    placeholder="Email"           required style="width:100%;margin:.3rem 0">
-          <input class="input" name="nombre_visible" type="text"     placeholder="Nombre a mostrar" required style="width:100%;margin:.3rem 0">
-          <input class="input" name="password"       type="password" placeholder="Contraseña (≥10 chars)" required style="width:100%;margin:.3rem 0">
-          <button class="btn btn-pri" style="width:100%;margin-top:.6rem">Crear cuenta</button>
-          <div class="muted small" id="err-reg" style="color:#b83a3a;margin-top:.4rem"></div>
-        </form>
-        <form id="form-forgot" hidden>
-          <input class="input" name="email" type="email" placeholder="Email" required style="width:100%;margin:.3rem 0">
-          <button class="btn btn-pri" style="width:100%;margin-top:.6rem">Recibir enlace de reset</button>
-          <div class="muted small" id="msg-forgot" style="margin-top:.4rem"></div>
-        </form>
-      </div>
+  // Delegamos toda la UI en <ap-auth-form>, un web component compartido
+  // que ya trae la estética solarpunk (hero con logo, gradientes de marca,
+  // indicador de fortaleza, aviso de coincidencia de email y contraseña).
+  // Aquí sólo cableamos los eventos que emite hacia las RPC de sesión.
+  function viewLogin(_, params) {
+    const initial = params.get('mode') || 'login';
+    root.innerHTML = `
+      <section class="auth-section">
+        <ap-auth-form mode="${esc(initial)}"></ap-auth-form>
+      </section>
     `;
-    const $ = (s) => root.querySelector(s);
-    const show = (id) => {
-      $('#form-login').hidden  = id !== 'login';
-      $('#form-reg').hidden    = id !== 'reg';
-      $('#form-forgot').hidden = id !== 'forgot';
-    };
-    $('#tab-login').onclick  = () => show('login');
-    $('#tab-reg').onclick    = () => show('reg');
-    $('#tab-forgot').onclick = () => show('forgot');
+    const form = root.querySelector('ap-auth-form');
 
-    $('#form-login').onsubmit = async (e) => {
-      e.preventDefault();
-      const f = new FormData(e.target);
+    form.addEventListener('ap-auth-login', async (e) => {
+      const { email, password } = e.detail;
       try {
-        await S.login(f.get('email'), f.get('password'), f.get('totp') || null);
+        await S.login(email, password);
+        form.reset();
         navigate('#/');
       } catch (err) {
-        $('#err-login').textContent = _msgError(err.message);
+        form.showError(_msgError(err.message), 'login');
       }
-    };
-    $('#form-reg').onsubmit = async (e) => {
-      e.preventDefault();
-      const f = new FormData(e.target);
+    });
+
+    form.addEventListener('ap-auth-register', async (e) => {
+      const { email, password, nombre_visible } = e.detail;
       try {
-        const r = await S.registrar(f.get('email'), f.get('password'), f.get('nombre_visible'));
-        showToast(r.mensaje || 'Revisa tu correo para verificar la cuenta.', 5000);
-        show('login');
+        const r = await S.registrar(email, password, nombre_visible);
+        form.showInfo(r.mensaje || 'Cuenta creada. Revisa tu correo para verificarla antes de entrar.', 'register');
+        showToast('Cuenta creada. Revisa tu correo para verificar.', 5000);
+        setTimeout(() => form.setMode('login'), 1500);
       } catch (err) {
-        $('#err-reg').textContent = _msgError(err.message);
+        form.showError(_msgError(err.message), 'register');
       }
-    };
-    $('#form-forgot').onsubmit = async (e) => {
-      e.preventDefault();
-      const f = new FormData(e.target);
+    });
+
+    form.addEventListener('ap-auth-forgot', async (e) => {
+      const { email } = e.detail;
       try {
-        const r = await S.solicitarReset(f.get('email'));
-        $('#msg-forgot').textContent = r.mensaje || 'Si el email existe, recibirás un correo.';
+        const r = await S.solicitarReset(email);
+        form.showInfo(r.mensaje || 'Si el email existe, recibirás un correo con el enlace de reset.', 'forgot');
       } catch (err) {
-        $('#msg-forgot').textContent = _msgError(err.message);
+        form.showError(_msgError(err.message), 'forgot');
       }
-    };
+    });
   }
 
   function _msgError(code) {
     return ({
       credenciales_invalidas: 'Email o contraseña incorrectos.',
       cuenta_bloqueada:       'Cuenta bloqueada temporalmente por intentos fallidos.',
-      totp_requerido:         'Introduce el código 2FA de tu app.',
-      totp_invalido:          'Código 2FA incorrecto.',
       email_no_verificado:    'Tienes que verificar tu email antes de entrar.',
       password_debil:         'La contraseña no cumple la política (≥10 caracteres y 3 de 4 categorías).',
       email_invalido:         'Email inválido.',
+      email_en_uso:           'Ya existe una cuenta con ese email.',
       nombre_visible_invalido:'El nombre debe tener al menos 2 caracteres.',
       token_invalido:         'El enlace ha caducado o ya se usó.',
       no_autenticado:         'Sesión caducada. Vuelve a entrar.',
@@ -232,19 +220,25 @@
 
   // ── Vista: verificar email ─────────────────────────────────────────
   async function viewVerify(_, params) {
-    root.innerHTML = '<div class="loading">Verificando…</div>';
     const token = params.get('token');
-    if (!token) return empty('Enlace inválido.');
+    if (!token) return _authCard('Enlace inválido', 'El token de verificación falta o está mal formado.');
+    root.innerHTML = _authCardHtml('Verificando email', '<p class="tagline">Un momento…</p>');
     try {
       await S.verificarEmail(token);
-      root.innerHTML = html`
-        <div class="resultado-card">
-          <h2>Email verificado ✓</h2>
-          <p>Ya puedes iniciar sesión.</p>
-          <button class="btn btn-pri" onclick="location.hash='#/login'">Entrar</button>
-        </div>`;
+      root.innerHTML = _authCardHtml(
+        'Email verificado ✓',
+        `<p class="info" style="display:block">¡Perfecto! Tu correo ha sido confirmado.
+         Ya puedes iniciar sesión con tu contraseña.</p>
+         <button class="btn btn-primary" id="btn-goto-login" style="width:100%">Iniciar sesión</button>`
+      );
+      root.querySelector('#btn-goto-login').onclick = () => navigate('#/login');
     } catch (e) {
-      empty(_msgError(e.message));
+      root.innerHTML = _authCardHtml(
+        'Enlace no válido',
+        `<p class="err" style="display:block">${esc(_msgError(e.message))}</p>
+         <button class="btn btn-primary" id="btn-goto-login" style="width:100%">Volver al inicio de sesión</button>`
+      );
+      root.querySelector('#btn-goto-login').onclick = () => navigate('#/login');
     }
   }
 
@@ -252,29 +246,84 @@
   // ── Vista: reset password ──────────────────────────────────────────
   async function viewReset(_, params) {
     const token = params.get('token');
-    if (!token) return empty('Enlace inválido.');
-    root.innerHTML = html`
-      <div class="view-head"><h2>Nueva contraseña</h2></div>
-      <div class="tema-card" style="cursor:default">
-        <form id="form-reset">
-          <input class="input" name="nueva" type="password"
-                 placeholder="Nueva contraseña (≥10 chars)" required
-                 style="width:100%;margin:.3rem 0">
-          <button class="btn btn-pri" style="width:100%;margin-top:.6rem">Guardar</button>
-          <div class="muted small" id="err" style="color:#b83a3a;margin-top:.4rem"></div>
-        </form>
-      </div>`;
-    root.querySelector('#form-reset').onsubmit = async (e) => {
+    if (!token) {
+      root.innerHTML = _authCardHtml(
+        'Enlace inválido',
+        `<p class="err" style="display:block">El enlace de recuperación no es válido.</p>
+         <button class="btn btn-primary" id="btn-goto-login" style="width:100%">Volver</button>`
+      );
+      root.querySelector('#btn-goto-login').onclick = () => navigate('#/login');
+      return;
+    }
+    root.innerHTML = _authCardHtml(
+      'Nueva contraseña',
+      `<p class="tagline">Elige una contraseña fuerte (mínimo 10 caracteres).</p>
+       <form id="form-reset" autocomplete="off" novalidate>
+         <label>Nueva contraseña
+           <input id="reset-pass" name="nueva" type="password"
+                  autocomplete="new-password" minlength="10" required>
+         </label>
+         <label>Repite la contraseña
+           <input id="reset-pass2" name="nueva2" type="password"
+                  autocomplete="new-password" minlength="10" required>
+         </label>
+         <p class="pw-match" id="reset-match" hidden></p>
+         <button class="btn btn-primary" type="submit" style="width:100%">Guardar contraseña</button>
+         <p class="err" id="reset-err" hidden></p>
+       </form>`
+    );
+    const $ = (s) => root.querySelector(s);
+    const p1 = $('#reset-pass'), p2 = $('#reset-pass2'), match = $('#reset-match');
+    function refreshMatch() {
+      if (!p2.value) { match.hidden = true; return; }
+      match.hidden = false;
+      if (p1.value === p2.value) {
+        match.textContent = '✓ Las contraseñas coinciden';
+        match.classList.remove('err'); match.classList.add('ok');
+      } else {
+        match.textContent = '✗ No coinciden';
+        match.classList.remove('ok'); match.classList.add('err');
+      }
+    }
+    p1.oninput = refreshMatch;
+    p2.oninput = refreshMatch;
+
+    $('#form-reset').onsubmit = async (e) => {
       e.preventDefault();
-      const nueva = new FormData(e.target).get('nueva');
+      $('#reset-err').hidden = true;
+      if (p1.value !== p2.value) {
+        $('#reset-err').textContent = 'Las contraseñas no coinciden.';
+        $('#reset-err').hidden = false;
+        return;
+      }
       try {
-        await S.resetearPassword(token, nueva);
+        await S.resetearPassword(token, p1.value);
         showToast('Contraseña actualizada. Ya puedes entrar.', 4000);
         navigate('#/login');
       } catch (err) {
-        root.querySelector('#err').textContent = _msgError(err.message);
+        $('#reset-err').textContent = _msgError(err.message);
+        $('#reset-err').hidden = false;
       }
     };
+  }
+
+  // Envoltura común: tarjeta solarpunk sin formulario, útil para pantallas
+  // "de estado" (verificar email, reset OK/KO, enlace inválido…).
+  function _authCardHtml(titulo, cuerpo) {
+    return `
+      <section class="auth-section">
+        <div class="auth-card">
+          <div class="auth-hero">
+            <span class="brand-logo" aria-hidden="true"></span>
+            <h1>Aprentix</h1>
+            <p class="tagline">${esc(titulo)}</p>
+          </div>
+          <div class="auth-panel active">${cuerpo}</div>
+        </div>
+      </section>`;
+  }
+  function _authCard(titulo, mensaje) {
+    root.innerHTML = _authCardHtml(titulo, `<p class="err" style="display:block">${esc(mensaje)}</p>`);
   }
 
 
@@ -911,9 +960,17 @@
   });
 
   (async function main() {
+    // Antes de saber si hay sesión, ocultamos la cabecera para no mostrar
+    // "?" en el avatar mientras rehidrata: se reactiva en _render() según
+    // la ruta y el estado de sesión.
+    setHeaderVisible(false);
     // Rehidratación silenciosa: si hay refresh, obtiene un access nuevo.
     await S.bootstrap();
-    if (!location.hash) location.hash = '#/';
-    else _render();
+    if (!location.hash) {
+      // Sin hash: si hay sesión, home; si no, login.
+      location.hash = S.getUser() ? '#/' : '#/login';
+    } else {
+      _render();
+    }
   })();
 })();

@@ -1,9 +1,9 @@
 {
-  "id": "/estudio/",
+  "id": "/",
   "name": "Aprentix — Tu oposición, a tu ritmo",
   "short_name": "Aprentix",
   "description": "Tests, teoría y repasos personalizados para tu oposición.",
-  "start_url": "/estudio/",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
@@ -33,9 +33,9 @@
   ],
   "shortcuts": [
     {
-      "name": "Abrir estudio",
-      "short_name": "Estudio",
-      "url": "/estudio/",
+      "name": "Abrir Aprentix",
+      "short_name": "Aprentix",
+      "url": "/",
       "icons": [{ "src": "/shared/pwa-icons/icon-any-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ],
