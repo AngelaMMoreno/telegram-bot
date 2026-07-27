@@ -413,15 +413,16 @@
     const op = home.oposicion || {};
     const temas = home.temas || [];
 
+    const admin = _esAdmin();
     root.innerHTML = html`
       <button class="oposicion-picker" id="btn-cambiar-op">
         <span>📚</span>
         <span>${op.nombre || 'Elige una oposición'}</span>
         <span class="caret">▾</span>
       </button>
-      <button class="btn-repasar" id="btn-repasar-op">
-        🔁 Repasar toda la oposición (40 preguntas)
-      </button>
+      ${raw(temas.length > 0
+        ? '<button class="btn-repasar" id="btn-repasar-op">🔁 Repasar toda la oposición (40 preguntas)</button>'
+        : '')}
       ${raw(temas.map(t => html`
         <div class="tema-card" data-tema="${t.id}">
           <div class="tema-head">
@@ -434,14 +435,30 @@
           </div>
         </div>
       `).join(''))}
-      ${raw(temas.length === 0 ? '<div class="empty">Esta oposición aún no tiene temas asignados.</div>' : '')}
+      ${raw(temas.length === 0
+        ? (admin
+            ? html`
+              <div class="empty">
+                <p>Esta oposición aún no tiene temas asignados.</p>
+                <button class="btn btn-pri" id="btn-gestionar-op">
+                  ➕ Añadir temas desde el panel admin
+                </button>
+              </div>`
+            : '<div class="empty">Esta oposición aún no tiene temas asignados.</div>')
+        : '')}
+      ${raw(admin
+        ? '<div class="admin-quick"><a class="btn btn-sm" href="#/admin/contenido">⚙️ Gestión de contenido</a></div>'
+        : '')}
     `;
 
     root.querySelectorAll('.tema-card').forEach(c => {
       c.onclick = () => navigate(`#/tema/${c.dataset.tema}`);
     });
-    root.querySelector('#btn-repasar-op').onclick = () => navigate(`#/repaso/${opId}`);
+    const btnR = root.querySelector('#btn-repasar-op');
+    if (btnR) btnR.onclick = () => navigate(`#/repaso/${opId}`);
     root.querySelector('#btn-cambiar-op').onclick = () => _abrirSelectorOposicion();
+    const btnG = root.querySelector('#btn-gestionar-op');
+    if (btnG) btnG.onclick = () => navigate(`#/admin/contenido/oposicion/${opId}`);
   }
 
   // Devuelve `mis_oposiciones` como un array simple.
@@ -451,34 +468,40 @@
     return Array.isArray(list) ? list : [];
   }
 
-  // Abre el picker "cambiar oposición". Si el usuario está en varias, le
-  // deja escoger; si no tiene más de una, va al selector de alta.
+  // Abre el picker "cambiar oposición". Siempre modal — así el botón
+  // "Añadir otra oposición" queda visible aunque el usuario solo tenga una;
+  // antes le mandábamos directo a #/elegir-oposicion y, si terminaba
+  // apuntándose a la misma que ya tenía, parecía que "no había pasado nada"
+  // (volvía a home sin feedback).
   async function _abrirSelectorOposicion() {
     const list = await _misOposiciones();
-    if (list.length <= 1) {
-      // También puede querer sumar otra oposición.
+    if (list.length === 0) {
       navigate('#/elegir-oposicion');
       return;
     }
+    const actual = getCtx().oposicion_id;
     _mostrarModal({
-      titulo: 'Cambiar oposición',
+      titulo: 'Tus oposiciones',
       contenido: html`
         <div class="form-grid">
           ${raw(list.map(o => html`
-            <button class="op-tile ${getCtx().oposicion_id === o.id ? 'selected' : ''}"
+            <button class="op-tile ${actual === o.id ? 'selected' : ''}"
                     type="button" data-opid="${o.id}">
               <span class="ico">📚</span>
               <strong>${o.nombre}</strong>
+              ${raw(actual === o.id ? '<div class="desc"><em>✓ Activa</em></div>' : '')}
               ${o.descripcion ? html`<div class="desc">${o.descripcion}</div>` : ''}
             </button>
           `).join(''))}
-          <button class="btn" id="btn-add-op" type="button">➕ Añadir otra oposición</button>
+          <button class="btn btn-pri" id="btn-add-op" type="button">➕ Añadir otra oposición</button>
         </div>`,
       onMount(modal) {
         modal.querySelectorAll('[data-opid]').forEach(b => {
           b.onclick = () => {
-            setCtx({ oposicion_id: b.dataset.opid });
+            const nueva = b.dataset.opid;
             _cerrarModal();
+            if (nueva === actual) return;                // sin cambios reales
+            setCtx({ oposicion_id: nueva });
             navigate('#/');
           };
         });
@@ -495,10 +518,25 @@
   async function viewElegirOposicion() {
     loading();
     const disp = await S.rpc('listar_oposiciones_disponibles')
-      .catch(() => []);
+      .catch((e) => {
+        console.error('listar_oposiciones_disponibles falló:', e);
+        return [];
+      });
     const list = Array.isArray(disp) ? disp : [];
     const mias = await _misOposiciones();
     const misIds = new Set(mias.map(o => o.id));
+
+    // Solo pedimos el solapamiento para oposiciones que el usuario NO tiene ya
+    // asignadas. Ninguna de estas llamadas es crítica: si fallan, el tile
+    // sigue apareciendo, solo sin la banda "tienes X% estudiado".
+    const solapadas = new Map();
+    if (mias.length > 0) {
+      await Promise.all(list
+        .filter(o => !misIds.has(o.id))
+        .map(o => S.rpc('sugerir_solapamiento', { p_oposicion_id: o.id })
+          .then(r => { if (r && r.total > 0 && r.pct > 0) solapadas.set(o.id, r); })
+          .catch(() => {})));
+    }
 
     root.innerHTML = html`
       <div class="view-head">
@@ -510,36 +548,86 @@
           : 'Selecciona cualquier oposición del catálogo para sumarla a tu plan.'}
       </p>
       ${raw(list.length === 0
-        ? '<div class="empty">Aún no hay oposiciones publicadas.</div>'
+        ? (_esAdmin()
+            ? html`
+              <div class="empty">
+                <p>Aún no hay oposiciones publicadas.</p>
+                <button class="btn btn-pri" id="btn-goto-admin">➕ Crear la primera oposición</button>
+              </div>`
+            : '<div class="empty">Aún no hay oposiciones publicadas. Vuelve más tarde o pregúntale al admin.</div>')
         : html`
           <div class="op-grid">
-            ${raw(list.map(o => html`
-              <button class="op-tile ${misIds.has(o.id) ? 'selected' : ''}"
+            ${raw(list.map(o => {
+              const yaLaTiene = misIds.has(o.id);
+              const sol = solapadas.get(o.id);
+              return html`
+              <button class="op-tile ${yaLaTiene ? 'selected disabled' : ''}"
                       type="button" data-opid="${o.id}"
-                      ${raw(misIds.has(o.id) ? 'aria-current="true"' : '')}>
+                      data-yatiene="${yaLaTiene ? '1' : ''}"
+                      ${raw(yaLaTiene ? 'aria-current="true"' : '')}>
                 <span class="ico">📚</span>
                 <strong>${o.nombre}</strong>
                 ${raw(o.descripcion ? html`<div class="desc">${o.descripcion}</div>` : '')}
-                ${raw(misIds.has(o.id) ? '<div class="desc" style="margin-top:.4rem"><em>✓ Ya la tienes</em></div>' : '')}
-              </button>
-            `).join(''))}
+                ${raw(yaLaTiene
+                  ? '<div class="desc" style="margin-top:.4rem"><em>✓ Ya la tienes</em></div>'
+                  : (sol
+                      ? html`<div class="desc" style="margin-top:.4rem"><em>Tienes estudiado un ${sol.pct}% del temario. ¡Apúntate!</em></div>`
+                      : ''))}
+              </button>`;
+            }).join(''))}
           </div>`)}
       ${raw(mias.length > 0
         ? '<div style="margin-top:1rem"><button class="btn" id="btn-volver">← Volver al inicio</button></div>'
         : '')}
+      ${raw(_esAdmin()
+        ? '<div class="admin-quick"><a class="btn btn-sm" href="#/admin/contenido">⚙️ Gestión de contenido</a></div>'
+        : '')}
     `;
     root.querySelectorAll('[data-opid]').forEach(b => {
       b.onclick = async () => {
+        if (b.dataset.yatiene) {
+          // Al reclicar una que ya tienes, la fijamos como activa y volvemos
+          // al home sin llamar al RPC. Sin este atajo el flujo se veía como
+          // "click → toast → home" y parecía que no había hecho nada nuevo.
+          setCtx({ oposicion_id: b.dataset.opid });
+          showToast('Esta oposición ya está en tu plan.');
+          navigate('#/');
+          return;
+        }
         try {
           await S.rpc('elegir_oposicion', { p_oposicion_id: b.dataset.opid });
           setCtx({ oposicion_id: b.dataset.opid });
           showToast('¡Oposición añadida!');
           navigate('#/');
-        } catch (e) { showToast(_msgError(e.message)); }
+        } catch (e) {
+          showToast('No se pudo añadir la oposición: ' + _msgError(e.message), 4000);
+        }
       };
     });
     const bv = root.querySelector('#btn-volver');
     if (bv) bv.onclick = () => navigate('#/');
+    const bg = root.querySelector('#btn-goto-admin');
+    if (bg) bg.onclick = () => navigate('#/admin/contenido');
+  }
+
+
+  // Atajo booleano para saber si la sesión actual tiene rol admin. Combina
+  // dos fuentes: el JWT (rápido) y una copia refrescada del rol vía
+  // `mi_cuenta` (que puede diferir del JWT si el admin te añadió el rol
+  // después de que iniciaras sesión). Si en la última carga de `mi_cuenta`
+  // aparecía 'admin', lo tratamos como admin aunque el JWT aún no lo diga.
+  let _lastFreshRoles = null;
+  async function _refreshLocalRoles() {
+    try {
+      const me = await S.rpc('mi_cuenta');
+      _lastFreshRoles = Array.isArray(me.roles) ? me.roles : null;
+    } catch (_) { /* ignoramos */ }
+  }
+  function _esAdmin() {
+    const u = S.getUser();
+    const jwtAdmin = !!(u && Array.isArray(u.roles) && u.roles.includes('admin'));
+    const freshAdmin = !!(Array.isArray(_lastFreshRoles) && _lastFreshRoles.includes('admin'));
+    return jwtAdmin || freshAdmin;
   }
 
 
@@ -2090,6 +2178,9 @@
 
     // Rehidratación silenciosa: si hay refresh, obtiene un access nuevo.
     await S.bootstrap();
+    // Cargamos los roles frescos de mi_cuenta (pueden diferir del JWT si un
+    // admin acaba de otorgar/retirar un rol). Esto alimenta `_esAdmin()`.
+    if (S.getUser()) _refreshLocalRoles();
     if (!location.hash) {
       // Sin hash: si hay sesión, home; si no, login.
       location.hash = S.getUser() ? '#/' : '#/login';

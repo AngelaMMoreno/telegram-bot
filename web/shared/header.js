@@ -92,7 +92,7 @@
       this.innerHTML = `
         <span class="flame ${on ? 'on' : 'off'}" title="${on ? d+' días de racha' : 'Sin racha activa'}">
           <span class="flame-emoji" aria-hidden="true">🔥</span>
-          <span class="flame-copy"><strong class="flame-days">${d}</strong><small>Racha</small></span>
+          <strong class="flame-days" aria-label="${on ? d+' días de racha' : 'Sin racha'}">${d}</strong>
         </span>`;
     }
   }
@@ -110,10 +110,6 @@
           <div class="hdr-left">
             <div class="hdr-chip level-chip" title="Nivel y experiencia">
               <xp-ring level="1" xp="0"></xp-ring>
-              <span class="level-meta">
-                <small>Nivel <strong id="nivel-actual">1</strong></small>
-                <b id="xp-actual">0 XP</b>
-              </span>
             </div>
           </div>
           <div class="hdr-center">
@@ -227,14 +223,23 @@
         location.href = '/#/login';
       };
 
-      // Oculta las filas de admin si el usuario no es admin.
+      // Oculta las filas de admin si el usuario no es admin. Los roles llegan
+      // por dos vías: (a) claim `roles` del JWT (rápido, se sella al login) y
+      // (b) `mi_cuenta` — que es fresco pero requiere red. Usamos la unión:
+      // si alguno de los dos dice "admin", mostramos. Así al añadir el rol en
+      // BBDD tras el login, no hay que cerrar sesión — con la primera llamada
+      // a mi_cuenta la cabecera se actualiza (this._freshAdmin se recuerda).
+      this._freshAdmin = null;
       const applyAdmin = () => {
         const u = S?.getUser?.();
-        const esAdmin = u && Array.isArray(u.roles) && u.roles.includes('admin');
+        const jwtAdmin   = !!(u && Array.isArray(u.roles) && u.roles.includes('admin'));
+        const freshAdmin = this._freshAdmin === true;
+        const esAdmin = jwtAdmin || freshAdmin;
         $('#btn-admin-panel').hidden = !esAdmin;
         const cont = $('#btn-admin-contenido');
         if (cont) cont.hidden = !esAdmin;
       };
+      this._applyAdmin = applyAdmin;
       applyAdmin();
       window.addEventListener('aprentix:session', applyAdmin);
 
@@ -260,18 +265,6 @@
           ring.setAttribute('xp', g.xp_total);
           ring.setAttribute('xp-nivel-ini', g.xp_nivel_ini);
           ring.setAttribute('xp-nivel-sig', g.xp_nivel_sig);
-        }
-        const nivel = this.querySelector('#nivel-actual');
-        const experiencia = this.querySelector('#xp-actual');
-        if (nivel) nivel.textContent = g.nivel || 1;
-        if (experiencia) {
-          // La barra visual la lleva el propio <xp-ring>; aquí sólo pintamos
-          // el total (con el "de X" del nivel siguiente en desktop, donde
-          // hay hueco). En móvil la CSS oculta la parte del `/ N`.
-          const total = Number(g.xp_total) || 0;
-          const sig   = Number(g.xp_nivel_sig) || total;
-          experiencia.innerHTML = `${total.toLocaleString('es-ES')}` +
-            ` XP<span class="of">&nbsp;/&nbsp;${sig.toLocaleString('es-ES')}</span>`;
         }
         const fl = this.querySelector('streak-flame');
         if (fl) fl.setAttribute('days', g.racha_actual || 0);
@@ -301,6 +294,11 @@
           etiqueta.textContent = rol;
           return etiqueta;
         }));
+        // Detecta cambios de rol tras el login (por ejemplo, un admin te dio
+        // el rol admin). Si los roles frescos difieren del JWT, actualizamos
+        // la visibilidad del panel admin sin esperar a que caduque el token.
+        this._freshAdmin = roles.includes('admin');
+        if (typeof this._applyAdmin === 'function') this._applyAdmin();
       } catch (_) { /* silencioso */ }
     }
   }
