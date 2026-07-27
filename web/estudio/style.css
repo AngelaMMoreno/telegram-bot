@@ -30,6 +30,15 @@ main#root {
   }
 }
 
+@media (min-width: 900px) {
+  body:not(.no-header) main#root {
+    max-width: 1080px;
+    margin-left: max(240px, calc((100vw - 1320px) / 2 + 240px));
+    margin-right: auto;
+    padding: 1.5rem 2rem;
+  }
+}
+
 /* Cuando el usuario aún no ha iniciado sesión (login / verify / reset)
  * ocultamos la cabecera y el bottom-nav; el contenido ocupa toda la
  * altura de la ventana centrado, para dar protagonismo al formulario. */
@@ -641,4 +650,3 @@ body.no-header main#root > .auth-section { width: 100%; }
   margin-bottom: .35rem;
   display: block;
 }
-

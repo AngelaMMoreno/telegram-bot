@@ -91,8 +91,8 @@
       const on = d > 0;
       this.innerHTML = `
         <span class="flame ${on ? 'on' : 'off'}" title="${on ? d+' días de racha' : 'Sin racha activa'}">
-          <span class="flame-emoji" aria-hidden="true">${on ? '🔥' : '🕯️'}</span>
-          <span class="flame-days">${d}</span>
+          <span class="flame-emoji" aria-hidden="true">🔥</span>
+          <span class="flame-copy"><strong class="flame-days">${d}</strong><small>Racha</small></span>
         </span>`;
     }
   }
@@ -107,8 +107,14 @@
 
       this.innerHTML = `
         <header class="topbar" id="topbar">
-          <div class="hdr-left"><xp-ring level="1" xp="0"></xp-ring></div>
-          <div class="hdr-center"><streak-flame days="0"></streak-flame></div>
+          <div class="hdr-left">
+            <xp-ring level="1" xp="0"></xp-ring>
+            <span class="metric-copy"><small>Nivel</small><strong id="nivel-actual">1</strong></span>
+          </div>
+          <div class="hdr-center">
+            <span class="xp-resumen"><small>Experiencia</small><strong id="xp-actual">0 XP</strong><i><span id="xp-progreso"></span></i></span>
+            <streak-flame days="0"></streak-flame>
+          </div>
           <div class="hdr-right">
             <button class="user-btn" id="btn-user-menu" aria-haspopup="dialog" aria-expanded="false" title="Cuenta">
               <span class="avatar" id="user-avatar">?</span>
@@ -134,6 +140,7 @@
               <div class="sheet-head-txt">
                 <strong id="sheet-username">—</strong>
                 <span class="sheet-mode-label" id="sheet-email"></span>
+                <span class="sheet-roles" id="sheet-roles" aria-label="Roles asignados"></span>
               </div>
               <button class="sheet-close" data-sheet-close="1" aria-label="Cerrar">✕</button>
             </header>
@@ -250,6 +257,17 @@
           ring.setAttribute('xp-nivel-ini', g.xp_nivel_ini);
           ring.setAttribute('xp-nivel-sig', g.xp_nivel_sig);
         }
+        const nivel = this.querySelector('#nivel-actual');
+        const experiencia = this.querySelector('#xp-actual');
+        const progreso = this.querySelector('#xp-progreso');
+        if (nivel) nivel.textContent = g.nivel || 1;
+        if (experiencia) experiencia.textContent = `${g.xp_total || 0} XP`;
+        if (progreso) {
+          const inicio = Number(g.xp_nivel_ini) || 0;
+          const siguiente = Math.max(inicio + 1, Number(g.xp_nivel_sig) || inicio + 1);
+          const porcentaje = Math.min(100, Math.max(0, ((Number(g.xp_total) - inicio) / (siguiente - inicio)) * 100));
+          progreso.style.width = `${porcentaje}%`;
+        }
         const fl = this.querySelector('streak-flame');
         if (fl) fl.setAttribute('days', g.racha_actual || 0);
       } catch (_) { /* silencioso */ }
@@ -260,6 +278,7 @@
         this.querySelector('#user-avatar').textContent = '?';
         this.querySelector('#sheet-username').textContent = '—';
         this.querySelector('#sheet-email').textContent = '';
+        this.querySelector('#sheet-roles').textContent = '';
         return;
       }
       try {
@@ -269,6 +288,14 @@
         this.querySelector('#sheet-avatar').textContent = inicial;
         this.querySelector('#sheet-username').textContent = me.nombre_visible || '';
         this.querySelector('#sheet-email').textContent    = me.email || '';
+        const roles = Array.isArray(me.roles) ? me.roles : [];
+        const contenedorRoles = this.querySelector('#sheet-roles');
+        contenedorRoles.replaceChildren(...(roles.length ? roles : ['sin rol']).map(rol => {
+          const etiqueta = document.createElement('span');
+          etiqueta.className = 'sheet-role';
+          etiqueta.textContent = rol;
+          return etiqueta;
+        }));
       } catch (_) { /* silencioso */ }
     }
   }

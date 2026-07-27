@@ -278,9 +278,36 @@ aprentix-header { display: contents; }
 }
 .bnav-item { position: relative; }
 
-/* En desktop la bottom-nav no aporta nada nuevo. */
+/* En escritorio la misma navegación móvil se convierte en menú lateral. */
 @media (min-width: 900px) {
-  .bottom-nav { display: none; }
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    top: calc(var(--topbar-h) + env(safe-area-inset-top, 0));
+    bottom: 0;
+    left: 0;
+    width: 224px;
+    height: auto;
+    padding: 1.25rem .8rem;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: .45rem;
+    border-top: 0;
+    border-right: 1px solid var(--glass-border);
+    box-shadow: 8px 0 28px rgba(0, 0, 0, .05);
+  }
+  .bottom-nav .bnav-item {
+    width: 100%;
+    min-height: 50px;
+    padding: .7rem .9rem;
+    flex: 0 0 auto;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: .8rem;
+    border-radius: 12px;
+  }
+  .bottom-nav .bnav-ico { width: 23px; height: 23px; }
+  .bottom-nav .bnav-label { font-size: .95rem; }
 }
 /* Deja hueco al contenido para que la bottom-nav no tape lo último.
  * Los apps pueden anular con --bottom-nav-h si lo necesitan. */
@@ -382,6 +409,16 @@ aprentix-header { display: contents; }
 .sheet-mode-label {
   font-size: 0.82rem;
   color: var(--txt-soft);
+}
+.sheet-roles { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.sheet-role {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--pri-soft);
+  color: var(--pri-d);
+  font-size: .68rem;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 .sheet-close {
   background: transparent; border: 0;
@@ -609,6 +646,20 @@ body.sheet-open { overflow: hidden; }
 
 /* XP ring: contenedor mínimo — el SVG ya trae su tamaño y transición. */
 xp-ring { display: inline-flex; align-items: center; }
+.metric-copy,
+.xp-resumen { display: flex; flex-direction: column; }
+.metric-copy { margin-left: .45rem; line-height: 1.05; }
+.metric-copy small,
+.xp-resumen small,
+.flame-copy small { color: var(--txt-soft); font-size: .68rem; font-weight: 700; }
+.metric-copy strong { font-size: 1.05rem; }
+.xp-resumen { width: min(210px, 30vw); line-height: 1.1; }
+.xp-resumen strong { font-size: .9rem; }
+.xp-resumen i {
+  height: 5px; margin-top: 5px; overflow: hidden;
+  border-radius: 999px; background: var(--border);
+}
+.xp-resumen i span { display: block; width: 0; height: 100%; background: var(--pri); transition: width .4s ease; }
 
 /* Fueguito de racha. */
 streak-flame { display: inline-flex; align-items: center; }
@@ -624,6 +675,7 @@ streak-flame { display: inline-flex; align-items: center; }
 .flame.off { color: var(--muted); opacity: .7; }
 .flame .flame-emoji { font-size: 1.1em; line-height: 1; }
 .flame .flame-days  { min-width: 1ch; text-align: center; }
+.flame-copy { display: flex; flex-direction: column; line-height: 1; }
 
 /* Botón avatar (versión rediseñada — sólo la inicial). */
 .topbar .user-btn {
@@ -647,5 +699,11 @@ streak-flame { display: inline-flex; align-items: center; }
 
 /* En la Home nueva no queremos overshoot de padding en desktop. */
 @media (min-width: 900px) {
-  .topbar { padding: 0 1.25rem; gap: 1rem; }
+  .topbar { padding: 0 2rem; gap: 1.5rem; }
+  .topbar .hdr-center { justify-content: flex-start; gap: 1.5rem; }
+  .topbar .hdr-left { min-width: 150px; }
+}
+@media (max-width: 520px) {
+  .xp-resumen { width: 120px; }
+  .metric-copy small { display: none; }
 }

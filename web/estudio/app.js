@@ -425,7 +425,7 @@
           </div>
         </div>
       `).join(''))}
-      ${temas.length === 0 ? '<div class="empty">Esta oposición aún no tiene temas asignados.</div>' : ''}
+      ${raw(temas.length === 0 ? '<div class="empty">Esta oposición aún no tiene temas asignados.</div>' : '')}
     `;
 
     root.querySelectorAll('.tema-card').forEach(c => {
@@ -730,9 +730,9 @@
           ` : ''}
           <div style="margin-top:1rem; display:flex; gap:.5rem">
             <button class="btn" id="btn-prev" ${idx === 0 ? 'disabled' : ''}>← Anterior</button>
-            ${idx < preguntas.length - 1
+          ${raw(idx < preguntas.length - 1
               ? '<button class="btn btn-pri" id="btn-next" style="margin-left:auto">Siguiente →</button>'
-              : '<button class="btn btn-pri" id="btn-fin" style="margin-left:auto">Finalizar</button>'}
+              : '<button class="btn btn-pri" id="btn-fin" style="margin-left:auto">Finalizar</button>')}
           </div>
         </div>
       `;
@@ -792,11 +792,11 @@
         <div class="subt">${r.aciertos || 0}/${r.total || 0} aciertos</div>
         <div style="margin-top:1.5rem; display:flex; gap:.5rem; justify-content:center; flex-wrap:wrap">
           <button class="btn" onclick="location.hash='#/'">Volver al inicio</button>
-          ${pasa
+          ${raw(pasa
             ? '<button class="btn btn-pri" id="btn-repasar-otro">Repasar más</button>'
-            : '<button class="btn btn-pri" id="btn-teoria">Repasar teoría</button>'}
+            : '<button class="btn btn-pri" id="btn-teoria">Repasar teoría</button>')}
         </div>
-        ${!pasa ? '<p class="muted small" style="margin-top:1rem">Sugerimos revisar la teoría de las preguntas que has fallado antes de repetir.</p>' : ''}
+        ${raw(!pasa ? '<p class="muted small" style="margin-top:1rem">Sugerimos revisar la teoría de las preguntas que has fallado antes de repetir.</p>' : '')}
       </div>
     `;
     const bt = root.querySelector('#btn-teoria');
@@ -849,14 +849,14 @@
           <dl class="kv-list">
             <dt>Email</dt>
             <dd>${me.email}
-              ${me.email_verificado
+              ${raw(me.email_verificado
                 ? '<span class="kv-badge ok">verificado</span>'
-                : '<span class="kv-badge warn">sin verificar</span>'}</dd>
+                : '<span class="kv-badge warn">sin verificar</span>')}</dd>
             <dt>Nombre</dt><dd>${me.nombre_visible || '—'}</dd>
             <dt>Roles</dt><dd>${(me.roles || []).join(', ') || '—'}</dd>
-            <dt>2FA</dt><dd>${me.totp_activo
+            <dt>2FA</dt><dd>${raw(me.totp_activo
               ? '<span class="kv-badge ok">activo</span>'
-              : 'no configurado'}</dd>
+              : 'no configurado')}</dd>
             <dt>Último acceso</dt><dd>${me.ultimo_login_en
               ? new Date(me.ultimo_login_en).toLocaleString()
               : '—'}</dd>
