@@ -446,9 +446,6 @@
               </div>`
             : '<div class="empty">Esta oposición aún no tiene temas asignados.</div>')
         : '')}
-      ${raw(admin
-        ? '<div class="admin-quick"><a class="btn btn-sm" href="#/admin/contenido">⚙️ Gestión de contenido</a></div>'
-        : '')}
     `;
 
     root.querySelectorAll('.tema-card').forEach(c => {
@@ -578,9 +575,6 @@
           </div>`)}
       ${raw(mias.length > 0
         ? '<div style="margin-top:1rem"><button class="btn" id="btn-volver">← Volver al inicio</button></div>'
-        : '')}
-      ${raw(_esAdmin()
-        ? '<div class="admin-quick"><a class="btn btn-sm" href="#/admin/contenido">⚙️ Gestión de contenido</a></div>'
         : '')}
     `;
     root.querySelectorAll('[data-opid]').forEach(b => {
