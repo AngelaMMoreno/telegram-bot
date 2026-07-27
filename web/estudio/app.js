@@ -578,6 +578,16 @@
         </button>
       ` : '')}
 
+      <aside class="plan-home-card">
+        <span class="plan-home-icono" aria-hidden="true">📅</span>
+        <span class="plan-home-copy">
+          <small>Tu calendario de estudio</small>
+          <strong>¿Quieres crear un plan de estudio?</strong>
+          <span>Organizaremos tu oposición según el tiempo que tengas disponible.</span>
+        </span>
+        <button class="btn btn-sec" id="btn-crear-plan" type="button">Crear mi plan</button>
+      </aside>
+
       ${raw(temas.length > 0 ? html`
         <section class="stat-strip" aria-label="Resumen de tu progreso">
           <div class="stat-cell">
@@ -672,6 +682,7 @@
     });
     const bc = root.querySelector('#btn-continuar');
     if (bc) bc.onclick = () => navigate(`#/tema/${bc.dataset.tema}`);
+    root.querySelector('#btn-crear-plan').onclick = () => navigate('#/plan');
     const btnR = root.querySelector('#btn-repasar-op');
     if (btnR) btnR.onclick = () => navigate(`#/repaso/${opId}`);
     root.querySelector('#btn-cambiar-op').onclick = () => _abrirSelectorOposicion();
