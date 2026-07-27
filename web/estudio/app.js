@@ -535,12 +535,21 @@
       : _paletaTema(0);
 
     root.innerHTML = html`
-      <button class="oposicion-chip" id="btn-cambiar-op"
-              title="Cambiar de oposición">
-        <span class="oposicion-chip-ico">📚</span>
-        <span class="oposicion-chip-nombre">${op.nombre || 'Elige una oposición'}</span>
-        <span class="oposicion-chip-caret" aria-hidden="true">▾</span>
-      </button>
+      <div class="home-top-actions">
+        <button class="oposicion-chip" id="btn-cambiar-op"
+                title="Cambiar de oposición">
+          <span class="oposicion-chip-ico">📚</span>
+          <span class="oposicion-chip-nombre">${op.nombre || 'Elige una oposición'}</span>
+          <span class="oposicion-chip-caret" aria-hidden="true">▾</span>
+        </button>
+        ${raw(temas.length > 0 ? html`
+          <button class="repaso-chip" id="btn-repasar-op"
+                  title="Repasar toda la oposición (40 preguntas)">
+            <span class="repaso-chip-ico" aria-hidden="true">🔁</span>
+            <span class="repaso-chip-label">Repasar</span>
+          </button>
+        ` : '')}
+      </div>
 
       <header class="home-head">
         <span class="home-head-emoji" aria-hidden="true">📚</span>
@@ -548,11 +557,6 @@
           <h1 class="home-title">Temas</h1>
           <p class="home-subtitle">Explora todos los temas y sigue tu progreso</p>
         </div>
-        <button class="home-search" type="button" aria-label="Buscar tema" id="btn-buscar-tema">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none"
-               stroke="currentColor" stroke-width="2" stroke-linecap="round"
-               stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        </button>
       </header>
 
       ${raw(temaContinuar ? html`
@@ -599,15 +603,23 @@
       ${raw(temas.length > 0 ? html`
         <div class="section-head">
           <h2>Todos los temas</h2>
-          <a class="section-head-link" href="#/logros">Ver todos <span aria-hidden="true">›</span></a>
         </div>
 
         <div class="tema-lista">
           ${raw(temas.map((t, idx) => {
             const pal = _paletaTema(idx);
             const totalModulos = (t.modulos || []).length;
-            const totalSecc = (t.modulos || []).reduce((n, m) => n + (Number(m.secciones_total) || 0), 0);
+            const totalPreg = Number(t.preguntas_total) || 0;
             const iconoTema = _iconoTema(t.nombre, idx);
+            // Chip principal: preguntas si el backend nuevo ya las devuelve;
+            // si no, número de secciones como fallback compatible con la RPC
+            // antigua para que no salga "0 preguntas" en instancias que
+            // todavía no hayan aplicado la migración 2026-07-29.
+            const totalSecc = (t.modulos || []).reduce(
+              (n, m) => n + (Number(m.secciones_total) || 0), 0);
+            const chipMuted = totalPreg > 0
+              ? `${totalPreg} pregunta${totalPreg === 1 ? '' : 's'}`
+              : `${totalSecc} sección${totalSecc === 1 ? '' : 'es'}`;
             return html`
               <button class="tema-tile" data-tema="${t.id}"
                       style="--tema-border:${raw(pal.border)}; --tema-soft:${raw(pal.soft)}; --tema-strong:${raw(pal.strong)};">
@@ -618,9 +630,8 @@
                   <strong class="tema-tile-titulo">${idx + 1}. ${t.nombre}</strong>
                   <span class="tema-tile-chips">
                     <span class="tema-tile-chip">${totalModulos} módulo${totalModulos === 1 ? '' : 's'}</span>
-                    <span class="tema-tile-chip muted">${totalSecc} sección${totalSecc === 1 ? '' : 'es'}</span>
+                    <span class="tema-tile-chip muted">${chipMuted}</span>
                   </span>
-                  ${op.descripcion ? '' : ''}
                 </span>
                 <span class="tema-tile-progreso" aria-hidden="true">
                   ${raw(_svgProgreso(t.pct, { size: 44, stroke: 4, color: pal.border }))}
@@ -629,12 +640,6 @@
               </button>`;
           }).join(''))}
         </div>
-
-        <button class="repasar-mini" id="btn-repasar-op" type="button">
-          <span class="repasar-mini-ico" aria-hidden="true">🔁</span>
-          <span>Repasar oposición (40 preguntas)</span>
-          <span aria-hidden="true">›</span>
-        </button>
 
         <aside class="consejo-card">
           <span class="consejo-ico" aria-hidden="true">💡</span>
@@ -669,8 +674,6 @@
     root.querySelector('#btn-cambiar-op').onclick = () => _abrirSelectorOposicion();
     const btnG = root.querySelector('#btn-gestionar-op');
     if (btnG) btnG.onclick = () => navigate(`#/admin/contenido/oposicion/${opId}`);
-    const bs = root.querySelector('#btn-buscar-tema');
-    if (bs) bs.onclick = () => showToast('Búsqueda de temas — próximamente.');
   }
 
   // Devuelve `mis_oposiciones` como un array simple.
@@ -854,12 +857,12 @@
     const pal = _paletaTema(idxTema < 0 ? 0 : idxTema);
     const iconoTema = _iconoTema(tema.nombre, idxTema);
 
-    // Si el tema tiene un solo módulo, el "salto por módulos" no aporta
-    // — desplegamos sus secciones directamente en esta pantalla para
-    // ahorrar un click. Igualmente listamos los módulos como bloques para
-    // que la cabecera del bloque sirva de sub-título.
+    // Siempre listamos los módulos como tiles clickeables — aunque el tema
+    // tenga un único módulo. Antes desplegábamos sus secciones aquí para
+    // ahorrar un click, pero eso rompía las migas ("Inicio / Tema" saltaba
+    // directo a estudiar sin pasar por el módulo) y desbalanceaba la
+    // jerarquía visual entre temas.
     const modulos = tema.modulos || [];
-    const soloUnModulo = modulos.length === 1;
 
     root.innerHTML = html`
       <div class="view-head">
@@ -877,6 +880,10 @@
             <span>${modulos.length} módulo${modulos.length === 1 ? '' : 's'}</span>
             <span aria-hidden="true">·</span>
             <span>${tema.pct}% completado</span>
+            ${raw(Number(tema.preguntas_total) > 0 ? html`
+              <span aria-hidden="true">·</span>
+              <span>${tema.preguntas_total} pregunta${tema.preguntas_total === 1 ? '' : 's'}</span>
+            ` : '')}
           </div>
           <div class="tema-hero-barra" role="progressbar"
                aria-valuenow="${tema.pct}" aria-valuemin="0" aria-valuemax="100">
@@ -896,48 +903,32 @@
         </button>
       </div>
 
-      ${raw(modulos.map((m, i) => {
-        const compl = m.secciones_total > 0 && m.secciones_ok >= m.secciones_total;
-        const pctModulo = m.secciones_total === 0
-          ? 0
-          : Math.round(100 * m.secciones_ok / m.secciones_total);
-        return html`
-          <section class="modulo-bloque"
-                   style="--tema-border:${raw(pal.border)}; --tema-soft:${raw(pal.soft)}; --tema-strong:${raw(pal.strong)};">
-            ${raw(soloUnModulo ? '' : html`
-              <button class="modulo-bloque-head" data-modulo="${m.id}">
-                <span class="modulo-bloque-num">M${i + 1}</span>
-                <span class="modulo-bloque-titulo">${m.nombre}</span>
-                <span class="modulo-bloque-progreso" aria-hidden="true">
-                  ${raw(_svgProgreso(pctModulo, { size: 34, stroke: 3.5, color: pal.border }))}
+      <div class="modulo-lista">
+        ${raw(modulos.map((m, i) => {
+          const pctModulo = m.secciones_total === 0
+            ? 0
+            : Math.round(100 * m.secciones_ok / m.secciones_total);
+          const preguntasM = Number(m.preguntas_total) || 0;
+          return html`
+            <button class="modulo-tile" data-modulo="${m.id}"
+                    style="--tema-border:${raw(pal.border)}; --tema-soft:${raw(pal.soft)}; --tema-strong:${raw(pal.strong)};">
+              <span class="modulo-tile-num" aria-hidden="true">M${i + 1}</span>
+              <span class="modulo-tile-body">
+                <strong class="modulo-tile-titulo">${m.nombre}</strong>
+                <span class="modulo-tile-chips">
+                  <span class="modulo-tile-chip">${m.secciones_total} sección${m.secciones_total === 1 ? '' : 'es'}</span>
+                  ${raw(preguntasM > 0 ? html`
+                    <span class="modulo-tile-chip muted">${preguntasM} pregunta${preguntasM === 1 ? '' : 's'}</span>
+                  ` : '')}
                 </span>
-                <span class="modulo-bloque-caret" aria-hidden="true">›</span>
-              </button>
-            `)}
-
-            <ol class="seccion-lista">
-              ${raw((m.secciones || []).map((s, j) => html`
-                <li class="seccion-mini ${s.completada ? 'is-done' : ''}"
-                    data-seccion="${s.id}">
-                  <span class="seccion-mini-check" aria-hidden="true">
-                    ${s.completada ? '✓' : (j + 1)}
-                  </span>
-                  <span class="seccion-mini-titulo">${s.nombre}</span>
-                  ${s.nota_max != null
-                    ? html`<span class="seccion-mini-nota">${Math.round(s.nota_max)}</span>`
-                    : ''}
-                  <span class="seccion-mini-caret" aria-hidden="true">›</span>
-                </li>
-              `).join(''))}
-            </ol>
-
-            ${raw(compl ? html`
-              <button class="modulo-bloque-repaso" data-repaso-modulo="${m.id}">
-                🔁 Repasar módulo
-              </button>
-            ` : '')}
-          </section>`;
-      }).join(''))}
+              </span>
+              <span class="modulo-tile-progreso" aria-hidden="true">
+                ${raw(_svgProgreso(pctModulo, { size: 40, stroke: 4, color: pal.border }))}
+              </span>
+              <span class="modulo-tile-caret" aria-hidden="true">›</span>
+            </button>`;
+        }).join(''))}
+      </div>
 
       ${tema.pct >= 100 ? html`
         <button class="repasar-mini" id="btn-repaso-tema" type="button">
@@ -948,26 +939,9 @@
       ` : ''}
     `;
 
-    // Cabecera de módulo → navega al módulo (solo cuando hay >1).
-    root.querySelectorAll('.modulo-bloque-head').forEach(el => {
-      el.onclick = (ev) => {
-        ev.preventDefault();
-        navigate(`#/modulo/${el.dataset.modulo}`);
-      };
-    });
-    // Sección → abre teoría (con test al final). Un único CTA.
-    root.querySelectorAll('.seccion-mini').forEach(el => {
-      el.onclick = () => navigate(`#/seccion/${el.dataset.seccion}/teoria`);
-    });
-    // Repaso por módulo.
-    root.querySelectorAll('[data-repaso-modulo]').forEach(el => {
-      el.onclick = async (ev) => {
-        ev.stopPropagation();
-        try {
-          const r = await S.rpc('iniciar_intento_modulo', { p_modulo_id: el.dataset.repasoModulo });
-          _iniciarFlujoTest(r);
-        } catch (e) { showToast(_msgError(e.message)); }
-      };
+    // Cada tile de módulo navega a su vista (donde ya viven las secciones).
+    root.querySelectorAll('.modulo-tile').forEach(el => {
+      el.onclick = () => navigate(`#/modulo/${el.dataset.modulo}`);
     });
     const btnRT = root.querySelector('#btn-repaso-tema');
     if (btnRT) {
@@ -1020,6 +994,10 @@
             <span>${totalOk}/${totalT} sección${totalT === 1 ? '' : 'es'} completada${totalOk === 1 ? '' : 's'}</span>
             <span aria-hidden="true">·</span>
             <span>${pctModulo}%</span>
+            ${raw(Number(modulo.preguntas_total) > 0 ? html`
+              <span aria-hidden="true">·</span>
+              <span>${modulo.preguntas_total} pregunta${modulo.preguntas_total === 1 ? '' : 's'}</span>
+            ` : '')}
           </div>
           <div class="tema-hero-barra" role="progressbar"
                aria-valuenow="${pctModulo}" aria-valuemin="0" aria-valuemax="100">
@@ -1085,15 +1063,37 @@
 
 
   // ── Vista: teoría de una sección ───────────────────────────────────
+  // Busca una sección en el payload de `mi_home_oposicion` y devuelve el
+  // triple (tema, modulo, seccion, idxTema) o null si no aparece — para
+  // pintar migas y color heredado sin más RPCs.
+  function _localizarSeccion(home, seccId) {
+    const temas = home?.temas || [];
+    for (let i = 0; i < temas.length; i++) {
+      const t = temas[i];
+      for (const m of (t.modulos || [])) {
+        const s = (m.secciones || []).find(x => x.id === seccId);
+        if (s) return { tema: t, modulo: m, seccion: s, idxTema: i };
+      }
+    }
+    return null;
+  }
+
   async function viewTeoria([seccId]) {
     loading();
-    // Placeholder: obtener la ruta del documento y renderizar el markdown.
-    // En MVP mostramos un aviso si el backend de contenido no está
-    // preparado — la ruta real la resuelve el microservicio 'contenido/'.
     try {
-      // TODO: RPC para obtener metadatos del documento por sección.
-      const doc = await S.rpc('documento_de_seccion', { p_seccion_id: seccId })
-        .catch(() => null);
+      // Necesitamos el árbol completo de la oposición para pintar migas
+      // (Tema / Módulo / Sección) coherentes con la vista de tema/módulo.
+      // Es una llamada más, pero es el mismo endpoint cacheable que ya usan
+      // esas vistas: el navegador reaprovecha la respuesta y la cabecera
+      // queda "en armonía" con el resto del flujo.
+      const opId = getCtx().oposicion_id;
+      const [doc, home] = await Promise.all([
+        S.rpc('documento_de_seccion', { p_seccion_id: seccId }).catch(() => null),
+        opId ? S.rpc('mi_home_oposicion', { p_oposicion_id: opId })
+             : Promise.resolve({ temas: [] }),
+      ]);
+      const ctx = _localizarSeccion(home, seccId);
+
       let md = '';
       if (doc && doc.ruta) md = await fetchMarkdown(doc.ruta);
       else md = '## Sin teoría todavía\n\nEsta sección no tiene documento de teoría subido.';
@@ -1101,10 +1101,32 @@
       // Marca la teoría como vista (idempotente).
       S.rpc('marcar_teoria_vista', { p_seccion_id: seccId }).catch(() => {});
 
+      const pal = ctx ? _paletaTema(ctx.idxTema) : _paletaTema(0);
+      const nombreOp = home.oposicion?.nombre || 'Inicio';
+
       root.innerHTML = html`
         <div class="view-head">
-          <div class="breadcrumbs"><a href="#/">Inicio</a> / Teoría</div>
+          <div class="breadcrumbs">
+            <a href="#/">${nombreOp}</a>
+            ${raw(ctx ? html`
+              / <a href="#/tema/${ctx.tema.id}">${ctx.tema.nombre}</a>
+              / <a href="#/modulo/${ctx.modulo.id}">${ctx.modulo.nombre}</a>
+              / <strong>${ctx.seccion.nombre}</strong>
+            ` : ' / <strong>Teoría</strong>')}
+          </div>
         </div>
+
+        ${raw(ctx ? html`
+          <header class="tema-hero teoria-hero"
+                  style="--tema-border:${raw(pal.border)}; --tema-soft:${raw(pal.soft)}; --tema-strong:${raw(pal.strong)};">
+            <span class="tema-hero-icono teoria-hero-icono" aria-hidden="true">📖</span>
+            <div class="tema-hero-body">
+              <span class="teoria-hero-crumb">${ctx.tema.nombre} · ${ctx.modulo.nombre}</span>
+              <h1 class="tema-hero-titulo">${ctx.seccion.nombre}</h1>
+            </div>
+          </header>
+        ` : '')}
+
         <div class="teoria-body">${raw(renderMarkdown(md))}</div>
         <div class="teoria-cta">
           <button class="btn btn-pri" id="btn-test">📝 ¿Te examinas ahora?</button>
