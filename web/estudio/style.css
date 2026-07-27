@@ -880,3 +880,197 @@ input[type="number"]::-webkit-inner-spin-button:hover {
   margin: .5rem 0 .25rem;
 }
 .json-preview__summary .kv-badge { font-weight: 700; }
+
+/* ── Vista de Logros y Retos ─────────────────────────────────────────
+ * Hero superior con 4 métricas (nivel, XP, racha, logros conseguidos)
+ * en tiles, secciones con grid de tarjetas de reto/logro. Cada tarjeta
+ * usa la paleta solarpunk según su semántica (reto = coral/ámbar,
+ * logro obtenido = verde salvia, logro por conseguir = suave).
+ */
+.logros-hero { padding: 1rem 1.1rem; margin-bottom: 1.25rem; }
+.logros-hero-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: .75rem;
+}
+.logros-hero-tile {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  padding: .7rem .85rem;
+  background: linear-gradient(135deg, var(--accent-soft), var(--pri-soft));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+.logros-hero-tile .tile-ico {
+  font-size: 1.6rem;
+  filter: drop-shadow(0 2px 4px rgba(107, 142, 35, .22));
+}
+.logros-hero-tile > div { display: flex; flex-direction: column; min-width: 0; }
+.logros-hero-tile small {
+  font-size: .72rem;
+  font-weight: 700;
+  color: var(--txt-soft);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.logros-hero-tile strong {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--pri-d);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+.logros-hero-tile .tile-unit {
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--txt-soft);
+}
+[data-theme="dark"] .logros-hero-tile {
+  background: linear-gradient(135deg, rgba(92, 229, 213, .12), rgba(176, 132, 245, .12));
+}
+[data-theme="dark"] .logros-hero-tile strong { color: var(--pri); }
+
+.logros-block { margin-bottom: 1.5rem; }
+.panel-section-title { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
+.panel-section-title-hint {
+  font-weight: 500;
+  font-size: .82rem;
+  color: var(--txt-soft);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.retos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: .8rem;
+}
+.reto-card {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: .9rem;
+  align-items: center;
+  padding: .9rem 1rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--coral, #ea7a63);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  transition: transform .12s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.reto-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
+}
+.reto-card.is-done {
+  border-left-color: var(--success);
+  background: linear-gradient(135deg, var(--success-light), var(--bg-panel) 55%);
+}
+[data-theme="dark"] .reto-card.is-done {
+  background: linear-gradient(135deg, rgba(126, 221, 160, .12), var(--bg-panel) 55%);
+}
+.reto-icono {
+  font-size: 2.4rem;
+  text-align: center;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(234, 122, 99, .22));
+}
+.reto-card.is-done .reto-icono {
+  filter: drop-shadow(0 2px 4px rgba(107, 142, 35, .28));
+}
+.reto-body { min-width: 0; display: flex; flex-direction: column; gap: .3rem; }
+.reto-head {
+  display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap;
+}
+.reto-head strong { font-size: 1rem; font-weight: 700; }
+.reto-xp {
+  font-size: .78rem;
+  font-weight: 700;
+  color: var(--accent-d);
+  background: var(--accent-soft);
+  padding: .1rem .45rem;
+  border-radius: 999px;
+}
+.reto-desc {
+  font-size: .88rem;
+  color: var(--txt-soft);
+  line-height: 1.35;
+}
+.reto-bar {
+  height: 8px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.reto-bar > span {
+  display: block; height: 100%;
+  background: linear-gradient(90deg, var(--coral), var(--accent));
+  border-radius: inherit;
+  transition: width .4s ease;
+}
+.reto-card.is-done .reto-bar > span {
+  background: linear-gradient(90deg, var(--grad-a), var(--success));
+}
+.reto-meta {
+  font-size: .82rem;
+  color: var(--txt-soft);
+  font-weight: 600;
+}
+
+.logros-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: .8rem;
+}
+.logro-card {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: .9rem;
+  align-items: center;
+  padding: .9rem 1rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  transition: transform .12s ease, box-shadow .15s ease;
+}
+.logro-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
+}
+.logro-card.is-obtenido {
+  border-left: 4px solid var(--success);
+  background: linear-gradient(135deg, var(--success-light), var(--bg-panel) 55%);
+}
+[data-theme="dark"] .logro-card.is-obtenido {
+  background: linear-gradient(135deg, rgba(126, 221, 160, .12), var(--bg-panel) 55%);
+}
+.logro-card.is-locked { opacity: .78; }
+.logro-card.is-locked .logro-icono { filter: grayscale(.75); opacity: .6; }
+.logro-icono {
+  font-size: 2.4rem;
+  text-align: center;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(244, 183, 64, .22));
+}
+.logro-body { min-width: 0; display: flex; flex-direction: column; gap: .3rem; }
+.logro-head {
+  display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap;
+}
+.logro-head strong { font-size: 1rem; font-weight: 700; }
+.logro-xp {
+  font-size: .78rem;
+  font-weight: 700;
+  color: var(--accent-d);
+  background: var(--accent-soft);
+  padding: .1rem .45rem;
+  border-radius: 999px;
+}
+.logro-desc {
+  font-size: .88rem;
+  color: var(--txt-soft);
+  line-height: 1.35;
+}
+.logro-fecha { align-self: flex-start; }

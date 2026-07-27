@@ -34,6 +34,7 @@
     folder: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
     user:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
     shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L4 5v7c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V5l-8-3z"/></svg>',
+    trophy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M17 5h3a2 2 0 0 1 0 4h-3"/><path d="M7 5H4a2 2 0 0 0 0 4h3"/></svg>',
   };
   const icon = (n) => ICONS[n] || ICONS.user;
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
@@ -107,14 +108,29 @@
 
       this.innerHTML = `
         <header class="topbar" id="topbar">
-          <div class="hdr-left">
-            <div class="hdr-chip level-chip" title="Nivel y experiencia">
+          <div class="hdr-stats">
+            <button type="button" class="hdr-chip level-chip"
+                    id="btn-level-chip"
+                    aria-label="Nivel y experiencia — ver logros y retos"
+                    title="Ver logros y retos">
               <xp-ring level="1" xp="0"></xp-ring>
-            </div>
+              <span class="level-meta">
+                <small>Nivel <strong id="lvl-num">1</strong></small>
+                <b><span id="lvl-xp">0</span><span class="of"> / <span id="lvl-xp-next">50</span> XP</span></b>
+              </span>
+            </button>
+            <button type="button" class="hdr-chip streak-chip"
+                    id="btn-streak-chip"
+                    aria-label="Racha diaria — ver logros y retos"
+                    title="Ver logros y retos">
+              <streak-flame days="0"></streak-flame>
+              <span class="flame-copy">
+                <strong id="streak-days-lbl">0</strong>
+                <small>Racha</small>
+              </span>
+            </button>
           </div>
-          <div class="hdr-center">
-            <streak-flame days="0"></streak-flame>
-          </div>
+          <div class="hdr-spacer"></div>
           <div class="hdr-right">
             <button class="user-btn" id="btn-user-menu" aria-haspopup="dialog" aria-expanded="false" title="Cuenta">
               <span class="avatar" id="user-avatar">?</span>
@@ -199,6 +215,16 @@
       };
 
       $('#btn-user-menu').onclick = () => openSheet('user-sheet');
+
+      // Chips de nivel y racha llevan al panel de logros y retos, así el
+      // usuario tiene un atajo desde la cabecera hacia su progreso.
+      const navLogros = () => this.dispatchEvent(new CustomEvent('aprentix:nav', {
+        detail: { id: 'logros' }, bubbles: true,
+      }));
+      const bl = $('#btn-level-chip');
+      const bs = $('#btn-streak-chip');
+      if (bl) bl.onclick = navLogros;
+      if (bs) bs.onclick = navLogros;
       this.querySelectorAll('[data-sheet-close]').forEach(el =>
         el.addEventListener('click', closeAll));
       document.addEventListener('keydown', (e) => {
@@ -272,7 +298,18 @@
           ring.setAttribute('xp-nivel-sig', g.xp_nivel_sig);
         }
         const fl = this.querySelector('streak-flame');
-        if (fl) fl.setAttribute('days', g.racha_actual || 0);
+        const dias = g.racha_actual || 0;
+        if (fl) fl.setAttribute('days', dias);
+        // Etiquetas numéricas visibles de la chip: aprovechan el espacio
+        // que antes quedaba vacío en la topbar y refuerzan el contexto.
+        const numLvl  = this.querySelector('#lvl-num');
+        const numXP   = this.querySelector('#lvl-xp');
+        const numNext = this.querySelector('#lvl-xp-next');
+        const numRch  = this.querySelector('#streak-days-lbl');
+        if (numLvl)  numLvl.textContent  = g.nivel;
+        if (numXP)   numXP.textContent   = g.xp_total;
+        if (numNext) numNext.textContent = g.xp_nivel_sig;
+        if (numRch)  numRch.textContent  = dias;
       } catch (_) { /* silencioso */ }
     }
 

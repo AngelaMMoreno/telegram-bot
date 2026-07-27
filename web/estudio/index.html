@@ -90,6 +90,7 @@
       nav-items='[
         {"id":"home","label":"Inicio","icon":"home","view":"home"},
         {"id":"estadisticas","label":"Estadísticas","icon":"chart","view":"estadisticas"},
+        {"id":"logros","label":"Logros","icon":"trophy","view":"logros"},
         {"id":"tablon","label":"Tablón","icon":"bookmark","view":"tablon"}
       ]'></aprentix-header>
   </div>
@@ -98,6 +99,10 @@
     <!-- El router hash mete aquí la vista activa. -->
     <div class="loading">Cargando…</div>
   </main>
+
+  <!-- Pila de tarjetas de notificación de logros/retos.  Se rellena
+       dinámicamente desde app.js cuando un intento desbloquea algo. -->
+  <div id="logros-notif-stack" class="logros-notif-stack" aria-live="polite"></div>
 
   <div id="toast" class="toast hidden"></div>
 </body>

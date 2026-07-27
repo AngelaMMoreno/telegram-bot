@@ -645,18 +645,36 @@ body.sheet-open { overflow: hidden; }
 
 .topbar .hdr-left,
 .topbar .hdr-center,
-.topbar .hdr-right {
+.topbar .hdr-right,
+.topbar .hdr-stats {
   display: flex; align-items: center;
 }
 .topbar .hdr-left    { justify-content: flex-start; min-width: 0; }
 .topbar .hdr-center  { flex: 1; justify-content: center; min-width: 0; }
 .topbar .hdr-right   { justify-content: flex-end; flex: 0 0 auto; }
+/* Nueva zona: bloque de estadísticas (nivel + racha) apilado horizontal.
+ * Vive a la izquierda con `hdr-spacer` empujando al avatar al otro lado.
+ * `flex-wrap` deja que si el móvil es muy estrecho la racha caiga bajo
+ * el nivel en lugar de sacarla de la vista. */
+.topbar .hdr-stats {
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  gap: .55rem;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+.topbar .hdr-spacer { flex: 0 1 auto; }
+@media (min-width: 640px) {
+  .topbar .hdr-stats { gap: .75rem; }
+}
 
 /* Chip genérico de la topbar: superficie glass + halo suave.
- * Mismo tamaño visual para nivel y racha → lectura tranquila. */
+ * Se convierte en <button> para hacer de atajo al panel de logros/retos,
+ * así el usuario aprovecha la cabecera para navegar y no queda como
+ * mero adorno estadístico. */
 .hdr-chip {
   display: inline-flex; align-items: center; gap: .55rem;
-  padding: 4px 12px 4px 4px;
+  padding: 4px 14px 4px 4px;
   border-radius: 999px;
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
@@ -664,8 +682,23 @@ body.sheet-open { overflow: hidden; }
   min-width: 0;
   max-width: 100%;
   line-height: 1.05;
+  color: var(--txt);
+  font: inherit;
+  cursor: pointer;
+  transition: background .15s ease, transform .12s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.hdr-chip:hover:not(:disabled) {
+  background: var(--pri-soft);
+  border-color: var(--pri);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 12px rgba(107, 142, 35, .18);
 }
 [data-theme="dark"] .hdr-chip { box-shadow: 0 1px 6px rgba(0, 0, 0, .35); }
+[data-theme="dark"] .hdr-chip:hover:not(:disabled) {
+  background: rgba(92, 229, 213, .14);
+  border-color: var(--pri);
+  box-shadow: 0 3px 12px rgba(92, 229, 213, .18);
+}
 
 /* Chip de nivel: anillo con el número dentro + XP total al lado.
  * En móviles muy estrechos escondemos el subtítulo "Nivel" y el
@@ -708,47 +741,67 @@ xp-ring { display: inline-flex; align-items: center; flex: 0 0 auto; }
   .level-chip .level-meta { display: none; }
 }
 
-/* Fueguito de racha — misma "cáscara" que el chip de nivel. */
-streak-flame { display: inline-flex; align-items: center; max-width: 100%; }
+/* Streak: ahora el fueguito vive dentro de la chip botón `.streak-chip`,
+ * sin doble borde. `<streak-flame>` sólo pinta el emoji + número (sin
+ * "cáscara" extra), y la copia (número + etiqueta "Racha") va como
+ * hermana dentro de la chip para que aproveche el mismo padding. */
+streak-flame { display: inline-flex; align-items: center; max-width: 100%; flex: 0 0 auto; }
 .flame {
-  display: inline-flex; align-items: center; gap: .5rem;
-  padding: 4px 14px;
-  border-radius: 999px;
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  box-shadow: 0 1px 6px rgba(0, 0, 0, .05);
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: 4px 4px;
   font-weight: 700;
   line-height: 1.05;
-  transition: background .2s ease, border-color .2s ease, transform .15s ease;
+  transition: transform .15s ease;
 }
-[data-theme="dark"] .flame { box-shadow: 0 1px 6px rgba(0, 0, 0, .35); }
+.flame .flame-emoji { font-size: 1.3rem; line-height: 1; filter: saturate(1.15); }
+/* El número dentro de <streak-flame> ya no se pinta: la chip trae su
+ * propia etiqueta grande `#streak-days-lbl` para aprovechar el espacio.
+ * Lo dejamos oculto por accesibilidad (aria-label sigue en el HTML). */
+.flame .flame-days { display: none; }
 
-.flame .flame-emoji { font-size: 1.25rem; line-height: 1; filter: saturate(1.15); }
-.flame .flame-days  { min-width: 1ch; text-align: center; font-size: 1.05rem; font-weight: 800; }
-.flame-copy { display: flex; flex-direction: column; line-height: 1; }
-.flame-copy small {
+/* La copia "5 · Racha" vive dentro de .streak-chip como hermana del
+ * <streak-flame>. */
+.streak-chip .flame-copy {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  line-height: 1;
+  min-width: 0;
+}
+.streak-chip .flame-copy strong {
+  font-size: 1.05rem; font-weight: 800;
+  color: var(--pri-d, var(--pri));
+  font-variant-numeric: tabular-nums;
+}
+[data-theme="dark"] .streak-chip .flame-copy strong { color: var(--pri); }
+.streak-chip .flame-copy small {
   font-size: .66rem; font-weight: 700; color: var(--txt-soft);
-  letter-spacing: .04em; text-transform: uppercase;
+  letter-spacing: .06em; text-transform: uppercase;
 }
 
-/* Activa: gradiente cálido tipo llama + halo. */
-.flame.on {
+/* Chip de racha "en llamas" — cambia el color de la chip completa cuando
+ * la racha está activa, no sólo del fueguito. Aviva la cabecera. */
+.streak-chip:has(.flame.on) {
   background: linear-gradient(135deg, var(--coral-soft, #ffe0dc) 0%, var(--accent-soft) 100%);
   border-color: var(--coral, #ea7a63);
   color: var(--coral-d, #b0432b);
   box-shadow:
-    0 2px 10px rgba(234, 122, 99, .28),
-    0 0 0 3px rgba(234, 122, 99, .08);
+    0 2px 10px rgba(234, 122, 99, .22),
+    0 0 0 3px rgba(234, 122, 99, .06);
   animation: flame-pulse 2.4s ease-in-out infinite;
 }
-.flame.on .flame-copy small { color: var(--coral-d, #b0432b); opacity: .85; }
-[data-theme="dark"] .flame.on {
+.streak-chip:has(.flame.on) .flame-copy strong { color: var(--coral-d, #b0432b); }
+.streak-chip:has(.flame.on) .flame-copy small  { color: var(--coral-d, #b0432b); opacity: .85; }
+[data-theme="dark"] .streak-chip:has(.flame.on) {
   background: linear-gradient(135deg, rgba(234, 122, 99, .22), rgba(244, 183, 64, .18));
   color: #ffd8cc;
+  border-color: rgba(234, 122, 99, .5);
 }
-[data-theme="dark"] .flame.on .flame-copy small { color: #ffd8cc; }
+[data-theme="dark"] .streak-chip:has(.flame.on) .flame-copy strong { color: #ffd8cc; }
+[data-theme="dark"] .streak-chip:has(.flame.on) .flame-copy small  { color: #ffd8cc; }
 
-/* Apagada: chip discreto. */
+/* Racha apagada: chip discreta pero con la etiqueta legible. */
 .flame.off { color: var(--txt-soft); opacity: .8; }
 .flame.off .flame-emoji { filter: grayscale(1); opacity: .6; }
 
@@ -757,14 +810,20 @@ streak-flame { display: inline-flex; align-items: center; max-width: 100%; }
   50%      { transform: translateY(-1px); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .flame.on { animation: none; }
+  .streak-chip:has(.flame.on) { animation: none; }
 }
 
 @media (max-width: 640px) {
-  .flame { padding: 4px 11px; gap: .35rem; }
+  .streak-chip { padding-right: 10px; }
+  .streak-chip .flame-copy small { display: none; }
+  .streak-chip .flame-copy strong { font-size: .95rem; }
   .flame .flame-emoji { font-size: 1.15rem; }
-  .flame .flame-days { font-size: .95rem; }
-  .flame-copy small { display: none; }
+}
+@media (max-width: 380px) {
+  /* Muy estrecho: la chip de racha queda sólo con el fueguito, así
+   * la de nivel no se aplasta contra el avatar. */
+  .streak-chip { padding: 3px 6px; gap: 0; }
+  .streak-chip .flame-copy { display: none; }
 }
 
 /* Botón avatar (versión rediseñada — sólo la inicial). */

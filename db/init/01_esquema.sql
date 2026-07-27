@@ -2674,13 +2674,14 @@ BEGIN
     PERFORM _gamif_dar_xp(p_usuario_id, v_logro.xp);
 END $$;
 
--- Suma XP al usuario y actualiza racha diaria.
+-- Suma XP al usuario y actualiza racha diaria.  Al final revisa umbrales
+-- de XP y racha para otorgar los logros correspondientes (idempotentes).
 CREATE OR REPLACE FUNCTION _gamif_dar_xp(p_usuario_id uuid, p_delta int)
 RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
     v_hoy  date := hoy_madrid();
-    v_prev date;
+    v_gm   usuario_gamificacion%ROWTYPE;
 BEGIN
     IF p_delta <= 0 THEN RETURN; END IF;
     INSERT INTO usuario_gamificacion (usuario_id, xp_total, racha_actual, racha_maxima, ultimo_dia_activo)
@@ -2705,6 +2706,12 @@ BEGIN
                 END),
             ultimo_dia_activo = v_hoy,
             actualizado_en = now();
+
+    SELECT * INTO v_gm FROM usuario_gamificacion WHERE usuario_id = p_usuario_id;
+    IF v_gm.xp_total     >= 1000 THEN PERFORM _gamif_dar_logro(p_usuario_id, 'xp_1000'); END IF;
+    IF v_gm.xp_total     >= 5000 THEN PERFORM _gamif_dar_logro(p_usuario_id, 'xp_5000'); END IF;
+    IF v_gm.racha_actual >= 7    THEN PERFORM _gamif_dar_logro(p_usuario_id, 'racha_7');  END IF;
+    IF v_gm.racha_actual >= 30   THEN PERFORM _gamif_dar_logro(p_usuario_id, 'racha_30'); END IF;
 END $$;
 
 
@@ -2727,7 +2734,9 @@ BEGIN
     -- Sección completada: XP + retos.
     PERFORM _gamif_dar_xp(v_uid, 25);
     PERFORM _gamif_bump_reto(v_uid, 'diario_completar_1_seccion');
+    PERFORM _gamif_bump_reto(v_uid, 'diario_completar_2_secc');
     PERFORM _gamif_bump_reto(v_uid, 'semanal_5_secciones');
+    PERFORM _gamif_bump_reto(v_uid, 'mensual_secciones_20');
     PERFORM _gamif_dar_logro(v_uid, 'primera_seccion');
 
     -- ¿Se ha completado el módulo?
@@ -2774,6 +2783,83 @@ END $$;
 CREATE TRIGGER progreso_seccion_gamif
     AFTER INSERT OR UPDATE OF completada_en ON progreso_seccion
     FOR EACH ROW EXECUTE FUNCTION _gamif_on_progreso_seccion();
+
+
+-- Trigger sobre teoría vista: bumpea retos de lectura diaria/semanal
+-- cuando el usuario marca la teoría de una sección como vista, y otorga
+-- el logro `teoria_50` al cruzar 50 secciones distintas leídas.
+CREATE OR REPLACE FUNCTION _gamif_on_teoria_vista() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE
+    v_uid uuid := NEW.usuario_id;
+    v_total int;
+BEGIN
+    IF NEW.teoria_vista_en IS NULL THEN RETURN NEW; END IF;
+    IF TG_OP = 'UPDATE' AND OLD.teoria_vista_en IS NOT NULL THEN
+        RETURN NEW;
+    END IF;
+    PERFORM _gamif_bump_reto(v_uid, 'diario_teoria_2_secciones');
+    PERFORM _gamif_bump_reto(v_uid, 'diario_teoria_1');
+    PERFORM _gamif_bump_reto(v_uid, 'semanal_teoria_5');
+
+    SELECT COUNT(DISTINCT seccion_id) INTO v_total
+      FROM progreso_seccion
+     WHERE usuario_id = v_uid AND teoria_vista_en IS NOT NULL;
+    IF v_total >= 50 THEN
+        PERFORM _gamif_dar_logro(v_uid, 'teoria_50');
+    END IF;
+    RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS progreso_seccion_teoria_gamif ON progreso_seccion;
+CREATE TRIGGER progreso_seccion_teoria_gamif
+    AFTER INSERT OR UPDATE OF teoria_vista_en ON progreso_seccion
+    FOR EACH ROW EXECUTE FUNCTION _gamif_on_teoria_vista();
+
+
+-- Trigger sobre intentos finalizados: bumpea retos de "N tests" (día,
+-- semana, mes), precisión (>= 75/80/90 %), repaso global, y otorga el
+-- logro `tests_100` al alcanzar los 100 tests finalizados.
+CREATE OR REPLACE FUNCTION _gamif_on_intento_finalizado() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE
+    v_uid uuid := NEW.usuario_id;
+    v_total int;
+BEGIN
+    IF NEW.finalizado_en IS NULL THEN RETURN NEW; END IF;
+    IF TG_OP = 'UPDATE' AND OLD.finalizado_en IS NOT NULL THEN
+        RETURN NEW;
+    END IF;
+    PERFORM _gamif_bump_reto(v_uid, 'diario_test_1');
+    PERFORM _gamif_bump_reto(v_uid, 'semanal_tests_10');
+    PERFORM _gamif_bump_reto(v_uid, 'mensual_tests_30');
+    IF NEW.origen = 'repaso' THEN
+        PERFORM _gamif_bump_reto(v_uid, 'semanal_repaso_global_1');
+        PERFORM _gamif_bump_reto(v_uid, 'mensual_repaso_4');
+    END IF;
+    IF NEW.nota IS NOT NULL AND NEW.nota >= 80 THEN
+        PERFORM _gamif_bump_reto(v_uid, 'diario_acierto_80');
+    END IF;
+    IF NEW.nota IS NOT NULL AND NEW.nota >= 90 THEN
+        PERFORM _gamif_bump_reto(v_uid, 'diario_precision_90');
+    END IF;
+    IF NEW.nota IS NOT NULL AND NEW.nota >= 75 THEN
+        PERFORM _gamif_bump_reto(v_uid, 'semanal_precision_75_x5');
+    END IF;
+
+    SELECT COUNT(*) INTO v_total
+      FROM intentos
+     WHERE usuario_id = v_uid AND finalizado_en IS NOT NULL;
+    IF v_total >= 100 THEN
+        PERFORM _gamif_dar_logro(v_uid, 'tests_100');
+    END IF;
+    RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS intento_finalizado_gamif ON intentos;
+CREATE TRIGGER intento_finalizado_gamif
+    AFTER INSERT OR UPDATE OF finalizado_en ON intentos
+    FOR EACH ROW EXECUTE FUNCTION _gamif_on_intento_finalizado();
 
 
 -- Retos y logros al lector: para el panel de "Retos y logros".
@@ -2834,13 +2920,23 @@ GRANT EXECUTE ON FUNCTION mis_logros()          TO web_user;
 -- Oposición → Tema → Módulo → Sección).
 INSERT INTO retos_catalogo (codigo, titulo, descripcion, periodo, objetivo, xp, icono) VALUES
     ('diario_completar_1_seccion', 'Sección diaria', 'Completa 1 sección hoy',              'diario',   1,  30, '🎯'),
-    ('diario_teoria_2_secciones',  'Doble teoría',   'Lee la teoría de 2 secciones',        'diario',   2,  20, '📖'),
+    ('diario_completar_2_secc',    'Doble sección',  'Completa 2 secciones hoy',            'diario',   2,  45, '🌱'),
+    ('diario_teoria_2_secciones',  'Doble teoría',   'Lee la teoría de 2 secciones hoy',    'diario',   2,  20, '📖'),
+    ('diario_teoria_1',            'Lectura diaria', 'Lee la teoría de 1 sección hoy',      'diario',   1,  15, '📖'),
+    ('diario_test_1',              'Test diario',    'Completa 1 test hoy',                 'diario',   1,  20, '📝'),
     ('diario_acierto_80',          'Precisión 80 %', 'Acierta el 80 % o más en algún test', 'diario',   1,  25, '🎯'),
+    ('diario_precision_90',        'Excelencia',     'Saca al menos un 90 % en un test',    'diario',   1,  40, '💎'),
     ('semanal_5_secciones',        '5 secciones',    'Completa 5 secciones esta semana',    'semanal',  5,  80, '📚'),
     ('semanal_completar_1_modulo', 'Módulo semanal', 'Completa un módulo entero',           'semanal',  1, 150, '🏔️'),
+    ('semanal_tests_10',           'Diez tests',     'Completa 10 tests esta semana',       'semanal', 10,  90, '📚'),
+    ('semanal_teoria_5',           'Teoría a fondo', 'Lee la teoría de 5 secciones esta semana', 'semanal', 5, 70, '📖'),
+    ('semanal_precision_75_x5',    'Consistencia',   'Termina 5 tests con al menos un 75 %', 'semanal',  5, 100, '🎯'),
     ('semanal_repaso_global_1',    'Repaso global',  'Haz al menos 1 repaso de 40 pregs',   'semanal',  1,  60, '🔁'),
     ('mensual_completar_1_tema',   'Tema del mes',   'Completa un tema entero este mes',    'mensual',  1, 400, '👑'),
-    ('mensual_oposicion_25_pct',   'Avance mensual', 'Avanza +25 % en cualquier oposición', 'mensual',  1, 300, '📈')
+    ('mensual_oposicion_25_pct',   'Avance mensual', 'Avanza +25 % en cualquier oposición', 'mensual',  1, 300, '📈'),
+    ('mensual_tests_30',           '30 tests',       'Completa 30 tests este mes',          'mensual', 30, 250, '🚀'),
+    ('mensual_secciones_20',       '20 secciones',   'Completa 20 secciones este mes',      'mensual', 20, 300, '🏔️'),
+    ('mensual_repaso_4',           'Repaso mensual', 'Haz 4 repasos globales este mes',     'mensual',  4, 200, '🔁')
 ON CONFLICT (codigo) DO NOTHING;
 
 INSERT INTO logros_catalogo (codigo, titulo, descripcion, objetivo, xp, icono) VALUES
@@ -2849,7 +2945,13 @@ INSERT INTO logros_catalogo (codigo, titulo, descripcion, objetivo, xp, icono) V
     ('primer_tema',                'Primer tema',               'Completaste tu primer tema completo',         1, 500, '🥉'),
     ('primera_oposicion_completa', 'Oposición completa',        'Completaste una oposición entera',            1,1500, '🏆'),
     ('polivalente_3_oposiciones',  'Polivalente',               'Tienes 3 oposiciones activas',                1, 300, '🎓'),
-    ('explorador_10_temas',        'Explorador',                'Has abierto teoría de 10 temas distintos',   10, 200, '🧭')
+    ('explorador_10_temas',        'Explorador',                'Has abierto teoría de 10 temas distintos',   10, 200, '🧭'),
+    ('racha_7',                    'Semana de fuego',           'Mantén una racha de 7 días',                    7,  200, '🔥'),
+    ('racha_30',                   'Mes en llamas',             'Mantén una racha de 30 días',                  30,  800, '🌋'),
+    ('xp_1000',                    'Aprendiz',                  'Alcanza los 1 000 puntos de XP',             1000,  100, '💠'),
+    ('xp_5000',                    'Veterano',                  'Alcanza los 5 000 puntos de XP',             5000,  400, '💎'),
+    ('teoria_50',                  'Bibliotecari@',             'Lee la teoría de 50 secciones distintas',      50,  400, '📚'),
+    ('tests_100',                  'Centenari@',                'Completa 100 tests',                          100,  500, '🏅')
 ON CONFLICT (codigo) DO NOTHING;
 
 

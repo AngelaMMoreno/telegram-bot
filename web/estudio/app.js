@@ -181,6 +181,7 @@
     { re: /^\/repaso\/([0-9a-f-]+)$/,        view: viewRepaso },
     { re: /^\/tablon\/([0-9a-f-]+)$/,        view: viewTablon },
     { re: /^\/estadisticas$/,                view: viewEstadisticas },
+    { re: /^\/logros$/,                      view: viewLogrosRetos },
     { re: /^\/mi-cuenta$/,                   view: viewMiCuenta },
     { re: /^\/elegir-oposicion$/,            view: viewElegirOposicion },
     { re: /^\/admin\/usuarios$/,             view: viewAdminUsuarios },
@@ -792,6 +793,9 @@
     if (!intento_id) return empty('No se pudo iniciar el test.');
     const preguntas = await S.rpc('preguntas_de_intento', { p_intento_id: intento_id });
     if (!preguntas || preguntas.length === 0) return empty('El test no tiene preguntas.');
+    // Fija el snapshot ANTES del test para que al finalizar el diff detecte
+    // los retos/logros que se hayan desbloqueado durante este intento.
+    gamif.snapshot();
 
     const respuestas = new Map();  // pregunta_id → { opcion, correcta }
     let idx = 0;
@@ -865,6 +869,9 @@
       try {
         const r = await S.rpc('finalizar_intento', { p_intento_id: intento_id });
         _pintarResultado(r, intento_id);
+        // El backend actualiza retos/logros vía triggers; el frontend hace
+        // diff local para pintar la tarjeta de "¡Reto completado!" / etc.
+        gamif.checkNuevos();
       } catch (e) {
         empty('Error finalizando: ' + e.message);
       }
@@ -2611,6 +2618,260 @@
   }
 
 
+  // ── Notificaciones de logros y retos ───────────────────────────────
+  // El motor de gamificación (retos + logros) vive en el backend, pero el
+  // frontend no recibe hoy en día un `logros_desbloqueados` en la respuesta
+  // de `finalizar_intento` (esa parte del pipeline se documentó pero se
+  // eliminó del schema unificado). Lo suplimos con un "diff local":
+  //   · antes de una acción que puede otorgar retos/logros → snapshot.
+  //   · después de completarse            → diff con lo nuevo.
+  // Así cada vez que un intento cambia el estado del catálogo, se pintan
+  // las tarjetitas emergentes como en la app antigua.
+  const gamif = (() => {
+    let snap = null;
+
+    async function _fetchEstado() {
+      const [retos, logros] = await Promise.all([
+        S.rpc('mis_retos_activos').catch(() => []),
+        S.rpc('mis_logros').catch(() => []),
+      ]);
+      return { retos: retos || [], logros: logros || [] };
+    }
+
+    // Guarda el estado actual (retos completos + logros obtenidos) como
+    // referencia; devuelve una promesa que resuelve cuando termina.
+    async function snapshot() {
+      try {
+        const e = await _fetchEstado();
+        snap = {
+          retos:  new Set(e.retos.filter(r => r.completado).map(r => r.codigo)),
+          logros: new Set(e.logros.filter(l => l.obtenido).map(l => l.codigo)),
+        };
+      } catch (_) {
+        snap = { retos: new Set(), logros: new Set() };
+      }
+    }
+
+    // Compara con el snapshot y notifica cualquier reto/logro nuevo.
+    async function checkNuevos() {
+      if (!snap) { await snapshot(); return; }
+      try {
+        const e = await _fetchEstado();
+        const nuevos = [];
+        e.retos.forEach(r => {
+          if (r.completado && !snap.retos.has(r.codigo)) {
+            nuevos.push({
+              tipo: 'reto',
+              titulo: r.titulo,
+              descripcion: r.descripcion,
+              icono: r.icono,
+              xp: r.xp,
+            });
+          }
+        });
+        e.logros.forEach(l => {
+          if (l.obtenido && !snap.logros.has(l.codigo)) {
+            nuevos.push({
+              tipo: 'logro',
+              titulo: l.titulo,
+              descripcion: l.descripcion,
+              icono: l.icono,
+              xp: l.xp,
+            });
+          }
+        });
+        if (nuevos.length) _notificar(nuevos);
+        // Actualiza snapshot al estado post-acción.
+        snap = {
+          retos:  new Set(e.retos.filter(r => r.completado).map(r => r.codigo)),
+          logros: new Set(e.logros.filter(l => l.obtenido).map(l => l.codigo)),
+        };
+        // Refresca XP y racha del header.
+        window.dispatchEvent(new Event('aprentix:session'));
+      } catch (_) { /* silencioso */ }
+    }
+
+    return { snapshot, checkNuevos };
+  })();
+
+  // Pinta una tarjeta por logro/reto en la pila `#logros-notif-stack`.
+  function _notificar(items) {
+    const stack = document.getElementById('logros-notif-stack');
+    if (!stack || !Array.isArray(items) || !items.length) return;
+    items.forEach((l, i) => {
+      const esReto = l.tipo === 'reto';
+      const titular = esReto ? '¡Reto completado!' : '¡Logro desbloqueado!';
+      const card = document.createElement('article');
+      card.className = 'logro-notif' + (esReto ? ' es-reto' : '');
+      card.setAttribute('role', 'status');
+      card.innerHTML = `
+        <div class="logro-notif-icono" aria-hidden="true">${esc(l.icono || (esReto ? '🎯' : '🏆'))}</div>
+        <div class="logro-notif-body">
+          <div class="logro-notif-head">
+            <strong>${esc(titular)}</strong>
+            <span class="logro-notif-xp">+${Number(l.xp) || 0} XP</span>
+          </div>
+          <div class="logro-notif-desc"><strong>${esc(l.titulo || '')}</strong>${
+            l.descripcion ? ' · ' + esc(l.descripcion) : ''
+          }</div>
+          <div class="logro-notif-bar" role="progressbar" aria-valuenow="1" aria-valuemin="0" aria-valuemax="1"><span></span></div>
+        </div>`;
+      stack.appendChild(card);
+      setTimeout(() => card.classList.add('done'), 60 + i * 120);
+      const cerrar = () => {
+        if (card._closed) return;
+        card._closed = true;
+        card.classList.add('out');
+        setTimeout(() => card.remove(), 350);
+      };
+      card.addEventListener('click', cerrar);
+      setTimeout(cerrar, 5200 + i * 400);
+    });
+  }
+
+
+  // ── Vista: Logros y retos ──────────────────────────────────────────
+  // Panel con dos secciones — retos activos (agrupados por periodo) y
+  // logros del catálogo (obtenidos vs pendientes). Estilo tarjeta,
+  // aprovecha `.panel-card` y utilidades del manifiesto.
+  async function viewLogrosRetos() {
+    loading();
+    const [retos, logros, gm] = await Promise.all([
+      S.rpc('mis_retos_activos').catch(() => []),
+      S.rpc('mis_logros').catch(() => []),
+      S.rpc('mi_gamificacion').catch(() => ({})),
+    ]);
+    // Snapshot inicial cada vez que se entra: así los nuevos retos que
+    // caigan durante la sesión se detectan como "nuevos".
+    gamif.snapshot();
+
+    const retosPorPeriodo = { diario: [], semanal: [], mensual: [] };
+    (retos || []).forEach(r => {
+      const p = r.periodo || 'diario';
+      (retosPorPeriodo[p] = retosPorPeriodo[p] || []).push(r);
+    });
+    const etiquetaPeriodo = {
+      diario:  { titulo: 'Retos diarios',   icono: '🌞', desc: 'Se reinician cada día.' },
+      semanal: { titulo: 'Retos semanales', icono: '📅', desc: 'Se reinician cada lunes.' },
+      mensual: { titulo: 'Retos mensuales', icono: '📈', desc: 'Se reinician el día 1.' },
+    };
+
+    function retoCard(r) {
+      const pct = Math.min(100, Math.round(((r.progreso || 0) / (r.objetivo || 1)) * 100));
+      const done = r.completado;
+      return `
+        <article class="reto-card ${done ? 'is-done' : ''}">
+          <div class="reto-icono" aria-hidden="true">${esc(r.icono || '🎯')}</div>
+          <div class="reto-body">
+            <div class="reto-head">
+              <strong>${esc(r.titulo || '')}</strong>
+              <span class="reto-xp">+${Number(r.xp) || 0} XP</span>
+            </div>
+            <div class="reto-desc">${esc(r.descripcion || '')}</div>
+            <div class="reto-bar" role="progressbar"
+                 aria-valuenow="${r.progreso || 0}"
+                 aria-valuemin="0" aria-valuemax="${r.objetivo || 1}">
+              <span style="width:${pct}%"></span>
+            </div>
+            <div class="reto-meta">
+              ${done
+                ? '<span class="kv-badge ok">Completado ✓</span>'
+                : `<span>${r.progreso || 0} / ${r.objetivo || 1}</span>`}
+            </div>
+          </div>
+        </article>`;
+    }
+
+    function logroCard(l) {
+      return `
+        <article class="logro-card ${l.obtenido ? 'is-obtenido' : 'is-locked'}">
+          <div class="logro-icono" aria-hidden="true">${esc(l.icono || '🏆')}</div>
+          <div class="logro-body">
+            <div class="logro-head">
+              <strong>${esc(l.titulo || '')}</strong>
+              <span class="logro-xp">+${Number(l.xp) || 0} XP</span>
+            </div>
+            <div class="logro-desc">${esc(l.descripcion || '')}</div>
+            ${l.obtenido
+              ? `<div class="logro-fecha kv-badge ok">Conseguido${
+                    l.obtenido_en
+                      ? ' · ' + new Date(l.obtenido_en).toLocaleDateString()
+                      : ''
+                  }</div>`
+              : '<div class="kv-badge">Por conseguir</div>'}
+          </div>
+        </article>`;
+    }
+
+    const obtenidos = (logros || []).filter(l => l.obtenido).length;
+    const totalLogros = (logros || []).length;
+
+    root.innerHTML = html`
+      <div class="view-head"><h2>Logros y retos</h2></div>
+
+      <div class="logros-hero panel-card">
+        <div class="logros-hero-grid">
+          <div class="logros-hero-tile">
+            <span class="tile-ico">✨</span>
+            <div>
+              <small>Nivel</small>
+              <strong>${gm?.nivel ?? 1}</strong>
+            </div>
+          </div>
+          <div class="logros-hero-tile">
+            <span class="tile-ico">💎</span>
+            <div>
+              <small>XP total</small>
+              <strong>${gm?.xp_total ?? 0}</strong>
+            </div>
+          </div>
+          <div class="logros-hero-tile">
+            <span class="tile-ico">🔥</span>
+            <div>
+              <small>Racha</small>
+              <strong>${gm?.racha_actual ?? 0} <span class="tile-unit">día(s)</span></strong>
+            </div>
+          </div>
+          <div class="logros-hero-tile">
+            <span class="tile-ico">🏆</span>
+            <div>
+              <small>Logros</small>
+              <strong>${obtenidos} / ${totalLogros}</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      ${raw(['diario', 'semanal', 'mensual'].map(p => {
+        const items = retosPorPeriodo[p] || [];
+        const meta = etiquetaPeriodo[p];
+        return html`
+          <section class="logros-block">
+            <h3 class="panel-section-title">
+              <span aria-hidden="true">${raw(meta.icono)}</span>
+              ${meta.titulo}
+              <small class="panel-section-title-hint">${raw(meta.desc)}</small>
+            </h3>
+            ${raw(items.length === 0
+              ? '<div class="empty">Aún no hay retos de este periodo.</div>'
+              : `<div class="retos-grid">${items.map(retoCard).join('')}</div>`)}
+          </section>`;
+      }).join(''))}
+
+      <section class="logros-block">
+        <h3 class="panel-section-title">
+          <span aria-hidden="true">🏅</span>
+          Logros
+          <small class="panel-section-title-hint">Hitos únicos que se desbloquean al progresar.</small>
+        </h3>
+        ${raw((logros || []).length === 0
+          ? '<div class="empty">Todavía no hay logros en el catálogo.</div>'
+          : `<div class="logros-grid">${logros.map(logroCard).join('')}</div>`)}
+      </section>
+    `;
+  }
+
+
   // ── Vista: estadísticas (placeholder) ──────────────────────────────
   async function viewEstadisticas() {
     root.innerHTML = html`
@@ -2628,12 +2889,19 @@
     const id = e.detail?.id;
     if (id === 'home')                navigate('#/');
     if (id === 'estadisticas')        navigate('#/estadisticas');
+    if (id === 'logros')              navigate('#/logros');
     if (id === 'cambiar-oposicion')   _abrirSelectorOposicion();
     if (id === 'tablon') {
       const op = getCtx().oposicion_id;
       if (op) navigate(`#/tablon/${op}`);
       else showToast('Elige primero una oposición.');
     }
+  });
+
+  // El sheet del avatar también expone acceso directo a la vista.
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-view="logros"]');
+    if (el) navigate('#/logros');
   });
 
   // El sheet del avatar dispara clicks por data-view; los cazamos aquí.
@@ -2667,7 +2935,11 @@
     await S.bootstrap();
     // Cargamos los roles frescos de mi_cuenta (pueden diferir del JWT si un
     // admin acaba de otorgar/retirar un rol). Esto alimenta `_esAdmin()`.
-    if (S.getUser()) _refreshLocalRoles();
+    if (S.getUser()) {
+      _refreshLocalRoles();
+      // Snapshot inicial de retos/logros para el diff de notificaciones.
+      gamif.snapshot();
+    }
     if (!location.hash) {
       // Sin hash: si hay sesión, home; si no, login.
       location.hash = S.getUser() ? '#/' : '#/login';
