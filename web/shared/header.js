@@ -115,8 +115,12 @@
                     title="Ver logros y retos">
               <xp-ring level="1" xp="0"></xp-ring>
               <span class="level-meta">
-                <small>Nivel <strong id="lvl-num">1</strong></small>
-                <b><span id="lvl-xp">0</span><span class="of"> / <span id="lvl-xp-next">50</span> XP</span></b>
+                <span class="level-copy">
+                  <small>Nivel <strong id="lvl-num">1</strong></small>
+                  <b><span id="lvl-xp">0</span><span class="of"> / <span id="lvl-xp-next">50</span> XP</span></b>
+                </span>
+                <span class="level-progress" aria-hidden="true"><span id="lvl-progress-fill"></span></span>
+                <span class="level-hint" id="lvl-xp-restante">50 XP para subir</span>
               </span>
             </button>
             <button type="button" class="hdr-chip streak-chip"
@@ -306,10 +310,19 @@
         const numXP   = this.querySelector('#lvl-xp');
         const numNext = this.querySelector('#lvl-xp-next');
         const numRch  = this.querySelector('#streak-days-lbl');
+        const progreso = this.querySelector('#lvl-progress-fill');
+        const restante = this.querySelector('#lvl-xp-restante');
         if (numLvl)  numLvl.textContent  = g.nivel;
         if (numXP)   numXP.textContent   = g.xp_total;
         if (numNext) numNext.textContent = g.xp_nivel_sig;
         if (numRch)  numRch.textContent  = dias;
+        const inicioNivel = Number(g.xp_nivel_ini) || 0;
+        const siguienteNivel = Number(g.xp_nivel_sig) || Math.max(50, inicioNivel + 50);
+        const xpTotal = Number(g.xp_total) || 0;
+        const porcentaje = Math.min(100, Math.max(0,
+          ((xpTotal - inicioNivel) / Math.max(1, siguienteNivel - inicioNivel)) * 100));
+        if (progreso) progreso.style.width = `${porcentaje}%`;
+        if (restante) restante.textContent = `${Math.max(0, siguienteNivel - xpTotal)} XP para subir`;
       } catch (_) { /* silencioso */ }
     }
 
