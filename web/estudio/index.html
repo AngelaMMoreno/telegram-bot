@@ -24,10 +24,15 @@
   <link rel="stylesheet" href="/estudio/style.css">
 
   <script>
-    // Tema oscuro antes del primer render.
+    // Tema oscuro antes del primer render. Reconoce "system" (respetar el
+    // ajuste del OS) además de light/dark, para que el selector de la vista
+    // "Mi cuenta" pueda pintar cualquiera de los tres estados sin fugas.
     (function () {
-      var m = document.cookie.match(/(?:^|;\s*)aprentix_theme=(dark|light)/);
-      var theme = m ? m[1] : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      var m = document.cookie.match(/(?:^|;\s*)aprentix_theme=(dark|light|system)/);
+      var pref = m ? m[1] : 'system';
+      var theme = (pref === 'system')
+        ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+        : pref;
       if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
     })();
   </script>
