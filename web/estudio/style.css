@@ -1205,6 +1205,43 @@ input[type="number"]::-webkit-inner-spin-button:hover {
  * mantienen porque siguen usándose en algún flujo admin.
  * ══════════════════════════════════════════════════════════════════════ */
 
+/* Fila superior del home: oposición actual + repaso rápido. Ambos son
+ * chips pequeños alineados: la oposición a la izquierda y el "Repasar"
+ * como acción secundaria a su derecha. El botón de repasar antes vivía
+ * como un CTA gigante al pie del home; aquí es más natural porque
+ * "repasar" es una acción a nivel de oposición, no de tema. */
+.home-top-actions {
+  display: flex; align-items: center; gap: .5rem;
+  flex-wrap: wrap;
+  margin-bottom: .9rem;
+}
+.home-top-actions .oposicion-chip { margin-bottom: 0; }
+.repaso-chip {
+  display: inline-flex; align-items: center; gap: .45rem;
+  padding: .3rem .7rem .3rem .35rem;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent-d);
+  font: inherit; font-weight: 800; font-size: .82rem;
+  cursor: pointer;
+  transition: background .15s ease, transform .1s ease, box-shadow .15s ease;
+}
+.repaso-chip:hover {
+  background: var(--accent);
+  color: #14241D;
+  box-shadow: 0 2px 8px rgba(244, 183, 64, .3);
+}
+.repaso-chip:active { transform: translateY(1px); }
+.repaso-chip-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
+  background: var(--bg-panel);
+  border-radius: 999px;
+  font-size: .85rem;
+  line-height: 1;
+}
+
 /* Chip compacto arriba con la oposición activa. Sustituye al gran
  * `.oposicion-picker` que ocupaba una fila entera. */
 .oposicion-chip {
@@ -1246,7 +1283,7 @@ input[type="number"]::-webkit-inner-spin-button:hover {
 /* Cabecera del home: emoji grande + título + botón de búsqueda. */
 .home-head {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr;
   align-items: center;
   gap: .75rem;
   margin: .5rem 0 1rem;
@@ -1268,23 +1305,6 @@ input[type="number"]::-webkit-inner-spin-button:hover {
   font-size: .88rem;
   color: var(--txt-soft);
 }
-.home-search {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 44px; height: 44px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  color: var(--txt-soft);
-  cursor: pointer;
-  transition: background .15s ease, color .15s ease, border-color .15s ease, transform .1s ease;
-}
-.home-search:hover {
-  background: var(--pri-soft);
-  color: var(--pri-d);
-  border-color: var(--pri);
-}
-.home-search:active { transform: scale(.96); }
-
 /* Card "Continúa por donde lo dejaste". Un botón grande a media pantalla,
  * con el icono a la izquierda dentro de un círculo del color del tema y un
  * CTA "Continuar" bien visible. */
@@ -1678,6 +1698,117 @@ input[type="number"]::-webkit-inner-spin-button:hover {
   font-size: 1.8rem;
 }
 
+/* Hero de la vista de teoría: mismo lenguaje que el tema/módulo pero un
+ * pelín más compacto y con un "crumb" de contexto (Tema · Módulo) sobre
+ * el título de la sección. Aporta armonía en el flujo de estudio. */
+.teoria-hero {
+  padding: .85rem 1rem;
+  margin-bottom: 1rem;
+}
+.teoria-hero-icono {
+  width: 52px; height: 52px;
+  font-size: 1.6rem;
+}
+.teoria-hero-crumb {
+  display: block;
+  font-size: .7rem;
+  font-weight: 800;
+  color: var(--tema-strong);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.teoria-hero .tema-hero-titulo {
+  font-size: 1.2rem;
+}
+
+/* Lista de tiles de módulo (vista de tema). Mismo lenguaje que las
+ * tarjetas de tema del home pero más compacto: el módulo es una unidad
+ * "más chica" y no debe pesar tanto visualmente como el tema. */
+.modulo-lista {
+  display: flex; flex-direction: column;
+  gap: .65rem;
+  margin-bottom: 1rem;
+}
+.modulo-tile {
+  --tema-border: var(--pri);
+  --tema-soft: var(--pri-soft);
+  --tema-strong: var(--pri-d);
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: .8rem;
+  padding: .7rem .9rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--tema-border);
+  border-radius: var(--radius);
+  color: var(--txt);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: transform .12s ease, box-shadow .15s ease;
+}
+.modulo-tile:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
+}
+.modulo-tile:active { transform: translateY(0); }
+.modulo-tile-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 40px; height: 40px;
+  padding: 0 .5rem;
+  background: var(--tema-border);
+  color: white;
+  border-radius: 12px;
+  font-size: .82rem;
+  font-weight: 900;
+  letter-spacing: .04em;
+}
+[data-theme="dark"] .modulo-tile-num { color: #14241D; }
+.modulo-tile-body {
+  display: flex; flex-direction: column; gap: 3px;
+  min-width: 0;
+}
+.modulo-tile-titulo {
+  font-size: .98rem;
+  font-weight: 800;
+  color: var(--txt);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.modulo-tile-chips {
+  display: flex; gap: 5px; flex-wrap: wrap;
+}
+.modulo-tile-chip {
+  display: inline-flex; align-items: center;
+  padding: 2px 7px;
+  background: var(--tema-soft);
+  color: var(--tema-strong);
+  border-radius: 999px;
+  font-size: .68rem;
+  font-weight: 700;
+}
+.modulo-tile-chip.muted {
+  background: var(--bg-alt);
+  color: var(--txt-soft);
+}
+[data-theme="dark"] .modulo-tile-chip.muted { background: var(--bg-soft); }
+.modulo-tile-progreso {
+  color: var(--tema-strong);
+  display: inline-flex;
+  align-items: center;
+}
+.modulo-tile-caret {
+  color: var(--txt-soft);
+  font-size: 1.3rem;
+}
+@media (max-width: 420px) {
+  .modulo-tile { grid-template-columns: auto 1fr auto; gap: .65rem; padding: .6rem .75rem; }
+  .modulo-tile-caret { display: none; }
+}
+
 /* Fila de acciones bajo el hero (Ver esquema / Subir esquema). */
 .tema-actions {
   display: flex; gap: .5rem; flex-wrap: wrap;
@@ -1702,6 +1833,17 @@ input[type="number"]::-webkit-inner-spin-button:hover {
 }
 .tema-action:active { transform: translateY(1px); }
 [data-theme="dark"] .tema-action:hover { color: var(--pri); }
+.tema-action.is-disabled {
+  color: var(--txt-soft);
+  opacity: .65;
+  cursor: not-allowed;
+  border-style: dashed;
+}
+.tema-action.is-disabled:hover {
+  background: var(--bg-panel);
+  border-color: var(--border);
+  color: var(--txt-soft);
+}
 
 /* Bloque de módulo dentro de la vista tema. */
 .modulo-bloque {

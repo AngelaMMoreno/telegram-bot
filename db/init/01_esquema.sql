@@ -2081,6 +2081,13 @@ BEGIN
           JOIN modulos m ON m.id = s.modulo_id
           LEFT JOIN progreso_seccion ps
                  ON ps.usuario_id = v_uid AND ps.seccion_id = s.id
+    ),
+    -- Nº de preguntas por sección — se reutiliza a nivel de sección,
+    -- módulo y tema, así que lo calculamos una sola vez.
+    preg_por_secc AS (
+        SELECT p.seccion_id, COUNT(*)::int AS n
+          FROM preguntas p
+         GROUP BY p.seccion_id
     )
     SELECT jsonb_build_object(
         'oposicion',
@@ -2100,6 +2107,15 @@ BEGIN
                     ELSE round(100.0 * (SELECT COALESCE(SUM(completada),0) FROM secc_pct WHERE tema_id = t.id)
                                      / (SELECT COUNT(*)                 FROM secc_pct WHERE tema_id = t.id), 0)
                 END,
+                -- Nº total de preguntas del tema (todas sus secciones).
+                'preguntas_total',
+                    COALESCE((
+                        SELECT SUM(pps.n)::int
+                          FROM secciones s
+                          JOIN modulos m ON m.id = s.modulo_id
+                          LEFT JOIN preg_por_secc pps ON pps.seccion_id = s.id
+                         WHERE m.tema_id = t.id
+                    ), 0),
                 'modulos',
                 COALESCE((
                     SELECT jsonb_agg(jsonb_build_object(
@@ -2111,6 +2127,14 @@ BEGIN
                                               FROM secc_pct WHERE modulo_id = m.id),
                         'secciones_total', (SELECT COUNT(*)
                                               FROM secc_pct WHERE modulo_id = m.id),
+                        -- Nº de preguntas del módulo (todas sus secciones).
+                        'preguntas_total',
+                            COALESCE((
+                                SELECT SUM(pps.n)::int
+                                  FROM secciones s
+                                  LEFT JOIN preg_por_secc pps ON pps.seccion_id = s.id
+                                 WHERE s.modulo_id = m.id
+                            ), 0),
                         'secciones',
                         COALESCE((
                             SELECT jsonb_agg(jsonb_build_object(
@@ -2119,7 +2143,9 @@ BEGIN
                                 'orden',           s.orden,
                                 'nota_max',        sp.nota_max,
                                 'completada',      sp.completada = 1,
-                                'teoria_vista_en', sp.teoria_vista_en
+                                'teoria_vista_en', sp.teoria_vista_en,
+                                'preguntas_total', COALESCE(
+                                    (SELECT n FROM preg_por_secc WHERE seccion_id = s.id), 0)
                             ) ORDER BY s.orden)
                               FROM secciones s
                               LEFT JOIN secc_pct sp ON sp.seccion_id = s.id

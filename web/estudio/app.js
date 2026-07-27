@@ -178,6 +178,7 @@
     { re: /^\/modulo\/([0-9a-f-]+)$/,        view: viewModulo },
     { re: /^\/seccion\/([0-9a-f-]+)\/teoria$/,view: viewTeoria },
     { re: /^\/seccion\/([0-9a-f-]+)\/test$/, view: viewTestSeccion },
+    { re: /^\/esquema\/tema\/([0-9a-f-]+)$/, view: viewEsquemaTema },
     { re: /^\/repaso\/([0-9a-f-]+)$/,        view: viewRepaso },
     { re: /^\/tablon\/([0-9a-f-]+)$/,        view: viewTablon },
     { re: /^\/estadisticas$/,                view: viewEstadisticas },
@@ -535,12 +536,21 @@
       : _paletaTema(0);
 
     root.innerHTML = html`
-      <button class="oposicion-chip" id="btn-cambiar-op"
-              title="Cambiar de oposición">
-        <span class="oposicion-chip-ico">📚</span>
-        <span class="oposicion-chip-nombre">${op.nombre || 'Elige una oposición'}</span>
-        <span class="oposicion-chip-caret" aria-hidden="true">▾</span>
-      </button>
+      <div class="home-top-actions">
+        <button class="oposicion-chip" id="btn-cambiar-op"
+                title="Cambiar de oposición">
+          <span class="oposicion-chip-ico">📚</span>
+          <span class="oposicion-chip-nombre">${op.nombre || 'Elige una oposición'}</span>
+          <span class="oposicion-chip-caret" aria-hidden="true">▾</span>
+        </button>
+        ${raw(temas.length > 0 ? html`
+          <button class="repaso-chip" id="btn-repasar-op"
+                  title="Repasar toda la oposición (40 preguntas)">
+            <span class="repaso-chip-ico" aria-hidden="true">🔁</span>
+            <span class="repaso-chip-label">Repasar</span>
+          </button>
+        ` : '')}
+      </div>
 
       <header class="home-head">
         <span class="home-head-emoji" aria-hidden="true">📚</span>
@@ -548,11 +558,6 @@
           <h1 class="home-title">Temas</h1>
           <p class="home-subtitle">Explora todos los temas y sigue tu progreso</p>
         </div>
-        <button class="home-search" type="button" aria-label="Buscar tema" id="btn-buscar-tema">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="none"
-               stroke="currentColor" stroke-width="2" stroke-linecap="round"
-               stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        </button>
       </header>
 
       ${raw(temaContinuar ? html`
@@ -599,15 +604,23 @@
       ${raw(temas.length > 0 ? html`
         <div class="section-head">
           <h2>Todos los temas</h2>
-          <a class="section-head-link" href="#/logros">Ver todos <span aria-hidden="true">›</span></a>
         </div>
 
         <div class="tema-lista">
           ${raw(temas.map((t, idx) => {
             const pal = _paletaTema(idx);
             const totalModulos = (t.modulos || []).length;
-            const totalSecc = (t.modulos || []).reduce((n, m) => n + (Number(m.secciones_total) || 0), 0);
+            const totalPreg = Number(t.preguntas_total) || 0;
             const iconoTema = _iconoTema(t.nombre, idx);
+            // Chip principal: preguntas si el backend nuevo ya las devuelve;
+            // si no, número de secciones como fallback compatible con la RPC
+            // antigua para que no salga "0 preguntas" en instancias que
+            // todavía no hayan aplicado la migración 2026-07-29.
+            const totalSecc = (t.modulos || []).reduce(
+              (n, m) => n + (Number(m.secciones_total) || 0), 0);
+            const chipMuted = totalPreg > 0
+              ? `${totalPreg} pregunta${totalPreg === 1 ? '' : 's'}`
+              : `${totalSecc} sección${totalSecc === 1 ? '' : 'es'}`;
             return html`
               <button class="tema-tile" data-tema="${t.id}"
                       style="--tema-border:${raw(pal.border)}; --tema-soft:${raw(pal.soft)}; --tema-strong:${raw(pal.strong)};">
@@ -618,9 +631,8 @@
                   <strong class="tema-tile-titulo">${idx + 1}. ${t.nombre}</strong>
                   <span class="tema-tile-chips">
                     <span class="tema-tile-chip">${totalModulos} módulo${totalModulos === 1 ? '' : 's'}</span>
-                    <span class="tema-tile-chip muted">${totalSecc} sección${totalSecc === 1 ? '' : 'es'}</span>
+                    <span class="tema-tile-chip muted">${chipMuted}</span>
                   </span>
-                  ${op.descripcion ? '' : ''}
                 </span>
                 <span class="tema-tile-progreso" aria-hidden="true">
                   ${raw(_svgProgreso(t.pct, { size: 44, stroke: 4, color: pal.border }))}
@@ -629,12 +641,6 @@
               </button>`;
           }).join(''))}
         </div>
-
-        <button class="repasar-mini" id="btn-repasar-op" type="button">
-          <span class="repasar-mini-ico" aria-hidden="true">🔁</span>
-          <span>Repasar oposición (40 preguntas)</span>
-          <span aria-hidden="true">›</span>
-        </button>
 
         <aside class="consejo-card">
           <span class="consejo-ico" aria-hidden="true">💡</span>
@@ -669,8 +675,6 @@
     root.querySelector('#btn-cambiar-op').onclick = () => _abrirSelectorOposicion();
     const btnG = root.querySelector('#btn-gestionar-op');
     if (btnG) btnG.onclick = () => navigate(`#/admin/contenido/oposicion/${opId}`);
-    const bs = root.querySelector('#btn-buscar-tema');
-    if (bs) bs.onclick = () => showToast('Búsqueda de temas — próximamente.');
   }
 
   // Devuelve `mis_oposiciones` como un array simple.
@@ -844,7 +848,13 @@
   async function viewTema([temaId]) {
     loading();
     const opId = getCtx().oposicion_id;
-    const home = opId ? await S.rpc('mi_home_oposicion', { p_oposicion_id: opId }) : { temas: [] };
+    // El árbol de la oposición y el documento del tema se piden en paralelo
+    // — ambos son datos que necesita esta vista antes del primer render.
+    const [home, docTema] = await Promise.all([
+      opId ? S.rpc('mi_home_oposicion', { p_oposicion_id: opId })
+           : Promise.resolve({ temas: [] }),
+      S.rpc('documento_de_tema', { p_tema_id: temaId }).catch(() => null),
+    ]);
     const tema = (home.temas || []).find(t => t.id === temaId);
     if (!tema) return empty('Tema no encontrado en tu oposición actual.');
 
@@ -853,13 +863,15 @@
     const idxTema = (home.temas || []).findIndex(t => t.id === temaId);
     const pal = _paletaTema(idxTema < 0 ? 0 : idxTema);
     const iconoTema = _iconoTema(tema.nombre, idxTema);
+    const hayEsquema = !!(docTema && docTema.ruta);
+    const puedeSubirEsquema = _esAdmin();
 
-    // Si el tema tiene un solo módulo, el "salto por módulos" no aporta
-    // — desplegamos sus secciones directamente en esta pantalla para
-    // ahorrar un click. Igualmente listamos los módulos como bloques para
-    // que la cabecera del bloque sirva de sub-título.
+    // Siempre listamos los módulos como tiles clickeables — aunque el tema
+    // tenga un único módulo. Antes desplegábamos sus secciones aquí para
+    // ahorrar un click, pero eso rompía las migas ("Inicio / Tema" saltaba
+    // directo a estudiar sin pasar por el módulo) y desbalanceaba la
+    // jerarquía visual entre temas.
     const modulos = tema.modulos || [];
-    const soloUnModulo = modulos.length === 1;
 
     root.innerHTML = html`
       <div class="view-head">
@@ -877,6 +889,10 @@
             <span>${modulos.length} módulo${modulos.length === 1 ? '' : 's'}</span>
             <span aria-hidden="true">·</span>
             <span>${tema.pct}% completado</span>
+            ${raw(Number(tema.preguntas_total) > 0 ? html`
+              <span aria-hidden="true">·</span>
+              <span>${tema.preguntas_total} pregunta${tema.preguntas_total === 1 ? '' : 's'}</span>
+            ` : '')}
           </div>
           <div class="tema-hero-barra" role="progressbar"
                aria-valuenow="${tema.pct}" aria-valuemin="0" aria-valuemax="100">
@@ -886,58 +902,52 @@
       </header>
 
       <div class="tema-actions">
-        <a class="tema-action" href="#/repaso/${opId}?tema=${tema.id}">
-          <span aria-hidden="true">📄</span>
-          <span>Ver esquema</span>
-        </a>
-        <button class="tema-action" type="button" id="btn-subir-esquema">
-          <span aria-hidden="true">⬆️</span>
-          <span>Subir esquema</span>
-        </button>
+        ${raw(hayEsquema
+          ? html`<a class="tema-action" href="#/esquema/tema/${tema.id}">
+                  <span aria-hidden="true">📄</span>
+                  <span>Ver esquema</span>
+                </a>`
+          : html`<button class="tema-action is-disabled" type="button"
+                        id="btn-ver-esquema-vacio"
+                        aria-disabled="true"
+                        title="Este tema aún no tiene esquema">
+                  <span aria-hidden="true">📄</span>
+                  <span>Ver esquema</span>
+                </button>`)}
+        ${raw(puedeSubirEsquema ? html`
+          <button class="tema-action" type="button" id="btn-subir-esquema">
+            <span aria-hidden="true">⬆️</span>
+            <span>${hayEsquema ? 'Cambiar esquema' : 'Subir esquema'}</span>
+          </button>
+        ` : '')}
       </div>
 
-      ${raw(modulos.map((m, i) => {
-        const compl = m.secciones_total > 0 && m.secciones_ok >= m.secciones_total;
-        const pctModulo = m.secciones_total === 0
-          ? 0
-          : Math.round(100 * m.secciones_ok / m.secciones_total);
-        return html`
-          <section class="modulo-bloque"
-                   style="--tema-border:${raw(pal.border)}; --tema-soft:${raw(pal.soft)}; --tema-strong:${raw(pal.strong)};">
-            ${raw(soloUnModulo ? '' : html`
-              <button class="modulo-bloque-head" data-modulo="${m.id}">
-                <span class="modulo-bloque-num">M${i + 1}</span>
-                <span class="modulo-bloque-titulo">${m.nombre}</span>
-                <span class="modulo-bloque-progreso" aria-hidden="true">
-                  ${raw(_svgProgreso(pctModulo, { size: 34, stroke: 3.5, color: pal.border }))}
+      <div class="modulo-lista">
+        ${raw(modulos.map((m, i) => {
+          const pctModulo = m.secciones_total === 0
+            ? 0
+            : Math.round(100 * m.secciones_ok / m.secciones_total);
+          const preguntasM = Number(m.preguntas_total) || 0;
+          return html`
+            <button class="modulo-tile" data-modulo="${m.id}"
+                    style="--tema-border:${raw(pal.border)}; --tema-soft:${raw(pal.soft)}; --tema-strong:${raw(pal.strong)};">
+              <span class="modulo-tile-num" aria-hidden="true">M${i + 1}</span>
+              <span class="modulo-tile-body">
+                <strong class="modulo-tile-titulo">${m.nombre}</strong>
+                <span class="modulo-tile-chips">
+                  <span class="modulo-tile-chip">${m.secciones_total} sección${m.secciones_total === 1 ? '' : 'es'}</span>
+                  ${raw(preguntasM > 0 ? html`
+                    <span class="modulo-tile-chip muted">${preguntasM} pregunta${preguntasM === 1 ? '' : 's'}</span>
+                  ` : '')}
                 </span>
-                <span class="modulo-bloque-caret" aria-hidden="true">›</span>
-              </button>
-            `)}
-
-            <ol class="seccion-lista">
-              ${raw((m.secciones || []).map((s, j) => html`
-                <li class="seccion-mini ${s.completada ? 'is-done' : ''}"
-                    data-seccion="${s.id}">
-                  <span class="seccion-mini-check" aria-hidden="true">
-                    ${s.completada ? '✓' : (j + 1)}
-                  </span>
-                  <span class="seccion-mini-titulo">${s.nombre}</span>
-                  ${s.nota_max != null
-                    ? html`<span class="seccion-mini-nota">${Math.round(s.nota_max)}</span>`
-                    : ''}
-                  <span class="seccion-mini-caret" aria-hidden="true">›</span>
-                </li>
-              `).join(''))}
-            </ol>
-
-            ${raw(compl ? html`
-              <button class="modulo-bloque-repaso" data-repaso-modulo="${m.id}">
-                🔁 Repasar módulo
-              </button>
-            ` : '')}
-          </section>`;
-      }).join(''))}
+              </span>
+              <span class="modulo-tile-progreso" aria-hidden="true">
+                ${raw(_svgProgreso(pctModulo, { size: 40, stroke: 4, color: pal.border }))}
+              </span>
+              <span class="modulo-tile-caret" aria-hidden="true">›</span>
+            </button>`;
+        }).join(''))}
+      </div>
 
       ${tema.pct >= 100 ? html`
         <button class="repasar-mini" id="btn-repaso-tema" type="button">
@@ -948,26 +958,9 @@
       ` : ''}
     `;
 
-    // Cabecera de módulo → navega al módulo (solo cuando hay >1).
-    root.querySelectorAll('.modulo-bloque-head').forEach(el => {
-      el.onclick = (ev) => {
-        ev.preventDefault();
-        navigate(`#/modulo/${el.dataset.modulo}`);
-      };
-    });
-    // Sección → abre teoría (con test al final). Un único CTA.
-    root.querySelectorAll('.seccion-mini').forEach(el => {
-      el.onclick = () => navigate(`#/seccion/${el.dataset.seccion}/teoria`);
-    });
-    // Repaso por módulo.
-    root.querySelectorAll('[data-repaso-modulo]').forEach(el => {
-      el.onclick = async (ev) => {
-        ev.stopPropagation();
-        try {
-          const r = await S.rpc('iniciar_intento_modulo', { p_modulo_id: el.dataset.repasoModulo });
-          _iniciarFlujoTest(r);
-        } catch (e) { showToast(_msgError(e.message)); }
-      };
+    // Cada tile de módulo navega a su vista (donde ya viven las secciones).
+    root.querySelectorAll('.modulo-tile').forEach(el => {
+      el.onclick = () => navigate(`#/modulo/${el.dataset.modulo}`);
     });
     const btnRT = root.querySelector('#btn-repaso-tema');
     if (btnRT) {
@@ -979,7 +972,151 @@
       };
     }
     const btnSubir = root.querySelector('#btn-subir-esquema');
-    if (btnSubir) btnSubir.onclick = () => showToast('Subir esquema — próximamente.');
+    if (btnSubir) btnSubir.onclick = () => _subirEsquemaTema(tema, docTema, () => viewTema([temaId]));
+    const btnVerVacio = root.querySelector('#btn-ver-esquema-vacio');
+    if (btnVerVacio) btnVerVacio.onclick = () => showToast('Este tema aún no tiene esquema.');
+  }
+
+
+  // Sube un esquema de tema al microservicio de contenido y lo registra en
+  // la tabla `documentos` con nivel='tema', tipo='esquema'.  Sigue el mismo
+  // patrón que la subida de teoría desde `viewAdminSeccion`: primero
+  // asegura la carpeta destino, luego POST /teoria/api/subir con el
+  // fichero, y finalmente `admin_upsert_documento`. Sólo admin — el botón
+  // que abre este modal ya está protegido en `viewTema`.
+  function _subirEsquemaTema(tema, docPrevio, onDone) {
+    // Carpeta convención: /<slug-tema>/esquema/. El microservicio crea las
+    // subcarpetas al vuelo con /api/carpeta (idempotente).
+    const slug = (tema.slug || 'tema')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'tema';
+    const carpeta = `/${slug}/esquema`;
+
+    _mostrarModal({
+      titulo: docPrevio ? 'Cambiar esquema del tema' : 'Subir esquema del tema',
+      contenido: html`
+        <p class="muted" style="margin-top:0">
+          Sube un fichero markdown (<code>.md</code>) con el esquema del tema.
+          Se guarda en <code>${carpeta}/</code> y se enlaza como esquema de
+          <strong>${tema.nombre}</strong>. ${raw(docPrevio ? html`
+            <br>Reemplazará la ruta actual (<code>${docPrevio.ruta}</code>).
+          ` : '')}
+        </p>
+        <form id="form-subir-esquema" class="form-grid">
+          <div class="field">
+            <label>Fichero</label>
+            <input type="file" name="fichero" accept=".md,.markdown,.txt" required>
+          </div>
+          <div class="form-err" hidden></div>
+          <div class="form-row" style="justify-content:flex-end;gap:.5rem">
+            <button class="btn" type="button" id="btn-cancelar-esquema">Cancelar</button>
+            <button class="btn btn-pri" type="submit" id="btn-guardar-esquema">
+              ${docPrevio ? 'Cambiar' : 'Subir'}
+            </button>
+          </div>
+        </form>`,
+      onMount(modal) {
+        modal.querySelector('#btn-cancelar-esquema').onclick = () => _cerrarModal();
+        modal.querySelector('#form-subir-esquema').onsubmit = async (ev) => {
+          ev.preventDefault();
+          const err = modal.querySelector('.form-err');
+          const btn = modal.querySelector('#btn-guardar-esquema');
+          err.hidden = true;
+          const file = new FormData(ev.target).get('fichero');
+          if (!file || !file.name) {
+            err.textContent = 'Elige un fichero antes de subir.';
+            err.hidden = false;
+            return;
+          }
+          btn.disabled = true;
+          btn.textContent = 'Subiendo…';
+          try {
+            const tok = S.getAccess?.();
+            const headers = tok ? { Authorization: `Bearer ${tok}` } : {};
+            // 1) Crea la carpeta destino de forma idempotente.
+            await fetch('/teoria/api/carpeta', {
+              method: 'POST',
+              headers: { ...headers, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                padre: carpeta.replace(/\/[^/]+$/, '/') || '/',
+                nombre: carpeta.split('/').pop(),
+              }),
+            }).catch(() => {});
+            // 2) Sube el fichero al microservicio de contenido.
+            const fd = new FormData();
+            fd.append('ruta', carpeta);
+            fd.append('files', file);
+            const r = await fetch('/teoria/api/subir', {
+              method: 'POST', body: fd, headers,
+            });
+            if (!r.ok) throw new Error('upload_failed');
+            const d = await r.json();
+            const ruta = d.subidos && d.subidos[0] && d.subidos[0].ruta;
+            if (!ruta) throw new Error('no_se_pudo_registrar');
+            // 3) Registra la ruta como esquema del tema en `documentos`.
+            await S.rpc('admin_upsert_documento', {
+              p_nivel: 'tema',
+              p_entidad_id: tema.id,
+              p_tipo: 'esquema',
+              p_ruta: ruta,
+            });
+            _cerrarModal();
+            showToast(docPrevio ? 'Esquema actualizado.' : 'Esquema subido.');
+            if (typeof onDone === 'function') onDone();
+          } catch (e) {
+            err.textContent = _msgError(e.message || String(e));
+            err.hidden = false;
+            btn.disabled = false;
+            btn.textContent = docPrevio ? 'Cambiar' : 'Subir';
+          }
+        };
+      },
+    });
+  }
+
+
+  // ── Vista: esquema de un tema (markdown) ───────────────────────────
+  async function viewEsquemaTema([temaId]) {
+    loading();
+    try {
+      const opId = getCtx().oposicion_id;
+      const [home, doc] = await Promise.all([
+        opId ? S.rpc('mi_home_oposicion', { p_oposicion_id: opId })
+             : Promise.resolve({ temas: [] }),
+        S.rpc('documento_de_tema', { p_tema_id: temaId }).catch(() => null),
+      ]);
+      const tema = (home.temas || []).find(t => t.id === temaId);
+      if (!tema) return empty('Tema no encontrado.');
+      const idxTema = (home.temas || []).findIndex(t => t.id === temaId);
+      const pal = _paletaTema(idxTema < 0 ? 0 : idxTema);
+      const nombreOp = home.oposicion?.nombre || 'Inicio';
+
+      let md = '';
+      if (doc && doc.ruta) md = await fetchMarkdown(doc.ruta);
+      else md = '## Sin esquema todavía\n\nEste tema aún no tiene esquema subido.';
+
+      root.innerHTML = html`
+        <div class="view-head">
+          <div class="breadcrumbs">
+            <a href="#/">${nombreOp}</a> /
+            <a href="#/tema/${tema.id}">${tema.nombre}</a> /
+            <strong>Esquema</strong>
+          </div>
+        </div>
+
+        <header class="tema-hero teoria-hero"
+                style="--tema-border:${raw(pal.border)}; --tema-soft:${raw(pal.soft)}; --tema-strong:${raw(pal.strong)};">
+          <span class="tema-hero-icono teoria-hero-icono" aria-hidden="true">📄</span>
+          <div class="tema-hero-body">
+            <span class="teoria-hero-crumb">${tema.nombre}</span>
+            <h1 class="tema-hero-titulo">Esquema del tema</h1>
+          </div>
+        </header>
+
+        <div class="teoria-body">${raw(renderMarkdown(md))}</div>
+      `;
+    } catch (e) {
+      empty('No se pudo cargar el esquema: ' + e.message);
+    }
   }
 
 
@@ -1020,6 +1157,10 @@
             <span>${totalOk}/${totalT} sección${totalT === 1 ? '' : 'es'} completada${totalOk === 1 ? '' : 's'}</span>
             <span aria-hidden="true">·</span>
             <span>${pctModulo}%</span>
+            ${raw(Number(modulo.preguntas_total) > 0 ? html`
+              <span aria-hidden="true">·</span>
+              <span>${modulo.preguntas_total} pregunta${modulo.preguntas_total === 1 ? '' : 's'}</span>
+            ` : '')}
           </div>
           <div class="tema-hero-barra" role="progressbar"
                aria-valuenow="${pctModulo}" aria-valuemin="0" aria-valuemax="100">
@@ -1085,15 +1226,37 @@
 
 
   // ── Vista: teoría de una sección ───────────────────────────────────
+  // Busca una sección en el payload de `mi_home_oposicion` y devuelve el
+  // triple (tema, modulo, seccion, idxTema) o null si no aparece — para
+  // pintar migas y color heredado sin más RPCs.
+  function _localizarSeccion(home, seccId) {
+    const temas = home?.temas || [];
+    for (let i = 0; i < temas.length; i++) {
+      const t = temas[i];
+      for (const m of (t.modulos || [])) {
+        const s = (m.secciones || []).find(x => x.id === seccId);
+        if (s) return { tema: t, modulo: m, seccion: s, idxTema: i };
+      }
+    }
+    return null;
+  }
+
   async function viewTeoria([seccId]) {
     loading();
-    // Placeholder: obtener la ruta del documento y renderizar el markdown.
-    // En MVP mostramos un aviso si el backend de contenido no está
-    // preparado — la ruta real la resuelve el microservicio 'contenido/'.
     try {
-      // TODO: RPC para obtener metadatos del documento por sección.
-      const doc = await S.rpc('documento_de_seccion', { p_seccion_id: seccId })
-        .catch(() => null);
+      // Necesitamos el árbol completo de la oposición para pintar migas
+      // (Tema / Módulo / Sección) coherentes con la vista de tema/módulo.
+      // Es una llamada más, pero es el mismo endpoint cacheable que ya usan
+      // esas vistas: el navegador reaprovecha la respuesta y la cabecera
+      // queda "en armonía" con el resto del flujo.
+      const opId = getCtx().oposicion_id;
+      const [doc, home] = await Promise.all([
+        S.rpc('documento_de_seccion', { p_seccion_id: seccId }).catch(() => null),
+        opId ? S.rpc('mi_home_oposicion', { p_oposicion_id: opId })
+             : Promise.resolve({ temas: [] }),
+      ]);
+      const ctx = _localizarSeccion(home, seccId);
+
       let md = '';
       if (doc && doc.ruta) md = await fetchMarkdown(doc.ruta);
       else md = '## Sin teoría todavía\n\nEsta sección no tiene documento de teoría subido.';
@@ -1101,10 +1264,32 @@
       // Marca la teoría como vista (idempotente).
       S.rpc('marcar_teoria_vista', { p_seccion_id: seccId }).catch(() => {});
 
+      const pal = ctx ? _paletaTema(ctx.idxTema) : _paletaTema(0);
+      const nombreOp = home.oposicion?.nombre || 'Inicio';
+
       root.innerHTML = html`
         <div class="view-head">
-          <div class="breadcrumbs"><a href="#/">Inicio</a> / Teoría</div>
+          <div class="breadcrumbs">
+            <a href="#/">${nombreOp}</a>
+            ${raw(ctx ? html`
+              / <a href="#/tema/${ctx.tema.id}">${ctx.tema.nombre}</a>
+              / <a href="#/modulo/${ctx.modulo.id}">${ctx.modulo.nombre}</a>
+              / <strong>${ctx.seccion.nombre}</strong>
+            ` : ' / <strong>Teoría</strong>')}
+          </div>
         </div>
+
+        ${raw(ctx ? html`
+          <header class="tema-hero teoria-hero"
+                  style="--tema-border:${raw(pal.border)}; --tema-soft:${raw(pal.soft)}; --tema-strong:${raw(pal.strong)};">
+            <span class="tema-hero-icono teoria-hero-icono" aria-hidden="true">📖</span>
+            <div class="tema-hero-body">
+              <span class="teoria-hero-crumb">${ctx.tema.nombre} · ${ctx.modulo.nombre}</span>
+              <h1 class="tema-hero-titulo">${ctx.seccion.nombre}</h1>
+            </div>
+          </header>
+        ` : '')}
+
         <div class="teoria-body">${raw(renderMarkdown(md))}</div>
         <div class="teoria-cta">
           <button class="btn btn-pri" id="btn-test">📝 ¿Te examinas ahora?</button>
