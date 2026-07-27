@@ -5,6 +5,11 @@
  * las tres apps. Depende de shared/tokens.css.
  */
 
+/* Reset universal a border-box: sin esto, un `width: 100%` con `padding`
+ * termina sumando ambos y desbordando su contenedor — le pasó a
+ * .auth-card en móvil y estaba cortando el formulario por la derecha. */
+*, *::before, *::after { box-sizing: border-box; }
+
 /* Base tipográfica accesible: 17px, altura de línea generosa y
  * antialiasing para que temarios largos no fatiguen. */
 html {

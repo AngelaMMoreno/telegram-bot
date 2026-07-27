@@ -19,7 +19,7 @@
  *   en el siguiente refresh.
  * ==========================================================================*/
 
-const CACHE_VERSION = "aprentix-v20";
+const CACHE_VERSION = "aprentix-v21";
 const SHELL_CACHE   = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
