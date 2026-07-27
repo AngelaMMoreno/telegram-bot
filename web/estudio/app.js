@@ -413,15 +413,16 @@
     const op = home.oposicion || {};
     const temas = home.temas || [];
 
+    const admin = _esAdmin();
     root.innerHTML = html`
       <button class="oposicion-picker" id="btn-cambiar-op">
         <span>📚</span>
         <span>${op.nombre || 'Elige una oposición'}</span>
         <span class="caret">▾</span>
       </button>
-      <button class="btn-repasar" id="btn-repasar-op">
-        🔁 Repasar toda la oposición (40 preguntas)
-      </button>
+      ${raw(temas.length > 0
+        ? '<button class="btn-repasar" id="btn-repasar-op">🔁 Repasar toda la oposición (40 preguntas)</button>'
+        : '')}
       ${raw(temas.map(t => html`
         <div class="tema-card" data-tema="${t.id}">
           <div class="tema-head">
@@ -434,14 +435,30 @@
           </div>
         </div>
       `).join(''))}
-      ${raw(temas.length === 0 ? '<div class="empty">Esta oposición aún no tiene temas asignados.</div>' : '')}
+      ${raw(temas.length === 0
+        ? (admin
+            ? html`
+              <div class="empty">
+                <p>Esta oposición aún no tiene temas asignados.</p>
+                <button class="btn btn-pri" id="btn-gestionar-op">
+                  ➕ Añadir temas desde el panel admin
+                </button>
+              </div>`
+            : '<div class="empty">Esta oposición aún no tiene temas asignados.</div>')
+        : '')}
+      ${raw(admin
+        ? '<div class="admin-quick"><a class="btn btn-sm" href="#/admin/contenido">⚙️ Gestión de contenido</a></div>'
+        : '')}
     `;
 
     root.querySelectorAll('.tema-card').forEach(c => {
       c.onclick = () => navigate(`#/tema/${c.dataset.tema}`);
     });
-    root.querySelector('#btn-repasar-op').onclick = () => navigate(`#/repaso/${opId}`);
+    const btnR = root.querySelector('#btn-repasar-op');
+    if (btnR) btnR.onclick = () => navigate(`#/repaso/${opId}`);
     root.querySelector('#btn-cambiar-op').onclick = () => _abrirSelectorOposicion();
+    const btnG = root.querySelector('#btn-gestionar-op');
+    if (btnG) btnG.onclick = () => navigate(`#/admin/contenido/oposicion/${opId}`);
   }
 
   // Devuelve `mis_oposiciones` como un array simple.
@@ -531,7 +548,13 @@
           : 'Selecciona cualquier oposición del catálogo para sumarla a tu plan.'}
       </p>
       ${raw(list.length === 0
-        ? '<div class="empty">Aún no hay oposiciones publicadas. Si eres admin, créalas desde el panel de contenido.</div>'
+        ? (_esAdmin()
+            ? html`
+              <div class="empty">
+                <p>Aún no hay oposiciones publicadas.</p>
+                <button class="btn btn-pri" id="btn-goto-admin">➕ Crear la primera oposición</button>
+              </div>`
+            : '<div class="empty">Aún no hay oposiciones publicadas. Vuelve más tarde o pregúntale al admin.</div>')
         : html`
           <div class="op-grid">
             ${raw(list.map(o => {
@@ -555,6 +578,9 @@
           </div>`)}
       ${raw(mias.length > 0
         ? '<div style="margin-top:1rem"><button class="btn" id="btn-volver">← Volver al inicio</button></div>'
+        : '')}
+      ${raw(_esAdmin()
+        ? '<div class="admin-quick"><a class="btn btn-sm" href="#/admin/contenido">⚙️ Gestión de contenido</a></div>'
         : '')}
     `;
     root.querySelectorAll('[data-opid]').forEach(b => {
@@ -580,6 +606,28 @@
     });
     const bv = root.querySelector('#btn-volver');
     if (bv) bv.onclick = () => navigate('#/');
+    const bg = root.querySelector('#btn-goto-admin');
+    if (bg) bg.onclick = () => navigate('#/admin/contenido');
+  }
+
+
+  // Atajo booleano para saber si la sesión actual tiene rol admin. Combina
+  // dos fuentes: el JWT (rápido) y una copia refrescada del rol vía
+  // `mi_cuenta` (que puede diferir del JWT si el admin te añadió el rol
+  // después de que iniciaras sesión). Si en la última carga de `mi_cuenta`
+  // aparecía 'admin', lo tratamos como admin aunque el JWT aún no lo diga.
+  let _lastFreshRoles = null;
+  async function _refreshLocalRoles() {
+    try {
+      const me = await S.rpc('mi_cuenta');
+      _lastFreshRoles = Array.isArray(me.roles) ? me.roles : null;
+    } catch (_) { /* ignoramos */ }
+  }
+  function _esAdmin() {
+    const u = S.getUser();
+    const jwtAdmin = !!(u && Array.isArray(u.roles) && u.roles.includes('admin'));
+    const freshAdmin = !!(Array.isArray(_lastFreshRoles) && _lastFreshRoles.includes('admin'));
+    return jwtAdmin || freshAdmin;
   }
 
 
@@ -2130,6 +2178,9 @@
 
     // Rehidratación silenciosa: si hay refresh, obtiene un access nuevo.
     await S.bootstrap();
+    // Cargamos los roles frescos de mi_cuenta (pueden diferir del JWT si un
+    // admin acaba de otorgar/retirar un rol). Esto alimenta `_esAdmin()`.
+    if (S.getUser()) _refreshLocalRoles();
     if (!location.hash) {
       // Sin hash: si hay sesión, home; si no, login.
       location.hash = S.getUser() ? '#/' : '#/login';

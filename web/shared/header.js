@@ -223,14 +223,23 @@
         location.href = '/#/login';
       };
 
-      // Oculta las filas de admin si el usuario no es admin.
+      // Oculta las filas de admin si el usuario no es admin. Los roles llegan
+      // por dos vías: (a) claim `roles` del JWT (rápido, se sella al login) y
+      // (b) `mi_cuenta` — que es fresco pero requiere red. Usamos la unión:
+      // si alguno de los dos dice "admin", mostramos. Así al añadir el rol en
+      // BBDD tras el login, no hay que cerrar sesión — con la primera llamada
+      // a mi_cuenta la cabecera se actualiza (this._freshAdmin se recuerda).
+      this._freshAdmin = null;
       const applyAdmin = () => {
         const u = S?.getUser?.();
-        const esAdmin = u && Array.isArray(u.roles) && u.roles.includes('admin');
+        const jwtAdmin   = !!(u && Array.isArray(u.roles) && u.roles.includes('admin'));
+        const freshAdmin = this._freshAdmin === true;
+        const esAdmin = jwtAdmin || freshAdmin;
         $('#btn-admin-panel').hidden = !esAdmin;
         const cont = $('#btn-admin-contenido');
         if (cont) cont.hidden = !esAdmin;
       };
+      this._applyAdmin = applyAdmin;
       applyAdmin();
       window.addEventListener('aprentix:session', applyAdmin);
 
@@ -285,6 +294,11 @@
           etiqueta.textContent = rol;
           return etiqueta;
         }));
+        // Detecta cambios de rol tras el login (por ejemplo, un admin te dio
+        // el rol admin). Si los roles frescos difieren del JWT, actualizamos
+        // la visibilidad del panel admin sin esperar a que caduque el token.
+        this._freshAdmin = roles.includes('admin');
+        if (typeof this._applyAdmin === 'function') this._applyAdmin();
       } catch (_) { /* silencioso */ }
     }
   }
