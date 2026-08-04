@@ -8,12 +8,35 @@
 # Mismo patrón que el stack `backups`: un dcron en foreground, la hora por
 # variable de entorno y todo a `docker logs`.
 #
-# NO es un sistema de CI. Publica lo que ya está en la rama que le digas
-# (normalmente `main`), es decir, lo que alguien ya revisó y mergeó. La
-# revisión previa sigue siendo cosa del PR.
+# NO es un sistema de CI. Publica lo que ya está en la rama que le digas,
+# es decir, lo que alguien ya revisó y mergeó. La revisión previa sigue
+# siendo cosa del PR.
+#
+# ── VARIANTE DESA (rama `desa`, entorno Dokploy `desarrollo`) ─────────
+# Los valores por defecto de este fichero son los de DESARROLLO:
+#   - `CONTENIDO_RAMA` = `desa`  → publica la rama de contenido en curso.
+#   - El DSN debe apuntar a `aprentix_desa`, NO a `aprentix`.
+#
+# Así el contenido recorre el mismo camino que el código: se mergea a
+# `desa`, se publica en `aprentix_desa`, se comprueba en
+# desa.aprentix.es y sólo entonces se mergea a `main` para que el
+# publicador de producción lo suba a `aprentix`. Con contenido generado
+# con ayuda de una IA, ese escalón intermedio es justamente donde se ven
+# los destrozos antes de que los vea un opositor.
+#
+# MERGE NOTE (al mergear a `main`): cambiar `CONTENIDO_RAMA` a `main` y
+# el DSN a la BD `aprentix`. Igual que en deploy/core y deploy/app,
+# mantener DOS ficheros distintos por entorno o conmutar con
+# `COMPOSE_PROFILES`.
+#
+# El nombre de servicio `publicador` se deja igual en los dos entornos:
+# nadie lo resuelve por DNS desde otro stack —sólo hace conexiones de
+# salida—, así que el alias duplicado en dokploy-network es inocuo. Es el
+# mismo criterio que con el servicio `app`.
 #
 # Se conecta a la BBDD del stack core por la red externa dokploy-network
-# usando el hostname `db`. Depende de que core esté levantado.
+# usando el hostname `db` (el Postgres único de producción, que aloja las
+# dos bases). Depende de que core-prod esté levantado.
 
 services:
 
@@ -34,12 +57,16 @@ services:
       # El token NO aparece en los logs: tanto el entrypoint como el
       # propio publicar.py lo tapan antes de imprimir nada.
       CONTENIDO_REPO: ${CONTENIDO_REPO:?URL del repo de contenido}
-      # Publica sólo lo mergeado. Deja `main` salvo que sepas por qué no.
-      CONTENIDO_RAMA: ${CONTENIDO_RAMA:-main}
+      # Publica sólo lo mergeado. En desa, la rama `desa`; en producción,
+      # `main`. Si tu repo de contenido usa otros nombres de rama, aquí
+      # es donde se ajusta.
+      CONTENIDO_RAMA: ${CONTENIDO_RAMA:-desa}
 
       # ── Base de datos ──────────────────────────────────────────────
-      # DSN completo. La contraseña es la misma que usa el stack core.
-      PUBLICAR_DSN: ${PUBLICAR_DSN:?DSN de la BBDD, p.ej. postgres://aprentix:PASS@db:5432/aprentix}
+      # DSN completo. La contraseña es la misma que usa el stack core: hay
+      # un solo rol `aprentix` para las dos bases.
+      # DESA → aprentix_desa   ·   PRODUCCIÓN → aprentix
+      PUBLICAR_DSN: ${PUBLICAR_DSN:?DSN de la BBDD, p.ej. postgres://aprentix:PASS@db:5432/aprentix_desa}
 
       # ── Qué y cuándo ───────────────────────────────────────────────
       # Cinco campos cron. Por defecto cada 15 min: el contenido no es

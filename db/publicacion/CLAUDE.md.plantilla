@@ -662,7 +662,25 @@ Cuando cambie una norma:
 
 ---
 
-## 12. Validar antes de commitear
+## 12. Ramas y validación
+
+### Ramas
+
+Mismo esquema que el repo de la aplicación:
+
+| Rama | Qué es | Dónde acaba |
+|---|---|---|
+| `desa` | Donde se mergea el contenido nuevo | `desa.aprentix.es` (entorno de desarrollo) |
+| `main` | Lo que ven los opositores | `aprentix.es` (producción) |
+
+El trabajo va a una rama propia, se mergea a `desa` por PR, se comprueba
+en `desa.aprentix.es`, y de ahí se mergea a `main`. **No se commitea
+directamente a `main`.**
+
+Un publicador automático recoge cada rama cada pocos minutos y la sube a
+su base de datos. No hay que ejecutar nada.
+
+### Validar antes de commitear
 
 **Obligatorio.** No commitees contenido sin pasar el validador:
 

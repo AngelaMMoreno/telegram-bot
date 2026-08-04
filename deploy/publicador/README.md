@@ -9,21 +9,60 @@ variable de entorno y todo a `docker logs`.
 
 ---
 
+## El contenido recorre el mismo camino que el código
+
+Hay **un publicador por entorno**, cada uno mirando su rama y escribiendo
+en su base de datos:
+
+```
+   repo de contenido                    aplicación
+   ─────────────────                    ──────────
+   PR  →  rama `desa`  ──publicador-desa──►  aprentix_desa
+                                              desa.aprentix.es
+                                                    │
+                                            lo compruebas aquí
+                                                    │
+          merge a `main` ──publicador-prod──►    aprentix
+                                                aprentix.es
+```
+
+| | `desarrollo` | `produccion` |
+|---|---|---|
+| Rama de contenido | `desa` | `main` |
+| Base de datos | `aprentix_desa` | `aprentix` |
+| `PUBLICAR_CRON` sugerido | `*/15 * * * *` | `0 * * * *` |
+
+Ese escalón intermedio es el que hace que un destrozo se vea en
+`desa.aprentix.es` y no en la cara de un opositor. Con contenido escrito
+con ayuda de una IA vale doble: el modelo genera cosas plausibles y
+equivocadas, y `--estricto` sólo detecta las que se pueden comprobar
+mecánicamente — un plazo inventado pasa el validador sin despeinarse.
+
+En producción el cron puede ser más espaciado: lo que llega ahí ya se ha
+mirado en desa.
+
+---
+
 ## Puesta en marcha
 
 En Dokploy, **Create Application → Compose**, apuntando a este repo con
-`deploy/publicador/docker-compose.yml`. Igual que los demás stacks.
+`deploy/publicador/docker-compose.yml`. Igual que los demás stacks, y
+**uno en cada entorno** (a diferencia de `notificador` y `backups`, que
+sólo corren en producción).
 
-Variables mínimas:
+Variables mínimas (ver `.env.example` para la lista completa):
 
-| Variable | Ejemplo | Qué es |
+| Variable | Ejemplo (desa) | Qué es |
 |---|---|---|
 | `CONTENIDO_REPO` | `https://x-access-token:<TOKEN>@github.com/tu-cuenta/oposiciones.git` | URL del repo de contenido |
-| `PUBLICAR_DSN` | `postgres://aprentix:<PASS>@db:5432/aprentix` | La BBDD. `db` es el hostname del stack core |
-| `CONTENIDO_RAMA` | `main` | Publica sólo lo mergeado |
+| `CONTENIDO_RAMA` | `desa` | En producción, `main` |
+| `PUBLICAR_DSN` | `postgres://aprentix:<PASS>@db:5432/aprentix_desa` | En producción, la BD `aprentix` |
 | `PUBLICAR_CRON` | `*/15 * * * *` | Cada cuánto mira |
 | `PUBLICAR_APLICAR` | *(vacío)* | **Déjala vacía al principio** |
 | `AVISO_EMAIL` | `tu@correo.es` | A quién avisar si falla. Ver abajo |
+
+> `db` es el hostname del Postgres único de producción, que aloja las dos
+> bases. El rol y la contraseña son los mismos para ambas.
 
 ### Avisos por email (importante si no usas CI)
 
@@ -108,8 +147,11 @@ base de datos (ver `db/publicacion/README.md`).
 El reparto queda así:
 
 ```
-escribes → PR → validar (revisión)  → merge a main → publicador (automático)
-                 ↑ humano o CI                        ↑ este contenedor
+escribes → PR → validar (revisión)  → merge a `desa` → publicador-desa
+                 ↑ humano o CI                          ↓
+                                              lo miras en desa.aprentix.es
+                                                        ↓
+                                        merge a `main` → publicador-prod
 ```
 
 ---

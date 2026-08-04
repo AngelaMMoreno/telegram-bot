@@ -350,13 +350,21 @@ dentro: `aprentix` (la usa prod) y `aprentix_desa` (la usa desa). Un
 En Dokploy, dentro del entorno `desarrollo`, se crean SÓLO dos Compose
 Applications, ambas apuntando a la rama `desa`:
 
-| Stack       | Compose path                          | .env de referencia            |
-|-------------|---------------------------------------|-------------------------------|
-| `core-desa` | `deploy/core/docker-compose.yml`      | `deploy/core/.env.example`    |
-| `app-desa`  | `deploy/app/docker-compose.yml`       | `deploy/app/.env.example`     |
+| Stack       | Compose path                              | .env de referencia               |
+|-------------|-------------------------------------------|----------------------------------|
+| `core-desa` | `deploy/core/docker-compose.yml`          | `deploy/core/.env.example`       |
+| `app-desa`  | `deploy/app/docker-compose.yml`           | `deploy/app/.env.example`        |
+| `publicador-desa` | `deploy/publicador/docker-compose.yml` | `deploy/publicador/.env.example` |
 
 **NO crear en desa** las Compose Applications de `notificador` ni
 `backups` — corren sólo en producción y ya cubren el sistema entero.
+
+**`publicador` sí va en los dos entornos**, a diferencia de los
+anteriores: cada uno publica su rama del repo de contenido en su base de
+datos (`desa` → `aprentix_desa`, `main` → `aprentix`). Así el contenido
+recorre el mismo camino que el código y se comprueba en
+`desa.aprentix.es` antes de llegar a producción. Ver
+`deploy/publicador/README.md`.
 
 ### Diferencias respecto a los ficheros de producción
 
@@ -428,6 +436,18 @@ Los composes de esta rama están recortados/renombrados a propósito:
 | `DOMINIO_LANDING`     | `desa.aprentix.es`         | Obligatorio; no pisa `aprentix.es`.          |
 | `DOMINIO_LANDING_ALT` | vacío o `www.desa.aprentix.es` | Alias opcional.                          |
 | `DOMINIO_WEB*`, `DOMINIO_TEORIA*` | **dejar vacías** | Los hosts legacy los declara sólo prod.  |
+
+#### `publicador-desa`
+
+| Clave                | Valor típico                                        | Notas                                        |
+|----------------------|-----------------------------------------------------|----------------------------------------------|
+| `CONTENIDO_REPO`     | `https://x-access-token:<TOKEN>@github.com/…/oposiciones.git` | Token de sólo lectura. No sale en los logs.  |
+| `CONTENIDO_RAMA`     | `desa`                                              | En producción, `main`.                       |
+| `PUBLICAR_DSN`       | `postgres://aprentix:<DB_PASS>@db:5432/aprentix_desa` | En producción, la BD `aprentix`.           |
+| `PUBLICAR_CRON`      | `*/15 * * * *`                                      | En producción basta `0 * * * *`.             |
+| `PUBLICAR_APLICAR`   | *(vacío al principio)*                              | Vacío = sólo simulacros; no escribe nada.    |
+| `AVISO_EMAIL`        | tu correo                                           | Avisa si una publicación falla.              |
+| `SMTP_*`             | *los mismos que `core`*                             | Sólo se usan si `AVISO_EMAIL` está puesta.   |
 
 ### Verificación
 

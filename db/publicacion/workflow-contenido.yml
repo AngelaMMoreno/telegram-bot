@@ -14,7 +14,9 @@ name: Validar contenido
 on:
   pull_request:
   push:
-    branches: [main]
+    # Las ramas donde se mergea contenido. Mismo esquema que el repo de
+    # la aplicación: `desa` es la de trabajo y `main` la de producción.
+    branches: [desa, main]
   workflow_dispatch:
 
 jobs:
