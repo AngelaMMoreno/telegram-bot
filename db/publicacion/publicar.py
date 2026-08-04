@@ -355,13 +355,6 @@ def validar(docs: list[Documento], raiz: Path) -> list[str]:
         if (tema, modulo) not in con_esquema_mod:
             avisos.append(f"{tema}/{modulo}: falta su esquema.md")
 
-    # Los YAML de oposición apuntan a temas que existen.
-    for path in sorted((raiz / "oposiciones").glob("*.yaml")):
-        datos = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        for slug in datos.get("temas") or []:
-            if slug not in por_tema_mods:
-                avisos.append(f"oposiciones/{path.name}: declara el tema «{slug}» "
-                              f"pero no hay nada en temas/{slug}/")
     return avisos
 
 
@@ -512,8 +505,10 @@ def construir_arbol(op: dict, docs: list[Documento],
     temas de esta oposición. Devuelve también los documentos implicados.
 
     `docs` puede venir ya filtrado; en ese caso `completo=False` y los temas
-    que falten simplemente se saltan. Publicando entero, en cambio, que un
-    tema del YAML no tenga ficheros es un error y no un silencio.
+    que falten simplemente se saltan. Publicando entero también se omiten los
+    temas del YAML que aún no tienen ficheros: el YAML puede declarar la
+    planificación completa de la oposición antes de que toda la teoría esté
+    escrita.
 
     **El orden de los temas se toma siempre de la posición que ocupan en el
     YAML completo**: si publicas suelto el quinto tema, sigue siendo el
@@ -528,10 +523,9 @@ def construir_arbol(op: dict, docs: list[Documento],
         del_tema = por_tema.get(slug_tema)
         if not del_tema:
             if completo:
-                raise ErrorContenido(
-                    f"la oposición «{op['slug']}» declara el tema «{slug_tema}» "
-                    f"pero no hay ningún fichero en temas/{slug_tema}/"
-                )
+                log.info("la oposición «%s» declara el tema «%s», pero todavía "
+                         "no hay documentos publicables en temas/%s/; se omite",
+                         op["slug"], slug_tema, slug_tema)
             continue
         usados.extend(del_tema)
 
@@ -686,12 +680,18 @@ def estado_actual(conn: psycopg.Connection, slug: str) -> dict[str, dict]:
 # ── Plan y ejecución ────────────────────────────────────────────────────────
 
 def calcular_plan(docs: list[Documento], estado: dict[str, dict],
-                  completo: bool = True) -> dict[str, list]:
+                  completo: bool = True,
+                  temas_publicables: set[str] | None = None) -> dict[str, list]:
     """Compara repo y BD. Esto es lo que se enseña en el simulacro.
 
     `completo=False` (publicación filtrada) deja la lista de archivables
     vacía: fuera del filtro no hemos mirado nada, y llamar «ausente» a lo que
     ni siquiera hemos leído sería mentir en el plan.
+
+    En publicación completa, `temas_publicables` acota el archivado a los
+    temas que sí tienen documentos en el repo. Así se pueden declarar en el
+    YAML temas planificados pero aún no escritos, sin que `--archivar-ausentes`
+    retire contenido de esos temas si existía de antes.
     """
     import hashlib
 
@@ -716,6 +716,9 @@ def calcular_plan(docs: list[Documento], estado: dict[str, dict],
             plan["actualizar"].append(ruta)
     if completo:
         for ruta, pub in estado.items():
+            tema = ruta.split("/", 1)[0]
+            if temas_publicables is not None and tema not in temas_publicables:
+                continue
             if ruta not in vistas and not pub.get("archivada"):
                 plan["archivar"].append(ruta)
     return plan
@@ -961,7 +964,8 @@ def _publicar_todo(args, raiz: Path, completo: bool) -> int:
                 continue
             publicadas += 1
             estado = estado_actual(conn, slug)
-            plan = calcular_plan(usados, estado, completo)
+            plan = calcular_plan(usados, estado, completo,
+                                 {d.tema for d in usados} if completo else None)
             imprimir_plan(plan, slug, args.aplicar, completo)
 
             # Se revisa también en simulacro: la idea es enterarse antes

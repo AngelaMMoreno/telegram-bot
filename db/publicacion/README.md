@@ -104,8 +104,7 @@ obligatorios de la teoría, el presupuesto de 350–1.100 palabras, las 5–12
 viñetas de «Retén esto», las ≥ 2 filas de «No lo confundas», el pool de
 ≥ 25 preguntas, las preguntas sin explicación, las que no tienen 4
 opciones, los tamaños del árbol (secciones por módulo, módulos por tema),
-los esquemas que falten, los nombres acoplados a la convocatoria (P5) y
-que cada YAML de oposición apunte a temas que existan.
+los esquemas que falten y los nombres acoplados a la convocatoria (P5).
 
 ## Publicar sin lanzar nada a mano
 
@@ -159,6 +158,11 @@ Es la convención que ya documenta `docs/PIPELINE_CREACION.md` § 7.2, más
 un YAML por oposición. Ese YAML hace falta porque **el orden de los temas
 no se puede deducir de las rutas**: un mismo tema se comparte entre
 oposiciones y ocupa distinta posición en cada una.
+
+El YAML puede declarar también temas planificados que todavía no tienen
+teoría escrita. El publicador los salta y publica sólo los temas que ya
+tienen documentos en `temas/`; así puedes tener clara la distribución de la
+oposición completa e ir estudiando lo que ya está terminado.
 
 ```yaml
 slug: auxilio-judicial

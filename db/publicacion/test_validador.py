@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from publicar import (  # noqa: E402
-    NOMBRES_PROHIBIDOS, _filas_tabla_bajo, _viñetas_bajo, leer_repo,
+    NOMBRES_PROHIBIDOS, _filas_tabla_bajo, _viñetas_bajo, leer_repo, validar,
 )
 
 fallos = []
@@ -91,6 +91,16 @@ with tempfile.TemporaryDirectory() as tmp:
     docs = leer_repo(raiz)
     check("ignora temas/README.md como documentación auxiliar",
           len(docs) == 1 and docs[0].ruta == "temas/constitucion/esquema.md")
+
+with tempfile.TemporaryDirectory() as tmp:
+    raiz = Path(tmp)
+    (raiz / "oposiciones").mkdir()
+    (raiz / "oposiciones" / "auxilio.yaml").write_text(
+        "slug: auxilio\nnombre: Auxilio\ntemas:\n  - tema-planificado\n",
+        encoding="utf-8",
+    )
+    check("un tema planificado en el YAML sin ficheros no es aviso",
+          validar([], raiz) == [])
 
 print("Recuento de viñetas y filas:")
 
