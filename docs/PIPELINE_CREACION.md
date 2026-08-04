@@ -305,17 +305,32 @@ copia que sirve la app.
 ```bash
 cd db/publicacion
 
-# 1. Simulacro. Lee, compara con lo publicado y enseña el plan. No escribe.
-python3 publicar.py --contenido ../../../oposiciones \
+# 1. Simulacro. Clona, compara con lo publicado y enseña el plan. No escribe.
+python3 publicar.py --repo git@github.com:tu-cuenta/oposiciones.git \
                     --db "postgres://aprentix@localhost:5432/aprentix_desa"
 
 # 2. Si el plan cuadra:
-python3 publicar.py --contenido ../../../oposiciones --db "…" --aplicar
+python3 publicar.py --repo git@github.com:tu-cuenta/oposiciones.git \
+                    --db "…" --aplicar
 ```
 
 Publica de una pasada la estructura, la teoría y las preguntas. Es
-idempotente: lo que no ha cambiado no se toca. El detalle completo —
-estructura del repo, flags y salvaguardas — está en
+idempotente: lo que no ha cambiado no se toca.
+
+Se puede acotar cuánto entra, y los flags son repetibles y combinables:
+
+| Alcance | Cómo |
+|---|---|
+| Todo el repo | *(sin flags)* |
+| Una oposición | `--oposicion auxilio-judicial` |
+| Un tema | `--tema ley-39-2015` |
+| Una sección | `--seccion ley-39-2015/terminacion/silencio` |
+
+Y de dónde sale: `--repo URL` lo clona él (con `--rama` y `--commit`), o
+`--contenido RUTA` usa una copia local. **`--commit` es el botón de
+deshacer**: republicando el commit anterior se vuelve al estado bueno.
+
+El detalle completo — estructura del repo, flags y salvaguardas — está en
 `db/publicacion/README.md`.
 
 ### 7.1 De dónde sale cada cosa

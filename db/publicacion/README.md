@@ -15,23 +15,71 @@ pip install -r requirements.txt
 
 # 1. Mira qué haría. NO escribe nada.
 python3 publicar.py \
-    --contenido ../../../oposiciones \
+    --repo git@github.com:tu-cuenta/oposiciones.git \
     --db "postgres://aprentix@localhost:5432/aprentix_desa"
 
 # 2. Si el plan cuadra, aplícalo.
-python3 publicar.py --contenido ../../../oposiciones --db "…" --aplicar
+python3 publicar.py --repo git@github.com:tu-cuenta/oposiciones.git \
+    --db "…" --aplicar
 ```
 
 Sin `--aplicar` es un **simulacro**: lee el repo, lo compara con lo
 publicado y enseña el plan. Es el modo por defecto a propósito — el paso
 que escribe hay que pedirlo.
 
-### Opciones
+### De dónde saca el contenido
+
+| Flag | Para qué |
+|---|---|
+| `--repo URL` | Lo clona él mismo en un temporal y publica de ahí. |
+| `--rama NOMBRE` | Rama a publicar. Por defecto, la del remoto. |
+| `--commit SHA` | Publica un commit concreto. **Así se vuelve atrás.** |
+| `--contenido RUTA` | Una copia local que ya tengas, en vez de clonar. |
+
+Con `--repo` lo publicado sale siempre de un árbol limpio recién traído
+del remoto, nunca de cambios sin commitear que alguien tuviera a medias
+en su copia. Las credenciales son las del entorno (clave SSH o credential
+helper): el script no maneja tokens ni los pide.
+
+`--commit` es el botón de deshacer. Si una publicación mete la pata,
+republicas el commit anterior y vuelves al estado bueno:
+
+```bash
+python3 publicar.py --repo … --commit a1b2c3d --aplicar
+```
+
+### Cuánto publica
+
+| Flag | Alcance |
+|---|---|
+| *(nada)* | Todas las oposiciones de `oposiciones/*.yaml`. |
+| `--oposicion SLUG` | Una oposición entera. |
+| `--tema SLUG` | Un tema suelto, en las oposiciones que lo usen. |
+| `--seccion TEMA/MODULO/SECCION` | Una sección suelta. |
+
+Los tres son repetibles y se pueden mezclar. Publicar filtrado es seguro
+para retocar algo concreto sin mover el resto:
+
+```bash
+# Sólo la sección que acabas de corregir.
+python3 publicar.py --repo … --seccion ley-39-2015/terminacion/silencio --aplicar
+```
+
+Dos detalles que importan al publicar parcial:
+
+- **El orden se respeta.** Un tema que va 5.º en su oposición sigue yendo
+  5.º aunque lo publiques suelto: la posición sale del `temas:` del YAML
+  completo, no del recorte.
+- **No se puede archivar.** `--archivar-ausentes` se rechaza junto con
+  `--tema`/`--seccion`, porque fuera del filtro no se ha leído nada y el
+  script daría por desaparecido todo el resto del temario. Para retirar
+  contenido hay que publicar la oposición entera.
+
+### Resto de opciones
 
 | Flag | Para qué |
 |---|---|
 | `--aplicar` | Escribe de verdad. Sin él, simulacro. |
-| `--oposicion SLUG` | Publica sólo esa. Repetible. Por defecto, todas. |
 | `--archivar-ausentes` | Retira lo que ya no está en el repo. **Nunca borra**: archiva. |
 | `--forzar` | Sobrescribe también los documentos editados desde el panel. |
 | `--estricto` | Los avisos de formato pasan a ser errores. Para el CI. |
@@ -138,8 +186,9 @@ Cuando el arreglo esté en git, publica con `--forzar`.
 ## Pruebas
 
 ```bash
-# Lógica del freno (no necesita BD).
+# Lógica del freno y del filtrado (no necesitan BD).
 python3 test_salvaguardas.py
+python3 test_filtrado.py
 
 # Invariantes sobre una BD de usar y tirar.
 createdb aprentix_test && psql -d aprentix_test -f ../init/01_esquema.sql

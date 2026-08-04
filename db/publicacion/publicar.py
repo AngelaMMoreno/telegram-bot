@@ -7,11 +7,25 @@ script es el único puente entre los dos, y va en una sola dirección.
 
 Uso típico — mira antes de tocar:
 
-    python3 publicar.py --contenido ../oposiciones --oposicion auxilio-judicial \\
+    python3 publicar.py --repo git@github.com:tu-cuenta/oposiciones.git \\
                         --db "postgres://aprentix@localhost:5432/aprentix_desa"
 
 Eso es un SIMULACRO: lee, compara y te enseña el plan sin escribir nada.
 Cuando el plan te cuadre, repítelo con `--aplicar`.
+
+De dónde sale el contenido, a elegir:
+
+    --repo URL        lo clona él mismo (rama con --rama, versión con --commit)
+    --contenido RUTA  una copia local que ya tengas
+
+Cuánto se publica:
+
+    (nada)                              todas las oposiciones del repo
+    --oposicion auxilio-judicial        una oposición entera
+    --tema ley-39-2015                  un tema suelto
+    --seccion ley-39-2015/term/silencio una sección suelta
+
+Los tres últimos son repetibles y se pueden mezclar.
 
 Las tres garantías, que están en las RPCs y no en este script:
 
@@ -49,11 +63,13 @@ Requiere: pip install -r requirements.txt
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
 import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -261,9 +277,63 @@ def leer_oposicion(raiz: Path, slug: str) -> dict:
 
 # ── Construcción del árbol ──────────────────────────────────────────────────
 
-def construir_arbol(op: dict, docs: list[Documento]) -> tuple[dict, list[Documento]]:
+def filtrar(docs: list[Documento], temas: list[str] | None,
+            secciones: list[str] | None) -> list[Documento]:
+    """Recorta la publicación a unos temas o unas secciones concretas.
+
+    Al filtrar por sección se arrastran también el `esquema.md` de su tema y
+    el de su módulo: son los que le dan nombre a los nodos padre, y sin ellos
+    la estructura se publicaría con el slug como nombre.
+    """
+    if not temas and not secciones:
+        return docs
+
+    quiero_tema = set(temas or [])
+    quiero_sec = set()
+    for ruta in (secciones or []):
+        partes = ruta.strip("/").split("/")
+        if len(partes) != 3:
+            raise ErrorContenido(
+                f"--seccion espera «tema/modulo/seccion», y me has dado «{ruta}»")
+        quiero_sec.add(tuple(partes))
+
+    # Ancestros de las secciones pedidas, para que sus padres tengan nombre.
+    ancestros_tema = {t for t, _, _ in quiero_sec}
+    ancestros_mod = {(t, m) for t, m, _ in quiero_sec}
+
+    salida = []
+    for d in docs:
+        if d.tema in quiero_tema:
+            salida.append(d)
+        elif d.nivel == "seccion" and (d.tema, d.modulo, d.seccion) in quiero_sec:
+            salida.append(d)
+        elif d.nivel == "tema" and d.tema in ancestros_tema:
+            salida.append(d)
+        elif d.nivel == "modulo" and (d.tema, d.modulo) in ancestros_mod:
+            salida.append(d)
+
+    if not salida:
+        raise ErrorContenido(
+            "el filtro no ha dejado ningún documento. Comprueba los slugs: "
+            f"temas={sorted(quiero_tema) or '—'}, "
+            f"secciones={sorted('/'.join(s) for s in quiero_sec) or '—'}"
+        )
+    return salida
+
+
+def construir_arbol(op: dict, docs: list[Documento],
+                    completo: bool = True) -> tuple[dict, list[Documento]]:
     """Arma el JSON que espera `admin_publicar_estructura`, limitado a los
-    temas de esta oposición. Devuelve también los documentos implicados."""
+    temas de esta oposición. Devuelve también los documentos implicados.
+
+    `docs` puede venir ya filtrado; en ese caso `completo=False` y los temas
+    que falten simplemente se saltan. Publicando entero, en cambio, que un
+    tema del YAML no tenga ficheros es un error y no un silencio.
+
+    **El orden de los temas se toma siempre de la posición que ocupan en el
+    YAML completo**: si publicas suelto el quinto tema, sigue siendo el
+    quinto y no pasa a ser el primero.
+    """
     por_tema: dict[str, list[Documento]] = {}
     for d in docs:
         por_tema.setdefault(d.tema, []).append(d)
@@ -272,10 +342,12 @@ def construir_arbol(op: dict, docs: list[Documento]) -> tuple[dict, list[Documen
     for orden_tema, slug_tema in enumerate(op["temas"], 1):
         del_tema = por_tema.get(slug_tema)
         if not del_tema:
-            raise ErrorContenido(
-                f"la oposición «{op['slug']}» declara el tema «{slug_tema}» "
-                f"pero no hay ningún fichero en temas/{slug_tema}/"
-            )
+            if completo:
+                raise ErrorContenido(
+                    f"la oposición «{op['slug']}» declara el tema «{slug_tema}» "
+                    f"pero no hay ningún fichero en temas/{slug_tema}/"
+                )
+            continue
         usados.extend(del_tema)
 
         doc_tema = next((d for d in del_tema if d.nivel == "tema"), None)
@@ -365,6 +437,43 @@ def commit_actual(raiz: Path) -> str | None:
         return None
 
 
+def _git(*args: str, cwd: Path | None = None) -> None:
+    r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise ErrorContenido(f"git {' '.join(args)} falló:\n    {r.stderr.strip()}")
+
+
+@contextlib.contextmanager
+def obtener_contenido(args):
+    """Da la raíz del contenido, venga de una carpeta local o de un clon.
+
+    Con `--repo` se clona en un directorio temporal que se borra al salir, de
+    modo que lo publicado sale siempre de un árbol limpio recién traído del
+    remoto y nunca de cambios sin commitear que alguien tuviera a medias en
+    su copia local.
+
+    Las credenciales son las del entorno (clave SSH o credential helper): el
+    script no maneja tokens ni los pide.
+    """
+    if args.contenido:
+        yield args.contenido
+        return
+
+    with tempfile.TemporaryDirectory(prefix="aprentix-contenido-") as tmp:
+        destino = Path(tmp) / "contenido"
+        if args.commit:
+            # Un commit suelto puede no estar en la punta de ninguna rama, así
+            # que aquí no vale el clon superficial.
+            log.info("clonando %s (completo, para poder ir al commit)", args.repo)
+            _git("clone", "--quiet", args.repo, str(destino))
+            _git("checkout", "--quiet", args.commit, cwd=destino)
+        else:
+            rama = ["--branch", args.rama] if args.rama else []
+            log.info("clonando %s%s", args.repo, f" (rama {args.rama})" if args.rama else "")
+            _git("clone", "--quiet", "--depth", "1", *rama, args.repo, str(destino))
+        yield destino
+
+
 def estado_actual(conn: psycopg.Connection, slug: str) -> dict[str, dict]:
     """Foto de lo publicado, indexada por ruta de slugs."""
     fila = conn.execute("SELECT admin_estado_publicacion(%s)", (slug,)).fetchone()[0]
@@ -375,8 +484,14 @@ def estado_actual(conn: psycopg.Connection, slug: str) -> dict[str, dict]:
 
 # ── Plan y ejecución ────────────────────────────────────────────────────────
 
-def calcular_plan(docs: list[Documento], estado: dict[str, dict]) -> dict[str, list]:
-    """Compara repo y BD. Esto es lo que se enseña en el simulacro."""
+def calcular_plan(docs: list[Documento], estado: dict[str, dict],
+                  completo: bool = True) -> dict[str, list]:
+    """Compara repo y BD. Esto es lo que se enseña en el simulacro.
+
+    `completo=False` (publicación filtrada) deja la lista de archivables
+    vacía: fuera del filtro no hemos mirado nada, y llamar «ausente» a lo que
+    ni siquiera hemos leído sería mentir en el plan.
+    """
     import hashlib
 
     plan: dict[str, list] = {"crear": [], "actualizar": [], "sin_cambios": [],
@@ -398,19 +513,24 @@ def calcular_plan(docs: list[Documento], estado: dict[str, dict]) -> dict[str, l
             plan["sin_cambios"].append(ruta)
         else:
             plan["actualizar"].append(ruta)
-    for ruta, pub in estado.items():
-        if ruta not in vistas and not pub.get("archivada"):
-            plan["archivar"].append(ruta)
+    if completo:
+        for ruta, pub in estado.items():
+            if ruta not in vistas and not pub.get("archivada"):
+                plan["archivar"].append(ruta)
     return plan
 
 
-def imprimir_plan(plan: dict[str, list], op_slug: str, aplicar: bool) -> None:
+def imprimir_plan(plan: dict[str, list], op_slug: str, aplicar: bool,
+                  completo: bool = True) -> None:
     cab = "PLAN DE PUBLICACIÓN" if aplicar else "SIMULACRO — no se escribe nada"
     print(f"\n── {cab} · {op_slug} " + "─" * max(0, 50 - len(op_slug)))
     print(f"  crear         {len(plan['crear']):4d}")
     print(f"  actualizar    {len(plan['actualizar']):4d}")
     print(f"  sin cambios   {len(plan['sin_cambios']):4d}")
-    print(f"  archivar      {len(plan['archivar']):4d}")
+    if completo:
+        print(f"  archivar      {len(plan['archivar']):4d}")
+    else:
+        print("  archivar         —  (publicación parcial: el resto ni se mira)")
     if plan["manual"]:
         print(f"  editadas a mano {len(plan['manual']):2d}  (no se pisan sin --forzar)")
     for clave, etiqueta in (("crear", "+"), ("actualizar", "~"),
@@ -515,12 +635,26 @@ def main() -> int:
         description="Publica el repo de contenido en la BD de Aprentix.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Sin --aplicar sólo enseña el plan; no escribe nada.")
-    ap.add_argument("--contenido", required=True, type=Path,
-                    help="raíz del repo de contenido")
+    origen = ap.add_mutually_exclusive_group(required=True)
+    origen.add_argument("--contenido", type=Path,
+                        help="raíz de una copia local del repo de contenido")
+    origen.add_argument("--repo",
+                        help="URL del repo de contenido; se clona en un "
+                             "temporal y se publica de ahí. Usa las "
+                             "credenciales del entorno (SSH o credential helper)")
+    ap.add_argument("--rama", help="rama a publicar con --repo (def. la del remoto)")
+    ap.add_argument("--commit",
+                    help="commit concreto a publicar con --repo. Sirve para "
+                         "volver a una versión anterior")
     ap.add_argument("--db", required=True, help="DSN de la BD (postgres://…)")
     ap.add_argument("--oposicion", action="append", dest="oposiciones",
                     help="slug de la oposición a publicar; repetible. "
                          "Por defecto, todas las de oposiciones/*.yaml")
+    ap.add_argument("--tema", action="append", dest="temas",
+                    help="publica sólo estos temas; repetible")
+    ap.add_argument("--seccion", action="append", dest="secciones",
+                    help="publica sólo estas secciones, como "
+                         "«tema/modulo/seccion»; repetible")
     ap.add_argument("--aplicar", action="store_true",
                     help="escribe de verdad (por defecto es un simulacro)")
     ap.add_argument("--archivar-ausentes", action="store_true",
@@ -540,65 +674,25 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
     try:
-        docs = leer_repo(args.contenido, args.ignorar_rutas)
-        log.info("leídos %d documentos de %s", len(docs), args.contenido)
+        if (args.rama or args.commit) and not args.repo:
+            raise ErrorContenido("--rama y --commit sólo tienen sentido con --repo")
 
-        avisos = [a for d in docs for a in _avisos_formato(d)]
-        for a in avisos:
-            log.warning(a)
-        if avisos and args.estricto:
-            raise ErrorContenido(f"{len(avisos)} avisos de formato y --estricto activo")
+        completo = not (args.temas or args.secciones)
 
-        slugs = args.oposiciones or sorted(
-            p.stem for p in (args.contenido / "oposiciones").glob("*.yaml"))
-        if not slugs:
-            raise ErrorContenido("no hay ninguna oposición en oposiciones/*.yaml")
+        # Publicar filtrado y archivar a la vez sería catastrófico: fuera del
+        # filtro no hemos leído nada, así que el script daría por desaparecido
+        # todo el resto del temario y lo retiraría de golpe.
+        if not completo and args.archivar_ausentes:
+            raise ErrorContenido(
+                "--archivar-ausentes no se puede combinar con --tema ni --seccion.\n"
+                "    Publicando filtrado sólo se mira una parte del repo, así que "
+                "el script no puede saber qué ha desaparecido de verdad y qué "
+                "simplemente no ha leído.\n"
+                "    Para retirar contenido, publica la oposición entera."
+            )
 
-        commit = commit_actual(args.contenido)
-        total = {"documentos": 0, "preguntas_nuevas": 0, "preguntas_movidas": 0,
-                 "preguntas_archivadas": 0, "saltados_manual": 0}
-
-        with abrir(args.db) as conn:
-            for slug in slugs:
-                op = leer_oposicion(args.contenido, slug)
-                arbol, usados = construir_arbol(op, docs)
-                estado = estado_actual(conn, slug)
-                plan = calcular_plan(usados, estado)
-                imprimir_plan(plan, slug, args.aplicar)
-
-                # Se revisa también en simulacro: la idea es enterarse antes
-                # de escribir, no después.
-                if args.archivar_ausentes:
-                    revisar_salvaguardas(plan, estado, args.umbral_archivado,
-                                         args.permitir_archivado_masivo)
-                elif plan["archivar"]:
-                    log.info("%d secciones ya no están en el repo; se quedan "
-                             "publicadas (usa --archivar-ausentes para retirarlas)",
-                             len(plan["archivar"]))
-
-                if not args.aplicar:
-                    continue
-
-                # Una transacción por oposición: si algo revienta a mitad,
-                # esta oposición se queda como estaba.
-                with conn.transaction():
-                    res = publicar(conn, arbol, usados, commit, args)
-                for k, v in res.items():
-                    total[k] += v
-
-        if not args.aplicar:
-            print("\nSimulacro terminado. Repítelo con --aplicar cuando el plan te cuadre.")
-            return 0
-
-        print(f"\nPublicado{f' — commit {commit}' if commit else ''}: "
-              f"{total['documentos']} documentos, "
-              f"{total['preguntas_nuevas']} preguntas nuevas, "
-              f"{total['preguntas_movidas']} movidas, "
-              f"{total['preguntas_archivadas']} archivadas.")
-        if total["saltados_manual"]:
-            print(f"AVISO: {total['saltados_manual']} documentos editados desde el "
-                  f"panel no se han tocado. Revísalos o publica con --forzar.")
-        return 0
+        with obtener_contenido(args) as raiz:
+            return _publicar_todo(args, raiz, completo)
 
     except ErrorContenido as e:
         log.error("%s", e)
@@ -606,6 +700,85 @@ def main() -> int:
     except psycopg.Error as e:
         log.error("error de base de datos: %s", e)
         return 3
+
+
+def _publicar_todo(args, raiz: Path, completo: bool) -> int:
+    docs = leer_repo(raiz, args.ignorar_rutas)
+    log.info("leídos %d documentos de %s", len(docs), raiz)
+
+    avisos = [a for d in docs for a in _avisos_formato(d)]
+    for a in avisos:
+        log.warning(a)
+    if avisos and args.estricto:
+        raise ErrorContenido(f"{len(avisos)} avisos de formato y --estricto activo")
+
+    if not completo:
+        docs = filtrar(docs, args.temas, args.secciones)
+        log.info("filtrado a %d documentos (%s)", len(docs),
+                 ", ".join((args.temas or []) + (args.secciones or [])))
+
+    slugs = args.oposiciones or sorted(
+        p.stem for p in (raiz / "oposiciones").glob("*.yaml"))
+    if not slugs:
+        raise ErrorContenido("no hay ninguna oposición en oposiciones/*.yaml")
+
+    commit = commit_actual(raiz)
+    total = {"documentos": 0, "preguntas_nuevas": 0, "preguntas_movidas": 0,
+             "preguntas_archivadas": 0, "saltados_manual": 0}
+    publicadas = 0
+
+    with abrir(args.db) as conn:
+        for slug in slugs:
+            op = leer_oposicion(raiz, slug)
+            arbol, usados = construir_arbol(op, docs, completo)
+            if not usados:
+                # Filtrando, es normal que una oposición no tenga nada que ver
+                # con lo pedido. Se salta sin ruido.
+                continue
+            publicadas += 1
+            estado = estado_actual(conn, slug)
+            plan = calcular_plan(usados, estado, completo)
+            imprimir_plan(plan, slug, args.aplicar, completo)
+
+            # Se revisa también en simulacro: la idea es enterarse antes
+            # de escribir, no después.
+            if args.archivar_ausentes:
+                revisar_salvaguardas(plan, estado, args.umbral_archivado,
+                                     args.permitir_archivado_masivo)
+            elif plan["archivar"]:
+                log.info("%d secciones ya no están en el repo; se quedan "
+                         "publicadas (usa --archivar-ausentes para retirarlas)",
+                         len(plan["archivar"]))
+
+            if not args.aplicar:
+                continue
+
+            # Una transacción por oposición: si algo revienta a mitad,
+            # esta oposición se queda como estaba.
+            with conn.transaction():
+                res = publicar(conn, arbol, usados, commit, args)
+            for k, v in res.items():
+                total[k] += v
+
+    if not publicadas:
+        raise ErrorContenido(
+            "el filtro no coincide con ninguna oposición. Comprueba que los "
+            "temas o secciones que has pedido están en la lista `temas:` de "
+            "algún oposiciones/*.yaml")
+
+    if not args.aplicar:
+        print("\nSimulacro terminado. Repítelo con --aplicar cuando el plan te cuadre.")
+        return 0
+
+    print(f"\nPublicado{f' — commit {commit}' if commit else ''}: "
+          f"{total['documentos']} documentos, "
+          f"{total['preguntas_nuevas']} preguntas nuevas, "
+          f"{total['preguntas_movidas']} movidas, "
+          f"{total['preguntas_archivadas']} archivadas.")
+    if total["saltados_manual"]:
+        print(f"AVISO: {total['saltados_manual']} documentos editados desde el "
+              f"panel no se han tocado. Revísalos o publica con --forzar.")
+    return 0
 
 
 if __name__ == "__main__":
