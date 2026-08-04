@@ -612,10 +612,21 @@ def commit_actual(raiz: Path) -> str | None:
         return None
 
 
+def redactar(texto: str) -> str:
+    """Tapa las credenciales de cualquier URL que aparezca en el texto.
+
+    Un repo privado se clona con el token dentro de la URL
+    (`https://x-access-token:ghp_…@github.com/…`), y esto acaba en los
+    logs del contenedor que publica. Se tapa antes de imprimir nada.
+    """
+    return re.sub(r"(https?://)[^/\s@]+@", r"\1***@", texto)
+
+
 def _git(*args: str, cwd: Path | None = None) -> None:
     r = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
     if r.returncode != 0:
-        raise ErrorContenido(f"git {' '.join(args)} falló:\n    {r.stderr.strip()}")
+        raise ErrorContenido(
+            f"git {redactar(' '.join(args))} falló:\n    {redactar(r.stderr.strip())}")
 
 
 @contextlib.contextmanager
@@ -636,15 +647,16 @@ def obtener_contenido(args):
 
     with tempfile.TemporaryDirectory(prefix="aprentix-contenido-") as tmp:
         destino = Path(tmp) / "contenido"
+        seguro = redactar(args.repo)
         if args.commit:
             # Un commit suelto puede no estar en la punta de ninguna rama, así
             # que aquí no vale el clon superficial.
-            log.info("clonando %s (completo, para poder ir al commit)", args.repo)
+            log.info("clonando %s (completo, para poder ir al commit)", seguro)
             _git("clone", "--quiet", args.repo, str(destino))
             _git("checkout", "--quiet", args.commit, cwd=destino)
         else:
             rama = ["--branch", args.rama] if args.rama else []
-            log.info("clonando %s%s", args.repo, f" (rama {args.rama})" if args.rama else "")
+            log.info("clonando %s%s", seguro, f" (rama {args.rama})" if args.rama else "")
             _git("clone", "--quiet", "--depth", "1", *rama, args.repo, str(destino))
         yield destino
 
