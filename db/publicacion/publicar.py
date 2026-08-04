@@ -365,8 +365,19 @@ def validar(docs: list[Documento], raiz: Path) -> list[str]:
     return avisos
 
 
+def _es_markdown_publicable(path: Path, raiz: Path) -> bool:
+    """Distingue los markdown de contenido de la documentación auxiliar.
+
+    En `temas/` puede haber ficheros explicativos como `README.md`; esos
+    documentos no son teoría ni esquema publicable y, por tanto, no tienen
+    por qué traer el bloque `aprentix:meta`.
+    """
+    rel = path.relative_to(raiz).as_posix()
+    return rel.endswith("/esquema.md") or rel.endswith("/teoria.md")
+
+
 def leer_repo(raiz: Path, ignorar_rutas: bool = False) -> list[Documento]:
-    """Recorre `temas/` y devuelve los documentos encontrados."""
+    """Recorre `temas/` y devuelve los documentos de contenido encontrados."""
     base = raiz / "temas"
     if not base.is_dir():
         raise ErrorContenido(f"no encuentro {base}. ¿Es {raiz} la raíz del repo de contenido?")
@@ -374,6 +385,9 @@ def leer_repo(raiz: Path, ignorar_rutas: bool = False) -> list[Documento]:
     docs: list[Documento] = []
     for path in sorted(base.rglob("*.md")):
         rel = path.relative_to(raiz).as_posix()
+        if not _es_markdown_publicable(path, raiz):
+            log.debug("ignorando markdown auxiliar %s", rel)
+            continue
         texto = path.read_text(encoding="utf-8")
         meta = _parse_meta(texto, rel)
         nivel = meta.get("nivel")
