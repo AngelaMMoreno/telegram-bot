@@ -18,7 +18,8 @@ REPO_SEGURO=$(echo "$CONTENIDO_REPO" | sed -E 's#(https?://)[^/@]+@#\1***@#')
 mkdir -p /etc/crontabs
 echo "$PUBLICAR_CRON . /etc/publicar.env && /publicar-job.sh 2>&1" > /etc/crontabs/root
 
-env | grep -E '^(CONTENIDO_|PUBLICAR_|TZ)=' | sed 's/^/export /' > /etc/publicar.env
+env | grep -E '^(CONTENIDO_|PUBLICAR_|SMTP_|AVISO_|TZ)=' \
+    | sed 's/^/export /' > /etc/publicar.env
 chmod 600 /etc/publicar.env
 
 echo "[entrypoint] cron programado: '$PUBLICAR_CRON' (TZ=${TZ:-UTC})"

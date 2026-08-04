@@ -16,6 +16,7 @@ COPY db/publicacion/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY db/publicacion/publicar.py .
+COPY deploy/publicador/avisar.py       /app/avisar.py
 COPY deploy/publicador/publicar-job.sh /publicar-job.sh
 COPY deploy/publicador/entrypoint.sh   /entrypoint.sh
 RUN chmod +x /publicar-job.sh /entrypoint.sh

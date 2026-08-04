@@ -23,6 +23,32 @@ Variables mínimas:
 | `CONTENIDO_RAMA` | `main` | Publica sólo lo mergeado |
 | `PUBLICAR_CRON` | `*/15 * * * *` | Cada cuánto mira |
 | `PUBLICAR_APLICAR` | *(vacío)* | **Déjala vacía al principio** |
+| `AVISO_EMAIL` | `tu@correo.es` | A quién avisar si falla. Ver abajo |
+
+### Avisos por email (importante si no usas CI)
+
+Si tú haces los PR y los merges a mano, **sin ningún CI de por medio**,
+este contenedor es lo único que revisa el contenido. Y cuando `--estricto`
+aborta una publicación, lo hace dentro de un contenedor que nadie mira: se
+deja de publicar en silencio hasta que alguien abra los logs.
+
+Pon `AVISO_EMAIL` y las credenciales SMTP (**las mismas del stack
+`mailer`**, así que si ya lo tienes configurado no hay nada nuevo que
+preparar) y recibirás un correo con el motivo exacto:
+
+```
+[Aprentix] La publicación de contenido ha fallado
+
+WARNING …/silencio/teoria.md: 9 preguntas en el pool, mínimo 25
+ERROR 1 avisos de formato y --estricto activo
+```
+
+**Sólo se avisa en los cambios de estado.** Si el fallo persiste no
+recibes un correo cada 15 minutos: uno cuando empieza a fallar y otro
+cuando vuelve a funcionar. Nada entre medias.
+
+Sin `AVISO_EMAIL` el contenedor funciona igual, pero los fallos sólo se
+ven en `docker logs`.
 
 ### Arranca en simulacro, a propósito
 
@@ -66,9 +92,9 @@ Las dos salvaguardas están probadas contra este contenedor:
 - **Cambio de slugs mergeado a `main`**: el freno detecta que crearía
   tantas secciones como archivaría, aborta, y no se toca ni una fila.
 
-En ambos casos el contenedor **sigue vivo**: el fallo se ve en los logs y
-la siguiente corrida lo reintenta. Un error de contenido no tira el
-servicio.
+En ambos casos el contenedor **sigue vivo**: el fallo se ve en los logs,
+sale el aviso por email y la siguiente corrida lo reintenta. Un error de
+contenido no tira el servicio.
 
 ---
 

@@ -58,6 +58,22 @@ services:
       # si la configuración es correcta. Ponla a 0 para desactivarla.
       PUBLICAR_AL_ARRANCAR: ${PUBLICAR_AL_ARRANCAR:-1}
 
+      # ── Aviso por email ────────────────────────────────────────────
+      # MUY recomendable si no pasas el contenido por ningún CI: sin
+      # esto, un merge que rompa la plantilla para la publicación en
+      # silencio dentro de un contenedor que nadie mira.
+      #
+      # Sólo se avisa en los CAMBIOS de estado (empieza a fallar / vuelve
+      # a funcionar), no en cada corrida. Las credenciales SMTP son las
+      # mismas del stack `mailer`.
+      AVISO_EMAIL: ${AVISO_EMAIL:-}
+      SMTP_HOST:   ${SMTP_HOST:-}
+      SMTP_PORT:   ${SMTP_PORT:-587}
+      SMTP_USER:   ${SMTP_USER:-}
+      SMTP_PASS:   ${SMTP_PASS:-}
+      SMTP_FROM:   ${SMTP_FROM:-Aprentix <hola@aprentix.es>}
+      SMTP_TLS:    ${SMTP_TLS:-starttls}
+
       TZ: ${TZ:-Europe/Madrid}
 
     restart: unless-stopped
