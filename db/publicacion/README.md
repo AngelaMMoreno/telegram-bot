@@ -123,7 +123,22 @@ respalda. Su sitio de trabajo es el repo de contenido:
 | Fichero | Cópialo como | Para qué |
 |---|---|---|
 | `CLAUDE.md.plantilla` | `CLAUDE.md` en la raíz | Toda la metodología, plantillas y reglas, autosuficiente. Es lo que hace que un modelo escriba contenido correcto sin tener que redescubrir las normas. |
+| `validar.sh.plantilla` | `validar.sh` en la raíz (`chmod +x`) | Lanza el validador sin tener que recordar la ruta. |
 | `workflow-contenido.yml` | `.github/workflows/validar.yml` | Pasa el validador en cada PR. Opcional: la validación también se puede lanzar a mano. |
+
+**`publicar.py` NO se copia al repo de contenido.** Una copia se queda
+desfasada en cuanto cambien las reglas, y entonces validarías contra una
+plantilla que ya no es la que se publica.
+
+`validar.sh` lo localiza así, en este orden: la variable `APP_REPO`, el
+fichero `.aprentix-local` del repo de contenido, y unas cuantas
+ubicaciones habituales. Se configura una vez por máquina con
+`./validar.sh --configurar /ruta/al/telegram-bot`, y `.aprentix-local`
+va al `.gitignore` porque la ruta es de esa máquina.
+
+> Esto es **sólo para validar en local**. El despliegue no depende de
+> ello: el contenedor del publicador lleva `publicar.py` dentro de su
+> imagen y clona el repo de contenido por URL.
 
 ## Estructura del repo de contenido
 

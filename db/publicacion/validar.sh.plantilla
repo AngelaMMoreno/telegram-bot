@@ -1,0 +1,103 @@
+#!/bin/sh
+#
+# Valida el contenido de este repositorio.
+#
+# CÓPIAME al repo de contenido como `validar.sh` (y `chmod +x validar.sh`).
+#
+# El validador vive en el repo de la APLICACIÓN y no se copia aquí a
+# propósito: una copia se queda desfasada en cuanto cambien las reglas, y
+# entonces validarías contra una plantilla que ya no es la que se publica.
+#
+# ¿DÓNDE ESTÁ EL REPO DE LA APLICACIÓN? Se busca en este orden:
+#
+#   1. La variable de entorno  APP_REPO
+#   2. El fichero  .aprentix-local  de este repo (una línea: APP_REPO=/ruta)
+#   3. Unas cuantas ubicaciones habituales, por si suena la flauta
+#
+# Lo normal es configurarlo UNA VEZ por máquina:
+#
+#     ./validar.sh --configurar /ruta/al/telegram-bot
+#
+# Eso escribe `.aprentix-local`, que va en .gitignore porque la ruta es
+# de tu máquina y no del proyecto.
+#
+# NOTA: nada de esto afecta al despliegue. El publicador de Dokploy lleva
+# el validador dentro de su imagen y clona el contenido por URL; no
+# depende de cómo tengas los repos en local.
+set -e
+
+AQUI=$(cd "$(dirname "$0")" && pwd)
+CONFIG="$AQUI/.aprentix-local"
+
+# ── Modo configuración ──────────────────────────────────────────────────
+if [ "${1:-}" = "--configurar" ]; then
+    if [ -z "${2:-}" ]; then
+        echo "uso: ./validar.sh --configurar /ruta/al/telegram-bot" >&2
+        exit 2
+    fi
+    RUTA=$(cd "$2" 2>/dev/null && pwd) || {
+        echo "No existe el directorio: $2" >&2
+        exit 2
+    }
+    if [ ! -f "$RUTA/db/publicacion/publicar.py" ]; then
+        echo "En «$RUTA» no encuentro db/publicacion/publicar.py." >&2
+        echo "¿Es esa la raíz del repo de la aplicación?" >&2
+        exit 2
+    fi
+    echo "APP_REPO=$RUTA" > "$CONFIG"
+    echo "Configurado. El validador se buscará en:"
+    echo "    $RUTA/db/publicacion/publicar.py"
+    echo
+    echo "Añade .aprentix-local a tu .gitignore si no está ya."
+    exit 0
+fi
+
+# ── Localizar el validador ──────────────────────────────────────────────
+buscar() {
+    for base in "$@"; do
+        [ -n "$base" ] || continue
+        if [ -f "$base/db/publicacion/publicar.py" ]; then
+            echo "$base"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# 2) fichero de configuración local
+if [ -z "${APP_REPO:-}" ] && [ -f "$CONFIG" ]; then
+    # shellcheck disable=SC1090
+    . "$CONFIG"
+fi
+
+# 1) variable de entorno (o lo que acabe de salir del fichero), 3) tanteo
+ENCONTRADO=$(buscar \
+    "${APP_REPO:-}" \
+    "$AQUI/../telegram-bot" \
+    "$AQUI/../aprentix" \
+    "$AQUI/../app" \
+    "$HOME/telegram-bot" \
+    "$HOME/proyectos/telegram-bot" \
+    "$HOME/Documentos/telegram-bot" \
+    "$HOME/Documents/telegram-bot" \
+    2>/dev/null) || {
+    cat >&2 <<FIN
+No encuentro el repo de la aplicación (el que tiene db/publicacion/publicar.py).
+
+Configúralo una sola vez:
+
+    ./validar.sh --configurar /ruta/al/telegram-bot
+
+O indícalo en la propia llamada:
+
+    APP_REPO=/ruta/al/telegram-bot ./validar.sh
+
+Si lo que buscas es validar sin tener el repo de la aplicación a mano,
+sube los cambios a una rama y deja que lo valide el CI: el publicador
+también valida con --estricto antes de publicar nada.
+FIN
+    exit 2
+}
+
+# Sólo necesita PyYAML: ni base de datos ni psycopg.
+exec python3 "$ENCONTRADO/db/publicacion/publicar.py" --contenido "$AQUI" --validar "$@"

@@ -685,10 +685,27 @@ su base de datos. No hay que ejecutar nada.
 **Obligatorio.** No commitees contenido sin pasar el validador:
 
 ```bash
-python3 publicar.py --contenido . --validar
+./validar.sh
 ```
 
 Sale `0` si está limpio y `1` si hay avisos. No necesita base de datos.
+
+**La primera vez en cada máquina** hay que decirle dónde está el repo de
+la aplicación (el validador vive allí y no se copia aquí, para que no se
+quede desfasado cuando cambien las reglas):
+
+```bash
+./validar.sh --configurar /ruta/al/telegram-bot
+```
+
+Eso escribe `.aprentix-local`, que **va en `.gitignore`**: la ruta es de
+esa máquina, no del proyecto. Si el script no encuentra el repo, te dice
+exactamente esto mismo.
+
+> Si no tienes el repo de la aplicación a mano, sube los cambios a una
+> rama igualmente: el publicador valida con `--estricto` antes de
+> publicar nada y avisa por email si algo falla. Validar en local es para
+> enterarte antes, no la única red de seguridad.
 
 Comprueba, entre otras cosas: los 8 apartados obligatorios, el
 presupuesto de 350–1.100 palabras, las 5–12 viñetas de «Retén esto», las
