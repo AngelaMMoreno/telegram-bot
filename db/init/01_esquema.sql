@@ -264,6 +264,11 @@ CREATE TABLE push_envios (
 CREATE TABLE oposiciones (
     id           uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     nombre       text        NOT NULL,
+    -- IDENTIDAD ESTABLE. El publicador (`db/publicacion/publicar.py`) casa
+    -- siempre por `slug`, nunca por `nombre`: así renombrar la oposición es
+    -- un UPDATE y no crea una fila nueva que dejaría huérfano el progreso.
+    -- Se escribe a mano en el repo de contenido y no se regenera jamás.
+    slug         text        NOT NULL UNIQUE,
     -- lower(nombre) UNIQUE para evitar duplicados con distinta capitalización.
     nombre_lower text        GENERATED ALWAYS AS (lower(nombre)) STORED UNIQUE,
     descripcion  text,
@@ -699,6 +704,28 @@ $$;
 CREATE OR REPLACE FUNCTION _sha256_hex(p text) RETURNS text
 LANGUAGE sql IMMUTABLE AS $$
     SELECT encode(digest(p, 'sha256'), 'hex');
+$$;
+
+-- Normalización de texto a slug. Vive aquí arriba (y no junto al panel de
+-- admin) porque lo usan tanto las RPCs de creación manual como las de
+-- publicación. Ojo: `_slugify` sólo se usa para PROPONER un slug al crear
+-- algo desde la SPA. Un slug ya existente no se regenera nunca a partir del
+-- nombre — es la identidad del nodo, ver el bloque de estructura curricular.
+CREATE OR REPLACE FUNCTION unaccent_es(p_txt text) RETURNS text
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT translate(
+        COALESCE(p_txt, ''),
+        'áéíóúÁÉÍÓÚñÑüÜçÇàèìòùÀÈÌÒÙ',
+        'aeiouAEIOUnNuUcCaeiouAEIOU'
+    );
+$$;
+
+CREATE OR REPLACE FUNCTION _slugify(p_txt text) RETURNS text
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT trim(both '-' from
+                regexp_replace(
+                    regexp_replace(lower(unaccent_es(p_txt)), '[^a-z0-9]+', '-', 'g'),
+                    '-+', '-', 'g'));
 $$;
 
 -- Política de contraseñas server-side. Tira excepción con código estable
@@ -1378,11 +1405,34 @@ GRANT EXECUTE ON FUNCTION borrar_usuario_admin(uuid)            TO web_user;
 
 -- ─────────────────────────── Estructura curricular ─────────────────────────
 
+-- IDENTIDAD DEL CONTENIDO — leer antes de tocar nada de este bloque.
+--
+-- El progreso de los usuarios cuelga de `secciones.id` (ver
+-- `progreso_seccion`, PK (usuario_id, seccion_id) con ON DELETE CASCADE).
+-- Por tanto ese uuid es sagrado: mientras sobreviva, el progreso sobrevive.
+--
+-- La regla que lo protege es que **el `slug` es la identidad y el `nombre`
+-- es sólo una etiqueta**. El publicador casa cada nodo por su slug, así que:
+--   • renombrar un tema/módulo/sección  → UPDATE, progreso intacto;
+--   • reordenar       → UPDATE de `orden`, progreso intacto;
+--   • quitarlo del repo → se archiva (`archivado`), NUNCA se borra.
+--
+-- Por eso `orden` NO lleva UNIQUE: si la posición fuese identidad, insertar
+-- una sección en medio desplazaría a las de abajo y le reasignaría a cada
+-- usuario el progreso de otra sección, en silencio. El orden es un atributo
+-- presentacional y nada más.
+--
+-- Los slugs de módulo y sección son únicos **dentro de su padre** (no
+-- globales), que es como los escribe el bloque `aprentix:meta` de cada
+-- fichero — ver `docs/PLANTILLA_TEORIA.md`. El de tema sí es global porque
+-- los temas se comparten entre oposiciones.
 CREATE TABLE temas (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     nombre       text NOT NULL,
     slug         text UNIQUE NOT NULL,        -- p.ej. 'constitucion-espanola'
     descripcion  text,
+    -- Archivado = fuera de circulación pero con su historial intacto.
+    archivado    boolean NOT NULL DEFAULT false,
     creado_en    timestamptz NOT NULL DEFAULT now()
 );
 
@@ -1393,9 +1443,11 @@ CREATE TABLE modulos (
     id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tema_id   uuid NOT NULL REFERENCES temas(id) ON DELETE CASCADE,
     nombre    text NOT NULL,
+    slug      text NOT NULL,
     orden     int  NOT NULL DEFAULT 0,
     es_unico  boolean NOT NULL DEFAULT false,
-    UNIQUE (tema_id, orden)
+    archivado boolean NOT NULL DEFAULT false,
+    UNIQUE (tema_id, slug)
 );
 CREATE INDEX modulos_tema_idx ON modulos (tema_id, orden);
 
@@ -1403,12 +1455,14 @@ CREATE TABLE secciones (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     modulo_id     uuid NOT NULL REFERENCES modulos(id) ON DELETE CASCADE,
     nombre        text NOT NULL,
+    slug          text NOT NULL,
     orden         int  NOT NULL DEFAULT 0,
     -- Umbral (%) para considerar la sección aprobada tras un test.
     min_aprobado  numeric NOT NULL DEFAULT 70 CHECK (min_aprobado BETWEEN 0 AND 100),
     -- Nº de preguntas del test de sección (fijo por defecto = 10).
     n_preg_test   int NOT NULL DEFAULT 10 CHECK (n_preg_test BETWEEN 1 AND 100),
-    UNIQUE (modulo_id, orden)
+    archivada     boolean NOT NULL DEFAULT false,
+    UNIQUE (modulo_id, slug)
 );
 CREATE INDEX secciones_modulo_idx ON secciones (modulo_id, orden);
 
@@ -1439,23 +1493,40 @@ CREATE TABLE preguntas (
     autor_id        uuid REFERENCES usuarios(id) ON DELETE SET NULL,
     creado_en       timestamptz NOT NULL DEFAULT now(),
     actualizado_en  timestamptz NOT NULL DEFAULT now(),
+    -- Retirada de circulación sin perder el historial: no entra en sorteos
+    -- ni en repasos, pero las respuestas que ya se dieron siguen siendo
+    -- legibles. Borrar una pregunta arrastraría `respuestas`/`marcadores`/
+    -- `repasos` del usuario, así que el publicador archiva en vez de borrar.
+    archivada       boolean NOT NULL DEFAULT false,
     hash_contenido  text GENERATED ALWAYS AS
                     (md5(lower(btrim(enunciado)))) STORED UNIQUE
 );
 CREATE INDEX preguntas_seccion_idx  ON preguntas (seccion_id);
+CREATE INDEX preguntas_vivas_idx    ON preguntas (seccion_id) WHERE NOT archivada;
 CREATE INDEX preguntas_emb_idx      ON preguntas USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX preguntas_enunciado_t  ON preguntas USING gin  (enunciado gin_trgm_ops);
 
 
 -- ─────────────────────────── Documentos (teoría markdown) ──────────────────
--- Cada documento apunta a un fichero en `/mnt/data/ficheros/<oposicion>/…`
--- servido por el microservicio `contenido/`. La BD guarda sólo metadatos y
--- la ruta relativa; el contenido real es el fichero. Reglas:
---   • Sección → sólo 'teoria'  (un fichero teoria.md por sección).
---   • Módulo  → sólo 'esquema' (un fichero esquema.md por módulo).
---   • Tema    → sólo 'esquema' (un fichero esquema.md por tema).
--- La UI del esquema puede linkar a la teoría de secciones concretas por
--- referencias relativas dentro del propio markdown (`[link](../seccion-1/teoria.md)`).
+-- El markdown vive AQUÍ, en `contenido`. No es la fuente de la verdad: se
+-- escribe en el repo de contenido (git, revisión por PR entre varias
+-- personas) y `db/publicacion/publicar.py` lo copia a esta tabla. El flujo
+-- es de una sola dirección — git → BD — así que no hay dos sitios donde
+-- editar lo mismo. `ruta` y `commit_sha` dicen de dónde salió cada fila.
+--
+-- Se guarda en la BD y no en disco para que el contenido publicado entre
+-- en el mismo `pg_dump` que el progreso que lo referencia: una restauración
+-- deja siempre teoría y progreso en el mismo punto. Son ~5 KB por sección
+-- (ver `docs/ESTRUCTURA_CONTENIDO.md` § 1.1), texto que Postgres mete en
+-- TOAST comprimido y fuera de línea.
+--
+-- Los PDFs y adjuntos NO viven aquí: siguen en `/mnt/data/ficheros`,
+-- servidos por el microservicio `teoria/`, que es su sitio.
+--
+-- Reglas de a qué se engancha cada documento:
+--   • Sección → sólo 'teoria'  (el texto que se estudia).
+--   • Módulo  → sólo 'esquema' (el mapa del bloque).
+--   • Tema    → sólo 'esquema' (el mapa del tema).
 CREATE TABLE documentos (
     id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     nivel          text NOT NULL CHECK (nivel IN ('tema','modulo','seccion')),
@@ -1463,8 +1534,22 @@ CREATE TABLE documentos (
     modulo_id      uuid REFERENCES modulos(id)   ON DELETE CASCADE,
     seccion_id     uuid REFERENCES secciones(id) ON DELETE CASCADE,
     tipo           text NOT NULL CHECK (tipo IN ('esquema','teoria')),
-    ruta           text NOT NULL,                       -- relativa a /mnt/data/ficheros
-    hash_contenido text,                                -- sha256 del fichero (integridad)
+    -- El markdown publicado, tal cual se renderiza en la SPA.
+    contenido      text NOT NULL,
+    -- Procedencia: ruta dentro del repo de contenido y commit del que salió.
+    -- Sirven para responder "¿qué versión hay publicada?" sin adivinar.
+    ruta           text,
+    commit_sha     text,
+    -- 'publicacion' = lo puso publicar.py desde git (lo normal).
+    -- 'manual'      = alguien lo editó desde el panel admin. El publicador
+    --                 avisa antes de pisarlo, para que un parche urgente en
+    --                 caliente no desaparezca sin que nadie se entere.
+    origen         text NOT NULL DEFAULT 'publicacion'
+                        CHECK (origen IN ('publicacion','manual')),
+    -- Derivado del propio contenido: el publicador compara este hash con el
+    -- del fichero para saltarse lo que no ha cambiado. Al ser GENERATED no
+    -- puede quedar desincronizado del texto que describe.
+    hash_contenido text GENERATED ALWAYS AS (md5(contenido)) STORED,
     actualizado_en timestamptz NOT NULL DEFAULT now(),
     CHECK (
         (nivel = 'seccion' AND seccion_id IS NOT NULL AND modulo_id IS NULL AND tema_id IS NULL AND tipo = 'teoria')
@@ -1861,6 +1946,9 @@ END $$;
 
 
 -- Sortea un pool de preguntas para un intento nuevo.
+-- Sortea preguntas vivas. Las archivadas quedan fuera de cualquier test
+-- nuevo; siguen siendo legibles en los intentos antiguos que las incluyeron
+-- (`preguntas_de_intento` no filtra, a propósito).
 CREATE OR REPLACE FUNCTION _sortear_preguntas(
     p_seccion_ids uuid[],
     p_n           int
@@ -1870,6 +1958,7 @@ LANGUAGE sql STABLE AS $$
       FROM (
         SELECT id FROM preguntas
          WHERE seccion_id = ANY(p_seccion_ids)
+           AND NOT archivada
          ORDER BY random()
          LIMIT p_n
       ) x;
@@ -1887,7 +1976,8 @@ DECLARE
     v_int uuid;
 BEGIN
     IF v_uid IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
-    SELECT n_preg_test INTO v_n FROM secciones WHERE id = p_seccion_id;
+    SELECT n_preg_test INTO v_n
+      FROM secciones WHERE id = p_seccion_id AND NOT archivada;
     IF v_n IS NULL THEN RAISE EXCEPTION 'seccion_no_encontrada'; END IF;
     v_ids := _sortear_preguntas(ARRAY[p_seccion_id], v_n);
     IF array_length(v_ids, 1) IS NULL THEN
@@ -1915,7 +2005,7 @@ DECLARE
 BEGIN
     IF v_uid IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
     SELECT array_agg(id), COUNT(*) INTO v_secc, v_n
-      FROM secciones WHERE modulo_id = p_modulo_id;
+      FROM secciones WHERE modulo_id = p_modulo_id AND NOT archivada;
     IF v_secc IS NULL THEN RAISE EXCEPTION 'modulo_sin_secciones'; END IF;
     SELECT tema_id INTO v_tema FROM modulos WHERE id = p_modulo_id;
     v_n := preguntas_por_nodo('modulo', v_n);
@@ -1944,7 +2034,8 @@ BEGIN
     SELECT array_agg(s.id), COUNT(*) INTO v_secc, v_n
       FROM secciones s
       JOIN modulos   m ON m.id = s.modulo_id
-     WHERE m.tema_id = p_tema_id;
+     WHERE m.tema_id = p_tema_id
+       AND NOT s.archivada AND NOT m.archivado;
     IF v_secc IS NULL THEN RAISE EXCEPTION 'tema_sin_secciones'; END IF;
     v_n := preguntas_por_nodo('tema', v_n);
     v_ids := _sortear_preguntas(v_secc, v_n);
@@ -2071,6 +2162,9 @@ DECLARE
 BEGIN
     IF v_uid IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
 
+    -- Todo este árbol ignora lo archivado: una sección retirada desaparece
+    -- del home aunque el usuario tenga progreso en ella (el progreso sigue
+    -- en la tabla, sólo deja de pintarse y de contar para los porcentajes).
     WITH secc_pct AS (
         -- Por sección: completada (0/1) — luego agregamos a módulo y tema.
         SELECT s.id AS seccion_id, s.modulo_id, m.tema_id,
@@ -2081,12 +2175,14 @@ BEGIN
           JOIN modulos m ON m.id = s.modulo_id
           LEFT JOIN progreso_seccion ps
                  ON ps.usuario_id = v_uid AND ps.seccion_id = s.id
+         WHERE NOT s.archivada AND NOT m.archivado
     ),
-    -- Nº de preguntas por sección — se reutiliza a nivel de sección,
+    -- Nº de preguntas vivas por sección — se reutiliza a nivel de sección,
     -- módulo y tema, así que lo calculamos una sola vez.
     preg_por_secc AS (
         SELECT p.seccion_id, COUNT(*)::int AS n
           FROM preguntas p
+         WHERE NOT p.archivada
          GROUP BY p.seccion_id
     )
     SELECT jsonb_build_object(
@@ -2115,6 +2211,7 @@ BEGIN
                           JOIN modulos m ON m.id = s.modulo_id
                           LEFT JOIN preg_por_secc pps ON pps.seccion_id = s.id
                          WHERE m.tema_id = t.id
+                           AND NOT s.archivada AND NOT m.archivado
                     ), 0),
                 'modulos',
                 COALESCE((
@@ -2133,7 +2230,7 @@ BEGIN
                                 SELECT SUM(pps.n)::int
                                   FROM secciones s
                                   LEFT JOIN preg_por_secc pps ON pps.seccion_id = s.id
-                                 WHERE s.modulo_id = m.id
+                                 WHERE s.modulo_id = m.id AND NOT s.archivada
                             ), 0),
                         'secciones',
                         COALESCE((
@@ -2149,15 +2246,17 @@ BEGIN
                             ) ORDER BY s.orden)
                               FROM secciones s
                               LEFT JOIN secc_pct sp ON sp.seccion_id = s.id
-                             WHERE s.modulo_id = m.id
+                             WHERE s.modulo_id = m.id AND NOT s.archivada
                         ), '[]'::jsonb)
                     ) ORDER BY m.orden)
-                      FROM modulos m WHERE m.tema_id = t.id
+                      FROM modulos m
+                     WHERE m.tema_id = t.id AND NOT m.archivado
                 ), '[]'::jsonb)
             ) ORDER BY ot.orden)
               FROM temas t
               JOIN oposicion_temas ot ON ot.tema_id = t.id
              WHERE ot.oposicion_id = p_oposicion_id
+               AND NOT t.archivado
         ), '[]'::jsonb)
     ) INTO v_res;
 
@@ -2177,15 +2276,19 @@ BEGIN
     SELECT COUNT(*) INTO v_total
       FROM secciones s
       JOIN modulos m ON m.id = s.modulo_id
+      JOIN temas   t ON t.id = m.tema_id
       JOIN oposicion_temas ot ON ot.tema_id = m.tema_id
-     WHERE ot.oposicion_id = p_oposicion_id;
+     WHERE ot.oposicion_id = p_oposicion_id
+       AND NOT s.archivada AND NOT m.archivado AND NOT t.archivado;
     SELECT COUNT(*) INTO v_hechas
       FROM secciones s
       JOIN modulos m ON m.id = s.modulo_id
+      JOIN temas   t ON t.id = m.tema_id
       JOIN oposicion_temas ot ON ot.tema_id = m.tema_id
       JOIN progreso_seccion ps ON ps.seccion_id = s.id AND ps.usuario_id = v_uid
      WHERE ot.oposicion_id = p_oposicion_id
-       AND ps.completada_en IS NOT NULL;
+       AND ps.completada_en IS NOT NULL
+       AND NOT s.archivada AND NOT m.archivado AND NOT t.archivado;
     RETURN jsonb_build_object(
         'oposicion_id', p_oposicion_id,
         'total',        v_total,
@@ -2215,11 +2318,14 @@ BEGIN
           FROM preguntas p
           JOIN secciones s   ON s.id = p.seccion_id
           JOIN modulos   m   ON m.id = s.modulo_id
+          JOIN temas     t   ON t.id = m.tema_id
           JOIN oposicion_temas ot ON ot.tema_id = m.tema_id
           JOIN progreso_seccion ps
                 ON ps.usuario_id = v_uid AND ps.seccion_id = s.id
          WHERE ot.oposicion_id = p_oposicion_id
            AND ps.completada_en IS NOT NULL
+           AND NOT p.archivada
+           AND NOT s.archivada AND NOT m.archivado AND NOT t.archivado
     ),
     scored AS (
         SELECT p.pregunta_id,
@@ -2457,15 +2563,18 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
      WHERE uo.usuario_id = jwt_usuario_id() AND o.activa;
 $$;
 
--- Metadatos del documento (teoría o esquema) asociado a una sección.
--- La SPA lo usa para saber la ruta relativa y pedir el fichero al
--- microservicio de contenido.
+-- El documento (teoría o esquema) de una sección, con su markdown ya dentro.
+-- La SPA lo pinta directamente: antes hacían falta dos saltos (esta RPC para
+-- sacar la ruta y luego un GET al microservicio de contenido); ahora basta
+-- con este. Devuelve NULL si la sección todavía no tiene teoría publicada.
 CREATE OR REPLACE FUNCTION documento_de_seccion(p_seccion_id uuid) RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
     SELECT jsonb_build_object(
-        'id',   d.id,
-        'ruta', d.ruta,
-        'tipo', d.tipo,
+        'id',        d.id,
+        'tipo',      d.tipo,
+        'contenido', d.contenido,
+        'ruta',      d.ruta,
+        'commit_sha', d.commit_sha,
         'actualizado_en', d.actualizado_en
     )
       FROM documentos d
@@ -2476,9 +2585,11 @@ $$;
 CREATE OR REPLACE FUNCTION documento_de_modulo(p_modulo_id uuid) RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
     SELECT jsonb_build_object(
-        'id',   d.id,
-        'ruta', d.ruta,
-        'tipo', d.tipo,
+        'id',        d.id,
+        'tipo',      d.tipo,
+        'contenido', d.contenido,
+        'ruta',      d.ruta,
+        'commit_sha', d.commit_sha,
         'actualizado_en', d.actualizado_en
     )
       FROM documentos d
@@ -2489,9 +2600,11 @@ $$;
 CREATE OR REPLACE FUNCTION documento_de_tema(p_tema_id uuid) RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
     SELECT jsonb_build_object(
-        'id',   d.id,
-        'ruta', d.ruta,
-        'tipo', d.tipo,
+        'id',        d.id,
+        'tipo',      d.tipo,
+        'contenido', d.contenido,
+        'ruta',      d.ruta,
+        'commit_sha', d.commit_sha,
         'actualizado_en', d.actualizado_en
     )
       FROM documentos d
@@ -3094,6 +3207,7 @@ BEGIN
         SELECT jsonb_agg(jsonb_build_object(
             'id',          o.id,
             'nombre',      o.nombre,
+            'slug',        o.slug,
             'descripcion', o.descripcion,
             'activa',      o.activa,
             'creado_en',   o.creado_en,
@@ -3109,16 +3223,23 @@ CREATE OR REPLACE FUNCTION admin_crear_oposicion(
     p_descripcion  text DEFAULT NULL
 ) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-DECLARE v_id uuid;
+DECLARE v_id uuid; v_slug text;
 BEGIN
     PERFORM _admin_o_permiso('oposicion.gestionar');
     IF p_nombre IS NULL OR btrim(p_nombre) = '' THEN
         RAISE EXCEPTION 'nombre_invalido';
     END IF;
-    INSERT INTO oposiciones (nombre, descripcion)
-    VALUES (btrim(p_nombre), NULLIF(btrim(COALESCE(p_descripcion,'')), ''))
+    -- El slug se propone desde el nombre sólo AQUÍ, al crear. A partir de
+    -- este momento es la identidad de la oposición y no se recalcula nunca
+    -- (`admin_actualizar_oposicion` no lo toca).
+    v_slug := _slugify(p_nombre);
+    WHILE EXISTS (SELECT 1 FROM oposiciones WHERE slug = v_slug) LOOP
+        v_slug := v_slug || '-' || substr(gen_random_uuid()::text, 1, 4);
+    END LOOP;
+    INSERT INTO oposiciones (nombre, slug, descripcion)
+    VALUES (btrim(p_nombre), v_slug, NULLIF(btrim(COALESCE(p_descripcion,'')), ''))
     RETURNING id INTO v_id;
-    RETURN jsonb_build_object('ok', true, 'id', v_id);
+    RETURN jsonb_build_object('ok', true, 'id', v_id, 'slug', v_slug);
 END $$;
 
 CREATE OR REPLACE FUNCTION admin_actualizar_oposicion(
@@ -3165,6 +3286,7 @@ BEGIN
             'nombre',        t.nombre,
             'slug',          t.slug,
             'descripcion',   t.descripcion,
+            'archivado',     t.archivado,
             'n_modulos',     (SELECT count(*) FROM modulos m WHERE m.tema_id = t.id),
             'n_secciones',   (SELECT count(*) FROM secciones s
                                JOIN modulos m ON m.id = s.modulo_id
@@ -3185,23 +3307,6 @@ BEGIN
         WHERE p_oposicion_id IS NULL OR ot.oposicion_id IS NOT NULL
     ), '[]'::jsonb);
 END $$;
-
-CREATE OR REPLACE FUNCTION unaccent_es(p_txt text) RETURNS text
-LANGUAGE sql IMMUTABLE AS $$
-    SELECT translate(
-        COALESCE(p_txt, ''),
-        'áéíóúÁÉÍÓÚñÑüÜçÇàèìòùÀÈÌÒÙ',
-        'aeiouAEIOUnNuUcCaeiouAEIOU'
-    );
-$$;
-
-CREATE OR REPLACE FUNCTION _slugify(p_txt text) RETURNS text
-LANGUAGE sql IMMUTABLE AS $$
-    SELECT trim(both '-' from
-                regexp_replace(
-                    regexp_replace(lower(unaccent_es(p_txt)), '[^a-z0-9]+', '-', 'g'),
-                    '-+', '-', 'g'));
-$$;
 
 CREATE OR REPLACE FUNCTION admin_crear_tema(
     p_nombre        text,
@@ -3234,8 +3339,8 @@ BEGIN
         ON CONFLICT DO NOTHING;
     END IF;
 
-    INSERT INTO modulos (tema_id, nombre, orden, es_unico)
-    VALUES (v_id, btrim(p_nombre), 1, true);
+    INSERT INTO modulos (tema_id, nombre, slug, orden, es_unico)
+    VALUES (v_id, btrim(p_nombre), 'general', 1, true);
 
     RETURN jsonb_build_object('ok', true, 'id', v_id, 'slug', v_slug);
 END $$;
@@ -3256,12 +3361,44 @@ BEGIN
     RETURN jsonb_build_object('ok', true);
 END $$;
 
+-- Cuenta el progreso de usuarios que se perdería al borrar un subárbol.
+-- `progreso_seccion` cuelga de `secciones` con ON DELETE CASCADE, así que
+-- borrar un tema se lleva por delante el progreso de todas sus secciones
+-- sin avisar. Esta función es el "avisar".
+CREATE OR REPLACE FUNCTION _progreso_en_secciones(p_seccion_ids uuid[]) RETURNS int
+LANGUAGE sql STABLE SET search_path = public, pg_temp AS $$
+    SELECT COUNT(*)::int FROM progreso_seccion
+     WHERE seccion_id = ANY(p_seccion_ids);
+$$;
+
 CREATE OR REPLACE FUNCTION admin_borrar_tema(p_id uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE v_progreso int;
 BEGIN
     PERFORM _admin_o_permiso('contenido.borrar');
+    SELECT _progreso_en_secciones(array_agg(s.id)) INTO v_progreso
+      FROM secciones s JOIN modulos m ON m.id = s.modulo_id
+     WHERE m.tema_id = p_id;
+    IF COALESCE(v_progreso, 0) > 0 THEN
+        RAISE EXCEPTION 'tiene_progreso'
+            USING DETAIL = format('%s filas de progreso se perderían; archiva el tema en vez de borrarlo', v_progreso);
+    END IF;
     DELETE FROM temas WHERE id = p_id;
     RETURN jsonb_build_object('ok', true);
+END $$;
+
+-- Archivar es la alternativa segura a borrar: saca el nodo de circulación
+-- (deja de aparecer en el home y de entrar en los tests) sin tocar ni una
+-- fila de progreso. Es reversible. Es lo que usa el publicador cuando algo
+-- desaparece del repo de contenido.
+CREATE OR REPLACE FUNCTION admin_archivar_tema(p_id uuid, p_archivado boolean DEFAULT true)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
+    PERFORM _admin_o_permiso('contenido.editar');
+    UPDATE temas SET archivado = p_archivado WHERE id = p_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'tema_no_encontrado'; END IF;
+    RETURN jsonb_build_object('ok', true, 'archivado', p_archivado);
 END $$;
 
 CREATE OR REPLACE FUNCTION admin_asignar_tema_a_oposicion(
@@ -3313,8 +3450,10 @@ BEGIN
         SELECT jsonb_agg(jsonb_build_object(
             'id',           m.id,
             'nombre',       m.nombre,
+            'slug',         m.slug,
             'orden',        m.orden,
             'es_unico',     m.es_unico,
+            'archivado',    m.archivado,
             'n_secciones',  (SELECT count(*) FROM secciones s WHERE s.modulo_id = m.id),
             'n_preguntas',  (SELECT count(*) FROM preguntas p
                               JOIN secciones s ON s.id = p.seccion_id
@@ -3331,7 +3470,7 @@ CREATE OR REPLACE FUNCTION admin_crear_modulo(
     p_orden   int DEFAULT NULL
 ) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-DECLARE v_id uuid; v_ord int;
+DECLARE v_id uuid; v_ord int; v_slug text;
 BEGIN
     PERFORM _admin_o_permiso('contenido.crear');
     IF p_nombre IS NULL OR btrim(p_nombre) = '' THEN
@@ -3340,10 +3479,16 @@ BEGIN
     SELECT COALESCE(p_orden,
                     (SELECT COALESCE(max(orden), 0) + 1 FROM modulos WHERE tema_id = p_tema_id))
       INTO v_ord;
-    INSERT INTO modulos (tema_id, nombre, orden, es_unico)
-    VALUES (p_tema_id, btrim(p_nombre), v_ord, false)
+    -- Slug propuesto desde el nombre, único dentro del tema. Identidad a
+    -- partir de aquí: `admin_actualizar_modulo` no lo recalcula.
+    v_slug := _slugify(p_nombre);
+    WHILE EXISTS (SELECT 1 FROM modulos WHERE tema_id = p_tema_id AND slug = v_slug) LOOP
+        v_slug := v_slug || '-' || substr(gen_random_uuid()::text, 1, 4);
+    END LOOP;
+    INSERT INTO modulos (tema_id, nombre, slug, orden, es_unico)
+    VALUES (p_tema_id, btrim(p_nombre), v_slug, v_ord, false)
     RETURNING id INTO v_id;
-    RETURN jsonb_build_object('ok', true, 'id', v_id, 'orden', v_ord);
+    RETURN jsonb_build_object('ok', true, 'id', v_id, 'slug', v_slug, 'orden', v_ord);
 END $$;
 
 CREATE OR REPLACE FUNCTION admin_actualizar_modulo(
@@ -3364,10 +3509,27 @@ END $$;
 
 CREATE OR REPLACE FUNCTION admin_borrar_modulo(p_id uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE v_progreso int;
 BEGIN
     PERFORM _admin_o_permiso('contenido.borrar');
+    SELECT _progreso_en_secciones(array_agg(s.id)) INTO v_progreso
+      FROM secciones s WHERE s.modulo_id = p_id;
+    IF COALESCE(v_progreso, 0) > 0 THEN
+        RAISE EXCEPTION 'tiene_progreso'
+            USING DETAIL = format('%s filas de progreso se perderían; archiva el módulo en vez de borrarlo', v_progreso);
+    END IF;
     DELETE FROM modulos WHERE id = p_id;
     RETURN jsonb_build_object('ok', true);
+END $$;
+
+CREATE OR REPLACE FUNCTION admin_archivar_modulo(p_id uuid, p_archivado boolean DEFAULT true)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
+    PERFORM _admin_o_permiso('contenido.editar');
+    UPDATE modulos SET archivado = p_archivado WHERE id = p_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'modulo_no_encontrado'; END IF;
+    RETURN jsonb_build_object('ok', true, 'archivado', p_archivado);
 END $$;
 
 GRANT EXECUTE ON FUNCTION admin_listar_modulos(uuid)                TO web_user;
@@ -3386,10 +3548,13 @@ BEGIN
         SELECT jsonb_agg(jsonb_build_object(
             'id',            s.id,
             'nombre',        s.nombre,
+            'slug',          s.slug,
             'orden',         s.orden,
             'min_aprobado',  s.min_aprobado,
             'n_preg_test',   s.n_preg_test,
-            'n_preguntas',   (SELECT count(*) FROM preguntas p WHERE p.seccion_id = s.id),
+            'archivada',     s.archivada,
+            'n_preguntas',   (SELECT count(*) FROM preguntas p
+                               WHERE p.seccion_id = s.id AND NOT p.archivada),
             'tiene_teoria',  EXISTS (SELECT 1 FROM documentos d
                                       WHERE d.seccion_id = s.id AND d.tipo = 'teoria')
         ) ORDER BY s.orden)
@@ -3406,7 +3571,7 @@ CREATE OR REPLACE FUNCTION admin_crear_seccion(
     p_n_preg_test  int     DEFAULT 10
 ) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-DECLARE v_id uuid; v_ord int;
+DECLARE v_id uuid; v_ord int; v_slug text;
 BEGIN
     PERFORM _admin_o_permiso('contenido.crear');
     IF p_nombre IS NULL OR btrim(p_nombre) = '' THEN
@@ -3415,12 +3580,19 @@ BEGIN
     SELECT COALESCE(p_orden,
                     (SELECT COALESCE(max(orden), 0) + 1 FROM secciones WHERE modulo_id = p_modulo_id))
       INTO v_ord;
-    INSERT INTO secciones (modulo_id, nombre, orden, min_aprobado, n_preg_test)
-    VALUES (p_modulo_id, btrim(p_nombre), v_ord,
+    -- Slug propuesto desde el nombre, único dentro del módulo. Es la
+    -- identidad de la que colgará el progreso de todos los usuarios: a
+    -- partir de aquí no se recalcula nunca.
+    v_slug := _slugify(p_nombre);
+    WHILE EXISTS (SELECT 1 FROM secciones WHERE modulo_id = p_modulo_id AND slug = v_slug) LOOP
+        v_slug := v_slug || '-' || substr(gen_random_uuid()::text, 1, 4);
+    END LOOP;
+    INSERT INTO secciones (modulo_id, nombre, slug, orden, min_aprobado, n_preg_test)
+    VALUES (p_modulo_id, btrim(p_nombre), v_slug, v_ord,
             COALESCE(p_min_aprobado, 70),
             COALESCE(p_n_preg_test, 10))
     RETURNING id INTO v_id;
-    RETURN jsonb_build_object('ok', true, 'id', v_id, 'orden', v_ord);
+    RETURN jsonb_build_object('ok', true, 'id', v_id, 'slug', v_slug, 'orden', v_ord);
 END $$;
 
 CREATE OR REPLACE FUNCTION admin_actualizar_seccion(
@@ -3445,10 +3617,26 @@ END $$;
 
 CREATE OR REPLACE FUNCTION admin_borrar_seccion(p_id uuid) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE v_progreso int;
 BEGIN
     PERFORM _admin_o_permiso('contenido.borrar');
+    v_progreso := _progreso_en_secciones(ARRAY[p_id]);
+    IF v_progreso > 0 THEN
+        RAISE EXCEPTION 'tiene_progreso'
+            USING DETAIL = format('%s usuarios tienen progreso aquí; archiva la sección en vez de borrarla', v_progreso);
+    END IF;
     DELETE FROM secciones WHERE id = p_id;
     RETURN jsonb_build_object('ok', true);
+END $$;
+
+CREATE OR REPLACE FUNCTION admin_archivar_seccion(p_id uuid, p_archivada boolean DEFAULT true)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+BEGIN
+    PERFORM _admin_o_permiso('contenido.editar');
+    UPDATE secciones SET archivada = p_archivada WHERE id = p_id;
+    IF NOT FOUND THEN RAISE EXCEPTION 'seccion_no_encontrada'; END IF;
+    RETURN jsonb_build_object('ok', true, 'archivada', p_archivada);
 END $$;
 
 GRANT EXECUTE ON FUNCTION admin_listar_secciones(uuid)                                   TO web_user;
@@ -3557,34 +3745,44 @@ GRANT EXECUTE ON FUNCTION admin_actualizar_pregunta(uuid, text, jsonb, text, uui
 GRANT EXECUTE ON FUNCTION admin_borrar_pregunta(uuid)                                             TO web_user;
 
 
--- ── Panel admin — Documentos (metadatos de teoría markdown) ─────────────────
+-- ── Panel admin — Documentos (markdown de teoría) ───────────────────────────
+-- Vía de edición MANUAL, para un parche urgente en caliente. Lo normal es
+-- publicar desde el repo de contenido con `db/publicacion/publicar.py`.
+-- Marca `origen = 'manual'` para que el publicador avise antes de pisarlo.
 CREATE OR REPLACE FUNCTION admin_upsert_documento(
     p_nivel      text,
     p_entidad_id uuid,
     p_tipo       text,
-    p_ruta       text
+    p_contenido  text,
+    p_ruta       text DEFAULT NULL
 ) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_id uuid;
 BEGIN
     PERFORM _admin_o_permiso('teoria.gestionar');
+    IF p_contenido IS NULL OR btrim(p_contenido) = '' THEN
+        RAISE EXCEPTION 'contenido_vacio';
+    END IF;
     IF p_nivel = 'seccion' THEN
-        INSERT INTO documentos (nivel, seccion_id, tipo, ruta)
-        VALUES ('seccion', p_entidad_id, p_tipo, p_ruta)
+        INSERT INTO documentos (nivel, seccion_id, tipo, contenido, ruta, origen)
+        VALUES ('seccion', p_entidad_id, p_tipo, p_contenido, p_ruta, 'manual')
         ON CONFLICT (seccion_id, tipo) WHERE seccion_id IS NOT NULL DO UPDATE
-            SET ruta = EXCLUDED.ruta, actualizado_en = now()
+            SET contenido = EXCLUDED.contenido, ruta = EXCLUDED.ruta,
+                origen = 'manual', commit_sha = NULL, actualizado_en = now()
         RETURNING id INTO v_id;
     ELSIF p_nivel = 'modulo' THEN
-        INSERT INTO documentos (nivel, modulo_id, tipo, ruta)
-        VALUES ('modulo', p_entidad_id, p_tipo, p_ruta)
+        INSERT INTO documentos (nivel, modulo_id, tipo, contenido, ruta, origen)
+        VALUES ('modulo', p_entidad_id, p_tipo, p_contenido, p_ruta, 'manual')
         ON CONFLICT (modulo_id, tipo) WHERE modulo_id IS NOT NULL DO UPDATE
-            SET ruta = EXCLUDED.ruta, actualizado_en = now()
+            SET contenido = EXCLUDED.contenido, ruta = EXCLUDED.ruta,
+                origen = 'manual', commit_sha = NULL, actualizado_en = now()
         RETURNING id INTO v_id;
     ELSIF p_nivel = 'tema' THEN
-        INSERT INTO documentos (nivel, tema_id, tipo, ruta)
-        VALUES ('tema', p_entidad_id, p_tipo, p_ruta)
+        INSERT INTO documentos (nivel, tema_id, tipo, contenido, ruta, origen)
+        VALUES ('tema', p_entidad_id, p_tipo, p_contenido, p_ruta, 'manual')
         ON CONFLICT (tema_id, tipo) WHERE tema_id IS NOT NULL DO UPDATE
-            SET ruta = EXCLUDED.ruta, actualizado_en = now()
+            SET contenido = EXCLUDED.contenido, ruta = EXCLUDED.ruta,
+                origen = 'manual', commit_sha = NULL, actualizado_en = now()
         RETURNING id INTO v_id;
     ELSE
         RAISE EXCEPTION 'nivel_invalido';
@@ -3600,8 +3798,482 @@ BEGIN
     RETURN jsonb_build_object('ok', true);
 END $$;
 
-GRANT EXECUTE ON FUNCTION admin_upsert_documento(text, uuid, text, text)   TO web_user;
-GRANT EXECUTE ON FUNCTION admin_borrar_documento(uuid)                     TO web_user;
+GRANT EXECUTE ON FUNCTION admin_upsert_documento(text, uuid, text, text, text) TO web_user;
+GRANT EXECUTE ON FUNCTION admin_borrar_documento(uuid)                         TO web_user;
+
+
+-- =============================================================================
+--          BLOQUE E — PUBLICACIÓN DESDE EL REPO DE CONTENIDO
+-- =============================================================================
+-- Estas RPCs son la única puerta por la que entra el contenido publicado.
+-- Las llama `db/publicacion/publicar.py`, que recorre el repo de contenido
+-- (git: donde se escribe y se revisa) y vuelca aquí el resultado.
+--
+-- Tres invariantes que no se rompen nunca:
+--
+--   1. SE CASA POR SLUG. Nunca por nombre y nunca por posición. Renombrar o
+--      reordenar es un UPDATE; el uuid no se mueve y el progreso tampoco.
+--   2. NO SE BORRA. Lo que desaparece del repo se archiva. Borrar es un acto
+--      manual desde el panel, y ni siquiera ahí si hay progreso enganchado.
+--   3. TODO O NADA. Cada RPC es una transacción: una publicación a medias
+--      por un fallo de red no deja el árbol en un estado intermedio.
+--
+-- Publicar de más es reversible (se desarchiva); publicar de menos, también.
+-- Lo único irreversible sería borrar, y por eso no se hace aquí.
+
+-- Resuelve la ruta de slugs a un uuid de sección. Devuelve NULL si algún
+-- tramo no existe — el que llama decide si eso es un error o un "aún no".
+CREATE OR REPLACE FUNCTION _seccion_por_slug(
+    p_tema_slug    text,
+    p_modulo_slug  text,
+    p_seccion_slug text
+) RETURNS uuid
+LANGUAGE sql STABLE SET search_path = public, pg_temp AS $$
+    SELECT s.id
+      FROM secciones s
+      JOIN modulos m ON m.id = s.modulo_id
+      JOIN temas   t ON t.id = m.tema_id
+     WHERE t.slug = p_tema_slug
+       AND m.slug = p_modulo_slug
+       AND s.slug = p_seccion_slug;
+$$;
+
+
+-- Publica el árbol completo de una oposición. Idempotente: llamarla dos
+-- veces seguidas con el mismo JSON no cambia nada la segunda vez.
+--
+-- Formato de `p_arbol`:
+--   {
+--     "oposicion": {"slug": "...", "nombre": "...", "descripcion": "..."},
+--     "temas": [{
+--        "slug": "...", "nombre": "...", "descripcion": "...", "orden": 1,
+--        "modulos": [{
+--           "slug": "...", "nombre": "...", "orden": 1, "es_unico": false,
+--           "secciones": [{"slug": "...", "nombre": "...", "orden": 1,
+--                          "min_aprobado": 70, "n_preg_test": 10}]
+--        }]
+--     }]
+--   }
+--
+-- Con `p_archivar_ausentes` archiva lo que esté en la BD colgando de esta
+-- oposición y no venga en el JSON. Por defecto NO lo hace: el publicador
+-- enseña primero el diff y sólo entonces lo activa.
+CREATE OR REPLACE FUNCTION admin_publicar_estructura(
+    p_arbol              jsonb,
+    p_archivar_ausentes  boolean DEFAULT false
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE
+    v_op_slug   text := p_arbol #>> '{oposicion,slug}';
+    v_op_id     uuid;
+    v_tema      jsonb;
+    v_modulo    jsonb;
+    v_seccion   jsonb;
+    v_tema_id   uuid;
+    v_mod_id    uuid;
+    v_sec_id    uuid;
+    v_temas_vivos   uuid[] := '{}';
+    v_mods_vivos    uuid[] := '{}';
+    v_secs_vivas    uuid[] := '{}';
+    v_creados   int := 0;
+    v_actualiz  int := 0;
+    v_archivados int := 0;
+    v_nuevo     boolean;
+BEGIN
+    PERFORM _admin_o_permiso('contenido.editar');
+
+    IF v_op_slug IS NULL OR btrim(v_op_slug) = '' THEN
+        RAISE EXCEPTION 'oposicion_sin_slug'
+            USING DETAIL = 'el arbol debe traer oposicion.slug';
+    END IF;
+
+    -- ── Oposición ───────────────────────────────────────────────────────
+    SELECT id INTO v_op_id FROM oposiciones WHERE slug = v_op_slug;
+    IF v_op_id IS NULL THEN
+        INSERT INTO oposiciones (slug, nombre, descripcion)
+        VALUES (v_op_slug,
+                COALESCE(p_arbol #>> '{oposicion,nombre}', v_op_slug),
+                p_arbol #>> '{oposicion,descripcion}')
+        RETURNING id INTO v_op_id;
+        v_creados := v_creados + 1;
+    ELSE
+        UPDATE oposiciones
+           SET nombre      = COALESCE(p_arbol #>> '{oposicion,nombre}', nombre),
+               descripcion = COALESCE(p_arbol #>> '{oposicion,descripcion}', descripcion)
+         WHERE id = v_op_id;
+        v_actualiz := v_actualiz + 1;
+    END IF;
+
+    -- ── Temas ───────────────────────────────────────────────────────────
+    FOR v_tema IN SELECT * FROM jsonb_array_elements(COALESCE(p_arbol->'temas', '[]'::jsonb)) LOOP
+        SELECT id INTO v_tema_id FROM temas WHERE slug = v_tema->>'slug';
+        v_nuevo := v_tema_id IS NULL;
+        IF v_nuevo THEN
+            INSERT INTO temas (slug, nombre, descripcion)
+            VALUES (v_tema->>'slug',
+                    COALESCE(v_tema->>'nombre', v_tema->>'slug'),
+                    v_tema->>'descripcion')
+            RETURNING id INTO v_tema_id;
+            v_creados := v_creados + 1;
+        ELSE
+            -- Renombrar es sólo esto: un UPDATE sobre la fila de siempre.
+            UPDATE temas
+               SET nombre      = COALESCE(v_tema->>'nombre', nombre),
+                   descripcion = COALESCE(v_tema->>'descripcion', descripcion),
+                   archivado   = false   -- reaparecer en el repo lo desarchiva
+             WHERE id = v_tema_id;
+            v_actualiz := v_actualiz + 1;
+        END IF;
+        v_temas_vivos := v_temas_vivos || v_tema_id;
+
+        INSERT INTO oposicion_temas (oposicion_id, tema_id, orden)
+        VALUES (v_op_id, v_tema_id, COALESCE((v_tema->>'orden')::int, 0))
+        ON CONFLICT (oposicion_id, tema_id) DO UPDATE
+            SET orden = EXCLUDED.orden;
+
+        -- ── Módulos ─────────────────────────────────────────────────────
+        FOR v_modulo IN SELECT * FROM jsonb_array_elements(COALESCE(v_tema->'modulos', '[]'::jsonb)) LOOP
+            SELECT id INTO v_mod_id
+              FROM modulos WHERE tema_id = v_tema_id AND slug = v_modulo->>'slug';
+            IF v_mod_id IS NULL THEN
+                INSERT INTO modulos (tema_id, slug, nombre, orden, es_unico)
+                VALUES (v_tema_id, v_modulo->>'slug',
+                        COALESCE(v_modulo->>'nombre', v_modulo->>'slug'),
+                        COALESCE((v_modulo->>'orden')::int, 0),
+                        COALESCE((v_modulo->>'es_unico')::boolean, false))
+                RETURNING id INTO v_mod_id;
+                v_creados := v_creados + 1;
+            ELSE
+                UPDATE modulos
+                   SET nombre    = COALESCE(v_modulo->>'nombre', nombre),
+                       orden     = COALESCE((v_modulo->>'orden')::int, orden),
+                       es_unico  = COALESCE((v_modulo->>'es_unico')::boolean, es_unico),
+                       archivado = false
+                 WHERE id = v_mod_id;
+                v_actualiz := v_actualiz + 1;
+            END IF;
+            v_mods_vivos := v_mods_vivos || v_mod_id;
+
+            -- ── Secciones ───────────────────────────────────────────────
+            FOR v_seccion IN SELECT * FROM jsonb_array_elements(COALESCE(v_modulo->'secciones', '[]'::jsonb)) LOOP
+                SELECT id INTO v_sec_id
+                  FROM secciones WHERE modulo_id = v_mod_id AND slug = v_seccion->>'slug';
+                IF v_sec_id IS NULL THEN
+                    INSERT INTO secciones (modulo_id, slug, nombre, orden, min_aprobado, n_preg_test)
+                    VALUES (v_mod_id, v_seccion->>'slug',
+                            COALESCE(v_seccion->>'nombre', v_seccion->>'slug'),
+                            COALESCE((v_seccion->>'orden')::int, 0),
+                            COALESCE((v_seccion->>'min_aprobado')::numeric, 70),
+                            COALESCE((v_seccion->>'n_preg_test')::int, 10))
+                    RETURNING id INTO v_sec_id;
+                    v_creados := v_creados + 1;
+                ELSE
+                    -- Aquí es donde se protege el progreso: el uuid de la
+                    -- sección no cambia por mucho que cambie el nombre.
+                    UPDATE secciones
+                       SET nombre       = COALESCE(v_seccion->>'nombre', nombre),
+                           orden        = COALESCE((v_seccion->>'orden')::int, orden),
+                           min_aprobado = COALESCE((v_seccion->>'min_aprobado')::numeric, min_aprobado),
+                           n_preg_test  = COALESCE((v_seccion->>'n_preg_test')::int, n_preg_test),
+                           archivada    = false
+                     WHERE id = v_sec_id;
+                    v_actualiz := v_actualiz + 1;
+                END IF;
+                v_secs_vivas := v_secs_vivas || v_sec_id;
+            END LOOP;
+        END LOOP;
+    END LOOP;
+
+    -- ── Archivado de lo ausente (nunca borrado) ─────────────────────────
+    IF p_archivar_ausentes THEN
+        WITH del_arbol AS (
+            SELECT s.id AS seccion_id, m.id AS modulo_id, t.id AS tema_id
+              FROM temas t
+              JOIN oposicion_temas ot ON ot.tema_id = t.id AND ot.oposicion_id = v_op_id
+              JOIN modulos m   ON m.tema_id = t.id
+              JOIN secciones s ON s.modulo_id = m.id
+        ), arch_s AS (
+            UPDATE secciones s SET archivada = true
+             WHERE s.id IN (SELECT seccion_id FROM del_arbol)
+               AND NOT s.id = ANY(v_secs_vivas)
+               AND NOT s.archivada
+            RETURNING 1
+        ), arch_m AS (
+            UPDATE modulos m SET archivado = true
+             WHERE m.id IN (SELECT modulo_id FROM del_arbol)
+               AND NOT m.id = ANY(v_mods_vivos)
+               AND NOT m.archivado
+            RETURNING 1
+        ), arch_t AS (
+            UPDATE temas t SET archivado = true
+             WHERE t.id IN (SELECT tema_id FROM del_arbol)
+               AND NOT t.id = ANY(v_temas_vivos)
+               AND NOT t.archivado
+            RETURNING 1
+        )
+        SELECT (SELECT count(*) FROM arch_s)
+             + (SELECT count(*) FROM arch_m)
+             + (SELECT count(*) FROM arch_t) INTO v_archivados;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'ok', true,
+        'oposicion_id', v_op_id,
+        'creados',      v_creados,
+        'actualizados', v_actualiz,
+        'archivados',   COALESCE(v_archivados, 0),
+        'secciones_vivas', array_length(v_secs_vivas, 1)
+    );
+END $$;
+
+
+-- Publica el markdown de un documento, resolviendo el nodo por slugs.
+-- `p_seccion_slug` NULL ⇒ el documento es el 'esquema' del módulo;
+-- `p_modulo_slug` también NULL ⇒ es el 'esquema' del tema.
+--
+-- Si el documento que hay publicado se editó a mano desde el panel
+-- (`origen = 'manual'`), NO lo pisa salvo `p_forzar`. Así un parche urgente
+-- no desaparece en silencio en el siguiente despliegue: el publicador lo
+-- reporta y alguien decide.
+CREATE OR REPLACE FUNCTION admin_publicar_documento(
+    p_tema_slug    text,
+    p_modulo_slug  text,
+    p_seccion_slug text,
+    p_contenido    text,
+    p_ruta         text    DEFAULT NULL,
+    p_commit_sha   text    DEFAULT NULL,
+    p_forzar       boolean DEFAULT false
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE
+    v_tema_id uuid; v_mod_id uuid; v_sec_id uuid;
+    v_id uuid; v_origen text; v_hash_actual text; v_hash_nuevo text;
+BEGIN
+    PERFORM _admin_o_permiso('teoria.gestionar');
+    IF p_contenido IS NULL OR btrim(p_contenido) = '' THEN
+        RAISE EXCEPTION 'contenido_vacio';
+    END IF;
+    v_hash_nuevo := md5(p_contenido);
+
+    SELECT id INTO v_tema_id FROM temas WHERE slug = p_tema_slug;
+    IF v_tema_id IS NULL THEN
+        RAISE EXCEPTION 'tema_no_encontrado' USING DETAIL = p_tema_slug;
+    END IF;
+
+    IF p_seccion_slug IS NOT NULL THEN
+        v_sec_id := _seccion_por_slug(p_tema_slug, p_modulo_slug, p_seccion_slug);
+        IF v_sec_id IS NULL THEN
+            RAISE EXCEPTION 'seccion_no_encontrada'
+                USING DETAIL = format('%s/%s/%s', p_tema_slug, p_modulo_slug, p_seccion_slug);
+        END IF;
+        SELECT id, origen, hash_contenido INTO v_id, v_origen, v_hash_actual
+          FROM documentos WHERE seccion_id = v_sec_id AND tipo = 'teoria';
+    ELSIF p_modulo_slug IS NOT NULL THEN
+        SELECT id INTO v_mod_id FROM modulos WHERE tema_id = v_tema_id AND slug = p_modulo_slug;
+        IF v_mod_id IS NULL THEN
+            RAISE EXCEPTION 'modulo_no_encontrado'
+                USING DETAIL = format('%s/%s', p_tema_slug, p_modulo_slug);
+        END IF;
+        SELECT id, origen, hash_contenido INTO v_id, v_origen, v_hash_actual
+          FROM documentos WHERE modulo_id = v_mod_id AND tipo = 'esquema';
+    ELSE
+        SELECT id, origen, hash_contenido INTO v_id, v_origen, v_hash_actual
+          FROM documentos WHERE tema_id = v_tema_id AND tipo = 'esquema';
+    END IF;
+
+    -- Sin cambios: no tocamos `actualizado_en` para que siga significando
+    -- "cuándo cambió de verdad este texto".
+    IF v_id IS NOT NULL AND v_hash_actual = v_hash_nuevo THEN
+        RETURN jsonb_build_object('ok', true, 'id', v_id, 'accion', 'sin_cambios');
+    END IF;
+
+    IF v_id IS NOT NULL AND v_origen = 'manual' AND NOT p_forzar THEN
+        RETURN jsonb_build_object('ok', false, 'id', v_id, 'accion', 'editado_a_mano',
+                                  'detalle', 'editado desde el panel; publica con --forzar para sobrescribir');
+    END IF;
+
+    IF v_id IS NOT NULL THEN
+        UPDATE documentos
+           SET contenido = p_contenido, ruta = p_ruta, commit_sha = p_commit_sha,
+               origen = 'publicacion', actualizado_en = now()
+         WHERE id = v_id;
+        RETURN jsonb_build_object('ok', true, 'id', v_id, 'accion', 'actualizado');
+    END IF;
+
+    IF v_sec_id IS NOT NULL THEN
+        INSERT INTO documentos (nivel, seccion_id, tipo, contenido, ruta, commit_sha, origen)
+        VALUES ('seccion', v_sec_id, 'teoria', p_contenido, p_ruta, p_commit_sha, 'publicacion')
+        RETURNING id INTO v_id;
+    ELSIF v_mod_id IS NOT NULL THEN
+        INSERT INTO documentos (nivel, modulo_id, tipo, contenido, ruta, commit_sha, origen)
+        VALUES ('modulo', v_mod_id, 'esquema', p_contenido, p_ruta, p_commit_sha, 'publicacion')
+        RETURNING id INTO v_id;
+    ELSE
+        INSERT INTO documentos (nivel, tema_id, tipo, contenido, ruta, commit_sha, origen)
+        VALUES ('tema', v_tema_id, 'esquema', p_contenido, p_ruta, p_commit_sha, 'publicacion')
+        RETURNING id INTO v_id;
+    END IF;
+    RETURN jsonb_build_object('ok', true, 'id', v_id, 'accion', 'creado');
+END $$;
+
+
+-- Publica el pool de preguntas de una sección.
+--
+-- La deduplicación va por `hash_contenido` (md5 del enunciado), que es
+-- UNIQUE global. Consecuencia práctica: si un enunciado ya existía en OTRA
+-- sección, esta RPC lo mueve a la de aquí y lo reporta en `movidas` — no lo
+-- duplica ni lo ignora en silencio. Los repasos y marcadores del usuario
+-- cuelgan de la pregunta, no de la sección, así que mover no rompe nada.
+--
+-- Con `p_archivar_ausentes`, las preguntas de la sección que no vengan en
+-- el JSON se archivan: salen de los sorteos pero conservan el historial de
+-- respuestas de quien ya las contestó.
+CREATE OR REPLACE FUNCTION admin_publicar_preguntas(
+    p_tema_slug         text,
+    p_modulo_slug       text,
+    p_seccion_slug      text,
+    p_preguntas         jsonb,
+    p_archivar_ausentes boolean DEFAULT false
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE
+    v_sec_id   uuid;
+    v_row      jsonb;
+    v_id       uuid;
+    v_sec_prev uuid;
+    v_ids      uuid[] := '{}';
+    v_nuevas   int := 0;
+    v_actualiz int := 0;
+    v_movidas  int := 0;
+    v_archiv   int := 0;
+    v_n_correctas int;
+BEGIN
+    IF NOT (es_admin() OR tiene_permiso('pregunta.crear')) THEN
+        RAISE EXCEPTION 'permiso_denegado';
+    END IF;
+
+    v_sec_id := _seccion_por_slug(p_tema_slug, p_modulo_slug, p_seccion_slug);
+    IF v_sec_id IS NULL THEN
+        RAISE EXCEPTION 'seccion_no_encontrada'
+            USING DETAIL = format('%s/%s/%s', p_tema_slug, p_modulo_slug, p_seccion_slug);
+    END IF;
+
+    FOR v_row IN SELECT * FROM jsonb_array_elements(COALESCE(p_preguntas, '[]'::jsonb)) LOOP
+        -- Validación mínima: sin esto, un fallo de formato en el repo entra
+        -- en producción y sólo se descubre cuando un usuario hace el test.
+        IF COALESCE(btrim(v_row->>'enunciado'), '') = '' THEN
+            RAISE EXCEPTION 'enunciado_vacio'
+                USING DETAIL = format('en %s/%s/%s', p_tema_slug, p_modulo_slug, p_seccion_slug);
+        END IF;
+        IF jsonb_typeof(v_row->'opciones') <> 'array'
+           OR jsonb_array_length(v_row->'opciones') < 2 THEN
+            RAISE EXCEPTION 'opciones_invalidas'
+                USING DETAIL = format('«%s» necesita al menos 2 opciones',
+                                      left(v_row->>'enunciado', 60));
+        END IF;
+        SELECT count(*) INTO v_n_correctas
+          FROM jsonb_array_elements(v_row->'opciones') o
+         WHERE (o->>'correcta')::boolean;
+        IF v_n_correctas <> 1 THEN
+            RAISE EXCEPTION 'correctas_invalidas'
+                USING DETAIL = format('«%s» tiene %s opciones correctas, debe tener exactamente 1',
+                                      left(v_row->>'enunciado', 60), v_n_correctas);
+        END IF;
+
+        SELECT id, seccion_id INTO v_id, v_sec_prev
+          FROM preguntas WHERE hash_contenido = md5(lower(btrim(v_row->>'enunciado')));
+
+        IF v_id IS NULL THEN
+            INSERT INTO preguntas (seccion_id, enunciado, opciones, explicacion)
+            VALUES (v_sec_id, btrim(v_row->>'enunciado'), v_row->'opciones', v_row->>'explicacion')
+            RETURNING id INTO v_id;
+            v_nuevas := v_nuevas + 1;
+        ELSE
+            UPDATE preguntas
+               SET seccion_id     = v_sec_id,
+                   opciones       = v_row->'opciones',
+                   explicacion    = v_row->>'explicacion',
+                   archivada      = false,
+                   actualizado_en = now()
+             WHERE id = v_id;
+            IF v_sec_prev IS DISTINCT FROM v_sec_id THEN
+                v_movidas := v_movidas + 1;
+            ELSE
+                v_actualiz := v_actualiz + 1;
+            END IF;
+        END IF;
+        v_ids := v_ids || v_id;
+    END LOOP;
+
+    IF p_archivar_ausentes THEN
+        WITH arch AS (
+            UPDATE preguntas SET archivada = true
+             WHERE seccion_id = v_sec_id
+               AND NOT id = ANY(v_ids)
+               AND NOT archivada
+            RETURNING 1
+        ) SELECT count(*) INTO v_archiv FROM arch;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'ok', true,
+        'seccion_id',   v_sec_id,
+        'nuevas',       v_nuevas,
+        'actualizadas', v_actualiz,
+        'movidas',      v_movidas,
+        'archivadas',   COALESCE(v_archiv, 0),
+        'total_vivas',  array_length(v_ids, 1)
+    );
+END $$;
+
+
+-- Foto de lo que hay publicado ahora mismo en una oposición. El publicador
+-- la pide ANTES de tocar nada para calcular el diff del `--dry-run`: qué
+-- crearía, qué actualizaría y —lo importante— qué archivaría.
+CREATE OR REPLACE FUNCTION admin_estado_publicacion(p_oposicion_slug text)
+RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE v_op_id uuid; v_res jsonb;
+BEGIN
+    PERFORM _admin_o_permiso('contenido.editar');
+    SELECT id INTO v_op_id FROM oposiciones WHERE slug = p_oposicion_slug;
+    IF v_op_id IS NULL THEN
+        RETURN jsonb_build_object('existe', false, 'secciones', '[]'::jsonb);
+    END IF;
+
+    SELECT jsonb_build_object(
+        'existe', true,
+        'oposicion_id', v_op_id,
+        'secciones', COALESCE(jsonb_agg(jsonb_build_object(
+            'ruta',        t.slug || '/' || m.slug || '/' || s.slug,
+            'seccion_id',  s.id,
+            'nombre',      s.nombre,
+            'archivada',   s.archivada OR m.archivado OR t.archivado,
+            'doc_hash',    d.hash_contenido,
+            'doc_origen',  d.origen,
+            'n_preguntas', (SELECT count(*) FROM preguntas p
+                             WHERE p.seccion_id = s.id AND NOT p.archivada)
+        ) ORDER BY t.slug, m.slug, s.slug), '[]'::jsonb)
+    ) INTO v_res
+      FROM secciones s
+      JOIN modulos m ON m.id = s.modulo_id
+      JOIN temas   t ON t.id = m.tema_id
+      JOIN oposicion_temas ot ON ot.tema_id = t.id
+      LEFT JOIN documentos d ON d.seccion_id = s.id AND d.tipo = 'teoria'
+     WHERE ot.oposicion_id = v_op_id;
+
+    RETURN v_res;
+END $$;
+
+
+GRANT EXECUTE ON FUNCTION _seccion_por_slug(text, text, text)                   TO web_user;
+GRANT EXECUTE ON FUNCTION admin_publicar_estructura(jsonb, boolean)             TO web_user;
+GRANT EXECUTE ON FUNCTION admin_publicar_documento(text,text,text,text,text,text,boolean) TO web_user;
+GRANT EXECUTE ON FUNCTION admin_publicar_preguntas(text,text,text,jsonb,boolean) TO web_user;
+GRANT EXECUTE ON FUNCTION admin_estado_publicacion(text)                        TO web_user;
+GRANT EXECUTE ON FUNCTION admin_archivar_tema(uuid, boolean)                    TO web_user;
+GRANT EXECUTE ON FUNCTION admin_archivar_modulo(uuid, boolean)                  TO web_user;
+GRANT EXECUTE ON FUNCTION admin_archivar_seccion(uuid, boolean)                 TO web_user;
 
 
 -- =============================================================================

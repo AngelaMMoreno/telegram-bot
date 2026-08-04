@@ -298,72 +298,95 @@ contenido que sobra o pool incompleto.
 
 ## F7 · Publicación
 
-### 7.1 Estructura (JSON de importación)
+Publicar es **mergear en el repo de contenido y correr el publicador**. No
+se sube nada a mano: el repo (git) es la fuente de la verdad y la BD es la
+copia que sirve la app.
 
-El panel de admin acepta este formato (`_importarOposicionJSON`). Los
-temas existentes **se reutilizan por nombre**, así que la nomenclatura
-canónica de `ESTRUCTURA_CONTENIDO.md` § 4 es lo que hace que el
-solapamiento entre oposiciones funcione.
+```bash
+cd db/publicacion
 
-```json
-{
-  "nombre": "Auxilio Judicial",
-  "descripcion": "Cuerpo de Auxilio Judicial de la Administración de Justicia.",
-  "temas": [
-    {
-      "nombre": "Procedimiento Administrativo Común (Ley 39/2015)",
-      "descripcion": "Régimen jurídico del procedimiento administrativo común.",
-      "modulos": [
-        {
-          "nombre": "Terminación del procedimiento",
-          "orden": 3,
-          "secciones": [
-            { "nombre": "Silencio administrativo", "orden": 1, "min_aprobado": 70, "n_preg_test": 10 },
-            { "nombre": "Desistimiento y renuncia",  "orden": 2, "min_aprobado": 70, "n_preg_test": 10 },
-            { "nombre": "Caducidad",                 "orden": 3, "min_aprobado": 70, "n_preg_test": 10 }
-          ]
-        }
-      ]
-    }
-  ]
-}
+# 1. Simulacro. Clona, compara con lo publicado y enseña el plan. No escribe.
+python3 publicar.py --repo git@github.com:tu-cuenta/oposiciones.git \
+                    --db "postgres://aprentix@localhost:5432/aprentix_desa"
+
+# 2. Si el plan cuadra:
+python3 publicar.py --repo git@github.com:tu-cuenta/oposiciones.git \
+                    --db "…" --aplicar
 ```
 
-También existen importadores parciales: temas sobre una oposición,
-módulos sobre un tema y secciones sobre un módulo, con el mismo formato
-anidado.
+Publica de una pasada la estructura, la teoría y las preguntas. Es
+idempotente: lo que no ha cambiado no se toca.
 
-### 7.2 Documentos markdown
+Se puede acotar cuánto entra, y los flags son repetibles y combinables:
 
-1. Sube el fichero al microservicio de contenido (queda bajo
-   `/mnt/data/ficheros/…`).
-2. Regístralo con `admin_upsert_documento(nivel, entidad_id, tipo, ruta)`.
+| Alcance | Cómo |
+|---|---|
+| Todo el repo | *(sin flags)* |
+| Una oposición | `--oposicion auxilio-judicial` |
+| Un tema | `--tema ley-39-2015` |
+| Una sección | `--seccion ley-39-2015/terminacion/silencio` |
 
-Convención de rutas — refleja la jerarquía canónica, **sin la
-oposición**, porque el tema se comparte:
+Y de dónde sale: `--repo URL` lo clona él (con `--rama` y `--commit`), o
+`--contenido RUTA` usa una copia local. **`--commit` es el botón de
+deshacer**: republicando el commit anterior se vuelve al estado bueno.
 
-```
-/temas/<slug-tema>/esquema.md
-/temas/<slug-tema>/<slug-modulo>/esquema.md
-/temas/<slug-tema>/<slug-modulo>/<slug-seccion>/teoria.md
-```
+El detalle completo — estructura del repo, flags y salvaguardas — está en
+`db/publicacion/README.md`.
 
-Restricciones del esquema: `seccion` → solo `teoria`; `modulo` y `tema`
-→ solo `esquema`; un único documento por (nivel, entidad, tipo).
+### 7.1 De dónde sale cada cosa
+
+| En la app | Sale de |
+|---|---|
+| Identidad (slug) | El bloque `aprentix:meta` |
+| Nombre visible | El `# H1` del markdown |
+| Orden | `orden:` del meta |
+| `min_aprobado`, `n_preg_test` | El meta; si faltan, se respeta lo que ya hay |
+| Teoría / esquema | El cuerpo del `.md`, tal cual, en `documentos.contenido` |
+| Preguntas | El `preguntas.json` de cada sección |
+| Oposición y orden de sus temas | `oposiciones/<slug>.yaml` |
+
+El YAML de oposición hace falta porque el orden de los temas no se deduce
+de las rutas: un mismo tema se comparte entre oposiciones y ocupa distinta
+posición en cada una (P5, independencia de la convocatoria).
+
+### 7.2 Qué protege el progreso
+
+El progreso de cada usuario cuelga de `secciones.id`. Todo lo demás se
+deriva de proteger ese uuid:
+
+- **El slug es la identidad; el nombre es una etiqueta.** Renombrar una
+  oposición, un tema, un módulo o una sección es un `UPDATE`. Reordenar,
+  también. Nadie pierde nada.
+- **El slug no se cambia.** Cambiarlo convierte la sección en otra: la
+  vieja se archiva con el progreso dentro y la nueva nace a cero.
+- **Aquí no se borra.** Lo que desaparece del repo se archiva con
+  `--archivar-ausentes`: sale del home y de los tests, y conserva el
+  historial. Volver a añadirlo lo desarchiva.
+- **Hay un freno.** Si la publicación fuese a retirar una parte grande del
+  temario —y sobre todo si crea casi tantas secciones como archiva, que es
+  la huella de un cambio de slugs— el script para antes de escribir.
 
 ### 7.3 Orden de publicación
 
-1. Estructura (temas → módulos → secciones).
-2. `esquema.md` del tema y de cada módulo.
-3. `teoria.md` de cada sección.
-4. Preguntas (dispara automáticamente el encolado de embeddings).
-5. Esperar al worker de embeddings y revisar `propuestas_fusion`.
-6. Asignar el tema a la oposición (`admin_asignar_tema_a_oposicion`).
+Una sola pasada del publicador ya respeta el orden correcto
+(estructura → documentos → preguntas). Lo que sigue siendo manual:
 
-> No asignes el tema a una oposición hasta que sus secciones tengan
-> teoría **y** pool ≥ 25. Una sección sin preguntas hace que
+1. Publicar (`--aplicar`).
+2. Esperar al worker de embeddings y revisar `propuestas_fusion`.
+3. Asignar el tema a la oposición: basta con añadir su slug a la lista
+   `temas:` del YAML y volver a publicar.
+
+> No metas un tema en el YAML de una oposición hasta que sus secciones
+> tengan teoría **y** pool ≥ 25. Una sección sin preguntas hace que
 > `iniciar_intento_seccion` falle con `sin_preguntas` y rompe el plan
 > diario del usuario.
+
+### 7.4 Parches urgentes
+
+El panel de admin sigue permitiendo sobrescribir la teoría de una sección
+a mano, para un arreglo que no puede esperar a un PR. Queda marcada como
+`origen = 'manual'` y **la siguiente publicación no la pisa**: la reporta y
+sigue. Cuando el arreglo esté en git, publica con `--forzar`.
 
 ---
 
@@ -377,8 +400,11 @@ Restricciones del esquema: `seccion` → solo `teoria`; `modulo` y `tema`
 3. Corrige la teoría y **actualiza `actualizado` en el meta**.
 4. Revisa las preguntas del pool afectadas. Editar el enunciado cambia
    `hash_contenido`; editar solo opciones o explicación, no.
-5. Si un dato desaparece de la norma, borra sus preguntas: una pregunta
-   sobre normativa derogada es peor que no tener pregunta.
+5. Si un dato desaparece de la norma, quita sus preguntas del
+   `preguntas.json` y publica con `--archivar-ausentes`: una pregunta sobre
+   normativa derogada es peor que no tener pregunta. Se archivan, no se
+   borran, así que las respuestas que ya dio la gente siguen contando en su
+   historial.
 
 ### Cuando las métricas señalan una sección
 
