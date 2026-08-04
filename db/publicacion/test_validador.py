@@ -15,7 +15,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from publicar import (  # noqa: E402
-    NOMBRES_PROHIBIDOS, _filas_tabla_bajo, _viñetas_bajo, leer_repo, validar,
+    Documento, NOMBRES_PROHIBIDOS, _avisos_seccion, _filas_tabla_bajo,
+    _viñetas_bajo, leer_repo, validar,
 )
 
 fallos = []
@@ -141,6 +142,21 @@ check("las filas vacías de la plantilla no cuentan",
       _filas_tabla_bajo(VACIA, "No lo confundas") == 0)
 check("apartado inexistente devuelve 0",
       _filas_tabla_bajo(MD, "No existe") == 0)
+
+
+print("Margen del recuento de palabras:")
+
+
+def documento_con_palabras(total):
+    contenido = "<!-- aprentix:meta\nnivel: seccion\ntema: t\nmodulo: m\nseccion: s\n-->\n"
+    contenido += "# T\n\n" + " ".join(["x"] * total)
+    return Documento("seccion", "t", "m", "s", "T", contenido, "temas/t/m/s/teoria.md", 1)
+
+
+check("1120 palabras sólo informa, no genera aviso bloqueante",
+      not any("palabras" in a for a in _avisos_seccion(documento_con_palabras(1120))))
+check("1211 palabras supera el tope duro y genera aviso",
+      any("tope duro de 1210" in a for a in _avisos_seccion(documento_con_palabras(1211))))
 
 print("TODO OK" if not fallos else f"HAY {len(fallos)} FALLOS")
 sys.exit(1 if fallos else 0)

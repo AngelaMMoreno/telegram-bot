@@ -100,7 +100,9 @@ APARTADOS_SECCION = [
     "Compruébalo tú mismo",
 ]
 # Presupuesto de una sección (docs/ESTRUCTURA_CONTENIDO.md § 1.1).
-PALABRAS_MIN, PALABRAS_MAX = 350, 1100
+PALABRAS_MIN = 350
+PALABRAS_MAX_RECOMENDADO = 1100
+PALABRAS_MAX = 1210  # 10 % de margen sobre el máximo recomendado.
 RETEN_MIN, RETEN_MAX = 5, 12          # viñetas de «Retén esto» = ítems evaluables
 POOL_MIN, POOL_OBJETIVO = 25, 35      # preguntas por sección
 
@@ -245,8 +247,13 @@ def _avisos_seccion(doc: Documento) -> list[str]:
         avisos.append(f"{r}: {n} palabras, por debajo del mínimo de {PALABRAS_MIN} "
                       f"(¿fundir con la sección contigua?)")
     elif n > PALABRAS_MAX:
-        avisos.append(f"{r}: {n} palabras, por encima del máximo de {PALABRAS_MAX} "
-                      f"(¿dividir en dos secciones?)")
+        avisos.append(f"{r}: {n} palabras, por encima del tope duro de {PALABRAS_MAX} "
+                      f"({PALABRAS_MAX_RECOMENDADO} + 10 % de margen; "
+                      f"¿dividir en dos secciones?)")
+    elif n > PALABRAS_MAX_RECOMENDADO:
+        log.info("%s: %s palabras, por encima del máximo recomendado de %s "
+                 "pero dentro del margen del 10 %% (tope duro %s)",
+                 r, n, PALABRAS_MAX_RECOMENDADO, PALABRAS_MAX)
 
     # «Retén esto» son las tarjetas del repaso: una por ítem evaluable.
     reten = _viñetas_bajo(doc.contenido, "Retén esto")
