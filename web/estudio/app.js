@@ -156,19 +156,15 @@
     localStorage.setItem(CTX_KEY, JSON.stringify({ ...cur, ...patch }));
   }
 
-  // ── Endpoint del microservicio de contenido (teoría markdown) ─────
-  // El servicio 'contenido/' (antes 'teoria/') sirve GET /teoria/api/leer?ruta=…
-  // para ficheros y expone otros endpoints admin (upload, mv, rm).
-  async function fetchMarkdown(ruta) {
-    // Refresca el access token proactivamente vía cualquier rpc barata,
-    // así el Bearer que enviamos al microservicio de contenido está fresco.
-    try { await S.rpc('leer_config'); } catch (_) { /* ignoramos */ }
-    const tok = S.getAccess?.();
-    const r = await fetch(`/teoria/api/leer?ruta=${encodeURIComponent(ruta)}`, {
-      headers: tok ? { Authorization: `Bearer ${tok}` } : {},
-    });
-    if (!r.ok) throw new Error('no_pudo_leer_teoria');
-    return await r.text();
+  // ── Markdown de teoría ────────────────────────────────────────────
+  // Viene dentro de la propia RPC (`documento_de_*` devuelve `contenido`),
+  // así que no hay segundo salto al microservicio: antes se pedía la ruta
+  // por RPC y luego el fichero por HTTP.
+  //
+  // El microservicio `teoria/` sigue existiendo para PDFs y adjuntos, que
+  // son ficheros de verdad; el markdown ya no pasa por ahí.
+  function markdownDe(doc, vacio) {
+    return (doc && doc.contenido) ? doc.contenido : vacio;
   }
 
   // ── Router ─────────────────────────────────────────────────────────
@@ -283,6 +279,9 @@
       nombre_visible_invalido:'El nombre debe tener al menos 2 caracteres.',
       token_invalido:         'El enlace ha caducado o ya se usó.',
       no_autenticado:         'Sesión caducada. Vuelve a entrar.',
+      fichero_requerido:      'Elige un fichero markdown.',
+      contenido_vacio:        'El fichero está vacío.',
+      tiene_progreso:         'Hay usuarios con progreso aquí. Archívalo en vez de borrarlo.',
     })[code] || code;
   }
 
@@ -980,27 +979,22 @@
   }
 
 
-  // Sube un esquema de tema al microservicio de contenido y lo registra en
-  // la tabla `documentos` con nivel='tema', tipo='esquema'.  Sigue el mismo
-  // patrón que la subida de teoría desde `viewAdminSeccion`: primero
-  // asegura la carpeta destino, luego POST /teoria/api/subir con el
-  // fichero, y finalmente `admin_upsert_documento`. Sólo admin — el botón
-  // que abre este modal ya está protegido en `viewTema`.
+  // Guarda el esquema de un tema en `documentos` (nivel='tema',
+  // tipo='esquema'). Lee el markdown en el navegador y manda el texto: ya
+  // no hay fichero en disco ni ruta que registrar.
+  //
+  // Es la vía manual, para un arreglo puntual. Lo normal es publicar desde
+  // el repo de contenido con `db/publicacion/publicar.py`. Sólo admin — el
+  // botón que abre este modal ya está protegido en `viewTema`.
   function _subirEsquemaTema(tema, docPrevio, onDone) {
-    // Carpeta convención: /<slug-tema>/esquema/. El microservicio crea las
-    // subcarpetas al vuelo con /api/carpeta (idempotente).
-    const slug = (tema.slug || 'tema')
-      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'tema';
-    const carpeta = `/${slug}/esquema`;
-
     _mostrarModal({
-      titulo: docPrevio ? 'Cambiar esquema del tema' : 'Subir esquema del tema',
+      titulo: docPrevio ? 'Cambiar esquema del tema' : 'Guardar esquema del tema',
       contenido: html`
         <p class="muted" style="margin-top:0">
-          Sube un fichero markdown (<code>.md</code>) con el esquema del tema.
-          Se guarda en <code>${carpeta}/</code> y se enlaza como esquema de
+          Markdown (<code>.md</code>) con el esquema de
           <strong>${tema.nombre}</strong>. ${raw(docPrevio ? html`
-            <br>Reemplazará la ruta actual (<code>${docPrevio.ruta}</code>).
+            <br>Reemplaza el esquema publicado y lo marca como editado a
+            mano, para que la siguiente publicación avise en vez de pisarlo.
           ` : '')}
         </p>
         <form id="form-subir-esquema" class="form-grid">
@@ -1012,7 +1006,7 @@
           <div class="form-row" style="justify-content:flex-end;gap:.5rem">
             <button class="btn" type="button" id="btn-cancelar-esquema">Cancelar</button>
             <button class="btn btn-pri" type="submit" id="btn-guardar-esquema">
-              ${docPrevio ? 'Cambiar' : 'Subir'}
+              ${docPrevio ? 'Cambiar' : 'Guardar'}
             </button>
           </div>
         </form>`,
@@ -1025,50 +1019,30 @@
           err.hidden = true;
           const file = new FormData(ev.target).get('fichero');
           if (!file || !file.name) {
-            err.textContent = 'Elige un fichero antes de subir.';
+            err.textContent = 'Elige un fichero antes de guardar.';
             err.hidden = false;
             return;
           }
           btn.disabled = true;
-          btn.textContent = 'Subiendo…';
+          btn.textContent = 'Guardando…';
           try {
-            const tok = S.getAccess?.();
-            const headers = tok ? { Authorization: `Bearer ${tok}` } : {};
-            // 1) Crea la carpeta destino de forma idempotente.
-            await fetch('/teoria/api/carpeta', {
-              method: 'POST',
-              headers: { ...headers, 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                padre: carpeta.replace(/\/[^/]+$/, '/') || '/',
-                nombre: carpeta.split('/').pop(),
-              }),
-            }).catch(() => {});
-            // 2) Sube el fichero al microservicio de contenido.
-            const fd = new FormData();
-            fd.append('ruta', carpeta);
-            fd.append('files', file);
-            const r = await fetch('/teoria/api/subir', {
-              method: 'POST', body: fd, headers,
-            });
-            if (!r.ok) throw new Error('upload_failed');
-            const d = await r.json();
-            const ruta = d.subidos && d.subidos[0] && d.subidos[0].ruta;
-            if (!ruta) throw new Error('no_se_pudo_registrar');
-            // 3) Registra la ruta como esquema del tema en `documentos`.
+            const contenido = await file.text();
+            if (!contenido.trim()) throw new Error('contenido_vacio');
             await S.rpc('admin_upsert_documento', {
               p_nivel: 'tema',
               p_entidad_id: tema.id,
               p_tipo: 'esquema',
-              p_ruta: ruta,
+              p_contenido: contenido,
+              p_ruta: file.name,
             });
             _cerrarModal();
-            showToast(docPrevio ? 'Esquema actualizado.' : 'Esquema subido.');
+            showToast(docPrevio ? 'Esquema actualizado.' : 'Esquema guardado.');
             if (typeof onDone === 'function') onDone();
           } catch (e) {
             err.textContent = _msgError(e.message || String(e));
             err.hidden = false;
             btn.disabled = false;
-            btn.textContent = docPrevio ? 'Cambiar' : 'Subir';
+            btn.textContent = docPrevio ? 'Cambiar' : 'Guardar';
           }
         };
       },
@@ -1092,9 +1066,8 @@
       const pal = _paletaTema(idxTema < 0 ? 0 : idxTema);
       const nombreOp = home.oposicion?.nombre || 'Inicio';
 
-      let md = '';
-      if (doc && doc.ruta) md = await fetchMarkdown(doc.ruta);
-      else md = '## Sin esquema todavía\n\nEste tema aún no tiene esquema subido.';
+      const md = markdownDe(
+        doc, '## Sin esquema todavía\n\nEste tema aún no tiene esquema publicado.');
 
       root.innerHTML = html`
         <div class="view-head">
@@ -1259,9 +1232,8 @@
       ]);
       const ctx = _localizarSeccion(home, seccId);
 
-      let md = '';
-      if (doc && doc.ruta) md = await fetchMarkdown(doc.ruta);
-      else md = '## Sin teoría todavía\n\nEsta sección no tiene documento de teoría subido.';
+      const md = markdownDe(
+        doc, '## Sin teoría todavía\n\nEsta sección no tiene teoría publicada.');
 
       // Marca la teoría como vista (idempotente).
       S.rpc('marcar_teoria_vista', { p_seccion_id: seccId }).catch(() => {});
@@ -2564,28 +2536,31 @@
       <div class="panel-card">
         <h3 class="card-title"><span class="ico">📖</span> Teoría (markdown)</h3>
         <p class="card-subtitle">
-          Ruta del fichero markdown asociado a esta sección. Súbelo primero al
-          microservicio de contenido y pega aquí la ruta relativa
-          (empezando por <code>/</code>).
+          Lo normal es publicar desde el repo de contenido
+          (<code>db/publicacion/publicar.py</code>). Esto de aquí es el parche
+          urgente: sobrescribe la teoría publicada y la marca como editada a
+          mano, para que la siguiente publicación avise en vez de pisarla.
         </p>
+        ${raw(docTeoria ? html`
+          <p class="card-subtitle">
+            Publicado: <strong>${docTeoria.origen === 'manual'
+              ? 'editado a mano' : 'desde el repo'}</strong>${raw(docTeoria.commit_sha
+              ? html` · commit <code>${docTeoria.commit_sha}</code>` : '')}${raw(docTeoria.ruta
+              ? html` · <code>${docTeoria.ruta}</code>` : '')}
+          </p>` : '')}
         <form id="form-teoria" class="form-grid">
           <div class="field">
-            <label>Subir un fichero markdown</label>
+            <label>Fichero markdown</label>
             <input type="file" name="fichero" accept=".md,.markdown,.txt">
             <small class="small" style="color:var(--txt-soft)">
-              Se sube a <code>/${esc((tema.slug || 'tema')+'/'+ (seccion.orden || '') +'-'+ (seccion.nombre || ''))}/</code>
-              y se registra su ruta como teoría de esta sección.
+              Se lee aquí mismo y su texto se guarda como teoría de esta
+              sección. Ya no se sube ningún fichero a disco.
             </small>
-          </div>
-          <div class="field">
-            <label>O bien, ruta ya existente</label>
-            <input name="ruta" placeholder="/oposicion/tema/seccion/teoria.md"
-                   value="${docTeoria?.ruta || ''}">
           </div>
           <div class="form-err" hidden></div>
           <div class="form-row" style="justify-content:flex-end">
             ${raw(docTeoria
-              ? '<button class="btn btn-danger-outline btn-sm" type="button" id="btn-quitar-teoria">Quitar vínculo</button>'
+              ? '<button class="btn btn-danger-outline btn-sm" type="button" id="btn-quitar-teoria">Quitar teoría</button>'
               : '')}
             <button class="btn btn-pri btn-sm" type="submit">Guardar teoría</button>
           </div>
@@ -2622,41 +2597,18 @@
       const err = root.querySelector('#form-teoria .form-err');
       err.hidden = true;
       try {
-        const f = new FormData(e.target);
-        let ruta = (f.get('ruta') || '').trim();
-        const file = f.get('fichero');
-        if (file && file.name) {
-          // Sube al microservicio contenido/. Carpeta por convención con el
-          // slug del tema y la sección (crea la subcarpeta al vuelo).
-          const carpeta = `/${(tema.slug || 'tema')}/${(seccion.orden || '') + '-' + (seccion.nombre || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-          const tok = S.getAccess?.();
-          // Crea carpeta destino de forma idempotente.
-          await fetch('/teoria/api/carpeta', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json',
-                       Authorization: `Bearer ${tok}` },
-            body: JSON.stringify({ padre: carpeta.replace(/\/[^/]+$/, '/') || '/',
-                                   nombre: carpeta.split('/').pop() }),
-          }).catch(() => {});
-          const fd = new FormData();
-          fd.append('ruta', carpeta);
-          fd.append('files', file);
-          const r = await fetch('/teoria/api/subir', {
-            method: 'POST', body: fd,
-            headers: tok ? { Authorization: `Bearer ${tok}` } : {},
-          });
-          if (!r.ok) throw new Error('upload_failed');
-          const d = await r.json();
-          if (d.subidos && d.subidos.length) ruta = d.subidos[0].ruta;
-        }
-        if (!ruta) throw new Error('ruta_o_fichero_requerido');
+        const file = new FormData(e.target).get('fichero');
+        if (!file || !file.name) throw new Error('fichero_requerido');
+        const contenido = await file.text();
+        if (!contenido.trim()) throw new Error('contenido_vacio');
         await S.rpc('admin_upsert_documento', {
           p_nivel: 'seccion',
           p_entidad_id: sid,
           p_tipo: 'teoria',
-          p_ruta: ruta,
+          p_contenido: contenido,
+          p_ruta: file.name,
         });
-        showToast('Teoría vinculada.');
+        showToast('Teoría guardada.');
         viewAdminSeccion([sid]);
       } catch (er) {
         err.textContent = _msgError(er.message || String(er));
@@ -2666,7 +2618,7 @@
     const btnQ = root.querySelector('#btn-quitar-teoria');
     if (btnQ) btnQ.onclick = () => _confirmar({
       titulo: 'Quitar teoría',
-      mensaje: 'Se elimina el vínculo (el fichero markdown NO se borra del disco).',
+      mensaje: 'Se borra la teoría publicada de esta sección. El original sigue en el repo de contenido: republicando vuelve.',
       confirmar: 'Quitar',
       onOk: async () => {
         await S.rpc('admin_borrar_documento', { p_id: docTeoria.id });
