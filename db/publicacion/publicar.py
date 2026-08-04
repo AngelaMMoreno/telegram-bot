@@ -74,8 +74,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import psycopg
 import yaml
+
+# psycopg sólo hace falta para publicar. `--validar` funciona sin él, para
+# que el CI del repo de contenido (y un modelo revisando su propio trabajo)
+# no necesiten ni driver ni base de datos.
+try:
+    import psycopg
+except ImportError:  # pragma: no cover
+    psycopg = None
 
 log = logging.getLogger("publicar")
 
@@ -92,8 +99,36 @@ APARTADOS_SECCION = [
     "Retén esto",
     "Compruébalo tú mismo",
 ]
-# Presupuesto de palabras de una sección (docs/ESTRUCTURA_CONTENIDO.md § 1.1).
+# Presupuesto de una sección (docs/ESTRUCTURA_CONTENIDO.md § 1.1).
 PALABRAS_MIN, PALABRAS_MAX = 350, 1100
+RETEN_MIN, RETEN_MAX = 5, 12          # viñetas de «Retén esto» = ítems evaluables
+POOL_MIN, POOL_OBJETIVO = 25, 35      # preguntas por sección
+
+# Tamaños del árbol (docs/ESTRUCTURA_CONTENIDO.md § 3).
+MODULO_SECCIONES_MAX = 7
+TEMA_MODULOS_MAX = 7
+TEMA_SECCIONES_MAX = 28
+
+# Longitud de los nombres (docs/ESTRUCTURA_CONTENIDO.md § 4.3).
+NOMBRE_MAX = {"tema": 60, "modulo": 50, "seccion": 60}
+
+# Nombres que delatan acoplamiento a una convocatoria (P5). El nombre debe
+# describir el objeto de conocimiento: un tema no es «el tema 7 de Auxilio
+# Judicial», es «Organización del Poder Judicial».
+NOMBRES_PROHIBIDOS = [
+    (r"\btema\s+\d+", "lleva número de tema"),
+    (r"\bbloque\s+(\d+|[IVX]+)\b", "lleva número de bloque"),
+    (r"\bparte\s+(\d+|[IVX]+)\b", "lleva número de parte"),
+    (r"\bm[óo]dulo\s+\d+", "lleva número de módulo"),
+    (r"\bsecci[óo]n\s+\d+", "lleva número de sección"),
+    (r"\b(grupo|subgrupo)\s+[A-C][12]?\b", "lleva grupo de clasificación"),
+    (r"\bturno\s+libre\b", "menciona el turno de la convocatoria"),
+    (r"\b(convocatoria|oposici[óo]n)\b", "menciona la convocatoria"),
+    # Ojo: NO se filtra por año. Las referencias legales los llevan y son
+    # nombres válidos («Ley 39/2015», «RDL 5/2015», «Ley 22/2006»).
+    (r"^\s*(parte|bloque)\s+general\s*$", "no dice qué contiene"),
+    (r"^\s*continuaci[óo]n", "parte por cantidad y no por sentido"),
+]
 
 
 class ErrorContenido(Exception):
@@ -172,25 +207,161 @@ def _leer_preguntas(path: Path) -> list[dict]:
     return salida
 
 
-def _avisos_formato(doc: Documento) -> list[str]:
-    """Comprobaciones de la plantilla. Son AVISOS: no bloquean la
-    publicación salvo con `--estricto`. Aquí es donde se nota tener el
-    contenido en git — esto puede correr también en el CI del repo."""
-    if doc.nivel != "seccion":
-        return []
+def _viñetas_bajo(contenido: str, apartado: str) -> int:
+    """Cuenta las viñetas de primer nivel de un `## apartado`."""
+    m = re.search(rf"^## {re.escape(apartado)}\s*$(.*?)(?=^## |\Z)",
+                  contenido, re.MULTILINE | re.DOTALL)
+    if not m:
+        return 0
+    return len(re.findall(r"^- ", m.group(1), re.MULTILINE))
+
+
+def _filas_tabla_bajo(contenido: str, apartado: str) -> int:
+    """Cuenta las filas con datos de la tabla de un `## apartado`
+    (descontando la cabecera y la línea de guiones)."""
+    m = re.search(rf"^## {re.escape(apartado)}\s*$(.*?)(?=^## |\Z)",
+                  contenido, re.MULTILINE | re.DOTALL)
+    if not m:
+        return 0
+    filas = [l for l in m.group(1).splitlines() if l.strip().startswith("|")]
+    filas = [l for l in filas if not re.match(r"^\s*\|[\s|:-]+\|\s*$", l)]
+    # Quita la cabecera y las filas de plantilla vacías («| | |»).
+    utiles = [l for l in filas[1:] if re.sub(r"[|\s]", "", l)]
+    return len(utiles)
+
+
+def _avisos_seccion(doc: Documento) -> list[str]:
+    """Reglas de PLANTILLA_TEORIA.md § 6 y ESTRUCTURA_CONTENIDO.md § 1.1."""
     avisos = []
+    r = doc.ruta
+
     faltan = [a for a in APARTADOS_SECCION if f"## {a}" not in doc.contenido]
     if faltan:
-        avisos.append(f"{doc.ruta}: faltan apartados obligatorios: {', '.join(faltan)}")
+        avisos.append(f"{r}: faltan apartados obligatorios: {', '.join(faltan)}")
+
     # Palabras del cuerpo, quitando el bloque de metadatos.
-    cuerpo = META_RE.sub("", doc.contenido)
-    n = len(cuerpo.split())
+    n = len(META_RE.sub("", doc.contenido).split())
     if n < PALABRAS_MIN:
-        avisos.append(f"{doc.ruta}: {n} palabras, por debajo del mínimo de {PALABRAS_MIN} "
+        avisos.append(f"{r}: {n} palabras, por debajo del mínimo de {PALABRAS_MIN} "
                       f"(¿fundir con la sección contigua?)")
     elif n > PALABRAS_MAX:
-        avisos.append(f"{doc.ruta}: {n} palabras, por encima del máximo de {PALABRAS_MAX} "
+        avisos.append(f"{r}: {n} palabras, por encima del máximo de {PALABRAS_MAX} "
                       f"(¿dividir en dos secciones?)")
+
+    # «Retén esto» son las tarjetas del repaso: una por ítem evaluable.
+    reten = _viñetas_bajo(doc.contenido, "Retén esto")
+    if reten and not (RETEN_MIN <= reten <= RETEN_MAX):
+        avisos.append(f"{r}: «Retén esto» tiene {reten} viñetas; "
+                      f"deben ser {RETEN_MIN}–9 (tope duro {RETEN_MAX})")
+
+    # Cada fila de «No lo confundas» es la fuente de un distractor.
+    confusiones = _filas_tabla_bajo(doc.contenido, "No lo confundas")
+    if confusiones < 2:
+        avisos.append(f"{r}: «No lo confundas» tiene {confusiones} filas con datos; "
+                      f"el mínimo es 2 (de ahí salen los distractores)")
+
+    if len(doc.nombre) > NOMBRE_MAX["seccion"]:
+        avisos.append(f"{r}: el nombre tiene {len(doc.nombre)} caracteres, "
+                      f"máximo {NOMBRE_MAX['seccion']}")
+
+    # Pool de preguntas.
+    if not doc.preguntas:
+        avisos.append(f"{r}: sin preguntas.json — una sección sin pool hace que "
+                      f"iniciar_intento_seccion falle con «sin_preguntas»")
+    else:
+        if len(doc.preguntas) < POOL_MIN:
+            avisos.append(f"{r}: {len(doc.preguntas)} preguntas en el pool, mínimo "
+                          f"{POOL_MIN} (objetivo {POOL_OBJETIVO}); por debajo, el "
+                          f"sorteo repite y se memoriza el orden")
+        sin_expl = sum(1 for p in doc.preguntas if not (p.get("explicacion") or "").strip())
+        if sin_expl:
+            avisos.append(f"{r}: {sin_expl} preguntas sin explicación — sin ella no "
+                          f"hay feedback inmediato (P3)")
+        pocas_op = sum(1 for p in doc.preguntas if len(p["opciones"]) != 4)
+        if pocas_op:
+            avisos.append(f"{r}: {pocas_op} preguntas no tienen 4 opciones; el "
+                          f"estándar es 4 para que el azar valga 25 %")
+    return avisos
+
+
+def _avisos_nombre_nodo(doc: Documento) -> list[str]:
+    """Test de portabilidad de ESTRUCTURA_CONTENIDO.md § 4.2: el nombre
+    describe el objeto de conocimiento, no la convocatoria que lo exige."""
+    avisos = []
+    tope = NOMBRE_MAX[doc.nivel]
+    if len(doc.nombre) > tope:
+        avisos.append(f"{doc.ruta}: el nombre tiene {len(doc.nombre)} caracteres, "
+                      f"máximo {tope}")
+    for patron, motivo in NOMBRES_PROHIBIDOS:
+        if re.search(patron, doc.nombre, re.IGNORECASE):
+            avisos.append(f"{doc.ruta}: «{doc.nombre}» {motivo} (P5: los nombres son "
+                          f"independientes de la convocatoria)")
+            break
+    return avisos
+
+
+def validar(docs: list[Documento], raiz: Path) -> list[str]:
+    """Todas las comprobaciones que NO necesitan base de datos.
+
+    Es lo que corre el CI del repo de contenido y lo que puede lanzar un
+    modelo para revisar su propio trabajo antes de commitear.
+    """
+    avisos: list[str] = []
+    for d in docs:
+        avisos += _avisos_nombre_nodo(d)
+        if d.nivel == "seccion":
+            avisos += _avisos_seccion(d)
+        elif d.nivel == "modulo" and "## Preguntas puente" in d.contenido:
+            puente = _viñetas_bajo(d.contenido, "Preguntas puente")
+            if puente < 2:
+                avisos.append(f"{d.ruta}: {puente} preguntas puente; con menos de 2 el "
+                              f"módulo no aporta sentido y sus secciones deberían "
+                              f"reagruparse")
+
+    # Tamaños del árbol (ESTRUCTURA_CONTENIDO.md § 3).
+    por_modulo: dict[tuple, int] = {}
+    por_tema_mods: dict[str, set] = {}
+    por_tema_secs: dict[str, int] = {}
+    for d in docs:
+        if d.nivel != "seccion":
+            continue
+        por_modulo[(d.tema, d.modulo)] = por_modulo.get((d.tema, d.modulo), 0) + 1
+        por_tema_mods.setdefault(d.tema, set()).add(d.modulo)
+        por_tema_secs[d.tema] = por_tema_secs.get(d.tema, 0) + 1
+
+    for (tema, modulo), n in sorted(por_modulo.items()):
+        if n > MODULO_SECCIONES_MAX:
+            avisos.append(f"{tema}/{modulo}: {n} secciones (máximo {MODULO_SECCIONES_MAX}); "
+                          f"el test agregado entra en zona de fatiga — divide el módulo")
+        elif n == 1 and len(por_tema_mods.get(tema, ())) > 1:
+            avisos.append(f"{tema}/{modulo}: una sola sección; o no es un módulo o la "
+                          f"sección estaba mal dimensionada")
+
+    for tema, mods in sorted(por_tema_mods.items()):
+        if len(mods) > TEMA_MODULOS_MAX:
+            avisos.append(f"{tema}: {len(mods)} módulos (máximo {TEMA_MODULOS_MAX}) — "
+                          f"probablemente son dos temas")
+        if por_tema_secs[tema] > TEMA_SECCIONES_MAX:
+            avisos.append(f"{tema}: {por_tema_secs[tema]} secciones (máximo "
+                          f"{TEMA_SECCIONES_MAX}); el test de tema pasa de 34 min")
+
+    # Cada tema debe traer su esquema, y cada módulo el suyo (encuadre, Dewey).
+    con_esquema_tema = {d.tema for d in docs if d.nivel == "tema"}
+    con_esquema_mod = {(d.tema, d.modulo) for d in docs if d.nivel == "modulo"}
+    for tema in sorted(por_tema_mods):
+        if tema not in con_esquema_tema:
+            avisos.append(f"{tema}: falta temas/{tema}/esquema.md (el encuadre del tema)")
+    for tema, modulo in sorted(por_modulo):
+        if (tema, modulo) not in con_esquema_mod:
+            avisos.append(f"{tema}/{modulo}: falta su esquema.md")
+
+    # Los YAML de oposición apuntan a temas que existen.
+    for path in sorted((raiz / "oposiciones").glob("*.yaml")):
+        datos = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        for slug in datos.get("temas") or []:
+            if slug not in por_tema_mods:
+                avisos.append(f"oposiciones/{path.name}: declara el tema «{slug}» "
+                              f"pero no hay nada en temas/{slug}/")
     return avisos
 
 
@@ -406,13 +577,17 @@ def construir_arbol(op: dict, docs: list[Documento],
 
 # ── Diálogo con la BD ───────────────────────────────────────────────────────
 
-def abrir(conn_str: str) -> psycopg.Connection:
+def abrir(conn_str: str):
     """Conecta y se identifica como admin ante las RPCs.
 
     Las RPCs comprueban permisos con `es_admin()`, que lee el claim `roles`
     de `request.jwt.claims`. Conectando directamente ese GUC viene vacío, así
     que hay que ponerlo a mano con un usuario que tenga el rol admin.
     """
+    if psycopg is None:
+        raise ErrorContenido(
+            "para publicar hace falta psycopg: pip install -r requirements.txt\n"
+            "    (para sólo validar no hace falta: usa --validar)")
     conn = psycopg.connect(conn_str)
     fila = conn.execute("""
         SELECT u.id FROM usuarios u
@@ -646,7 +821,12 @@ def main() -> int:
     ap.add_argument("--commit",
                     help="commit concreto a publicar con --repo. Sirve para "
                          "volver a una versión anterior")
-    ap.add_argument("--db", required=True, help="DSN de la BD (postgres://…)")
+    ap.add_argument("--validar", action="store_true",
+                    help="sólo revisa el contenido y sale. No necesita BD ni "
+                         "psycopg. Devuelve 1 si hay algún aviso, 0 si está "
+                         "limpio, para poder usarlo en el CI")
+    ap.add_argument("--db", help="DSN de la BD (postgres://…). "
+                                 "Obligatorio salvo con --validar")
     ap.add_argument("--oposicion", action="append", dest="oposiciones",
                     help="slug de la oposición a publicar; repetible. "
                          "Por defecto, todas las de oposiciones/*.yaml")
@@ -676,6 +856,9 @@ def main() -> int:
     try:
         if (args.rama or args.commit) and not args.repo:
             raise ErrorContenido("--rama y --commit sólo tienen sentido con --repo")
+        if not args.validar and not args.db:
+            raise ErrorContenido("hace falta --db para publicar (o --validar para "
+                                 "sólo revisar el contenido)")
 
         completo = not (args.temas or args.secciones)
 
@@ -706,7 +889,22 @@ def _publicar_todo(args, raiz: Path, completo: bool) -> int:
     docs = leer_repo(raiz, args.ignorar_rutas)
     log.info("leídos %d documentos de %s", len(docs), raiz)
 
-    avisos = [a for d in docs for a in _avisos_formato(d)]
+    avisos = validar(docs, raiz)
+
+    if args.validar:
+        # Modo revisión: se imprime todo junto y se sale con un código que
+        # el CI (o quien haya escrito el contenido) pueda mirar.
+        n_sec = sum(1 for d in docs if d.nivel == "seccion")
+        print(f"\n── REVISIÓN · {n_sec} secciones, {len(docs)} documentos "
+              + "─" * 20)
+        if not avisos:
+            print("  Sin avisos. El contenido cumple la plantilla.")
+            return 0
+        for a in avisos:
+            print(f"  · {a}")
+        print(f"\n{len(avisos)} avisos. Arréglalos antes de publicar.")
+        return 1
+
     for a in avisos:
         log.warning(a)
     if avisos and args.estricto:

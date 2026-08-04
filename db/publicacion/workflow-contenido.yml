@@ -1,0 +1,49 @@
+# Validación del repo de contenido.
+#
+# CÓPIAME al repo de contenido como `.github/workflows/validar.yml`.
+# Vivo aquí sólo para estar junto al validador que invoco.
+#
+# Comprueba que el contenido cumple la plantilla ANTES de que se mergee:
+# los 8 apartados obligatorios, el presupuesto de palabras, el pool mínimo
+# de preguntas, los nombres independientes de la convocatoria y que la
+# ruta de cada fichero cuadre con los slugs de su bloque `aprentix:meta`.
+#
+# No toca la base de datos ni necesita credenciales: sólo lee ficheros.
+name: Validar contenido
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Traer el contenido
+        uses: actions/checkout@v4
+        with:
+          path: contenido
+
+      # El validador vive en el repo de la aplicación. Si ese repo es
+      # privado, hace falta un token con permiso de lectura en un secreto
+      # llamado APP_REPO_TOKEN; si es público, quita la línea `token:`.
+      - name: Traer el validador
+        uses: actions/checkout@v4
+        with:
+          repository: AngelaMMoreno/telegram-bot
+          path: app
+          sparse-checkout: db/publicacion
+          token: ${{ secrets.APP_REPO_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # `--validar` no necesita psycopg ni base de datos, sólo PyYAML.
+      - name: Instalar dependencias
+        run: pip install --quiet PyYAML
+
+      - name: Validar
+        run: python3 app/db/publicacion/publicar.py --contenido contenido --validar

@@ -23,6 +23,35 @@ python3 publicar.py --repo git@github.com:tu-cuenta/oposiciones.git \
     --db "…" --aplicar
 ```
 
+## Revisar sin publicar
+
+```bash
+python3 publicar.py --contenido ../ruta/al/repo --validar
+```
+
+Sale `0` si el contenido está limpio y `1` si hay avisos. **No necesita
+base de datos ni `psycopg`**, sólo PyYAML: está pensado para que lo lance
+el CI del repo de contenido y para que quien escribe —persona o modelo—
+revise su propio trabajo antes de commitear.
+
+Comprueba lo que se puede comprobar leyendo ficheros: los 8 apartados
+obligatorios de la teoría, el presupuesto de 350–1.100 palabras, las 5–12
+viñetas de «Retén esto», las ≥ 2 filas de «No lo confundas», el pool de
+≥ 25 preguntas, las preguntas sin explicación, las que no tienen 4
+opciones, los tamaños del árbol (secciones por módulo, módulos por tema),
+los esquemas que falten, los nombres acoplados a la convocatoria (P5) y
+que cada YAML de oposición apunte a temas que existan.
+
+## Ficheros para copiar al repo de contenido
+
+Dos plantillas que viven aquí sólo para estar junto al código que las
+respalda. Su sitio de trabajo es el repo de contenido:
+
+| Fichero | Cópialo como | Para qué |
+|---|---|---|
+| `CLAUDE.md.plantilla` | `CLAUDE.md` en la raíz | Toda la metodología, plantillas y reglas, autosuficiente. Es lo que hace que un modelo escriba contenido correcto sin tener que redescubrir las normas. |
+| `workflow-contenido.yml` | `.github/workflows/validar.yml` | Pasa el validador en cada PR. |
+
 Sin `--aplicar` es un **simulacro**: lee el repo, lo compara con lo
 publicado y enseña el plan. Es el modo por defecto a propósito — el paso
 que escribe hay que pedirlo.
@@ -186,9 +215,10 @@ Cuando el arreglo esté en git, publica con `--forzar`.
 ## Pruebas
 
 ```bash
-# Lógica del freno y del filtrado (no necesitan BD).
+# Freno, filtrado y calibrado del validador (no necesitan BD).
 python3 test_salvaguardas.py
 python3 test_filtrado.py
+python3 test_validador.py
 
 # Invariantes sobre una BD de usar y tirar.
 createdb aprentix_test && psql -d aprentix_test -f ../init/01_esquema.sql

@@ -1,0 +1,713 @@
+# CLAUDE.md — Repositorio de contenido de Aprentix
+
+> **Cópiame a la raíz del repo de contenido con el nombre `CLAUDE.md`.**
+> Vivo aquí, en el repo de la aplicación, sólo para mantenerme junto al
+> código que me valida. Mi sitio de trabajo es el otro repo.
+
+Este documento es **autosuficiente**: contiene todo lo necesario para
+escribir contenido correcto sin consultar otros ficheros.
+
+---
+
+## 1. Qué es este repositorio
+
+Contiene el **temario** de Aprentix, una aplicación de preparación de
+oposiciones: oposiciones, temas, módulos, secciones, teoría y tests.
+
+Este repo es la **fuente de la verdad**. La aplicación tiene una base de
+datos, pero es una copia publicada: se escribe aquí, se revisa aquí, y un
+script (`publicar.py`) lo vuelca a la base de datos. **El flujo va en una
+sola dirección: repo → base de datos.** Nunca al revés.
+
+### La regla de oro
+
+> **El `slug` es la identidad. El nombre es una etiqueta.**
+
+El progreso de cada usuario (notas, secciones completadas, repasos
+pendientes) cuelga del identificador interno de cada sección, y ese
+identificador se localiza **por su slug**. De ahí se derivan todas las
+reglas de seguridad:
+
+| Acción | ¿Seguro? | Por qué |
+|---|---|---|
+| Cambiar el `# Título` de cualquier cosa | ✅ Siempre | Es sólo una etiqueta. |
+| Cambiar el `orden:` | ✅ Siempre | El orden es presentación. |
+| Reescribir la teoría entera | ✅ Siempre | Es texto. |
+| Cambiar opciones o explicación de una pregunta | ✅ Siempre | La pregunta sigue siendo la misma. |
+| Añadir o quitar secciones | ✅ Sí | Lo que se quita se archiva, no se borra. |
+| **Cambiar un `slug`** | ❌ **NUNCA** | Convierte la sección en otra distinta: la vieja se archiva con el progreso dentro y la nueva nace a cero. |
+| **Renombrar una carpeta sin cambiar el meta** (o al revés) | ❌ **NUNCA** | El publicador se detiene: no puede saber cuál de los dos manda. |
+
+Si de verdad hace falta cambiar un slug, **pregunta antes**. Se hace con
+una operación manual sobre la base de datos, no editando ficheros.
+
+---
+
+## 2. Estructura del repositorio
+
+```
+oposiciones/
+  auxilio-judicial.yaml          ← qué temas la componen y en qué orden
+  gestion-procesal.yaml
+temas/
+  <slug-tema>/
+    esquema.md                   ← mapa del tema
+    <slug-modulo>/
+      esquema.md                 ← mapa del módulo
+      <slug-seccion>/
+        teoria.md                ← lo que se estudia
+        preguntas.json           ← su pool de test
+```
+
+**Los temas no cuelgan de las oposiciones.** Existen una sola vez y las
+oposiciones los referencian. Eso es lo que permite compartirlos (§ 8).
+
+### `oposiciones/<slug>.yaml`
+
+```yaml
+slug: auxilio-judicial          # debe coincidir con el nombre del fichero
+nombre: Cuerpo de Auxilio Judicial
+descripcion: Administración de Justicia.
+temas:                          # el ORDEN de esta lista es el orden en la app
+  - constitucion-espanola-1978
+  - procedimiento-administrativo-comun-ley-39-2015
+```
+
+Este fichero existe porque el orden de los temas **no se puede deducir de
+las carpetas**: un mismo tema va en distinta posición en cada oposición.
+
+### Reglas de los slugs
+
+- Minúsculas, sin acentos, palabras separadas por guiones.
+- Descriptivos: `silencio-administrativo`, no `seccion-3`.
+- Slug de tema: **único en todo el repo**.
+- Slug de módulo: único dentro de su tema.
+- Slug de sección: único dentro de su módulo.
+- **La ruta de la carpeta debe reproducir exactamente los slugs del meta.**
+
+---
+
+## 3. El marco pedagógico
+
+No es decoración. Cada autor resuelve un problema concreto y se traduce
+en una regla verificable. **Si una decisión no se puede justificar con uno
+de estos cuatro, no entra.**
+
+### Ericsson — práctica deliberada
+Se mejora practicando tareas bien definidas, con feedback inmediato,
+atacando las debilidades. De ahí: la **sección** es la unidad atómica
+(un objetivo, 10–15 min, un test que lo verifica); la zona objetivo de
+rendimiento es **70–85 %**; la `explicacion` de cada pregunta es
+obligatoria.
+
+> **Consecuencia dura:** una sección que no se puede evaluar con
+> preguntas no es una sección. Si escribes teoría que no genera
+> preguntas, has escrito material de lectura.
+
+### Dewey — aprender haciendo
+Se aprende actuando sobre un problema y reflexionando después. De ahí:
+toda sección abre con `## Por qué importa` (un caso real, **nunca** una
+definición); el ciclo es teoría → test → corrección en la misma sesión;
+`## Compruébalo tú mismo` obliga a producir antes de verificar.
+
+> **Consecuencia dura:** el `esquema.md` de módulo y de tema existe por
+> Dewey — el todo antes de la parte. Sin ese marco, las secciones son
+> fragmentos sueltos.
+
+### Flavell — metacognición
+El fallo típico del opositor es la **mala calibración**: cree que domina
+algo porque lo ha leído muchas veces. De ahí: cabecera con objetivo y
+tiempo; el test como espejo objetivo; `## No lo confundas` enseña *cómo*
+se equivoca la gente, no sólo qué es correcto.
+
+### Skinner — condicionamiento operante
+La conducta se moldea por sus consecuencias. De ahí: corrección
+inmediata; escalera sección → módulo → tema; `min_aprobado` del 70 % para
+que sea alcanzable al primer intento; y **control de estímulos**: la
+estructura de la teoría es siempre idéntica.
+
+> **La rigidez del formato no es burocracia.** Es lo que hace que
+> arrancar una sesión de estudio cueste menos decidir.
+
+**Complementos:** Ebbinghaus (repaso espaciado de 7 cajas) y Sweller
+(carga cognitiva: el límite de 10–15 min por sección).
+
+### Las 7 premisas no negociables
+
+1. **P1 · Atomicidad.** La sección es la unidad mínima. 10–15 minutos.
+2. **P2 · Cierre teoría–test.** Toda pregunta se responde con la teoría de
+   su sección, y todo dato relevante de la teoría aparece en al menos una
+   pregunta. Ni teoría huérfana ni preguntas huérfanas.
+3. **P3 · Feedback accionable.** Nunca un dato sin la decisión que implica.
+4. **P4 · Estructura invariable.** Mismo esqueleto, mismo orden, siempre.
+5. **P5 · Independencia de la convocatoria.** Los nombres describen el
+   objeto de conocimiento, no la oposición que lo exige.
+6. **P6 · Estabilidad del plan.** No se reestructura a diario.
+7. **P7 · Nunca castigar.** Bajo rendimiento reduce carga, nunca reprocha.
+
+---
+
+## 4. Dimensionar el contenido
+
+Todo el sistema está calibrado sobre una constante:
+
+> **Una sección = una sesión de estudio completa de 10 a 15 minutos:
+> leer la teoría, autocomprobar y hacer el test de 10 preguntas.**
+
+| Componente | Cálculo | Tiempo |
+|---|---|---|
+| Lectura de teoría | palabras ÷ **130 ppm** | 5–7 min |
+| Autochequeo | 2–3 preguntas abiertas | 1–2 min |
+| Test de sección | 10 preguntas × 30 s | 5 min |
+| **Total** | | **11–14 min** |
+
+> Si más del 40 % del cuerpo son tablas o listas de datos, multiplica el
+> tiempo de lectura por **1,3**.
+
+### Presupuesto de una sección
+
+| Magnitud | Mínimo | **Objetivo** | Máximo duro |
+|---|---:|---:|---:|
+| Palabras de teoría | 350 | **700–900** | 1.100 |
+| Ítems evaluables | 5 | **6–9** | 12 |
+| Preguntas en el pool | 25 | **35** | — |
+| `n_preg_test` | 8 | **10** | 15 |
+| `min_aprobado` | 60 | **70** | 80 |
+
+- **Por debajo de 350 palabras o 5 ítems** → fusiona con la sección
+  contigua. Excepción: secciones de datos puros (tablas de plazos,
+  cuantías, composición de órganos).
+- **Por encima de 1.100 palabras o 12 ítems** → divide en dos. No hay
+  tercera opción: recortar contenido esencial no vale.
+
+### Qué es un «ítem evaluable»
+
+Un hecho que se puede convertir en pregunta por sí solo: una definición,
+un plazo, una cuantía, una mayoría, una competencia, una excepción a una
+regla, o una relación jerárquica. **Cuéntalos antes de escribir**: es
+como sabes si la sección tiene el tamaño correcto.
+
+### Módulo y tema
+
+| Magnitud | Mínimo | **Objetivo** | Máximo |
+|---|---:|---:|---:|
+| Secciones por módulo | 2 | **3–5** | 7 |
+| Módulos por tema | 1 (`es_unico`) | **3–5** | 7 |
+| Secciones por tema | 4 | **12–20** | 28 |
+
+### ¿Esto es una sección o un módulo?
+
+Aplica en orden; la primera respuesta afirmativa decide.
+
+1. ¿Supera los 15 minutos? → módulo (o sección que hay que partir).
+2. ¿Tiene más de una idea nuclear, es decir, no lo puedes resumir en una
+   frase de ≤ 20 palabras sin usar «y» para unir cosas distintas? → módulo.
+3. ¿Necesita dos niveles de encabezado con contenido sustantivo? → módulo,
+   y esos `###` son sus secciones.
+4. ¿Genera más de 15 preguntas realmente distintas? → módulo.
+5. ¿Se puede completar sin volver atrás a consultar otra parte? → sección.
+
+---
+
+## 5. Nombres: independientes de la convocatoria (P5)
+
+> **El nombre describe el OBJETO DE CONOCIMIENTO, no la convocatoria que
+> lo exige.**
+
+Un tema no es «el tema 7 de Auxilio Judicial»: es «Organización del Poder
+Judicial». Que en una convocatoria sea el 7 y en otra el 12 es
+información del YAML de la oposición, no del nombre.
+
+### Test de portabilidad (obligatorio antes de crear)
+
+1. ¿Seguiría siendo correcto si mañana otra oposición incluyera el mismo
+   contenido?
+2. ¿Contiene número de tema, bloque, parte, cuerpo, escala, grupo o año de
+   convocatoria? → renombrar.
+3. ¿Un opositor de otra administración entendería qué hay dentro?
+
+### Formatos válidos
+
+| Nivel | Patrón | Ejemplo |
+|---|---|---|
+| Tema (norma) | `<Denominación> (<referencia legal>)` | `Procedimiento Administrativo Común (Ley 39/2015)` |
+| Tema (órgano) | `<Institución>` | `La Corona` |
+| Tema (materia) | `<Materia>: <ámbito>` | `Ofimática: procesador de textos` |
+| Módulo | El **criterio de agrupación** | `Título I: derechos y deberes fundamentales` |
+| Sección | `<Concepto> (<anclaje>)` | `Derechos fundamentales y libertades públicas (arts. 14–29)` |
+
+```
+❌ Módulo 2              ← no dice nada
+❌ Parte general         ← no dice nada
+❌ Continuación (II)     ← parte por cantidad, no por sentido
+❌ Artículos 14 al 29    ← describe el envase, no el contenido
+❌ Sección 3             ← el orden ya vive en `orden:`
+```
+
+**Longitudes máximas:** tema 60 caracteres, módulo 50, sección 60.
+
+### La excepción legítima
+
+Hay contenidos intrínsecamente específicos de una administración. Criterio
+verificable:
+
+> Si el nombre aparece como **título de la norma o denominación oficial
+> del órgano en un boletín oficial**, es válido. Si sólo aparece en las
+> **bases de una convocatoria**, no lo es.
+
+| ✅ Válido | ❌ Inválido |
+|---|---|
+| `Ley 22/2006 de Capitalidad y de Régimen Especial de Madrid` | `Tema 4 Administrativo Ayto. Madrid` |
+| `Estatuto de Autonomía de la Comunidad de Madrid` | `Parte autonómica (turno libre)` |
+| `Estatuto Básico del Empleado Público (RDL 5/2015)` | `Función pública C2` |
+
+---
+
+## 6. Plantilla de la teoría (`teoria.md`)
+
+**Los ocho apartados son obligatorios, literales y en este orden.**
+Ninguno se omite. La rigidez es deliberada (P4).
+
+````markdown
+<!-- aprentix:meta
+version: 1
+nivel: seccion
+tema: <slug-del-tema>
+modulo: <slug-del-modulo>
+seccion: <slug-de-la-seccion>
+orden: <n>
+min_aprobado: 70
+n_preg_test: 10
+fuentes:
+  - "<Norma, artículos, identificador oficial>"
+actualizado: AAAA-MM-DD
+palabras: <n>
+items_evaluables: <n>
+preguntas_pool: <n>
+-->
+
+# <Nombre de la sección>
+
+> **Objetivo** · <Qué sabrás hacer al terminar. Una frase, ≤ 25 palabras.>
+> **Antes de esto** · <Sección prerrequisito | Nada>
+> **Tiempo** · <X> min de teoría + <Y> min de test
+
+## Por qué importa
+
+<40–70 palabras. Un caso, una situación o una pregunta real. NUNCA
+empieza con una definición.>
+
+## La idea clave
+
+<50–80 palabras. El núcleo, comprensible por sí solo. Los términos que
+van a examen, en **negrita**.>
+
+## Desarrollo
+
+<350–550 palabras, en 2–4 subapartados `###`. Lo comparable va en tabla,
+lo enumerable en lista, lo explicativo en prosa corta.>
+
+### <Subapartado 1>
+
+### <Subapartado 2>
+
+## Cómo cae en el examen
+
+| Dato que se pregunta | Forma habitual del enunciado | Cómo acertar |
+|---|---|---|
+| | | |
+
+## No lo confundas
+
+| ❌ Se confunde con | ✅ Lo correcto | Diferencia en una frase |
+|---|---|---|
+| | | |
+
+## Retén esto
+
+- **<Concepto>:** <dato exacto>
+
+## Compruébalo tú mismo
+
+**1. <Pregunta abierta>**
+
+<details>
+<summary>Ver respuesta</summary>
+
+<Respuesta en 1–2 líneas.>
+
+</details>
+
+## Fuente
+
+- <Norma consolidada, artículos concretos, identificador oficial>
+````
+
+### Reparto de palabras
+
+| Apartado | Función | Palabras |
+|---|---|---:|
+| Cabecera `>` | Planificación | 25 |
+| Por qué importa | Problema antes que concepto | 40–70 |
+| La idea clave | Aísla lo que se va a practicar | 50–80 |
+| Desarrollo | El contenido | 350–550 |
+| Cómo cae en el examen | Conexión con la práctica real | 60–100 |
+| No lo confundas | Discriminación de estímulos | 50–90 |
+| Retén esto | Tarjetas del repaso espaciado | 60–110 |
+| Compruébalo tú mismo | Monitorización activa | 60–100 |
+| Fuente | Trazabilidad | 15–30 |
+| **Total** | | **700–900** (tope 1.100) |
+
+Si te pasas de 1.100, **el recorte sale del Desarrollo**, nunca de «Retén
+esto» ni de «No lo confundas»: esos dos sostienen el banco de preguntas.
+
+### Apartados críticos
+
+- **`## No lo confundas`** — mínimo **2 filas**. Son confusiones reales,
+  no matices teóricos. **Estas filas son la fuente de los distractores**
+  de las preguntas.
+- **`## Retén esto`** — **5–9 viñetas** (12 como tope duro), una por ítem
+  evaluable. Cada una debe entenderse **fuera de contexto**, sin
+  pronombres que dependan del texto anterior: se muestran sueltas en los
+  repasos.
+
+### Reglas de redacción
+
+1. **Segunda persona.** «Cuando presentes un recurso…», no «El interesado,
+   cuando presente…».
+2. **Frases cortas**, máximo 25 palabras. La norma ya está en el BOE.
+3. **Nunca copies literalmente artículos largos.** Cita el artículo y
+   explica qué dice. Si hay que reproducir algo, va en `> cita`, máximo 3
+   líneas.
+4. **Negrita sólo para términos evaluables.** Máximo ~15 por sección.
+5. **Números siempre en cifra**: «3 meses», no «tres meses».
+6. **Sin «como ya sabemos», «obviamente», «es evidente».**
+7. **Cero referencias a la convocatoria** dentro de la teoría.
+
+### Restricciones del renderizador
+
+La app renderiza con `marked` + `DOMPurify`.
+
+| Sí | No |
+|---|---|
+| Encabezados `#`–`####`, listas, tablas GFM, citas `>` | Front-matter YAML `---` |
+| **Negrita**, *cursiva*, `código` | LaTeX / MathJax |
+| `<details>` / `<summary>` | Scripts, iframes, estilos inline, clases CSS |
+| Enlaces relativos entre documentos | Imágenes remotas |
+
+---
+
+## 7. Plantillas de esquema
+
+### Módulo (`esquema.md`) — 200–400 palabras
+
+````markdown
+<!-- aprentix:meta
+version: 1
+nivel: modulo
+tema: <slug-del-tema>
+modulo: <slug-del-modulo>
+orden: <n>
+actualizado: AAAA-MM-DD
+-->
+
+# <Nombre del módulo>
+
+> **Qué agrupa** · <El criterio de agrupación en una frase.>
+> **Secciones** · <N> · **Tiempo total** · <N × 12> min aprox.
+
+## El hilo conductor
+
+<60–100 palabras. Por qué estas secciones van juntas y en este orden. Si
+no puedes explicarlo, el módulo está mal formado.>
+
+## Mapa del módulo
+
+1. **<Sección 1>** — <qué resuelve, 1 línea>
+
+## Cuando termines sabrás
+
+- <Capacidad concreta y verificable, en verbo de acción>
+
+## Preguntas puente
+
+<2–3 preguntas que NINGUNA sección responde por sí sola: exigen combinar
+dos o más.>
+
+- <Pregunta que cruza las secciones 1 y 3>
+````
+
+> Si no consigues escribir **al menos 2 preguntas puente**, el módulo no
+> aporta sentido: sus secciones son independientes y deberían reagruparse.
+
+### Tema (`esquema.md`) — 400–700 palabras
+
+````markdown
+<!-- aprentix:meta
+version: 1
+nivel: tema
+tema: <slug-del-tema>
+actualizado: AAAA-MM-DD
+-->
+
+# <Nombre del tema>
+
+> **De qué va** · <Una frase.>
+> **Módulos** · <N> · **Secciones** · <N> · **Tiempo total** · <N> h aprox.
+
+## Qué vas a estudiar y por qué
+
+<80–120 palabras. Para qué sirve saber esto, no sólo qué contiene.>
+
+## Estructura
+
+| # | Módulo | Secciones | Qué cubre |
+|---|---|---:|---|
+
+<Si algún módulo sólo lo exigen determinadas convocatorias, márcalo como
+**ampliación** SIN nombrar la oposición: "Ampliación: sólo necesario si tu
+temario incluye X".>
+
+## Orden recomendado
+
+<40–80 palabras.>
+
+## Antes de empezar
+
+- **Necesitas haber visto:** <Tema prerrequisito | Nada>
+- **Se apoya en:** <Conceptos previos>
+
+## Vocabulario mínimo
+
+| Término | Significado en una línea |
+|---|---|
+
+<5–10 términos.>
+
+## Fuentes del tema
+
+- <Norma consolidada principal, identificador oficial y fecha>
+````
+
+---
+
+## 8. Compartir temas entre oposiciones
+
+Esta es una capacidad central del sistema, no un truco.
+
+**Cómo se hace:** la carpeta del tema existe **una sola vez**. Lo nombras
+en los YAML de todas las oposiciones que lo incluyan.
+
+```yaml
+# oposiciones/auxilio-judicial.yaml
+temas:
+  - constitucion-espanola-1978
+  - procedimiento-administrativo-comun-ley-39-2015   ← 2º aquí
+```
+```yaml
+# oposiciones/gestion-procesal.yaml
+temas:
+  - procedimiento-administrativo-comun-ley-39-2015   ← 1º aquí
+```
+
+**Qué ganas:** se escribe una vez, se corrige una vez. Y como es
+literalmente el mismo tema, si alguien lo estudia preparando una
+oposición y luego se apunta a otra que lo incluye, **le sale ya
+completado**. No lo estudia dos veces.
+
+**Nunca dupliques un tema** con el mismo contenido y distinto nombre:
+rompe el progreso compartido y la deduplicación de preguntas.
+
+### Cuando dos oposiciones piden la misma fuente con distinta profundidad
+
+| Solapamiento | Decisión |
+|---|---|
+| **≥ 60 %** | **Un solo tema compartido.** Los módulos que sólo exige la oposición más amplia van al final y su `esquema.md` los marca como ampliación. El coste (algún módulo de más) es menor que duplicar el banco de preguntas. |
+| **< 60 %** | **Dos temas distintos**, nombrados por su alcance real: `Constitución Española: parte dogmática` y `Constitución Española: organización territorial`. |
+
+---
+
+## 9. El banco de preguntas (`preguntas.json`)
+
+### Cuántas
+
+| Regla | Cantidad |
+|---|---|
+| Por sección | **mínimo 25, objetivo 35** (≈ 3,5 × las 10 del test) |
+| Por ítem evaluable | 3–5 preguntas |
+| Por fila de «No lo confundas» | ≥ 1 pregunta cuyo distractor sea esa confusión |
+
+> Con menos de 25, el sorteo aleatorio repite y el usuario memoriza el
+> orden, no el contenido.
+
+### Mezcla de tipos
+
+| Tipo | Peso | Qué evalúa |
+|---|---:|---|
+| Literal / dato | 40 % | Recuerdo exacto del ítem |
+| Comprensión / aplicación | 35 % | Uso del concepto en un caso |
+| Discriminación | 25 % | Distinguir figuras confundibles |
+
+Las de **discriminación** son las que producen aprendizaje real y las que
+peor salen automáticamente. Escríbelas con cuidado.
+
+### Reglas de redacción
+
+1. **4 opciones, 1 correcta.** El estándar es 4 para que el azar valga 25 %.
+2. **`explicacion` obligatoria**, máximo 3 líneas. Debe decir por qué la
+   correcta lo es **y** por qué falla la trampa principal. Sin explicación
+   la pregunta incumple P3.
+3. **Distractores plausibles y con origen**: salen de «No lo confundas» o
+   de datos vecinos (otro plazo de la misma norma). Un distractor absurdo
+   no enseña nada.
+4. **Paridad de longitud** entre opciones. La opción notablemente más
+   larga suele ser la correcta y el usuario lo aprende.
+5. **Sin «todas/ninguna de las anteriores»** por encima del 5 % del pool.
+6. **Sin negaciones dobles.** Si el enunciado es negativo, el «NO» va en
+   mayúsculas.
+7. **Autosuficiencia**: se responde con la teoría de **su** sección.
+8. **Un ítem por pregunta.**
+9. **Sin referencias a la convocatoria** ni al número de tema.
+
+### Formato
+
+```json
+{
+  "titulo": "Silencio administrativo",
+  "preguntas": [
+    {
+      "enunciado": "Transcurrido el plazo máximo sin notificación expresa en un procedimiento iniciado a solicitud del interesado, el silencio administrativo será, como regla general:",
+      "opciones": [
+        { "texto": "Estimatorio", "correcta": true },
+        { "texto": "Desestimatorio", "correcta": false },
+        { "texto": "Estimatorio sólo si lo prevé una norma con rango de ley", "correcta": false },
+        { "texto": "Produce la caducidad del procedimiento", "correcta": false }
+      ],
+      "explicacion": "El art. 24.1 de la Ley 39/2015 fija el silencio positivo como regla general a solicitud del interesado. La caducidad opera en procedimientos iniciados de oficio con efectos desfavorables, no aquí."
+    }
+  ]
+}
+```
+
+> **El enunciado es la identidad de la pregunta.** Cambiar opciones o
+> explicación conserva la pregunta y su historial. Cambiar el enunciado
+> crea una pregunta nueva y archiva la anterior.
+
+---
+
+## 10. El cierre teoría–test (P2)
+
+Es el principio verificable más importante del sistema. **Compruébalo
+siempre antes de dar una sección por terminada:**
+
+- Cada viñeta de **Retén esto** tiene ≥ 2 preguntas en el pool.
+- Cada fila de **No lo confundas** genera ≥ 1 pregunta cuyo distractor es
+  precisamente esa confusión.
+- Ninguna pregunta exige un dato que no esté en la teoría de esta sección.
+- Ningún párrafo del **Desarrollo** queda sin pregunta asociada. Si sobra
+  contenido, o se convierte en pregunta o se elimina.
+
+Construye esta matriz y comprueba que ninguna celda queda vacía:
+
+| Ítem («Retén esto») | Preguntas que lo evalúan |
+|---|---|
+| Regla general: silencio positivo | 5 |
+| Excepción: responsabilidad patrimonial | 3 |
+
+Y a la inversa: **toda pregunta debe apuntar a un ítem**. Las preguntas
+huérfanas señalan teoría incompleta; los ítems sin preguntas señalan
+contenido que sobra o pool incompleto.
+
+---
+
+## 11. Cómo trabajar aquí
+
+### Crear una sección nueva
+
+1. Cuenta los **ítems evaluables** de la fuente. ¿Entre 5 y 12? Adelante.
+   Si son menos, fusiona; si son más, divide.
+2. Elige el slug y crea `temas/<tema>/<modulo>/<seccion>/`.
+3. Escribe `teoria.md` con la plantilla completa (§ 6).
+4. Escribe `preguntas.json` con ≥ 25 preguntas (§ 9).
+5. Comprueba el cierre teoría–test (§ 10).
+6. **Valida** (§ 12) y corrige lo que salga.
+7. Commit.
+
+### Crear un tema nuevo
+
+1. Comprueba primero si ya existe algo equivalente: **antes de crear un
+   tema, mira si puedes reutilizar uno** (§ 8).
+2. Nombre que pase el test de portabilidad (§ 5).
+3. `temas/<slug>/esquema.md`, luego los módulos, luego las secciones.
+4. Añade el slug del tema al `temas:` del YAML de su oposición.
+
+### Crear una oposición nueva
+
+1. `oposiciones/<slug>.yaml`.
+2. En `temas:`, **reutiliza todos los temas que puedas**. Sólo crea temas
+   nuevos para lo que no exista.
+
+### Modificar contenido existente
+
+Consulta la tabla de la § 1. Resumen: cambia lo que quieras **salvo los
+slugs y la correspondencia entre carpeta y meta**.
+
+Cuando cambie una norma:
+1. Busca en los bloques `fuentes:` el identificador de la norma afectada.
+2. Revisa esas secciones: ítems, «Retén esto» y «Cómo cae en el examen».
+3. Corrige y **actualiza `actualizado:` en el meta**.
+4. Revisa las preguntas afectadas. Si un dato desaparece de la norma,
+   quita sus preguntas: una pregunta sobre normativa derogada es peor que
+   no tener pregunta.
+
+---
+
+## 12. Validar antes de commitear
+
+**Obligatorio.** No commitees contenido sin pasar el validador:
+
+```bash
+python3 publicar.py --contenido . --validar
+```
+
+Sale `0` si está limpio y `1` si hay avisos. No necesita base de datos.
+
+Comprueba, entre otras cosas: los 8 apartados obligatorios, el
+presupuesto de 350–1.100 palabras, las 5–12 viñetas de «Retén esto», las
+≥ 2 filas de «No lo confundas», el pool de ≥ 25 preguntas, que ninguna
+pregunta se quede sin explicación, los tamaños del árbol, los nombres
+acoplados a la convocatoria y que la ruta de cada fichero cuadre con su
+meta.
+
+---
+
+## 13. Lo que NUNCA debes hacer
+
+- ❌ **Cambiar un `slug`.** Deja huérfano el progreso de quien estudió eso.
+- ❌ **Mover una carpeta sin actualizar el meta**, o al revés.
+- ❌ **Duplicar un tema** con el mismo contenido y distinto nombre.
+- ❌ **Escribir teoría que no genere preguntas**, o preguntas que la
+  teoría de su sección no permita responder (P2).
+- ❌ **Poner una pregunta sin `explicacion`** (P3).
+- ❌ **Nombrar nada por la convocatoria**: «Tema 7», «Bloque II», «turno
+  libre» (P5).
+- ❌ **Saltarte un apartado de la plantilla** o cambiarlos de orden (P4).
+- ❌ **Inventar datos, plazos, cuantías o artículos.** Si no está en la
+  fuente citada, no se escribe. Ante la duda, marca el punto y pregunta.
+- ❌ **Copiar literalmente artículos largos** de la norma.
+- ❌ Tocar la base de datos de la aplicación desde aquí.
+
+---
+
+## 14. Criterio de rechazo
+
+Una sección, un módulo o un tema se rechaza si:
+
+- [ ] La sección no se completa en 15 min (teoría + test) → dividir.
+- [ ] Hay preguntas que su teoría no permite responder → P2.
+- [ ] Hay contenido en la teoría que ninguna pregunta evalúa → P2.
+- [ ] Falta algún apartado del esqueleto markdown → P4.
+- [ ] Alguna pregunta no tiene `explicacion` → P3.
+- [ ] El nombre lleva número de tema, bloque, cuerpo, escala o año → P5.
+- [ ] El módulo tiene una sola sección real → no es un módulo.
+- [ ] El pool de la sección baja de 25 preguntas.
