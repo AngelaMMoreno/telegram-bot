@@ -7,7 +7,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from publicar import Documento, ErrorContenido, construir_arbol, filtrar  # noqa: E402
+from publicar import (  # noqa: E402
+    Documento, ErrorContenido, calcular_plan, construir_arbol, filtrar,
+)
 
 
 def doc(nivel, tema, modulo=None, seccion=None, orden=0):
@@ -84,18 +86,30 @@ check("publicación parcial: el 2º sigue siendo el 2º",
       len(arbol["temas"]) == 1 and arbol["temas"][0]["orden"] == 2)
 check("publicación parcial: sólo el tema pedido", len(usados) == 4)
 
-# Publicando entero, un tema del YAML sin ficheros es un error, no un silencio.
-try:
-    construir_arbol({"slug": "x", "temas": ["constitucion", "fantasma"]}, DOCS,
-                    completo=True)
-    check("tema del YAML sin ficheros da error", False)
-except ErrorContenido as e:
-    check("tema del YAML sin ficheros da error", "fantasma" in str(e))
+# Una oposición puede declarar temas planificados aunque aún no tengan
+# documentos: se saltan sin bloquear lo que ya está listo.
+arbol, usados = construir_arbol({"slug": "x", "temas": ["constitucion", "fantasma"]},
+                                DOCS, completo=True)
+check("publicación completa: el tema planificado sin ficheros se salta",
+      [t["slug"] for t in arbol["temas"]] == ["constitucion"] and len(usados) == 4)
 
-# Filtrando, en cambio, se salta sin ruido.
+# Filtrando se mantiene el mismo criterio.
 arbol, _ = construir_arbol({"slug": "x", "temas": ["constitucion", "fantasma"]},
                            DOCS, completo=False)
 check("filtrando, el tema ausente se salta", len(arbol["temas"]) == 1)
+
+plan = calcular_plan(
+    usados,
+    {
+        "constitucion/preliminar/art-1": {"doc_hash": "x", "doc_origen": "git"},
+        "constitucion/preliminar/retirada": {"doc_hash": "x", "doc_origen": "git"},
+        "fantasma/modulo/seccion": {"doc_hash": "x", "doc_origen": "git"},
+    },
+    completo=True,
+    temas_publicables={d.tema for d in usados},
+)
+check("archivar se limita a temas con documentos publicables",
+      plan["archivar"] == ["constitucion/preliminar/retirada"])
 
 print("TODO OK" if not fallos else f"HAY {len(fallos)} FALLOS")
 sys.exit(1 if fallos else 0)

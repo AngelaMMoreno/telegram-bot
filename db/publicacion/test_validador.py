@@ -10,11 +10,12 @@ No necesita base de datos.
 """
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from publicar import (  # noqa: E402
-    NOMBRES_PROHIBIDOS, _filas_tabla_bajo, _viñetas_bajo,
+    NOMBRES_PROHIBIDOS, _filas_tabla_bajo, _viñetas_bajo, leer_repo, validar,
 )
 
 fallos = []
@@ -66,6 +67,40 @@ INVALIDOS = [
 ]
 for n in INVALIDOS:
     check(f"«{n}»", motivo(n) is not None)
+
+
+print("Lectura del repo:")
+
+with tempfile.TemporaryDirectory() as tmp:
+    raiz = Path(tmp)
+    tema = raiz / "temas" / "constitucion"
+    tema.mkdir(parents=True)
+    (raiz / "temas" / "README.md").write_text(
+        "# Estado del contenido en temas\n\nDocumento explicativo, no publicable.\n",
+        encoding="utf-8",
+    )
+    (tema / "esquema.md").write_text(
+        "<!-- aprentix:meta\n"
+        "nivel: tema\n"
+        "tema: constitucion\n"
+        "nombre: Constitución Española\n"
+        "-->\n"
+        "# Constitución Española\n",
+        encoding="utf-8",
+    )
+    docs = leer_repo(raiz)
+    check("ignora temas/README.md como documentación auxiliar",
+          len(docs) == 1 and docs[0].ruta == "temas/constitucion/esquema.md")
+
+with tempfile.TemporaryDirectory() as tmp:
+    raiz = Path(tmp)
+    (raiz / "oposiciones").mkdir()
+    (raiz / "oposiciones" / "auxilio.yaml").write_text(
+        "slug: auxilio\nnombre: Auxilio\ntemas:\n  - tema-planificado\n",
+        encoding="utf-8",
+    )
+    check("un tema planificado en el YAML sin ficheros no es aviso",
+          validar([], raiz) == [])
 
 print("Recuento de viñetas y filas:")
 

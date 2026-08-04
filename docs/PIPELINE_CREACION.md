@@ -349,6 +349,11 @@ El YAML de oposición hace falta porque el orden de los temas no se deduce
 de las rutas: un mismo tema se comparte entre oposiciones y ocupa distinta
 posición en cada una (P5, independencia de la convocatoria).
 
+Puede incluir temas planificados aunque aún no tengan `teoria.md` ni
+estructura publicada bajo `temas/`: el publicador los omite hasta que haya
+documentos publicables, sin bloquear el estudio de los temas que sí están
+terminados.
+
 ### 7.2 Qué protege el progreso
 
 El progreso de cada usuario cuelga de `secciones.id`. Todo lo demás se
