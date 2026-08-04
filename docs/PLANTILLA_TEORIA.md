@@ -27,7 +27,7 @@ La SPA renderiza con **`marked` + `DOMPurify`** (`renderMarkdown()` en
 | Listas ordenadas y no ordenadas, anidadas | Scripts, iframes, estilos inline (DOMPurify los elimina) |
 | Tablas GFM | Imágenes remotas (sin política de assets aún) |
 | Citas `>` | HTML complejo o clases CSS propias |
-| `<details>` / `<summary>` | Enlaces a ficheros fuera de `/mnt/data/ficheros` |
+| `<details>` / `<summary>` | Enlaces a ficheros fuera de `/mnt/data/ficheros` (PDFs y adjuntos; el markdown ya no vive ahí) |
 | Enlaces relativos entre documentos | |
 
 **Metadatos:** van en un comentario HTML al principio del fichero. Es
@@ -40,6 +40,21 @@ invisible en el render y legible por herramientas.
 Copiar tal cual. Los ocho apartados son **obligatorios y en este
 orden**. Ninguno se omite.
 
+> **Los tres slugs del meta son la identidad del contenido.** El
+> publicador casa cada sección por `tema`/`modulo`/`seccion`, así que:
+>
+> - El `# Título` y el `nombre` de cualquier nodo se pueden **cambiar
+>   cuando quieras**: es un `UPDATE` y no afecta a nadie.
+> - El `orden` también: reordenar no toca ninguna identidad.
+> - **El slug no se cambia.** Cambiarlo convierte la sección en otra
+>   distinta: la vieja se archiva con el progreso de quien la estudió
+>   dentro, y la nueva nace vacía. Si de verdad hace falta, se hace con un
+>   `UPDATE` sobre la columna `slug` y se publica después.
+>
+> La ruta del fichero tiene que reflejar esos mismos slugs
+> (`temas/<tema>/<modulo>/<seccion>/teoria.md`). Si no coinciden, el
+> publicador para: ver `db/publicacion/README.md`.
+
 ````markdown
 <!-- aprentix:meta
 version: 1
@@ -47,6 +62,9 @@ nivel: seccion
 tema: <slug-del-tema>
 modulo: <slug-del-modulo>
 seccion: <slug-de-la-seccion>
+orden: <n>
+min_aprobado: 70
+n_preg_test: 10
 fuentes:
   - "<Norma o documento, artículos, identificador oficial>"
 actualizado: AAAA-MM-DD
@@ -476,5 +494,7 @@ la ley prevé la caducidad y el archivo, no un sentido presunto.
 - [ ] "Fuente" cita norma consolidada e identificador oficial.
 - [ ] Se cumple el cierre teoría–test (§ 2.3).
 - [ ] Sin referencias a ninguna oposición concreta.
-- [ ] El documento está registrado en `documentos` vía
-      `admin_upsert_documento` con `nivel='seccion'`, `tipo='teoria'`.
+- [ ] El fichero está en `temas/<tema>/<modulo>/<seccion>/teoria.md` y los
+      tres slugs del meta coinciden con esa ruta.
+- [ ] `publicar.py` sin `--aplicar` lo lista como "crear" o "actualizar",
+      no da avisos de formato y no dispara el freno de archivado.
