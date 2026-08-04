@@ -1,0 +1,33 @@
+#!/bin/sh
+#
+# Valida el contenido de este repositorio.
+#
+# CÓPIAME al repo de contenido como `validar.sh` (y `chmod +x validar.sh`).
+#
+# El validador vive en el repo de la APLICACIÓN y no se copia aquí a
+# propósito: una copia se queda desfasada en cuanto cambien las reglas, y
+# entonces validarías contra una plantilla que ya no es la que se publica.
+#
+# Por defecto busca el repo de la aplicación como hermano de éste:
+#
+#     ~/proyectos/telegram-bot/     ← la aplicación
+#     ~/proyectos/oposiciones/      ← este repo
+#
+# Si lo tienes en otro sitio:  APP_REPO=/ruta/al/repo ./validar.sh
+set -e
+
+AQUI=$(cd "$(dirname "$0")" && pwd)
+APP_REPO="${APP_REPO:-$AQUI/../telegram-bot}"
+VALIDADOR="$APP_REPO/db/publicacion/publicar.py"
+
+if [ ! -f "$VALIDADOR" ]; then
+    echo "No encuentro el validador en:" >&2
+    echo "    $VALIDADOR" >&2
+    echo >&2
+    echo "Clona el repo de la aplicación al lado de éste, o indica dónde está:" >&2
+    echo "    APP_REPO=/ruta/al/telegram-bot ./validar.sh" >&2
+    exit 2
+fi
+
+# Sólo necesita PyYAML: ni base de datos ni psycopg.
+exec python3 "$VALIDADOR" --contenido "$AQUI" --validar "$@"

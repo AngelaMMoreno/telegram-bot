@@ -685,10 +685,15 @@ su base de datos. No hay que ejecutar nada.
 **Obligatorio.** No commitees contenido sin pasar el validador:
 
 ```bash
-python3 publicar.py --contenido . --validar
+./validar.sh
 ```
 
 Sale `0` si está limpio y `1` si hay avisos. No necesita base de datos.
+
+> El validador vive en el repo de la aplicación (`telegram-bot`), no aquí:
+> una copia se quedaría desfasada en cuanto cambien las reglas. `validar.sh`
+> lo busca como repo hermano; si lo tienes en otro sitio,
+> `APP_REPO=/ruta/al/telegram-bot ./validar.sh`.
 
 Comprueba, entre otras cosas: los 8 apartados obligatorios, el
 presupuesto de 350–1.100 palabras, las 5–12 viñetas de «Retén esto», las
