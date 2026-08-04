@@ -16,7 +16,10 @@
 -- se puede cambiar cuando se quiera.
 --
 -- SI TU BBDD NO TIENE CONTENIDO QUE CONSERVAR, es más limpio recrearla desde
--- `db/init/01_esquema.sql` que aplicar este delta.
+-- `db/init/01_esquema.sql` que aplicar este delta. Para eso hay que pedir el
+-- reset explícitamente (el fichero se niega a pisar un esquema existente):
+--     SET aprentix.recrear = 'si';   -- primera línea, antes de pegarlo
+-- Se negará igualmente si encuentra intentos registrados.
 --
 -- ANTES DE EJECUTAR: backup.
 --   docker compose -f deploy/core/docker-compose.yml exec db \

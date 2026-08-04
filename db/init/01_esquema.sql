@@ -26,6 +26,74 @@
 -- =============================================================================
 
 
+-- =============================================================================
+--                      REEJECUCIÓN SOBRE UNA BD YA CREADA
+-- =============================================================================
+-- Este fichero asume una BD vacía: es lo que hace el contenedor de Postgres al
+-- arrancar sobre un PGDATA nuevo. Ejecutarlo contra una BD que ya tiene el
+-- esquema falla con «relation ... already exists», y eso es a propósito.
+--
+-- Por qué NO se usa `CREATE TABLE IF NOT EXISTS`: dejaría las tablas que ya
+-- existen TAL CUAL —con la forma antigua, sin las columnas nuevas— mientras
+-- crea sin problema las funciones que sí esperan esas columnas. El script
+-- terminaría «sin errores» dejando una BD rota que sólo se descubre cuando un
+-- usuario hace un test. Un fallo ruidoso es mejor que uno silencioso.
+--
+-- Si lo que quieres es RECREAR el esquema desde cero (BORRANDO TODO), pide el
+-- reset explícitamente:
+--
+--   psql:     PGOPTIONS="-c aprentix.recrear=si" psql -d aprentix_desa -f 01_esquema.sql
+--   pgAdmin:  pega  SET aprentix.recrear = 'si';  como primera línea del Query Tool
+--
+-- Aun así se niega a borrar si detecta actividad de usuarios (intentos
+-- registrados): para una BD con progreso el camino es la migración de
+-- `db/migraciones/`, no recrear.
+--
+-- Si sólo quieres actualizar el esquema de una BD viva, no toques este fichero:
+-- aplica el delta correspondiente de `db/migraciones/`.
+DO $recrear$
+DECLARE
+    v_pedido   text    := lower(btrim(coalesce(current_setting('aprentix.recrear', true), 'no')));
+    v_recrear  boolean := v_pedido IN ('si', 'sí', 'yes', '1', 'true', 'on');
+    v_existe   boolean;
+    v_intentos bigint  := 0;
+BEGIN
+    SELECT to_regclass('public.usuarios') IS NOT NULL INTO v_existe;
+
+    -- Caso normal: BD vacía. No hay nada que decidir.
+    IF NOT v_existe THEN
+        RETURN;
+    END IF;
+
+    IF NOT v_recrear THEN
+        RAISE EXCEPTION 'el esquema ya existe en esta base de datos'
+            USING DETAIL = 'Este fichero crea el esquema desde cero; no es una migración.',
+                  HINT   = 'Para actualizar una BD viva usa db/migraciones/. '
+                           'Para recrearla desde cero BORRANDO TODO: '
+                           'SET aprentix.recrear = ''si''; antes de ejecutar.';
+    END IF;
+
+    -- Freno: recrear una BD con progreso de usuarios destruiría notas,
+    -- secciones completadas y repasos. Eso no se hace por accidente.
+    IF to_regclass('public.intentos') IS NOT NULL THEN
+        EXECUTE 'SELECT count(*) FROM public.intentos' INTO v_intentos;
+    END IF;
+    IF v_intentos > 0 THEN
+        RAISE EXCEPTION 'la base de datos tiene actividad de usuarios'
+            USING DETAIL = format('%s intentos registrados; recrear el esquema '
+                                  'borraría notas, progreso y repasos.', v_intentos),
+                  HINT   = 'Usa el delta de db/migraciones/ en vez de recrear.';
+    END IF;
+
+    RAISE NOTICE 'aprentix.recrear=si → borrando el esquema public y recreándolo';
+    DROP SCHEMA public CASCADE;
+    CREATE SCHEMA public;
+    -- Los roles (web_anon, web_user, autenticador) son de cluster y sobreviven
+    -- al DROP; más abajo se recrean de forma idempotente y se re-otorgan los
+    -- permisos sobre el esquema nuevo.
+END $recrear$;
+
+
 -- ─────────────────────────── Extensiones ────────────────────────────────────
 CREATE EXTENSION IF NOT EXISTS pgcrypto;    -- gen_random_uuid, crypt/bcrypt, hmac, pgp_sym_*
 CREATE EXTENSION IF NOT EXISTS pg_trgm;     -- búsqueda difusa (similarity, %>)

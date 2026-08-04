@@ -30,6 +30,15 @@
 --
 --    (`SET` sin `LOCAL` deja los valores para el resto de la sesión pgAdmin.)
 --
+--    Si la BD YA tiene el esquema y quieres recrearlo desde cero (borra
+--    todo el contenido), añade también:
+--
+--        SET aprentix.recrear = 'si';
+--
+--    Sin esa línea, el script se para al ver que el esquema ya existe, que
+--    es lo correcto: no es una migración. Y con ella tampoco borrará nada
+--    si detecta intentos registrados de usuarios.
+--
 -- 5. Abre `db/init/01_esquema.sql` y pega TODO su contenido a continuación
 --    de los SET. Ejecuta. Debería terminar sin errores dejando:
 --        * 32 tablas creadas (usuarios, sesiones, temas, secciones, …)

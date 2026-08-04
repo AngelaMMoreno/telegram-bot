@@ -11,6 +11,28 @@ nombre. Aplícalo a mano (una sola vez) desde pgAdmin → Query Tool.
 Todos los ficheros son idempotentes: pueden ejecutarse varias veces
 sin efectos duplicados.
 
+`01_esquema.sql`, en cambio, **no** es idempotente a propósito: crea el
+esquema desde cero y, si ya existe, se para con un error explicando qué
+hacer. No lleva `CREATE TABLE IF NOT EXISTS` porque eso dejaría las
+tablas existentes con su forma antigua mientras crea las funciones que
+esperan la nueva: terminaría «sin errores» dejando una BD rota que sólo
+se descubre cuando un usuario hace un test.
+
+Para **recrear** una BD desde cero (borrando todo) hay que pedirlo:
+
+```sql
+SET aprentix.recrear = 'si';   -- primera línea del Query Tool
+```
+
+o, desde psql:
+
+```bash
+PGOPTIONS="-c aprentix.recrear=si" psql -d aprentix_desa -f db/init/01_esquema.sql
+```
+
+Aun así se niega si detecta intentos registrados: una BD con progreso se
+actualiza con el delta de esta carpeta, no recreándola.
+
 ## Ficheros
 
 | Fecha       | Fichero                                    | Qué añade |
