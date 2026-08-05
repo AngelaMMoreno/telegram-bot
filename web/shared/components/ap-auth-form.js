@@ -13,7 +13,7 @@
  *
  * Eventos:
  *   - 'ap-auth-login'   detail: { username, password }
- *   - 'ap-auth-register' detail: { username, password, email }
+ *   - 'ap-auth-register' detail: { username, password, email, email2 }
  *
  * Métodos:
  *   - showError(msg, kind = 'login' | 'register')
@@ -60,9 +60,13 @@ class ApAuthForm extends HTMLElement {
           <label>Usuario
             <input id="reg-user" name="username" autocomplete="username" minlength="3" required>
           </label>
-          <label>Email (opcional)
-            <input id="reg-email" name="email" type="email" autocomplete="email">
+          <label>Correo electrónico
+            <input id="reg-email" name="email" type="email" autocomplete="email" required>
           </label>
+          <label>Repite el correo electrónico
+            <input id="reg-email2" name="email2" type="email" autocomplete="email" required>
+          </label>
+          <p class="muted small">Más adelante enviaremos un correo para confirmar la cuenta.</p>
           <label>Contraseña
             <input id="reg-pass" name="password" type="password"
                    autocomplete="new-password" minlength="6" required>
@@ -119,14 +123,17 @@ class ApAuthForm extends HTMLElement {
     this.querySelector('[data-panel="register"]').addEventListener('submit', (e) => {
       e.preventDefault();
       const username = this.querySelector('#reg-user').value.trim();
-      const email    = this.querySelector('#reg-email').value.trim() || null;
+      const email    = this.querySelector('#reg-email').value.trim();
+      const email2   = this.querySelector('#reg-email2').value.trim();
       const p1       = this.querySelector('#reg-pass').value;
       const p2       = this.querySelector('#reg-pass2').value;
+      if (!email || !email2) return this.showError('El correo electrónico es obligatorio', 'register');
+      if (email.toLowerCase() !== email2.toLowerCase()) return this.showError('Los correos electrónicos no coinciden', 'register');
       if (p1 !== p2) return this.showError('Las contraseñas no coinciden', 'register');
       const { nivel } = calcularFortaleza(p1);
       if (nivel < 2) return this.showError('Elige una contraseña más fuerte', 'register');
       this.dispatchEvent(new CustomEvent('ap-auth-register', {
-        bubbles: true, detail: { username, password: p1, email },
+        bubbles: true, detail: { username, password: p1, email, email2 },
       }));
     });
   }

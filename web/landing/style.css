@@ -353,3 +353,81 @@ input:focus, select:focus {
 .onboarding-list .check-item input { margin: 0; }
 .onboarding-list strong { display: block; }
 .onboarding-list .muted { display: block; margin-top: 2px; }
+
+/* Rediseño oposición-first inspirado en las maquetas: luz, jardín, tarjetas orgánicas y modo oscuro coherente. */
+.aplicacion-oposicion {
+  max-width: 980px;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: max(20px, env(safe-area-inset-top)) 20px calc(112px + env(safe-area-inset-bottom));
+  color: var(--txt);
+  background: var(--bg-ambient), var(--bg);
+}
+.portada-jardin {
+  position: relative;
+  overflow: hidden;
+  padding: 18px 8px 26px;
+}
+.portada-jardin::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto auto;
+  width: min(46vw, 360px);
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: radial-gradient(circle, var(--accent-soft), transparent 68%);
+  pointer-events: none;
+}
+.pildoras-superiores {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  justify-content: space-between;
+  margin-bottom: 42px;
+}
+.pildora, .avatar-inicial, .avatar-zorro, .etiqueta-hoy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-panel) 86%, transparent);
+  box-shadow: var(--shadow);
+}
+.pildora { min-height: 54px; padding: 0 24px; border-radius: 999px; font-weight: 800; }
+.avatar-zorro, .avatar-inicial { width: 72px; height: 72px; border-radius: 50%; font-size: 2rem; }
+.avatar-inicial { color: #fff; background: linear-gradient(145deg, var(--pri), var(--pri-d)); }
+.etiqueta-hoy { padding: 8px 18px; border-radius: 18px; color: var(--pri-d); font-weight: 800; }
+.portada-jardin h1 { max-width: 720px; margin: 22px 0 12px; font-size: clamp(3rem, 9vw, 5.4rem); line-height: .98; color: var(--pri-d); letter-spacing: -.06em; }
+.subtitulo-portada { max-width: 620px; margin: 0; color: var(--txt-soft); font-size: clamp(1.2rem, 3.5vw, 1.7rem); }
+.panel-principal { display: grid; gap: 22px; }
+.tarjeta {
+  border: 1px solid var(--border);
+  border-radius: 30px;
+  padding: clamp(22px, 5vw, 34px);
+  background: color-mix(in srgb, var(--bg-panel) 90%, transparent);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(var(--glass-blur));
+}
+.tarjeta header { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--pri-d); font-weight: 800; }
+.tarjeta h2 { margin: 14px 0 8px; color: var(--txt); font-size: clamp(1.6rem, 5vw, 2.4rem); }
+.tarjeta p, .tarjeta small { color: var(--txt-soft); }
+.barra { height: 14px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--border) 70%, transparent); }
+.barra span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--pri), var(--grad-a)); }
+.boton-verde { width: 100%; margin-top: 24px; min-height: 68px; border: 0; border-radius: 999px; color: #fff; background: linear-gradient(135deg, var(--pri), var(--pri-d)); font-size: 1.35rem; font-weight: 900; box-shadow: var(--shadow-lg); }
+.plan ol { margin: 0; padding-left: 1.2rem; }
+.plan li { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.plan li:last-child { border-bottom: 0; }
+.plan small { display: block; }
+.metricas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.metricas span { display: grid; gap: 4px; padding: 16px; border-radius: 22px; background: var(--bg-alt); text-align: center; }
+.metricas strong { font-size: 1.4rem; color: var(--pri-d); }
+.navegacion-inferior {
+  position: fixed; left: 50%; bottom: max(12px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+  width: min(940px, calc(100vw - 24px)); display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+  padding: 10px; border: 1px solid var(--border); border-radius: 28px;
+  background: color-mix(in srgb, var(--bg-panel) 88%, transparent); box-shadow: var(--shadow-lg); backdrop-filter: blur(var(--glass-blur));
+}
+.navegacion-inferior a { display: grid; place-items: center; gap: 4px; padding: 10px; border-radius: 20px; color: var(--txt-soft); text-decoration: none; }
+.navegacion-inferior a.activo { color: var(--pri-d); background: var(--pri-soft); font-weight: 900; }
+@media (max-width: 680px) { .metricas { grid-template-columns: 1fr; } .pildora { padding: 0 14px; } }
+[data-theme="dark"] .boton-verde { color: #07211d; }
