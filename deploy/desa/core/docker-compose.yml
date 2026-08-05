@@ -1,0 +1,68 @@
+# =============================================================================
+# Stack CORE ─ entorno DESA (paralelo al de producción)
+#
+# Levanta SOLO Postgres y PostgREST para el rediseño orientado a
+# oposiciones.  Sin embeddings (no hay pgvector en este modelo) y SIN
+# pgadmin: se reutiliza el pgadmin del stack de producción y se le
+# añade el servidor `aprentix-desa` en su servers.json.
+#
+# Base de datos: `aprentix_desa` — completamente aislada de la de
+# producción `aprentix`.
+#
+# Publicado por Traefik en:
+#   api.desa.aprentix.es → postgrest
+# =============================================================================
+
+services:
+
+  db-desa:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: aprentix_desa
+      POSTGRES_USER: aprentix
+      POSTGRES_PASSWORD: ${DB_PASS_DESA:?DB_PASS_DESA requerida}
+    command:
+      - postgres
+      - -c
+      - app.jwt_secret=${JWT_SECRET_DESA:?JWT_SECRET_DESA requerida}
+      - -c
+      - app.admin_pass=${ADMIN_PASS_DESA:?ADMIN_PASS_DESA requerida}
+      - -c
+      - app.auth_pass=${AUTH_PASS_DESA:?AUTH_PASS_DESA requerida}
+    volumes:
+      # Volumen específico de desa; NO tocar el /mnt/data/pg de producción.
+      - /mnt/data/pg_desa:/var/lib/postgresql/data
+      - ../../../db/desa/init:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+    networks: [dokploy-network]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aprentix -d aprentix_desa"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgrest-desa:
+    image: postgrest/postgrest:v12.2.3
+    depends_on:
+      db-desa:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://autenticador@db-desa:5432/aprentix_desa
+      PGPASSWORD: ${AUTH_PASS_DESA:?AUTH_PASS_DESA requerida}
+      PGRST_DB_ANON_ROLE: web_anon
+      PGRST_DB_SCHEMAS: public
+      PGRST_JWT_SECRET: ${JWT_SECRET_DESA}
+      PGRST_OPENAPI_SERVER_PROXY_URI: https://${DOMINIO_API_DESA:-api.desa.aprentix.es}
+    restart: unless-stopped
+    networks: [dokploy-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api-desa.rule=Host(`${DOMINIO_API_DESA:-api.desa.aprentix.es}`)"
+      - "traefik.http.routers.api-desa.entrypoints=websecure"
+      - "traefik.http.routers.api-desa.tls=true"
+      - "traefik.http.routers.api-desa.tls.certresolver=letsencrypt"
+      - "traefik.http.services.api-desa.loadbalancer.server.port=3000"
+
+networks:
+  dokploy-network:
+    external: true

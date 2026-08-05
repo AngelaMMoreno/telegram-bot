@@ -1,0 +1,25 @@
+# Stack APP ─ entorno DESA
+#
+# Un solo contenedor con Caddy que sirve la nueva SPA (web/app/) y
+# proxya /api/ al PostgREST del stack core-desa (paralelo al de
+# producción, aislado de la BBDD de prod).
+
+services:
+
+  app-desa:
+    build:
+      context: ../../..
+      dockerfile: deploy/desa/app/Dockerfile
+    restart: unless-stopped
+    networks: [dokploy-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.app-desa.rule=Host(`${DOMINIO_WEB_DESA:-desa.aprentix.es}`)"
+      - "traefik.http.routers.app-desa.entrypoints=websecure"
+      - "traefik.http.routers.app-desa.tls=true"
+      - "traefik.http.routers.app-desa.tls.certresolver=letsencrypt"
+      - "traefik.http.services.app-desa.loadbalancer.server.port=80"
+
+networks:
+  dokploy-network:
+    external: true

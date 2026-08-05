@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Aprentix · Tu oposición, a tu ritmo</title>
+
+  <meta name="application-name" content="Aprentix">
+  <meta name="theme-color" content="#6B8E23" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#101E1A" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Aprentix">
+
+  <link rel="icon" type="image/svg+xml" href="/shared/pwa-icons/icon-any.svg">
+
+  <!--
+       Tokens compartidos: paleta verde salvia + modo oscuro
+       bioluminiscente.  El resto del CSS de esta SPA está en style.css.
+  -->
+  <link rel="stylesheet" href="/shared/tokens.css">
+  <link rel="stylesheet" href="style.css">
+
+  <script>
+    // Aplica el tema antes del primer render para evitar el flash.
+    (function () {
+      var m = document.cookie.match(/(?:^|;\s*)aprentix_theme=(dark|light)/);
+      var theme = m ? m[1] : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    })();
+  </script>
+
+  <script src="/shared/auth/session.js"></script>
+</head>
+<body>
+  <!-- ═══════════════════════════════════════════════════════════
+       Layout general.
+       Fondos ambientales solarpunk pintados con CSS puro sobre :root.
+       Toda la app usa una capa `.app-root` que envuelve el contenido
+       para poder empujar el bottom-nav.
+       ═══════════════════════════════════════════════════════════ -->
+  <div class="ambient"></div>
+
+  <div id="app" class="app-root"></div>
+
+  <!-- Vistas / templates.  Se clonan al DOM desde JS según la ruta. -->
+
+  <!--──────────────── AUTH: login + registro (mismo layout) ────────────────-->
+  <template id="tpl-auth">
+    <div class="auth-view">
+      <header class="auth-hero">
+        <div class="fox-badge fox-badge-lg"></div>
+        <h1>Aprentix</h1>
+        <p class="tagline">Tu oposición, a tu ritmo.</p>
+      </header>
+
+      <div class="auth-card">
+        <div class="auth-tabs">
+          <button class="auth-tab active" data-tab="login">Entrar</button>
+          <button class="auth-tab" data-tab="register">Crear cuenta</button>
+        </div>
+
+        <form data-panel="login" class="auth-panel active" autocomplete="on">
+          <label>
+            <span>Correo electrónico</span>
+            <input name="email" type="email" autocomplete="email" required>
+          </label>
+          <label>
+            <span>Contraseña</span>
+            <input name="password" type="password" autocomplete="current-password" required>
+          </label>
+          <button class="btn btn-primary" type="submit">Entrar</button>
+          <p class="auth-err" data-err hidden></p>
+          <p class="auth-forgot">
+            <button type="button" data-reenviar>Reenviar confirmación</button>
+          </p>
+        </form>
+
+        <form data-panel="register" class="auth-panel" autocomplete="off">
+          <label>
+            <span>Nombre</span>
+            <input name="nombre" type="text" autocomplete="name" required>
+          </label>
+          <label>
+            <span>Correo electrónico</span>
+            <input name="email" type="email" autocomplete="email" required>
+          </label>
+          <label>
+            <span>Repite el correo</span>
+            <input name="email2" type="email" autocomplete="email" required>
+          </label>
+          <p class="mini-hint" data-email-match hidden></p>
+
+          <label>
+            <span>Contraseña</span>
+            <input name="password" type="password" autocomplete="new-password" minlength="8" required>
+          </label>
+          <div class="pw-strength" data-pw-strength>
+            <div class="pw-strength-bar"><span data-pw-fill></span></div>
+            <span class="pw-strength-label" data-pw-label>Introduce una contraseña</span>
+          </div>
+
+          <label>
+            <span>Repite la contraseña</span>
+            <input name="password2" type="password" autocomplete="new-password" minlength="8" required>
+          </label>
+          <p class="mini-hint" data-pw-match hidden></p>
+
+          <button class="btn btn-primary" type="submit">Crear cuenta</button>
+          <p class="auth-err" data-err hidden></p>
+          <p class="auth-mini">
+            Al continuar aceptas recibir un correo de verificación desde
+            <strong>no-reply@aprentix.es</strong>.
+          </p>
+        </form>
+      </div>
+    </div>
+  </template>
+
+  <!--──────────────── HOME / INICIO ────────────────-->
+  <template id="tpl-home">
+    <section class="view view-home">
+      <header class="top-bar">
+        <button class="chip chip-level" data-open-perfil>
+          <span class="fox-badge"></span>
+          <span data-nivel>Nivel 1</span>
+        </button>
+        <button class="chip chip-racha">
+          <span class="chip-ico">☀️</span>
+          <strong data-racha>0</strong> días
+        </button>
+        <button class="avatar-btn" data-open-perfil>
+          <span class="avatar" data-avatar>K</span>
+        </button>
+      </header>
+
+      <div class="hero hero-home">
+        <span class="pill">Hoy</span>
+        <h1>Sigue con tu oposición</h1>
+        <p class="muted">Avanza con sesiones breves, enfoque claro y descansos bien medidos.</p>
+        <div class="hero-art art-home" aria-hidden="true"></div>
+      </div>
+
+      <article class="card card-continua" data-continua>
+        <div class="card-head">
+          <span class="chip chip-soft">🌱 Continúa estudiando</span>
+          <span class="chip chip-ghost"><span class="chip-ico">🕒</span> <span data-continua-min>-- min</span></span>
+        </div>
+        <div class="card-body">
+          <div class="book-avatar" data-continua-ico>📗</div>
+          <div class="card-body-txt">
+            <h3 data-continua-tema>—</h3>
+            <p class="muted" data-continua-unidad>—</p>
+            <div class="progress">
+              <div class="progress-bar"><span data-continua-fill style="width:0%"></span></div>
+              <span class="progress-label"><span data-continua-pct>0</span>%</span>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-cta" data-continua-btn>
+          <span class="play-ico">▶</span> Continuar
+        </button>
+      </article>
+
+      <section class="section">
+        <div class="section-head">
+          <h2><span class="section-sun">🌤</span> Tu día de hoy</h2>
+          <button class="chip chip-outline" data-goto="plan">
+            <span class="chip-ico">📅</span> Ver plan completo
+          </button>
+        </div>
+        <ul class="list list-hoy" data-hoy></ul>
+      </section>
+
+      <section class="stats-row">
+        <div class="stat">
+          <span class="stat-ico">☀️</span>
+          <div><strong data-racha2>0</strong><span>días<br>Racha</span></div>
+        </div>
+        <div class="stat">
+          <span class="stat-ico">⏱️</span>
+          <div><strong data-minutos>0m</strong><span>esta semana</span></div>
+        </div>
+        <div class="stat">
+          <span class="stat-ico">🎯</span>
+          <div><strong data-pct>0%</strong><span>completado</span></div>
+        </div>
+      </section>
+    </section>
+  </template>
+
+  <!--──────────────── PLAN ────────────────-->
+  <template id="tpl-plan">
+    <section class="view view-plan">
+      <header class="top-bar">
+        <span class="fox-badge"></span>
+        <button class="chip chip-level" data-open-perfil>
+          <span class="chip-ico">🌿</span><span data-nivel>Nivel 1</span>
+        </button>
+        <button class="chip chip-racha">
+          <span class="chip-ico">☀️</span><strong data-racha>0</strong> días
+        </button>
+        <button class="avatar-btn" data-open-perfil>
+          <span class="avatar" data-avatar>K</span>
+        </button>
+      </header>
+
+      <div class="hero hero-plan">
+        <span class="pill">Hoy</span>
+        <h1>Tu plan</h1>
+        <p class="muted">Organiza tus sesiones y mantén un ritmo realista cada día.</p>
+        <div class="hero-art art-plan" aria-hidden="true"></div>
+      </div>
+
+      <nav class="week-strip" data-week></nav>
+
+      <article class="card card-plan-hoy">
+        <div class="card-head">
+          <h2><span class="section-sun">🌱</span> Plan de hoy</h2>
+          <span class="chip chip-soft" data-bloques>0 bloques</span>
+        </div>
+        <ul class="timeline" data-timeline></ul>
+        <div class="progress progress-lg">
+          <span class="progress-title">Completado hoy</span>
+          <div class="progress-bar"><span data-plan-fill style="width:0%"></span></div>
+          <span class="progress-label"><span data-plan-pct>0</span>%</span>
+        </div>
+      </article>
+
+      <article class="card card-hito">
+        <div class="hito-ico">🎯</div>
+        <div class="hito-txt">
+          <span class="chip chip-soft">Próximo hito</span>
+          <h3 data-hito-nombre>Simulacro general</h3>
+          <p class="muted" data-hito-desc>En — días</p>
+        </div>
+        <span class="chevron">›</span>
+      </article>
+
+      <article class="card">
+        <h2>🌿 Tu estrategia semanal</h2>
+        <ul class="list list-plain">
+          <li>
+            <span class="ico-round">🕒</span>
+            <div><strong>Bloques cortos</strong><span class="muted">Sesiones de 20–30 min</span></div>
+            <span class="chevron">›</span>
+          </li>
+          <li>
+            <span class="ico-round">📅</span>
+            <div><strong>Días fuertes</strong><span class="muted">Martes, jueves y sábado</span></div>
+            <span class="chevron">›</span>
+          </li>
+          <li>
+            <span class="ico-round">🔁</span>
+            <div><strong>Repasos</strong><span class="muted">Cada 2 días</span></div>
+            <span class="chevron">›</span>
+          </li>
+        </ul>
+      </article>
+
+      <div class="plan-actions">
+        <button class="btn btn-primary" data-plan-editar>✏️ Editar plan</button>
+        <button class="btn btn-outline" data-plan-reprog>📅 Reprogramar</button>
+      </div>
+    </section>
+  </template>
+
+  <!--──────────────── ESTADÍSTICAS ────────────────-->
+  <template id="tpl-stats">
+    <section class="view view-stats">
+      <header class="top-bar">
+        <span class="fox-badge"></span>
+        <button class="chip chip-level" data-open-perfil>
+          <span class="chip-ico">🌿</span><span data-nivel>Nivel 1</span>
+        </button>
+        <button class="chip chip-racha">
+          <span class="chip-ico">🔥</span><strong data-racha>0</strong> días
+        </button>
+        <button class="avatar-btn" data-open-perfil>
+          <span class="avatar" data-avatar>K</span>
+        </button>
+      </header>
+
+      <div class="hero hero-stats">
+        <h1>Estadísticas</h1>
+        <p class="muted">Mide tu constancia y detecta dónde progresas mejor.</p>
+        <div class="hero-art art-stats" aria-hidden="true"></div>
+      </div>
+
+      <div class="stats-tiles">
+        <div class="tile">
+          <span class="tile-ico">🔥</span>
+          <div><span class="muted">Racha</span><strong data-racha2>0 días</strong></div>
+        </div>
+        <div class="tile">
+          <span class="tile-ico">⏱️</span>
+          <div><span class="muted">Tiempo esta semana</span><strong data-minutos>0m</strong></div>
+        </div>
+        <div class="tile">
+          <span class="tile-ico">🎯</span>
+          <div><span class="muted">Precisión media</span><strong data-precision>0%</strong></div>
+        </div>
+      </div>
+
+      <article class="card">
+        <div class="card-head">
+          <h2>📊 Actividad semanal</h2>
+          <span class="chip chip-outline">📅 Últimos 7 días</span>
+        </div>
+        <div class="chart-bars" data-chart aria-label="Actividad semanal"></div>
+      </article>
+
+      <article class="card card-progreso">
+        <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="ring-bg" cx="60" cy="60" r="52"/>
+          <circle class="ring-fg" cx="60" cy="60" r="52" data-ring pathLength="100"/>
+          <text x="60" y="66" text-anchor="middle" class="ring-txt" data-ring-txt>0%</text>
+        </svg>
+        <div class="progreso-txt">
+          <h2>Progreso total</h2>
+          <p><strong data-hechas>0</strong> de <strong data-totales>0</strong> unidades</p>
+          <p class="muted">¡Sigue así!</p>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>🌿 Rendimiento por materia</h2>
+        <ul class="list list-materias" data-rendimiento></ul>
+      </article>
+
+      <article class="card card-tip">
+        <div class="tip-ico">🌼</div>
+        <div>
+          <h3>Recomendación</h3>
+          <p class="muted">Cuando tengas más datos, aquí verás tu mejor franja horaria y los temas a reforzar.</p>
+        </div>
+      </article>
+    </section>
+  </template>
+
+  <!--──────────────── PERFIL ────────────────-->
+  <template id="tpl-perfil">
+    <section class="view view-perfil">
+      <div class="perfil-hero">
+        <span class="fox-badge fox-badge-hero"></span>
+        <h1 data-nombre>—</h1>
+        <p class="muted"><span data-email>—</span></p>
+        <span class="chip chip-outline"><span class="chip-ico">🌿</span> <span data-nivel>Nivel 1</span></span>
+      </div>
+
+      <div class="stats-tiles">
+        <div class="tile">
+          <span class="tile-ico">🔥</span>
+          <div><span class="muted">Racha</span><strong data-racha>0 días</strong></div>
+        </div>
+        <div class="tile">
+          <span class="tile-ico">⏱️</span>
+          <div><span class="muted">XP</span><strong data-xp>0</strong></div>
+        </div>
+        <div class="tile">
+          <span class="tile-ico">🎯</span>
+          <div><span class="muted">Progreso</span><strong data-pct>0%</strong></div>
+        </div>
+      </div>
+
+      <article class="card card-objetivo">
+        <div class="obj-ico">🎯</div>
+        <div class="obj-txt">
+          <span class="chip chip-soft">Tu objetivo</span>
+          <h2 data-obj-titulo>Elige tu oposición</h2>
+          <p class="muted" data-obj-desc>Personaliza tu plan de estudio.</p>
+          <div class="progress">
+            <div class="progress-bar"><span data-obj-fill style="width:0%"></span></div>
+            <span class="progress-label"><span data-obj-pct>0</span>%</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>🎖️ Logros</h2>
+        <ul class="logros-grid" data-logros></ul>
+      </article>
+
+      <article class="card">
+        <h2>Preferencias</h2>
+        <ul class="list list-plain">
+          <li>
+            <span class="ico-round">📅</span>
+            <div><strong>Disponibilidad</strong><span class="muted">Lunes a sábado · 2 h al día</span></div>
+            <span class="chevron">›</span>
+          </li>
+          <li>
+            <span class="ico-round">🔔</span>
+            <div><strong>Recordatorios</strong><span class="muted">Activados a las 19:00</span></div>
+            <span class="chevron">›</span>
+          </li>
+          <li>
+            <span class="ico-round">🌓</span>
+            <div><strong>Tema</strong><span class="muted" data-theme-label>Automático</span></div>
+            <button class="btn btn-mini" data-toggle-theme>Cambiar</button>
+          </li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>Cuenta</h2>
+        <ul class="list list-plain">
+          <li>
+            <span class="ico-round">👤</span>
+            <div><strong>Editar perfil</strong><span class="muted">Nombre, meta y avatar</span></div>
+            <span class="chevron">›</span>
+          </li>
+          <li>
+            <span class="ico-round">🛡️</span>
+            <div><strong>Seguridad</strong><span class="muted">Contraseña y acceso</span></div>
+            <span class="chevron">›</span>
+          </li>
+          <li>
+            <span class="ico-round">💬</span>
+            <div><strong>Ayuda y soporte</strong><span class="muted">FAQ y contacto</span></div>
+            <span class="chevron">›</span>
+          </li>
+        </ul>
+      </article>
+
+      <button class="btn btn-outline btn-block" data-logout>🚪 Cerrar sesión</button>
+    </section>
+  </template>
+
+  <!--──────────────── ONBOARDING oposición ────────────────-->
+  <template id="tpl-onboarding">
+    <section class="view view-onboarding">
+      <div class="hero hero-onboarding">
+        <span class="fox-badge fox-badge-hero"></span>
+        <h1>Elige tu oposición</h1>
+        <p class="muted">Puedes cambiarla más adelante desde tu perfil.</p>
+      </div>
+      <ul class="onboarding-list" data-onboarding></ul>
+      <button class="btn btn-primary btn-block" data-onboarding-guardar disabled>
+        Continuar
+      </button>
+    </section>
+  </template>
+
+  <!--──────────────── UNIDAD (teoría + test) ────────────────-->
+  <template id="tpl-unidad">
+    <section class="view view-unidad">
+      <header class="unidad-head">
+        <button class="btn btn-ghost btn-mini" data-back>‹ Atrás</button>
+        <h1 data-unidad-nombre>—</h1>
+        <span class="chip chip-soft" data-unidad-min>-- min</span>
+      </header>
+      <div class="tabs">
+        <button class="tab active" data-tab="teoria">Teoría</button>
+        <button class="tab" data-tab="test">Test</button>
+      </div>
+      <article class="card card-teoria" data-panel="teoria">
+        <div class="prose" data-teoria></div>
+        <button class="btn btn-primary btn-block" data-marcar-teoria>Marcar como estudiada</button>
+      </article>
+      <article class="card card-test" data-panel="test" hidden>
+        <div class="test-progress" data-test-progress></div>
+        <div class="test-q" data-test-q></div>
+        <div class="test-options" data-test-options></div>
+        <div class="test-explicacion" data-test-explicacion hidden></div>
+        <button class="btn btn-primary btn-block" data-test-siguiente hidden>Siguiente</button>
+        <div class="test-resultado" data-test-resultado hidden></div>
+      </article>
+    </section>
+  </template>
+
+  <!--──────────────── BOTTOM NAV ────────────────-->
+  <template id="tpl-nav">
+    <nav class="bottom-nav" aria-label="Navegación principal">
+      <button data-nav="home" class="active">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></svg>
+        <span>Inicio</span>
+      </button>
+      <button data-nav="plan">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>
+        <span>Plan</span>
+      </button>
+      <button data-nav="stats">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+        <span>Estadísticas</span>
+      </button>
+      <button data-nav="perfil">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/></svg>
+        <span>Perfil</span>
+      </button>
+    </nav>
+  </template>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

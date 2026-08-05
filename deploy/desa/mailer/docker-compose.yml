@@ -1,0 +1,32 @@
+# Stack MAILER ─ entorno DESA
+#
+# Worker que lee `cola_emails` de la BBDD DESA y envía por SMTP.
+# Comparte SMTP con producción (o con cualquier proveedor que se
+# configure en las vars).  Ver mailer/mailer.py para el ciclo.
+
+services:
+
+  mailer-desa:
+    build:
+      context: ../../../mailer
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgres://aprentix@db-desa:5432/aprentix_desa
+      PGPASSWORD:   ${DB_PASS_DESA:?DB_PASS_DESA requerida}
+      SMTP_HOST:    ${SMTP_HOST:?SMTP_HOST requerido}
+      SMTP_PORT:    ${SMTP_PORT:-587}
+      SMTP_USER:    ${SMTP_USER:-}
+      SMTP_PASS:    ${SMTP_PASS:-}
+      SMTP_FROM:    ${SMTP_FROM:-No Contestar <no-reply@aprentix.es>}
+      SMTP_TLS:     ${SMTP_TLS:-starttls}
+      TICK_SECONDS: ${MAILER_TICK:-30}
+      BATCH:        ${MAILER_BATCH:-25}
+      LOG_LEVEL:    ${MAILER_LOG:-INFO}
+    restart: unless-stopped
+    depends_on:
+      - db-desa
+    networks: [dokploy-network]
+
+networks:
+  dokploy-network:
+    external: true

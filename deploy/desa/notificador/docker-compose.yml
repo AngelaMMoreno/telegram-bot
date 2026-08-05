@@ -1,0 +1,29 @@
+# Stack NOTIFICADOR ─ entorno DESA (Web Push).
+#
+# Reutiliza la misma imagen que el notificador de producción; sólo
+# cambian las variables de entorno y la BBDD a la que apunta.  Las
+# claves VAPID DEBEN ser diferentes de las de producción para no
+# invalidar las suscripciones reales de los usuarios.
+
+services:
+
+  notificador-desa:
+    build:
+      context: ../../../notificador
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL:      postgres://aprentix@db-desa:5432/aprentix_desa
+      PGPASSWORD:        ${DB_PASS_DESA:?DB_PASS_DESA requerida}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY_DESA:?VAPID_PRIVATE_KEY_DESA requerida}
+      VAPID_PUBLIC_KEY:  ${VAPID_PUBLIC_KEY_DESA:-}
+      VAPID_SUBJECT:     ${VAPID_SUBJECT_DESA:-mailto:soporte@aprentix.es}
+      TICK_SECONDS:      ${NOTIF_TICK_DESA:-300}
+      BATCH_LIMIT:       ${NOTIF_BATCH_DESA:-500}
+    restart: unless-stopped
+    depends_on:
+      - db-desa
+    networks: [dokploy-network]
+
+networks:
+  dokploy-network:
+    external: true

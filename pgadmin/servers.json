@@ -9,6 +9,16 @@
       "Username": "aprentix",
       "SSLMode": "prefer",
       "Comment": "Postgres del stack Aprentix (intra-red dokploy)"
+    },
+    "2": {
+      "Name": "aprentix-desa",
+      "Group": "Servers",
+      "Host": "db-desa",
+      "Port": 5432,
+      "MaintenanceDB": "aprentix_desa",
+      "Username": "aprentix",
+      "SSLMode": "prefer",
+      "Comment": "Postgres del stack DESA (rediseño oposiciones). Mismo pgAdmin."
     }
   }
 }

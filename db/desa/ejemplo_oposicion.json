@@ -1,0 +1,73 @@
+{
+  "slug": "auxiliar-administrativo-age",
+  "nombre": "Auxiliar Administrativo (AGE)",
+  "descripcion": "Cuerpo General Auxiliar de la Administración del Estado.",
+  "organismo": "AGE",
+  "temas": [
+    {
+      "slug": "constitucion-espanola",
+      "nombre": "Constitución Española",
+      "icono": "⚖️",
+      "orden": 1,
+      "unidades": [
+        {
+          "slug": "titulo-preliminar",
+          "nombre": "Título preliminar",
+          "orden": 1,
+          "minutos_est": 25,
+          "resumen": "Principios, símbolos y estructura del Estado.",
+          "teoria_md": "# Título preliminar\n\nRegula los principios que informan la Constitución (artículos 1 a 9).\n\n## Artículo 1\n\n**España se constituye en un Estado social y democrático de Derecho**, que propugna como valores superiores de su ordenamiento jurídico la libertad, la justicia, la igualdad y el pluralismo político.\n\n- La soberanía nacional reside en el pueblo español.\n- La forma política del Estado español es la Monarquía parlamentaria.\n",
+          "preguntas": [
+            {
+              "enunciado": "Según el artículo 1.1 CE, España se constituye en un Estado...",
+              "opciones": [
+                {"texto": "Social y democrático de Derecho.", "correcta": true},
+                {"texto": "Republicano parlamentario.", "correcta": false},
+                {"texto": "Confederal y democrático.", "correcta": false},
+                {"texto": "Monárquico y federal.", "correcta": false}
+              ],
+              "explicacion": "Artículo 1.1 de la Constitución Española.",
+              "dificultad": 1
+            },
+            {
+              "enunciado": "La soberanía nacional reside en...",
+              "opciones": [
+                {"texto": "El pueblo español.", "correcta": true},
+                {"texto": "El Rey.", "correcta": false},
+                {"texto": "Las Cortes Generales.", "correcta": false},
+                {"texto": "El Gobierno.", "correcta": false}
+              ],
+              "explicacion": "Artículo 1.2 CE.",
+              "dificultad": 2
+            }
+          ]
+        },
+        {
+          "slug": "derechos-y-libertades",
+          "nombre": "Derechos y libertades",
+          "orden": 2,
+          "minutos_est": 30,
+          "resumen": "Título I: derechos fundamentales y libertades públicas.",
+          "teoria_md": "# Derechos y libertades\n\nEl Título I de la Constitución recoge los derechos fundamentales y libertades públicas (arts. 14 a 29).\n",
+          "preguntas": []
+        }
+      ]
+    },
+    {
+      "slug": "procedimiento-administrativo",
+      "nombre": "Procedimiento Administrativo Común",
+      "icono": "📚",
+      "orden": 2,
+      "unidades": [
+        {
+          "slug": "ley-39-2015",
+          "nombre": "Ley 39/2015",
+          "orden": 1,
+          "minutos_est": 40,
+          "teoria_md": "# Ley 39/2015, de 1 de octubre\n\nDel Procedimiento Administrativo Común de las Administraciones Públicas.",
+          "preguntas": []
+        }
+      ]
+    }
+  ]
+}
