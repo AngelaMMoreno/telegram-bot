@@ -8,6 +8,16 @@
 #                                 y hace reverse_proxy al uvicorn de teoría
 set -eu
 
+
+# Configuración pública consumida por el frontend estático. Permite usar
+# desa.aprentix.es sin recompilar la imagen y sin fijar cookies a producción.
+cat > /srv/shared/entorno.js <<EOF
+window.APRENTIX_ENTORNO = Object.assign(window.APRENTIX_ENTORNO || {}, {
+  dominioPrincipal: "${PUBLIC_DOMINIO_PRINCIPAL:-}",
+  cookieDomain: "${PUBLIC_COOKIE_DOMAIN:-}"
+});
+EOF
+
 # El uvicorn NO debe escuchar en 0.0.0.0 para no exponerse por fuera;
 # el único que habla con él es el Caddy local.
 uvicorn app:app --host 127.0.0.1 --port 8000 --proxy-headers &

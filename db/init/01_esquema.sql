@@ -328,9 +328,15 @@ DO $$ BEGIN
     CREATE ROLE autenticador LOGIN;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 GRANT web_anon, web_user TO autenticador;
-GRANT USAGE ON SCHEMA public TO web_anon, web_user;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO web_user;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO web_user;
+ALTER ROLE autenticador PASSWORD current_setting('app.auth_pass');
+DO $$
+DECLARE
+    v_esquema text := current_schema();
+BEGIN
+    EXECUTE format('GRANT USAGE ON SCHEMA %I TO web_anon, web_user', v_esquema);
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO web_user', v_esquema);
+    EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA %I TO web_user', v_esquema);
+END $$;
 
 CREATE OR REPLACE FUNCTION url_b64(data bytea) RETURNS text
 LANGUAGE sql IMMUTABLE AS $$

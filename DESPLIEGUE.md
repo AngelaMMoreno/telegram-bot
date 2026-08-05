@@ -300,3 +300,31 @@ recoge.
 | `push_inactividad_cooldown_horas` |   `48`  | Cooldown entre avisos de inactividad              |
 | `push_min_vencidas`               |    `5`  | Mínimo de preguntas vencidas para lanzar aviso    |
 | `push_tz`                         | `Europe/Madrid` | Zona horaria de la ventana                 |
+
+## Entorno separado de desarrollo (`desa.aprentix.es`)
+
+Para desplegar esta rama en otro entorno sin tocar producción, configura estas
+variables en los stacks de Dokploy antes de inicializar la base:
+
+| Variable | Ejemplo desarrollo | Uso |
+| --- | --- | --- |
+| `DOMINIO_LANDING` | `desa.aprentix.es` | Host principal servido por `deploy/app`. |
+| `DOMINIO_LANDING_ALT` | vacío o `www.desa.aprentix.es` | Host alternativo opcional. |
+| `DOMINIO_API` | `api-desa.aprentix.es` | Host público de PostgREST/OpenAPI. |
+| `DOMINIO_PGADMIN` | `pgadmin-desa.aprentix.es` | Host de pgAdmin del entorno. |
+| `COOKIE_DOMAIN` | `.aprentix.es` | Dominio de cookie compartida. Usa `none` si quieres cookie solo host. |
+| `POSTGRES_DB` | `aprentix_desa` | Nombre de la base de datos a crear/usar. |
+| `POSTGRES_USER` | `aprentix` | Usuario owner de la base. |
+| `POSTGRES_SCHEMA` | `desa` | Esquema lógico para esta rama; por defecto `public`. |
+
+Notas importantes:
+
+- `db/init/00_configurar_esquema.sh` crea `POSTGRES_SCHEMA` y ajusta el
+  `search_path` antes de ejecutar `01_esquema.sql`, de modo que el esquema
+  limpio de oposiciones puede vivir en `desa` sin mezclarse con `public`.
+- `deploy/core/docker-compose.yml`, `deploy/notificador/docker-compose.yml` y
+  `deploy/backups/docker-compose.yml` leen `POSTGRES_DB`, `POSTGRES_USER` y
+  `POSTGRES_SCHEMA` para apuntar al mismo entorno.
+- `deploy/app/start.sh` genera `/shared/entorno.js` en cada arranque con
+  `PUBLIC_DOMINIO_PRINCIPAL` y `PUBLIC_COOKIE_DOMAIN`, para que el frontend
+  no tenga dominios de producción embebidos en la imagen.

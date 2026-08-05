@@ -36,6 +36,11 @@
 
   // ── Utilidades ─────────────────────────────────────────────────────────
   function cookieDomain() {
+    const cfg = window.APRENTIX_ENTORNO || {};
+    if (cfg.cookieDomain === false || cfg.cookieDomain === 'none') return '';
+    if (typeof cfg.cookieDomain === 'string' && cfg.cookieDomain.trim()) {
+      return cfg.cookieDomain.trim().replace(/^\.?/, '.');
+    }
     const parts = location.hostname.split('.');
     return parts.length >= 2 ? '.' + parts.slice(-2).join('.') : '';
   }

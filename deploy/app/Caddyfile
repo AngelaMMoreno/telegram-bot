@@ -1,4 +1,4 @@
-# Gateway público de aprentix.es cuando se despliega en modo monolítico
+# Gateway público del dominio configurado cuando se despliega en modo monolítico
 # (contenedor único, deploy/app/). Sirve la landing en /, la SPA de
 # tests bajo /tests/*, y reenvía /teoria/* al uvicorn local que tiene
 # la SPA + la API + los ficheros de teoría.
@@ -14,11 +14,14 @@
 
     # ── Service worker en la raíz (scope "/") ─────────────────────────
     # Debe servirse desde el path exacto en el que se registra
-    # (aprentix.es/service-worker.js).  Este bloque va ANTES de los
+    # (DOMINIO_LANDING/service-worker.js).  Este bloque va ANTES de los
     # `handle` genéricos para no caer en el file_server de la landing
     # con cabeceras equivocadas.
     @sw path /service-worker.js
     header @sw Cache-Control "no-cache"
+
+    @entorno path /shared/entorno.js /tests/shared/entorno.js /teoria/shared/entorno.js
+    header @entorno Cache-Control "no-store"
     header @sw Service-Worker-Allowed "/"
 
     # Sin barra final los prefijos no matchean; redirigimos para que el

@@ -2,7 +2,7 @@
  * Aprentix · sesión compartida.
  *
  * Fuente única de verdad para:
- *   - cookies (get/set/delete) con dominio ".aprentix.es" para que la
+ *   - cookies (get/set/delete) con dominio configurable para que la
  *     sesión se comparta entre landing, tests y teoría.
  *   - parseo del JWT (nunca lo verificamos aquí; solo leemos claims).
  *   - RPC contra PostgREST con Authorization automática.
@@ -21,6 +21,11 @@
   const COOKIE_HORAS = 12; // coincide con expiración del JWT
 
   function cookieDomain() {
+    const cfg = window.APRENTIX_ENTORNO || {};
+    if (cfg.cookieDomain === false || cfg.cookieDomain === 'none') return '';
+    if (typeof cfg.cookieDomain === 'string' && cfg.cookieDomain.trim()) {
+      return cfg.cookieDomain.trim().replace(/^\.?/, '.');
+    }
     const parts = location.hostname.split('.');
     return parts.length >= 2 ? '.' + parts.slice(-2).join('.') : '';
   }

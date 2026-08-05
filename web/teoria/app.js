@@ -40,8 +40,9 @@ function getCookie(name) {
 function deleteCookie(name) {
   // Borra en el subdominio (.aprentix.es) para que se propague al resto.
   const host = location.hostname;
-  const parent = host.split('.').slice(-2).join('.');  // aprentix.es
-  document.cookie = `${name}=; Max-Age=0; Path=/; Domain=.${parent}`;
+  const cfg = window.APRENTIX_ENTORNO || {};
+  const parent = cfg.cookieDomain === 'none' ? '' : (cfg.cookieDomain || host.split('.').slice(-2).join('.'));
+  if (parent) document.cookie = `${name}=; Max-Age=0; Path=/; Domain=.${String(parent).replace(/^\./, '')}`;
   document.cookie = `${name}=; Max-Age=0; Path=/`;
 }
 

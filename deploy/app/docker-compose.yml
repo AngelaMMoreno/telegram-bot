@@ -20,6 +20,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET requerida}
       BASE_DIR: /ficheros
       POSTGREST_URL: http://postgrest:3000
+      PUBLIC_DOMINIO_PRINCIPAL: ${DOMINIO_LANDING:-aprentix.es}
+      PUBLIC_COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
     volumes:
       # Los ficheros de teoría (PDFs, markdown, etc.) viven fuera del
       # contenedor para sobrevivir a redespliegues.
@@ -29,7 +31,7 @@ services:
     labels:
       - "traefik.enable=true"
 
-      # ── Router principal: aprentix.es / www.aprentix.es ───────────
+      # ── Router principal: ${DOMINIO_LANDING:-aprentix.es} / ${DOMINIO_LANDING_ALT:-www.aprentix.es} ───────────
       - "traefik.http.routers.app.rule=Host(`${DOMINIO_LANDING:-aprentix.es}`) || Host(`${DOMINIO_LANDING_ALT:-www.aprentix.es}`)"
       - "traefik.http.routers.app.entrypoints=websecure"
       - "traefik.http.routers.app.tls=true"
