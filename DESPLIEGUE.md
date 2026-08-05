@@ -345,6 +345,9 @@ AUTH_PASS=<contraseña_del_rol_autenticador_desa>
 ADMIN_PASS=<contraseña_admin_desa>
 JWT_SECRET=<secreto_jwt_desa>
 DOMINIO_API=api.desa.aprentix.es
+TRAEFIK_API_ID=api-desa
+POSTGRES_HOST_ALIAS=db-desa
+POSTGREST_HOST_ALIAS=postgrest-desa
 # No definas COMPOSE_PROFILES en desa: así no arranca otro servicio pgAdmin.
 PGADMIN_PUBLICADO=false
 # No definas DOMINIO_PGADMIN, PGADMIN_EMAIL ni PGADMIN_PASS para desa.
@@ -354,6 +357,8 @@ PGADMIN_PUBLICADO=false
 
 ```env
 JWT_SECRET=<mismo_JWT_SECRET_que_core>
+TRAEFIK_APP_ID=app-desa
+POSTGREST_HOST=postgrest-desa
 DOMINIO_LANDING=desa.aprentix.es
 DOMINIO_LANDING_ALT=www.desa.aprentix.es
 COOKIE_DOMAIN=.aprentix.es
@@ -371,6 +376,7 @@ POSTGRES_DB=aprentix_desa
 POSTGRES_USER=aprentix
 POSTGRES_SCHEMA=public
 DB_PASS=<misma_DB_PASS_que_core>
+POSTGRES_HOST_ALIAS=db-desa
 VAPID_PRIVATE_KEY=<clave_vapid_privada_desa_o_la_misma_si_quieres_reutilizarla>
 VAPID_PUBLIC_KEY=<clave_vapid_publica>
 VAPID_SUBJECT=mailto:soporte@aprentix.es
@@ -383,6 +389,7 @@ POSTGRES_DB=aprentix_desa
 POSTGRES_USER=aprentix
 POSTGRES_SCHEMA=public
 DB_PASS=<misma_DB_PASS_que_core>
+POSTGRES_HOST_ALIAS=db-desa
 RESTIC_REPOSITORY=<repositorio_restic_para_desa>
 RESTIC_PASSWORD=<contraseña_restic>
 RESTIC_HOST=aprentix-desa
@@ -392,3 +399,22 @@ Con esta configuración, el entorno de desarrollo usa la base `aprentix_desa`, l
 SPA vive en `desa.aprentix.es`, la API en `api.desa.aprentix.es` y no arranca
 un segundo pgAdmin. Para administrar la base, entra en `pgadmin.aprentix.es` y
 añade una conexión nueva hacia la base `aprentix_desa` del stack correspondiente.
+
+
+### Si `https://desa.aprentix.es/` devuelve 404
+
+En Traefik, un 404 en el host raíz suele significar que no existe ningún router
+válido para ese `Host`, o que el router de `desa` colisiona con otro router del
+stack de producción. En este repositorio los nombres de router y los aliases de
+Docker son configurables para evitarlo:
+
+- En `deploy/app/docker-compose.yml`, usa `TRAEFIK_APP_ID=app-desa` para que el
+  router no se llame igual que producción (`app`).
+- En `deploy/core/docker-compose.yml`, usa `TRAEFIK_API_ID=api-desa` para que el
+  router de PostgREST no se llame igual que producción (`api`).
+- En `core`, usa `POSTGRES_HOST_ALIAS=db-desa` y
+  `POSTGREST_HOST_ALIAS=postgrest-desa`; en `app`, usa
+  `POSTGREST_HOST=postgrest-desa`. Así la app de `desa` no resuelve por DNS el
+  `postgrest` de producción dentro de la red compartida `dokploy-network`.
+- Comprueba que el DNS de `desa.aprentix.es` apunta al mismo Traefik y que el
+  stack `app` se ha redeplegado después de cambiar las variables.

@@ -26,7 +26,7 @@ services:
     init: true
     environment:
       # ── BBDD (mismas creds que el stack core) ──────────────────────
-      PGHOST:     ${PGHOST:-db}
+      PGHOST:     ${POSTGRES_HOST_ALIAS:-db}
       PGPORT:     ${PGPORT:-5432}
       PGUSER:     ${POSTGRES_USER:-aprentix}
       PGDATABASE: ${POSTGRES_DB:-aprentix}

@@ -19,7 +19,8 @@ services:
       # para validar los tokens que emite PostgREST.
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET requerida}
       BASE_DIR: /ficheros
-      POSTGREST_URL: http://postgrest:3000
+      POSTGREST_HOST: ${POSTGREST_HOST:-postgrest}
+      POSTGREST_URL: http://${POSTGREST_HOST:-postgrest}:3000
       PUBLIC_DOMINIO_PRINCIPAL: ${DOMINIO_LANDING:-aprentix.es}
       PUBLIC_COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
     volumes:
@@ -32,31 +33,31 @@ services:
       - "traefik.enable=true"
 
       # ── Router principal: ${DOMINIO_LANDING:-aprentix.es} / ${DOMINIO_LANDING_ALT:-www.aprentix.es} ───────────
-      - "traefik.http.routers.app.rule=Host(`${DOMINIO_LANDING:-aprentix.es}`) || Host(`${DOMINIO_LANDING_ALT:-www.aprentix.es}`)"
-      - "traefik.http.routers.app.entrypoints=websecure"
-      - "traefik.http.routers.app.tls=true"
-      - "traefik.http.routers.app.tls.certresolver=letsencrypt"
-      - "traefik.http.services.app.loadbalancer.server.port=80"
+      - "traefik.http.routers.${TRAEFIK_APP_ID:-app}.rule=Host(`${DOMINIO_LANDING:-aprentix.es}`) || Host(`${DOMINIO_LANDING_ALT:-www.aprentix.es}`)"
+      - "traefik.http.routers.${TRAEFIK_APP_ID:-app}.entrypoints=websecure"
+      - "traefik.http.routers.${TRAEFIK_APP_ID:-app}.tls=true"
+      - "traefik.http.routers.${TRAEFIK_APP_ID:-app}.tls.certresolver=letsencrypt"
+      - "traefik.http.services.${TRAEFIK_APP_ID:-app}.loadbalancer.server.port=80"
 
       # ── Redirect legacy: test.aprentix.es → aprentix.es/tests/ ────
-      - "traefik.http.routers.web-legacy.rule=Host(`${DOMINIO_WEB:-test.aprentix.es}`) || Host(`${DOMINIO_WEB_ALT:-www.test.aprentix.es}`)"
-      - "traefik.http.routers.web-legacy.entrypoints=websecure"
-      - "traefik.http.routers.web-legacy.tls=true"
-      - "traefik.http.routers.web-legacy.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.web-legacy.middlewares=web-legacy-redirect"
-      - "traefik.http.middlewares.web-legacy-redirect.redirectregex.regex=^https?://[^/]+/(.*)"
-      - "traefik.http.middlewares.web-legacy-redirect.redirectregex.replacement=https://${DOMINIO_LANDING:-aprentix.es}/tests/$${1}"
-      - "traefik.http.middlewares.web-legacy-redirect.redirectregex.permanent=true"
+      - "traefik.http.routers.${TRAEFIK_APP_ID:-app}-web-legacy.rule=Host(`${DOMINIO_WEB:-test.aprentix.es}`) || Host(`${DOMINIO_WEB_ALT:-www.test.aprentix.es}`)"
+      - "traefik.http.routers.${TRAEFIK_APP_ID:-app}-web-legacy.entrypoints=websecure"
+      - "traefik.http.routers.${TRAEFIK_APP_ID:-app}-web-legacy.tls=true"
+      - "traefik.http.routers.${TRAEFIK_APP_ID:-app}-web-legacy.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${TRAEFIK_APP_ID:-app}-web-legacy.middlewares=${TRAEFIK_APP_ID:-app}-web-legacy-redirect"
+      - "traefik.http.middlewares.${TRAEFIK_APP_ID:-app}-web-legacy-redirect.redirectregex.regex=^https?://[^/]+/(.*)"
+      - "traefik.http.middlewares.${TRAEFIK_APP_ID:-app}-web-legacy-redirect.redirectregex.replacement=https://${DOMINIO_LANDING:-aprentix.es}/tests/$${1}"
+      - "traefik.http.middlewares.${TRAEFIK_APP_ID:-app}-web-legacy-redirect.redirectregex.permanent=true"
 
       # ── Redirect legacy: teoria.aprentix.es → aprentix.es/teoria/ ─
-      - "traefik.http.routers.teoria-legacy.rule=Host(`${DOMINIO_TEORIA:-teoria.aprentix.es}`) || Host(`${DOMINIO_TEORIA_ALT:-www.teoria.aprentix.es}`)"
-      - "traefik.http.routers.teoria-legacy.entrypoints=websecure"
-      - "traefik.http.routers.teoria-legacy.tls=true"
-      - "traefik.http.routers.teoria-legacy.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.teoria-legacy.middlewares=teoria-legacy-redirect"
-      - "traefik.http.middlewares.teoria-legacy-redirect.redirectregex.regex=^https?://[^/]+/(.*)"
-      - "traefik.http.middlewares.teoria-legacy-redirect.redirectregex.replacement=https://${DOMINIO_LANDING:-aprentix.es}/teoria/$${1}"
-      - "traefik.http.middlewares.teoria-legacy-redirect.redirectregex.permanent=true"
+      - "traefik.http.routers.${TRAEFIK_APP_ID:-app}-teoria-legacy.rule=Host(`${DOMINIO_TEORIA:-teoria.aprentix.es}`) || Host(`${DOMINIO_TEORIA_ALT:-www.teoria.aprentix.es}`)"
+      - "traefik.http.routers.${TRAEFIK_APP_ID:-app}-teoria-legacy.entrypoints=websecure"
+      - "traefik.http.routers.${TRAEFIK_APP_ID:-app}-teoria-legacy.tls=true"
+      - "traefik.http.routers.${TRAEFIK_APP_ID:-app}-teoria-legacy.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${TRAEFIK_APP_ID:-app}-teoria-legacy.middlewares=${TRAEFIK_APP_ID:-app}-teoria-legacy-redirect"
+      - "traefik.http.middlewares.${TRAEFIK_APP_ID:-app}-teoria-legacy-redirect.redirectregex.regex=^https?://[^/]+/(.*)"
+      - "traefik.http.middlewares.${TRAEFIK_APP_ID:-app}-teoria-legacy-redirect.redirectregex.replacement=https://${DOMINIO_LANDING:-aprentix.es}/teoria/$${1}"
+      - "traefik.http.middlewares.${TRAEFIK_APP_ID:-app}-teoria-legacy-redirect.redirectregex.permanent=true"
 
 networks:
   dokploy-network:

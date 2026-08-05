@@ -59,7 +59,7 @@
     # PostgREST espera /rpc/... — hay que quitar /tests/api completo.
     # Este handle es más específico que /tests/* y Caddy lo elige antes.
     handle_path /tests/api/* {
-        reverse_proxy postgrest:3000
+        reverse_proxy {$POSTGREST_HOST:postgrest}:3000
     }
 
     # ── App de tests (SPA estática) ───────────────────────────────────
@@ -73,7 +73,7 @@
     # La landing usa rutas absolutas (/api/rpc/...), así que llega aquí.
     handle /api/* {
         uri strip_prefix /api
-        reverse_proxy postgrest:3000
+        reverse_proxy {$POSTGREST_HOST:postgrest}:3000
     }
 
     # MIME correcto para el manifest PWA.

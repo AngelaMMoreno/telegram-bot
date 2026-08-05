@@ -23,7 +23,7 @@ services:
     build: ../../notificador
     depends_on: []
     environment:
-      DATABASE_URL:      postgres://${POSTGRES_USER:-aprentix}@db:5432/${POSTGRES_DB:-aprentix}?options=-csearch_path%3D${POSTGRES_SCHEMA:-public},public
+      DATABASE_URL:      postgres://${POSTGRES_USER:-aprentix}@${POSTGRES_HOST_ALIAS:-db}:5432/${POSTGRES_DB:-aprentix}?options=-csearch_path%3D${POSTGRES_SCHEMA:-public},public
       PGPASSWORD:        ${DB_PASS:?DB_PASS requerida}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:?VAPID_PRIVATE_KEY requerida}
       VAPID_PUBLIC_KEY:  ${VAPID_PUBLIC_KEY:-}
