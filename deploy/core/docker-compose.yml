@@ -41,6 +41,7 @@ services:
       retries: 10
 
   pgadmin:
+    profiles: ["pgadmin"]
     image: dpage/pgadmin4:9
     depends_on:
       db:
@@ -60,7 +61,7 @@ services:
     restart: unless-stopped
     networks: [dokploy-network]
     labels:
-      - "traefik.enable=true"
+      - "traefik.enable=${PGADMIN_PUBLICADO:-true}"
       - "traefik.http.routers.pgadmin.rule=Host(`${DOMINIO_PGADMIN:-pgadmin.aprentix.es}`)"
       - "traefik.http.routers.pgadmin.entrypoints=websecure"
       - "traefik.http.routers.pgadmin.tls=true"

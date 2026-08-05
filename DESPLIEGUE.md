@@ -310,12 +310,14 @@ variables en los stacks de Dokploy antes de inicializar la base:
 | --- | --- | --- |
 | `DOMINIO_LANDING` | `desa.aprentix.es` | Host principal servido por `deploy/app`. |
 | `DOMINIO_LANDING_ALT` | vacío o `www.desa.aprentix.es` | Host alternativo opcional. |
-| `DOMINIO_API` | `api-desa.aprentix.es` | Host público de PostgREST/OpenAPI. |
-| `DOMINIO_PGADMIN` | `pgadmin-desa.aprentix.es` | Host de pgAdmin del entorno. |
+| `DOMINIO_API` | `api.desa.aprentix.es` | Host público de PostgREST/OpenAPI. |
+| `COMPOSE_PROFILES` | no definir | No arranca el servicio `pgadmin` en `desa`; usa el existente en `pgadmin.aprentix.es`. |
+| `PGADMIN_PUBLICADO` | `false` | Solo aplica si activas el perfil `pgadmin`; en `desa` debe quedar sin publicar. |
+| `DOMINIO_PGADMIN` | no definir | Solo se usa si arrancas el perfil `pgadmin`; en producción conserva `pgadmin.aprentix.es`. |
 | `COOKIE_DOMAIN` | `.aprentix.es` | Dominio de cookie compartida. Usa `none` si quieres cookie solo host. |
 | `POSTGRES_DB` | `aprentix_desa` | Nombre de la base de datos a crear/usar. |
 | `POSTGRES_USER` | `aprentix` | Usuario owner de la base. |
-| `POSTGRES_SCHEMA` | `desa` | Esquema lógico para esta rama; por defecto `public`. |
+| `POSTGRES_SCHEMA` | `public` | Si la base ya es independiente (`aprentix_desa`), no hace falta crear otro esquema lógico. |
 
 Notas importantes:
 
@@ -328,3 +330,65 @@ Notas importantes:
 - `deploy/app/start.sh` genera `/shared/entorno.js` en cada arranque con
   `PUBLIC_DOMINIO_PRINCIPAL` y `PUBLIC_COOKIE_DOMAIN`, para que el frontend
   no tenga dominios de producción embebidos en la imagen.
+
+
+### Variables por Compose para `desa.aprentix.es`
+
+#### `deploy/core/docker-compose.yml`
+
+```env
+POSTGRES_DB=aprentix_desa
+POSTGRES_USER=aprentix
+POSTGRES_SCHEMA=public
+DB_PASS=<contraseña_de_la_base_desa>
+AUTH_PASS=<contraseña_del_rol_autenticador_desa>
+ADMIN_PASS=<contraseña_admin_desa>
+JWT_SECRET=<secreto_jwt_desa>
+DOMINIO_API=api.desa.aprentix.es
+# No definas COMPOSE_PROFILES en desa: así no arranca otro servicio pgAdmin.
+PGADMIN_PUBLICADO=false
+# No definas DOMINIO_PGADMIN, PGADMIN_EMAIL ni PGADMIN_PASS para desa.
+```
+
+#### `deploy/app/docker-compose.yml`
+
+```env
+JWT_SECRET=<mismo_JWT_SECRET_que_core>
+DOMINIO_LANDING=desa.aprentix.es
+DOMINIO_LANDING_ALT=www.desa.aprentix.es
+COOKIE_DOMAIN=.aprentix.es
+# Opcional: si no quieres dominios legacy en desa, no apuntes DNS para ellos.
+DOMINIO_WEB=test.desa.aprentix.es
+DOMINIO_WEB_ALT=www.test.desa.aprentix.es
+DOMINIO_TEORIA=teoria.desa.aprentix.es
+DOMINIO_TEORIA_ALT=www.teoria.desa.aprentix.es
+```
+
+#### `deploy/notificador/docker-compose.yml`
+
+```env
+POSTGRES_DB=aprentix_desa
+POSTGRES_USER=aprentix
+POSTGRES_SCHEMA=public
+DB_PASS=<misma_DB_PASS_que_core>
+VAPID_PRIVATE_KEY=<clave_vapid_privada_desa_o_la_misma_si_quieres_reutilizarla>
+VAPID_PUBLIC_KEY=<clave_vapid_publica>
+VAPID_SUBJECT=mailto:soporte@aprentix.es
+```
+
+#### `deploy/backups/docker-compose.yml`
+
+```env
+POSTGRES_DB=aprentix_desa
+POSTGRES_USER=aprentix
+POSTGRES_SCHEMA=public
+DB_PASS=<misma_DB_PASS_que_core>
+RESTIC_REPOSITORY=<repositorio_restic_para_desa>
+RESTIC_PASSWORD=<contraseña_restic>
+RESTIC_HOST=aprentix-desa
+```
+
+Con esta configuración, el entorno de desarrollo usa la base `aprentix_desa`, la
+SPA vive en `desa.aprentix.es`, la API en `api.desa.aprentix.es` y no arranca
+un segundo pgAdmin. Para administrar la base, entra en `pgadmin.aprentix.es` y
+añade una conexión nueva hacia la base `aprentix_desa` del stack correspondiente.
