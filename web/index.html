@@ -13,13 +13,11 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Aprentix">
 
-  <link rel="icon" type="image/svg+xml" href="/shared/pwa-icons/icon-any.svg">
+  <!-- Favicon inline en SVG para no depender de otro fetch. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='50' font-size='52'%3E🦊%3C/text%3E%3C/svg%3E">
 
-  <!--
-       Tokens compartidos: paleta verde salvia + modo oscuro
-       bioluminiscente.  El resto del CSS de esta SPA está en style.css.
-  -->
-  <link rel="stylesheet" href="/shared/tokens.css">
+  <!-- Paleta verde salvia + modo oscuro bioluminiscente. -->
+  <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="style.css">
 
   <script>
@@ -31,7 +29,7 @@
     })();
   </script>
 
-  <script src="/shared/auth/session.js"></script>
+  <script src="session.js"></script>
 </head>
 <body>
   <!-- ═══════════════════════════════════════════════════════════

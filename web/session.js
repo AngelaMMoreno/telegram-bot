@@ -1,24 +1,17 @@
 /*
- * Aprentix · sesión compartida.
+ * Aprentix · sesión y llamadas RPC.
  *
- * Fuente única de verdad para:
- *   - cookies (get/set/delete) con dominio ".aprentix.es" para que la
- *     sesión se comparta entre landing, tests y teoría.
- *   - parseo del JWT (nunca lo verificamos aquí; solo leemos claims).
- *   - RPC contra PostgREST con Authorization automática.
- *
- * Antes cada SPA duplicaba estas funciones. Un cambio en el nombre de la
- * cookie o en la duración del JWT requería tocar tres ficheros y quedaban
- * desincronizados. Ahora es un único módulo global (window.AprentixSession)
- * cargado como script clásico, compatible con `defer` y sin bundler.
+ * Único módulo que sabe de cookies, JWT y PostgREST — todo lo demás
+ * usa window.AprentixSession.rpc(fn, args).  Se carga como script
+ * clásico antes que app.js.
  */
 'use strict';
 
 (function () {
   if (window.AprentixSession) return;
 
-  const COOKIE_NAME = 'aprentix_token';
-  const COOKIE_HORAS = 12; // coincide con expiración del JWT
+  const COOKIE_NAME  = 'aprentix_token';
+  const COOKIE_HORAS = 12;                 // coincide con la expiración del JWT
 
   function cookieDomain() {
     const parts = location.hostname.split('.');
@@ -59,20 +52,16 @@
     } catch (_) { return null; }
   }
 
-  const jwtSub = (tok) => (parseJwt(tok) || {}).sub || null;
-
   const getToken   = () => getCookie(COOKIE_NAME);
   const setToken   = (t, horas = COOKIE_HORAS) => setCookie(COOKIE_NAME, t, horas);
   const clearToken = () => deleteCookie(COOKIE_NAME);
 
   /*
-   * rpc(fn, args, { api = '/api', token }) → resuelve con el JSON de la
-   * respuesta. Lanza Error(message||hint||details||HTTP nnn) si !ok.
-   *
-   * `api` permite elegir la base:
-   *   - landing:  '/api'          (Caddy la reenvía a PostgREST)
-   *   - tests:    '/tests/api'    (misma imagen, ruta absoluta)
-   *   - teoria:   '/api'          (dentro del contenedor de teoría)
+   * rpc(fn, args, opts) → JSON de PostgREST.
+   *   opts.api    → base ('/api' por defecto).
+   *   opts.token  → sobreescribe el token; pasa null para llamadas
+   *                 anónimas (login, registro).
+   * Lanza Error(message||hint||details||HTTP nnn) si !ok.
    */
   async function rpc(fn, args = {}, opts = {}) {
     const api = opts.api || '/api';
@@ -102,7 +91,7 @@
     COOKIE_NAME, COOKIE_HORAS,
     cookieDomain,
     getCookie, setCookie, deleteCookie,
-    parseJwt, jwtSub,
+    parseJwt,
     getToken, setToken, clearToken,
     rpc,
   };

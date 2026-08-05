@@ -1,367 +1,197 @@
 """
-Aprentix · notificador
-======================
+Aprentix · notificador (Web Push).
+==================================
 
-Servicio residente que, cada N minutos:
-  1. Comprueba si estamos dentro de la ventana horaria (Europe/Madrid por
-     defecto) mediante _push_en_ventana() en la BBDD.
-  2. Consulta candidatos a recibir push:
-       - push_candidatos_repaso()      → tienen preguntas de repaso vencidas.
-       - push_candidatos_inactividad() → llevan demasiadas horas sin entrar.
-  3. Para cada candidato, envía un Web Push firmado con VAPID a todas sus
-     suscripciones activas (pywebpush).
-  4. Registra el envío en push_envios (para el rate-limit) y desactiva las
-     suscripciones que devuelvan 404/410 (el navegador las tiró).
+Worker residente que consume la tabla `cola_push` de la BBDD y envía
+cada fila como Web Push VAPID a todas las suscripciones activas del
+destinatario. La BBDD es la única cola: la SPA (o la RPC
+`push_enviar_prueba`) insertan filas y este servicio las procesa.
 
-La BBDD es la fuente de verdad para *cuándo* y *a quién* avisar: la ventana,
-el mínimo de vencidas y los cooldowns viven en la tabla `config`. Cambiar
-un valor allí surte efecto en el siguiente tick sin redeploy.
+Ciclo por tick (TICK_SECONDS, por defecto 60 s):
+
+  1. SELECT ... FROM cola_push WHERE enviado_en IS NULL
+       AND intentos < max_intentos ORDER BY encolado_en LIMIT BATCH.
+  2. Para cada fila, envía Web Push a cada suscripción activa del usuario.
+     - 404/410 desactiva la suscripción (el navegador la tiró).
+  3. Marca la fila como enviada o incrementa `intentos` con `ultimo_error`.
 
 Variables de entorno:
-  DATABASE_URL          postgresql://aprentix@db:5432/aprentix
-  PGPASSWORD            (contraseña del rol aprentix)
-  VAPID_PRIVATE_KEY     clave privada VAPID en formato PEM (una línea con \\n)
-  VAPID_PUBLIC_KEY      clave pública VAPID (opcional, solo para log)
-  VAPID_SUBJECT         mailto:soporte@aprentix.es
-  TICK_SECONDS          intervalo entre ciclos (default 300 = 5 min)
+  DATABASE_URL       postgres://aprentix@db:5432/<DB_NAME>
+  PGPASSWORD         contraseña del rol de conexión
+  VAPID_PRIVATE_KEY  clave privada VAPID (PEM con saltos reales o "\\n")
+  VAPID_PUBLIC_KEY   solo para log (opcional)
+  VAPID_SUBJECT      mailto:soporte@aprentix.es
+  TICK_SECONDS       intervalo entre ciclos (default 60)
+  BATCH              máximo de mensajes por tick (default 50)
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
 import signal
 import sys
 import time
-from dataclasses import dataclass
-from typing import Iterable
-
-import base64
 
 import psycopg
-from py_vapid import Vapid01
 from pywebpush import WebPushException, webpush
 
 
-# ── Configuración desde entorno ────────────────────────────────────────────
+# ── Utilidades ──────────────────────────────────────────────────────
 
 def _normalizar_vapid_key(raw: str) -> str:
-    """
-    Acepta la clave privada VAPID en cualquiera de estos formatos:
-
-      1) PEM con saltos REALES:
-             -----BEGIN PRIVATE KEY-----
-             MIGHA...
-             -----END PRIVATE KEY-----
-         (funciona si tu backend de secretos permite valores multilínea)
-
-      2) PEM con '\\n' LITERALES:
-             -----BEGIN PRIVATE KEY-----\\nMIGHA...\\n-----END PRIVATE KEY-----\\n
-         (necesario en .env de Dokploy y en la mayoría de UIs de secretos,
-          porque los .env no soportan valores multilínea sin escape).
-
-      3) Base64 del PEM entero:
-             LS0tLS1CRUdJTiBQUklWQVRFI...
-         (útil si tu UI escapa mal las barras: base64 no tiene ni '/' ni
-          saltos que confundan al parser)
-
-    Devuelve siempre PEM con saltos reales, que es lo que espera
-    pywebpush → cryptography.
-    """
+    """Acepta la clave privada VAPID en PEM (multilínea o con '\\n'
+    literales) o base64 del PEM entero; devuelve siempre PEM con
+    saltos reales, que es lo que espera cryptography."""
     s = raw.strip()
-
-    # 1) Ya viene con saltos reales.
     if "-----BEGIN" in s and "\n" in s:
         return s
-
-    # 2) Saltos codificados como '\n' literales (dos caracteres).
     if "-----BEGIN" in s and "\\n" in s:
         return s.replace("\\n", "\n")
-
-    # 3) Base64 del PEM entero.
     try:
-        # Padding tolerante (algunos generadores omiten '=').
         pad = "=" * ((4 - len(s) % 4) % 4)
         decoded = base64.b64decode(s + pad).decode("utf-8")
         if "-----BEGIN" in decoded:
             return decoded
     except Exception:  # noqa: BLE001
         pass
-
     raise SystemExit(
-        "VAPID_PRIVATE_KEY no reconocida. Debe ser un PEM (con saltos reales "
-        "o con '\\n' literales) o el PEM entero codificado en base64."
+        "VAPID_PRIVATE_KEY no reconocida. Pega un PEM (con saltos "
+        "reales o '\\n' literales) o el PEM entero en base64."
     )
 
 
 DATABASE_URL      = os.environ["DATABASE_URL"]
 VAPID_PRIVATE_KEY = _normalizar_vapid_key(os.environ["VAPID_PRIVATE_KEY"])
 VAPID_SUBJECT     = os.environ.get("VAPID_SUBJECT", "mailto:soporte@aprentix.es")
-TICK_SECONDS      = int(os.environ.get("TICK_SECONDS", "300"))
-BATCH_LIMIT       = int(os.environ.get("BATCH_LIMIT",  "500"))
+TICK_SECONDS      = int(os.environ.get("TICK_SECONDS", "60"))
+BATCH             = int(os.environ.get("BATCH", "50"))
+
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
-    format="%(asctime)s %(levelname)s %(message)s",
+    format="%(asctime)s %(levelname)s %(name)s :: %(message)s",
 )
 log = logging.getLogger("notificador")
 
 
-def _diagnosticar_pem(pem: str) -> str:
-    """
-    Descripción no-secreta del contenido de VAPID_PRIVATE_KEY para el log de
-    arranque. Ayuda a detectar clásicos: '\\n' literales sin convertir,
-    espacios en lugar de saltos, PEM truncada, CRLF vs LF, etc.  NO imprime
-    la clave completa; sólo la longitud, tipo de saltos y las primeras y
-    últimas 30 caracteres (que son siempre los delimitadores del PEM).
-    """
-    n_nl_reales    = pem.count("\n")
-    n_cr           = pem.count("\r")
-    n_nl_literales = pem.count("\\n")
-    tiene_begin    = "-----BEGIN" in pem
-    tiene_end      = "-----END"   in pem
-    partes = [
-        f"len={len(pem)}",
-        f"BEGIN={tiene_begin}",
-        f"END={tiene_end}",
-        f"newlines_reales={n_nl_reales}",
-        f"CR={n_cr}",
-        f"'\\n'_literales={n_nl_literales}",
-        f"cabecera={pem[:32]!r}",
-        f"cola={pem[-32:]!r}",
-    ]
-    return " ".join(partes)
-
-
-def _cargar_vapid_privada(pem: str) -> Vapid01:
-    """
-    Parsea el PEM una sola vez con py-vapid; devuelve un objeto reutilizable
-    para todas las llamadas a webpush().  Esto evita que pywebpush vuelva a
-    intentar interpretar la clave como base64 raw en cada envío (donde solía
-    fallar con un ValueError críptico).
-    """
-    try:
-        return Vapid01.from_pem(pem.encode("utf-8"))
-    except Exception as e:  # noqa: BLE001
-        raise SystemExit(
-            "No he podido cargar VAPID_PRIVATE_KEY como PEM de EC P-256.\n"
-            f"Error real: {type(e).__name__}: {e}\n"
-            f"Descripción del contenido recibido: {_diagnosticar_pem(pem)}\n"
-            "Pistas:\n"
-            "  - Si 'newlines_reales' es < 4, el .env colapsó los saltos:\n"
-            "    regenera con notificador/gen_vapid.py y usa la variante (A)\n"
-            "    (una sola línea con '\\n' literales) o la (B) (base64 del PEM).\n"
-            "  - Si cabecera no empieza por '-----BEGIN PRIVATE KEY-----',\n"
-            "    algo pegó espacios o cambió el formato antes de llegar.\n"
-            "  - Si 'CR' > 0, el .env tiene CRLF; convierte a LF puro."
-        )
-
-
-def _validar_config_vapid(vapid: Vapid01) -> None:
-    """
-    Comprueba en arranque que la firma end-to-end funciona.  Cualquier fallo
-    aquí (subject inválido, clave con curva rara, etc.) mata el proceso con
-    un mensaje humano en lugar de spamear el log en cada tick.
-    """
-    if not (VAPID_SUBJECT.startswith("mailto:") or VAPID_SUBJECT.startswith("https:")):
-        raise SystemExit(
-            f"VAPID_SUBJECT inválido ({VAPID_SUBJECT!r}). "
-            "Debe empezar por 'mailto:' o 'https:'."
-        )
-    try:
-        vapid.sign({"sub": VAPID_SUBJECT, "aud": "https://example.org"})
-    except Exception as e:  # noqa: BLE001
-        raise SystemExit(
-            "La clave VAPID cargó pero no firma un JWT de prueba: "
-            f"{type(e).__name__}: {e}"
-        )
-    log.info("VAPID cargada y validada (subject=%s)", VAPID_SUBJECT)
-
-
-VAPID_PRIV_OBJ = _cargar_vapid_privada(VAPID_PRIVATE_KEY)
-_validar_config_vapid(VAPID_PRIV_OBJ)
-
-
-# ── Textos motivacionales ──────────────────────────────────────────────────
-# Deliberadamente cortos: en Android e iOS solo se ven ~2 líneas.
-
-def payload_repaso(n_vencidas: int) -> dict:
-    return {
-        "title": "🌱 Toca repaso",
-        "body":  (f"Tienes {n_vencidas} preguntas listas para repasar. "
-                  "¡Vamos a por ellas!"),
-        "tag":   "repaso",
-        "url":   "/tests/?atajo=repasar",
-    }
-
-
-def payload_inactividad(dias: int) -> dict:
-    if dias <= 1:
-        cuerpo = "Ha pasado un día. Unos minutos y no pierdes la racha."
-    elif dias <= 3:
-        cuerpo = f"Llevas {dias} días fuera. Vuelve poco a poco: 5 preguntas cuentan."
-    else:
-        cuerpo = f"Hace {dias} días que no entras. Tu oposición te espera."
-    return {
-        "title": "🔥 Tu racha te espera",
-        "body":  cuerpo,
-        "tag":   "inactividad",
-        "url":   "/tests/?atajo=home",
-    }
-
-
-# ── Modelo simple ──────────────────────────────────────────────────────────
-
-@dataclass
-class Suscripcion:
-    endpoint: str
-    p256dh:   str
-    auth:     str
-
-    def as_subscription_info(self) -> dict:
-        return {
-            "endpoint": self.endpoint,
-            "keys":     {"p256dh": self.p256dh, "auth": self.auth},
-        }
-
-
-# ── Envío con manejo de errores ────────────────────────────────────────────
-
-def enviar_push(sus: Suscripcion, payload: dict) -> tuple[bool, str | None]:
-    """
-    Devuelve (ok, motivo_si_falla). Un motivo con "gone" o "not_found" es
-    señal de que la suscripción está muerta y hay que desactivarla.
-
-    El motivo incluye el mensaje real de la excepción (no solo el tipo) para
-    que se pueda diagnosticar sin abrir la sesión Python: los pywebpush /
-    py-vapid tiran ValueError con textos como "invalid_scheme", "expiration
-    too far in the future", etc. cuando la config está mal, y sin ese texto
-    todo se ve igual desde fuera.
-    """
-    try:
-        # vapid_claims se muta dentro de pywebpush (añade 'aud'/'exp'), y esa
-        # mutación persiste entre llamadas → después de la primera suscripción
-        # las siguientes reciben un 'aud' viejo y fallan. Le pasamos siempre
-        # un dict fresco.
-        webpush(
-            subscription_info=sus.as_subscription_info(),
-            data=json.dumps(payload),
-            vapid_private_key=VAPID_PRIV_OBJ,
-            vapid_claims={"sub": VAPID_SUBJECT},
-            ttl=3600,
-        )
-        return True, None
-    except WebPushException as e:
-        status = getattr(e.response, "status_code", None)
-        if status in (404, 410):
-            return False, "gone"
-        return False, f"http_{status}: {e}" if status else f"network: {e}"
-    except Exception as e:  # noqa: BLE001 — no queremos que un fallo pare el bucle
-        return False, f"error:{type(e).__name__}: {e}"
-
-
-# ── Ciclo principal ────────────────────────────────────────────────────────
-
-def procesar_candidatos(
-    cur: psycopg.Cursor,
-    tipo: str,
-    filas: Iterable[tuple],
-    build_payload,
-) -> int:
-    enviados = 0
-    for usuario_id, medida in filas:
-        payload = build_payload(medida)
-
-        # Todas las suscripciones activas del usuario en un solo round-trip.
+def _enviar_a_suscripciones(cn: psycopg.Connection, usuario_id: str,
+                            payload: dict) -> tuple[int, str | None]:
+    """Envía payload a todas las suscripciones activas del usuario.
+    Devuelve (num_ok, ultimo_error). Desactiva suscripciones caducas."""
+    with cn.cursor() as cur:
         cur.execute(
-            "SELECT endpoint, p256dh, auth FROM push_suscripciones_de(%s);",
+            "SELECT endpoint, p256dh, auth FROM push_suscripciones "
+            "WHERE usuario_id = %s AND activa",
             (usuario_id,),
         )
-        subs = [Suscripcion(*row) for row in cur.fetchall()]
-        if not subs:
-            continue
+        subs = cur.fetchall()
+    if not subs:
+        return 0, "sin_suscripciones_activas"
 
-        exito_alguno = False
-        for s in subs:
-            ok, motivo = enviar_push(s, payload)
-            if ok:
-                exito_alguno = True
-            elif motivo == "gone":
-                cur.execute("SELECT push_marcar_error(%s, %s);", (s.endpoint, motivo))
-                log.info("suscripción desactivada (%s): %s", motivo, s.endpoint[:60])
-            else:
-                # error transitorio → no desactivamos, se reintentará el próximo tick
-                log.warning("push falló (%s) para %s: %s",
-                            motivo, s.endpoint[:60], tipo)
-
-        if exito_alguno:
-            cur.execute(
-                "SELECT push_marcar_envio(%s, %s, %s::jsonb);",
-                (usuario_id, tipo, json.dumps(payload)),
+    ok = 0
+    err_final: str | None = None
+    for endpoint, p256dh, auth in subs:
+        info = {"endpoint": endpoint, "keys": {"p256dh": p256dh, "auth": auth}}
+        try:
+            webpush(
+                subscription_info=info,
+                data=json.dumps(payload),
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": VAPID_SUBJECT},
+                ttl=3600,
             )
-            enviados += 1
+            ok += 1
+            with cn.cursor() as cur:
+                cur.execute(
+                    "UPDATE push_suscripciones SET ultima_ok_en = now() "
+                    "WHERE endpoint = %s",
+                    (endpoint,),
+                )
+        except WebPushException as e:
+            status = getattr(e.response, "status_code", None)
+            err_final = f"HTTP {status}: {e}"[:900]
+            if status in (404, 410):
+                with cn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE push_suscripciones SET activa = false, "
+                        "ultimo_error = %s WHERE endpoint = %s",
+                        (err_final, endpoint),
+                    )
+                log.info("suscripción caducada endpoint=%s", endpoint)
+        except Exception as e:  # noqa: BLE001
+            err_final = str(e)[:900]
+    cn.commit()
+    return ok, err_final
 
-    return enviados
 
-
-def tick(conn: psycopg.Connection) -> None:
-    with conn.cursor() as cur:
-        cur.execute("SELECT _push_en_ventana();")
-        (en_ventana,) = cur.fetchone()
-        if not en_ventana:
-            log.debug("fuera de ventana horaria; skip")
-            return
-
-        # ── Repaso ──
-        cur.execute("SELECT * FROM push_candidatos_repaso() LIMIT %s;",
-                    (BATCH_LIMIT,))
-        candidatos_repaso = cur.fetchall()
-        n_repaso = procesar_candidatos(
-            cur, "repaso", candidatos_repaso, payload_repaso
+def _tick(cn: psycopg.Connection) -> int:
+    """Procesa un lote de push pendientes. Devuelve cuántos entregó."""
+    with cn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, usuario_id, titulo, cuerpo, url, icono
+              FROM cola_push
+             WHERE enviado_en IS NULL AND intentos < max_intentos
+             ORDER BY encolado_en
+             LIMIT %s
+             FOR UPDATE SKIP LOCKED
+            """,
+            (BATCH,),
         )
+        pendientes = cur.fetchall()
 
-        # ── Inactividad ──
-        cur.execute("SELECT * FROM push_candidatos_inactividad() LIMIT %s;",
-                    (BATCH_LIMIT,))
-        candidatos_inactividad = cur.fetchall()
-        n_inact = procesar_candidatos(
-            cur, "inactividad", candidatos_inactividad, payload_inactividad
-        )
-
-    conn.commit()
-    if n_repaso or n_inact:
-        log.info("tick: repaso=%d inactividad=%d", n_repaso, n_inact)
+    entregados = 0
+    for row_id, usuario_id, titulo, cuerpo, url, icono in pendientes:
+        payload = {"title": titulo, "body": cuerpo, "url": url, "icon": icono}
+        ok, err = _enviar_a_suscripciones(cn, str(usuario_id), payload)
+        with cn.cursor() as cur:
+            if ok > 0:
+                cur.execute(
+                    "UPDATE cola_push SET enviado_en = now(), "
+                    "intentos = intentos + 1 WHERE id = %s",
+                    (row_id,),
+                )
+                entregados += 1
+                log.info("entregado id=%s destinos=%d", row_id, ok)
+            else:
+                cur.execute(
+                    "UPDATE cola_push SET intentos = intentos + 1, "
+                    "ultimo_error = %s WHERE id = %s",
+                    (err or "sin_destinos", row_id),
+                )
+                log.warning("fallo id=%s error=%s", row_id, err)
+        cn.commit()
+    return entregados
 
 
 def main() -> int:
-    parar = False
+    log.info("arranca notificador subject=%s batch=%s tick=%ss",
+             VAPID_SUBJECT, BATCH, TICK_SECONDS)
 
-    def _handle(signum, _frame):
-        nonlocal parar
-        log.info("señal %s recibida, salgo tras el tick actual", signum)
-        parar = True
-    signal.signal(signal.SIGTERM, _handle)
-    signal.signal(signal.SIGINT,  _handle)
+    stop = {"flag": False}
+    def _handler(signum, _frame):  # noqa: ARG001
+        log.info("recibida señal %s — cerrando", signum)
+        stop["flag"] = True
+    signal.signal(signal.SIGTERM, _handler)
+    signal.signal(signal.SIGINT,  _handler)
 
-    log.info("notificador arrancado (tick=%ss, batch=%d)",
-             TICK_SECONDS, BATCH_LIMIT)
-
-    while not parar:
+    while not stop["flag"]:
         try:
-            with psycopg.connect(DATABASE_URL, autocommit=False) as conn:
-                tick(conn)
-        except Exception:  # noqa: BLE001
-            log.exception("fallo en el tick; reintento en 30s")
-            time.sleep(30)
-            continue
-        # Sleep con exit temprano si nos avisan.
-        for _ in range(TICK_SECONDS):
-            if parar:
-                break
-            time.sleep(1)
+            with psycopg.connect(DATABASE_URL, autocommit=False) as cn:
+                while not stop["flag"]:
+                    _tick(cn)
+                    time.sleep(TICK_SECONDS)
+        except psycopg.OperationalError as e:
+            log.error("BBDD inalcanzable (%s); reintento en 10 s", e)
+            time.sleep(10)
+        except Exception as e:  # noqa: BLE001
+            log.exception("error en el ciclo principal: %s", e)
+            time.sleep(15)
 
-    log.info("notificador parado")
+    log.info("notificador detenido")
     return 0
 
 

@@ -1,22 +1,137 @@
-# Compose maestro SOLO para desarrollo local.
+# =============================================================================
+# Aprentix — docker-compose único.
 #
-# En producción (Dokploy) NO se usa: cada carpeta bajo deploy/ es una
-# Compose Application independiente que se puede redesplegar por
-# separado. Aquí incluimos los composes que interesen para poder
-# levantar todo el stack de una tacada.
+# Todo el stack en un solo fichero: Postgres + PostgREST + frontend
+# Caddy + worker de emails + worker de Web Push.  Dokploy despliega
+# este fichero como una única Compose Application.
 #
-# Modo único (unificado). Un solo contenedor con Caddy + uvicorn
-# sirve landing + tests + teoría desde web/. Se despliega desde deploy/app/.
-# Es más simple: menos partes móviles y un solo redeploy tras cualquier
-# cambio de frontend.
+# Los `container_name` llevan prefijo `aprentix-` para no chocar en la
+# red compartida `dokploy-network` cuando conviva con otros stacks
+# (por ejemplo, un pgAdmin ya existente que quiera conectarse a
+# `aprentix-db`).
 #
-# El modo segmentado (un stack por SPA) se retiró junto con las carpetas
-# landing/ y teoria/site/ al unificar el frontend bajo web/.
-#
-# Requiere Docker Compose 2.20 o superior (por `include:`).
+# Las variables son las mismas que en cualquier entorno — sólo cambia
+# el valor en `.env` (ver `.env.example`).  Ningún nombre lleva el
+# sufijo del entorno.
+# =============================================================================
 
-include:
-  - deploy/core/docker-compose.yml
-  - deploy/app/docker-compose.yml
-  - deploy/notificador/docker-compose.yml
-  - deploy/backups/docker-compose.yml
+services:
+
+  db:
+    image: postgres:16
+    container_name: aprentix-db
+    environment:
+      POSTGRES_DB:       ${DB_NAME:?DB_NAME requerida}
+      POSTGRES_USER:     aprentix
+      POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS requerida}
+    command:
+      - postgres
+      - -c
+      - app.jwt_secret=${JWT_SECRET:?JWT_SECRET requerida}
+      - -c
+      - app.admin_pass=${ADMIN_PASS:?ADMIN_PASS requerida}
+      - -c
+      - app.auth_pass=${AUTH_PASS:?AUTH_PASS requerida}
+    volumes:
+      # Volumen local del proyecto (Docker lo llama <stack>_pg_data). Al
+      # ser Dokploy quien nombra el stack, no colisiona con otros.
+      - pg_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+    networks: [dokploy-network]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aprentix -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgrest:
+    image: postgrest/postgrest:v12.2.3
+    container_name: aprentix-postgrest
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI:                    postgres://autenticador@aprentix-db:5432/${DB_NAME}
+      PGPASSWORD:                      ${AUTH_PASS}
+      PGRST_DB_ANON_ROLE:              web_anon
+      PGRST_DB_SCHEMAS:                public
+      PGRST_JWT_SECRET:                ${JWT_SECRET}
+      PGRST_OPENAPI_SERVER_PROXY_URI:  https://${DOMINIO_API}
+    restart: unless-stopped
+    networks: [dokploy-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=dokploy-network"
+      - "traefik.http.routers.aprentix-api.rule=Host(`${DOMINIO_API}`)"
+      - "traefik.http.routers.aprentix-api.entrypoints=websecure"
+      - "traefik.http.routers.aprentix-api.tls=true"
+      - "traefik.http.routers.aprentix-api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.aprentix-api.loadbalancer.server.port=3000"
+
+  app:
+    build:
+      context: .
+      dockerfile: deploy/app/Dockerfile
+    container_name: aprentix-app
+    depends_on: [postgrest]
+    restart: unless-stopped
+    networks: [dokploy-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=dokploy-network"
+      - "traefik.http.routers.aprentix-web.rule=Host(`${DOMINIO_WEB}`)"
+      - "traefik.http.routers.aprentix-web.entrypoints=websecure"
+      - "traefik.http.routers.aprentix-web.tls=true"
+      - "traefik.http.routers.aprentix-web.tls.certresolver=letsencrypt"
+      - "traefik.http.services.aprentix-web.loadbalancer.server.port=80"
+
+  mailer:
+    build:
+      context: ./mailer
+      dockerfile: Dockerfile
+    container_name: aprentix-mailer
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://aprentix@aprentix-db:5432/${DB_NAME}
+      PGPASSWORD:   ${DB_PASS}
+      SMTP_HOST:    ${SMTP_HOST}
+      SMTP_PORT:    ${SMTP_PORT:-587}
+      SMTP_USER:    ${SMTP_USER:-}
+      SMTP_PASS:    ${SMTP_PASS:-}
+      SMTP_FROM:    ${SMTP_FROM:-No Contestar <no-reply@aprentix.es>}
+      SMTP_TLS:     ${SMTP_TLS:-starttls}
+      TICK_SECONDS: ${MAILER_TICK:-30}
+      BATCH:        ${MAILER_BATCH:-25}
+      LOG_LEVEL:    ${MAILER_LOG:-INFO}
+    restart: unless-stopped
+    networks: [dokploy-network]
+
+  notificador:
+    build:
+      context: ./notificador
+      dockerfile: Dockerfile
+    container_name: aprentix-notificador
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL:      postgres://aprentix@aprentix-db:5432/${DB_NAME}
+      PGPASSWORD:        ${DB_PASS}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_PUBLIC_KEY:  ${VAPID_PUBLIC_KEY:-}
+      VAPID_SUBJECT:     ${VAPID_SUBJECT:-mailto:soporte@aprentix.es}
+      TICK_SECONDS:      ${NOTIF_TICK:-60}
+      BATCH:             ${NOTIF_BATCH:-50}
+      LOG_LEVEL:         ${NOTIF_LOG:-INFO}
+    restart: unless-stopped
+    networks: [dokploy-network]
+
+volumes:
+  pg_data:
+
+networks:
+  dokploy-network:
+    external: true
