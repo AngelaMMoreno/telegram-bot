@@ -217,60 +217,28 @@ body.no-header main#root > .auth-section { width: 100%; }
 .pregunta .opciones {
   display: flex; flex-direction: column; gap: .4rem;
 }
-/* .opcion — botón de una respuesta de test.
- *
- * Antes usaba `--glass-bg`, que sobre el fondo ambiental marfil deja el
- * texto casi ilegible. Ahora es una superficie plana `--bg-panel` con
- * borde suave y radio orgánico del sistema; hereda el mismo contraste
- * de texto que las tarjetas del resto de la app en día y noche.
- *
- * Estados (todos con la paleta tokenizada, nada de literales hex):
- *   :hover       →  fondo `--pri-soft`, borde `--pri`
- *   .elegida     →  la que ha marcado el usuario mientras aún no ha
- *                  confirmado (transitorio; hoy click = respuesta, pero
- *                  se mantiene la clase por si en el futuro añadimos
- *                  paso "confirmar")
- *   .correcta    →  verde éxito translúcido + borde `--success`
- *   .mala        →  terracota `--danger-soft` + borde `--danger`
- *   [disabled]   →  sin cursor pointer (el resto del look lo hereda del
- *                  estado que corresponda; los colores no cambian)
- */
 .opcion {
-  padding: .85rem 1rem;
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius);
+  padding: .7rem 1rem;
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
   cursor: pointer;
-  background: var(--bg-panel);
-  color: var(--txt);
+  background: var(--glass-bg);
   text-align: left;
-  min-height: 50px;
-  font: inherit;
-  font-size: .98em;
-  line-height: 1.4;
-  transition: background .12s ease, border-color .12s ease, box-shadow .12s ease;
+  transition: background .12s ease, border-color .12s ease;
 }
-.opcion:hover:not([disabled]) {
-  background: var(--pri-soft);
-  border-color: var(--pri);
-}
-.opcion:focus-visible {
-  outline: 3px solid var(--pri);
-  outline-offset: 2px;
-}
-.opcion.elegida  { border-color: var(--accent);  background: var(--accent-soft); }
-.opcion.correcta { border-color: var(--success); background: var(--success-soft, var(--pri-soft)); color: var(--txt); }
-.opcion.mala     { border-color: var(--danger);  background: var(--danger-soft, var(--coral-soft)); color: var(--txt); }
+.opcion:hover:not([disabled]) { background: var(--accent-soft); }
+.opcion.elegida  { border-color: var(--accent); background: var(--accent-soft); }
+.opcion.correcta { border-color: #4a8f2a; background: #d4edc7; }
+.opcion.mala     { border-color: #b83a3a; background: #f5cccc; }
 .opcion[disabled] { cursor: default; }
 
 .explicacion {
   margin-top: .8rem;
-  padding: .85rem 1rem;
+  padding: .8rem 1rem;
   background: var(--accent-soft);
   border-left: 3px solid var(--accent);
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   font-size: .95em;
-  color: var(--txt);
-  line-height: 1.5;
 }
 
 /* ── Teoría (markdown) ─────────────────────────────────────────────── */
@@ -2276,162 +2244,4 @@ input[type="number"]::-webkit-inner-spin-button:hover {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: .6rem;
-}
-
-/* ── Inicio · "Diario del estudio" ─────────────────────────────────────
- *
- * Portada minimalista de una sola pantalla móvil. La idea es que abrir
- * Aprentix se parezca a abrir un diario en la mesa de estudio: una
- * página con la fecha, una tarjeta grande que dice "hoy toca esto", y
- * dos chips discretos al pie. Sin scroll, sin listas, sin decisiones.
- *
- * La estética juega con superficies planas sobre el fondo ambiental
- * solarpunk (marfil / bosque bioluminiscente); los colores del tema
- * activo entran por las CSS custom `--tema-border/soft/strong` que
- * inyecta la vista.
- */
-.diario {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  min-height: calc(100vh - 200px);  /* deja hueco al bottom-nav sin scroll */
-  padding: .25rem 0;
-}
-.diario-cabecera {
-  display: flex;
-  justify-content: center;
-}
-.diario-op-chip {
-  max-width: 100%;
-}
-.diario-fecha {
-  margin: .25rem 0 0;
-  text-align: center;
-  color: var(--txt-soft);
-  font-size: 1.05rem;
-  letter-spacing: .01em;
-  font-weight: 500;
-}
-.diario-card {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 1.25rem;
-  margin: 1rem 0;
-  padding: 1.5rem 1.3rem 1.35rem;
-  background: linear-gradient(160deg, var(--tema-soft, var(--pri-soft)) 0%, var(--bg-panel) 90%);
-  border: 1.5px solid var(--tema-border, var(--border));
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-  cursor: pointer;
-  color: var(--txt);
-  text-align: left;
-  font: inherit;
-  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
-  min-height: 220px;
-  justify-content: space-between;
-}
-.diario-card:hover:not([disabled]) {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
-}
-.diario-card:focus-visible {
-  outline: 3px solid var(--pri);
-  outline-offset: 3px;
-}
-.diario-card[disabled] {
-  cursor: default;
-  opacity: .8;
-}
-.diario-card-copy {
-  display: flex;
-  flex-direction: column;
-  gap: .35rem;
-}
-.diario-card-etiqueta {
-  font-size: .78rem;
-  font-weight: 700;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--tema-strong, var(--pri-d));
-}
-.diario-card-titulo {
-  font-size: 1.6rem;
-  line-height: 1.15;
-  font-weight: 800;
-  color: var(--txt);
-  word-break: break-word;
-}
-.diario-card-meta {
-  font-size: .95rem;
-  color: var(--txt-soft);
-  line-height: 1.4;
-}
-.diario-card-cta {
-  align-self: flex-start;
-  padding: .75rem 1.15rem;
-  background: var(--tema-border, var(--pri));
-  color: var(--bg-panel);
-  border-radius: var(--radius);
-  font-weight: 700;
-  font-size: .98rem;
-  box-shadow: var(--shadow-sm);
-}
-[data-theme="dark"] .diario-card-cta { color: #14241D; }
-
-.diario-pie {
-  margin-top: auto;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: .5rem;
-  padding-top: .5rem;
-}
-.diario-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: .4rem;
-  padding: .35rem .7rem;
-  background: transparent;
-  border: 1.5px solid var(--border);
-  border-radius: 999px;
-  color: var(--txt-soft);
-  font-size: .88rem;
-  cursor: pointer;
-  transition: border-color .15s, color .15s;
-}
-.diario-chip:hover {
-  border-color: var(--accent);
-  color: var(--txt);
-}
-.diario-link {
-  color: var(--pri-d);
-  font-size: .95rem;
-  font-weight: 600;
-  text-decoration: none;
-  padding: .3rem .2rem;
-}
-.diario-link:hover { text-decoration: underline; }
-[data-theme="dark"] .diario-link { color: var(--pri); }
-
-
-/* ── Perfil · rejilla de accesos rápidos ──────────────────────────────
- * Contenedor para las .op-card que sustituyen las pestañas Logros y
- * Tablón, que salen del menú inferior en el rediseño. Una columna en
- * móvil, dos en tablet+; sin scroll horizontal.
- */
-.perfil-accesos {
-  display: grid;
-  gap: .55rem;
-  margin-top: .5rem;
-}
-@media (min-width: 640px) {
-  .perfil-accesos { grid-template-columns: 1fr 1fr; }
-}
-.perfil-accesos .op-card { text-align: left; cursor: pointer; }
-.perfil-accesos .op-card[disabled] {
-  opacity: .55;
-  cursor: not-allowed;
-  transform: none;
 }

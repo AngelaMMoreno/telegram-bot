@@ -45,18 +45,6 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
     c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-  // Fisher–Yates in-place — se usa para aleatorizar las opciones de cada
-  // pregunta al arrancar un test. `Math.random() - 0.5` como comparador de
-  // sort() no es uniforme (los navegadores lo sesgan según el algoritmo
-  // que use su V8/JSC), así que evitamos ese atajo aquí.
-  function shuffleInPlace(arr) {
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
-  }
-
   function showToast(msg, ms = 2500) {
     toast.textContent = msg;
     toast.classList.remove('hidden');
@@ -193,10 +181,7 @@
     { re: /^\/estadisticas$/,                view: viewEstadisticas },
     { re: /^\/plan$/,                        view: viewPlan },
     { re: /^\/logros$/,                      view: viewLogrosRetos },
-    // /perfil es el nombre nuevo (aparece en el menú inferior). /mi-cuenta
-    // se conserva como alias para no romper enlaces guardados / accesos
-    // desde el sheet del avatar.
-    { re: /^\/(?:perfil|mi-cuenta)$/,        view: viewMiCuenta },
+    { re: /^\/mi-cuenta$/,                   view: viewMiCuenta },
     { re: /^\/elegir-oposicion$/,            view: viewElegirOposicion },
     { re: /^\/admin\/usuarios$/,             view: viewAdminUsuarios },
     { re: /^\/admin\/duplicados$/,           view: viewAdminDuplicados },
@@ -284,21 +269,6 @@
   }
 
   function _msgError(code) {
-    const raw = String(code || '');
-    // Códigos del importador JSON de preguntas: `pregunta_<N>_<motivo>`.
-    // Los reconocemos por patrón para no listar uno por índice; el número
-    // que sale ayuda al autor a localizar la pregunta problemática.
-    const mImport = raw.match(/^pregunta_(\d+)_(sin_enunciado|pocas_opciones|opcion_vacia|sin_correcta)$/);
-    if (mImport) {
-      const n = mImport[1];
-      const motivo = ({
-        sin_enunciado:  'no tiene enunciado',
-        pocas_opciones: 'necesita al menos 2 opciones',
-        opcion_vacia:   'tiene alguna opción sin texto',
-        sin_correcta:   'no marca ninguna opción como correcta (usa `correcta:true` o el prefijo `*`)',
-      })[mImport[2]];
-      return `Pregunta ${n}: ${motivo}.`;
-    }
     return ({
       credenciales_invalidas: 'Email o contraseña incorrectos.',
       cuenta_bloqueada:       'Cuenta bloqueada temporalmente por intentos fallidos.',
@@ -312,10 +282,7 @@
       fichero_requerido:      'Elige un fichero markdown.',
       contenido_vacio:        'El fichero está vacío.',
       tiene_progreso:         'Hay usuarios con progreso aquí. Archívalo en vez de borrarlo.',
-      json_invalido:          'El texto no es un JSON válido.',
-      debe_ser_array:         'El JSON tiene que ser un array de preguntas.',
-      array_vacio:            'El array de preguntas está vacío.',
-    })[raw] || raw;
+    })[code] || code;
   }
 
 
@@ -514,42 +481,17 @@
   }
 
 
-  // ── Vista: Inicio · "Diario del estudio" ──────────────────────────
-  //
-  // Portada minimalista pensada para una sola pantalla móvil sin scroll.
-  // La idea es que al abrir Aprentix veas UNA cosa que hacer hoy y nada
-  // más: un diario abierto en la mesa. Fuera de aquí quedan:
-  //
-  //   - La lista de temas → botón "Ver todos los temas" en el pie
-  //     que lleva a `#/temas` (o al primer tema si sólo hay uno).
-  //   - Las estadísticas globales → pestaña `Estadísticas`.
-  //   - El botón "Repasar" → vive dentro de `Plan` (como sección "Repaso
-  //     pendiente"), no en el Inicio.
-  //
-  // Contenido:
-  //   1. Fecha en tipografía suave — la "página" del diario.
-  //   2. Chip discreto de la oposición activa (con dropdown para cambiar).
-  //   3. Tarjeta protagonista "Hoy toca":
-  //        - Si el `Plan` tiene una tarea programada para hoy, ésa.
-  //        - Fallback: siguiente módulo con progreso < 100 dentro de la
-  //          oposición activa. Si todo está al 100%, ofrece "Repasar la
-  //          oposición" (40 preguntas SRS) como sugerencia.
-  //   4. Chip pequeño de racha (tap → Estadísticas).
-  //   5. Link textual al pie: "Ver todos los temas" — sin botones grandes
-  //      que compitan con la card de "Hoy toca".
-  //
-  // Nota: mientras `viewPlan` sigue en fase "próximamente", el fallback
-  // funciona igualmente y sirve al usuario. Cuando el Plan real esté
-  // listo, sustituiremos la selección local por una llamada a la RPC
-  // `mi_plan_hoy` (u homóloga) sin tocar el layout.
   async function viewHome() {
     loading();
     // Averigua la oposición activa: preferencia local, o la primera del usuario.
     let opId = getCtx().oposicion_id;
+    // Siempre pedimos la lista al backend para poder validar la preferida y
+    // detectar el caso "primer login sin oposición".
     const list = await _misOposiciones();
     if (opId && !list.some(o => o.id === opId)) opId = null;   // stale ctx
     if (!opId && list.length) opId = list[0].id;
     if (!opId) {
+      // Primer login (o borrado de sus oposiciones): mandamos al picker.
       navigate('#/elegir-oposicion');
       return;
     }
@@ -559,129 +501,181 @@
     const op = home.oposicion || {};
     const temas = home.temas || [];
 
+    // Métricas agregadas para la franja de estadísticas del home. Todo se
+    // deriva del payload de `mi_home_oposicion` (secciones_ok/total por
+    // módulo) sin pedir más RPCs. El tiempo total es una estimación amable
+    // (~15 min por sección) para dar sensación de progreso longitudinal.
+    let seccOk = 0, seccTot = 0, modTot = 0;
+    for (const t of temas) {
+      for (const m of (t.modulos || [])) {
+        seccOk += Number(m.secciones_ok) || 0;
+        seccTot += Number(m.secciones_total) || 0;
+        modTot += 1;
+      }
+    }
+    const progresoGlobal = seccTot === 0 ? 0 : Math.round(100 * seccOk / seccTot);
+    const tiempoEstim = _duracionEstimada(seccTot * 15);
+
+    // Racha: la trae `mi_gamificacion`. Es la misma info que la cabecera; la
+    // duplicamos en el home para que la stat-strip esté completa aunque el
+    // usuario ya la vea arriba (refuerza el hábito).
     const gm = await S.rpc('mi_gamificacion').catch(() => ({}));
     const racha = Number(gm?.racha_actual) || 0;
+
+    // Tema "por donde lo dejaste": el primero con progreso parcial (> 0 y
+    // < 100). Si no hay ninguno con progreso, el primer tema pendiente. Si
+    // todo está al 100%, mostramos el primero (para poder repasar). Sin
+    // temas, esta card se oculta.
+    const temaContinuar = temas.find(t => t.pct > 0 && t.pct < 100)
+                        || temas.find(t => t.pct < 100)
+                        || temas[0]
+                        || null;
+
     const admin = _esAdmin();
-
-    // "Hoy toca": el primer módulo del primer tema no completado. Si todo
-    // el temario está al 100%, la card se convierte en una invitación a
-    // repasar la oposición. Si no hay temas asignados, mostramos empty.
-    let sugerencia = null;   // {tema, modulo?, tipo: 'estudia' | 'repasa' | 'vacio'}
-    if (temas.length > 0) {
-      let temaAbierto = null, moduloSiguiente = null;
-      for (const t of temas) {
-        for (const m of (t.modulos || [])) {
-          const okM = Number(m.secciones_ok) || 0;
-          const totM = Number(m.secciones_total) || 0;
-          if (totM === 0 || okM < totM) {
-            temaAbierto = t; moduloSiguiente = m;
-            break;
-          }
-        }
-        if (temaAbierto) break;
-      }
-      if (temaAbierto) {
-        sugerencia = { tipo: 'estudia', tema: temaAbierto, modulo: moduloSiguiente };
-      } else {
-        // Todo al 100% → invitamos a repasar la oposición entera.
-        sugerencia = { tipo: 'repasa', tema: temas[0], modulo: null };
-      }
-    } else {
-      sugerencia = { tipo: 'vacio' };
-    }
-
-    // Fecha estilo diario: "Martes 5 · Agosto".
-    const hoy = new Date();
-    const diaSemana = hoy.toLocaleDateString('es-ES', { weekday: 'long' });
-    const diaMes   = hoy.getDate();
-    const mes      = hoy.toLocaleDateString('es-ES', { month: 'long' });
-    const fecha    = `${diaSemana.charAt(0).toUpperCase() + diaSemana.slice(1)} ${diaMes} · ${mes.charAt(0).toUpperCase() + mes.slice(1)}`;
-
-    // Paleta para la card protagonista: la del tema sugerido, o la
-    // primera si no hay tema aún.
-    const palIdx = sugerencia.tema ? temas.indexOf(sugerencia.tema) : 0;
-    const pal = _paletaTema(Math.max(0, palIdx));
-
-    // Construimos el cuerpo de la card según el estado.
-    let cardCopy = '';
-    let cardCta  = '';
-    let cardDataHref = '';
-    if (sugerencia.tipo === 'estudia') {
-      const idxTema = temas.indexOf(sugerencia.tema) + 1;
-      cardCopy = html`
-        <small class="diario-card-etiqueta">Hoy toca</small>
-        <strong class="diario-card-titulo">${sugerencia.modulo?.nombre || sugerencia.tema.nombre}</strong>
-        <span class="diario-card-meta">Tema ${idxTema} · ${sugerencia.tema.nombre}</span>
-      `;
-      cardCta = 'Empezar sesión de hoy';
-      cardDataHref = sugerencia.modulo
-        ? `#/modulo/${sugerencia.modulo.id}`
-        : `#/tema/${sugerencia.tema.id}`;
-    } else if (sugerencia.tipo === 'repasa') {
-      cardCopy = html`
-        <small class="diario-card-etiqueta">Todo completado</small>
-        <strong class="diario-card-titulo">Repasa la oposición</strong>
-        <span class="diario-card-meta">40 preguntas mezcladas para mantener la memoria fresca.</span>
-      `;
-      cardCta = 'Repasar ahora';
-      cardDataHref = `#/repaso/${opId}`;
-    } else {
-      cardCopy = html`
-        <small class="diario-card-etiqueta">Sin contenido todavía</small>
-        <strong class="diario-card-titulo">Aún no hay temas asignados</strong>
-        <span class="diario-card-meta">${admin
-          ? 'Añade temas a esta oposición desde el panel de administración.'
-          : 'Vuelve pronto — un administrador está preparando el temario.'}</span>
-      `;
-      cardCta = admin ? 'Ir al panel admin' : '';
-      cardDataHref = admin ? `#/admin/contenido/oposicion/${opId}` : '';
-    }
+    const varsCont = temaContinuar
+      ? _paletaTema(temas.indexOf(temaContinuar))
+      : _paletaTema(0);
 
     root.innerHTML = html`
-      <div class="diario">
-        <div class="diario-cabecera">
-          <button class="oposicion-chip diario-op-chip" id="btn-cambiar-op"
-                  title="Cambiar de oposición">
-            <span class="oposicion-chip-ico" aria-hidden="true">📚</span>
-            <span class="oposicion-chip-nombre">${op.nombre || 'Elige una oposición'}</span>
-            <span class="oposicion-chip-caret" aria-hidden="true">▾</span>
-          </button>
-        </div>
-
-        <p class="diario-fecha">${fecha}</p>
-
-        <button class="diario-card diario-card-${sugerencia.tipo}"
-                type="button"
-                ${cardDataHref ? `data-href="${cardDataHref}"` : 'disabled'}
-                style="--tema-border:${raw(pal.border)}; --tema-soft:${raw(pal.soft)}; --tema-strong:${raw(pal.strong)};">
-          <span class="diario-card-copy">${raw(cardCopy)}</span>
-          ${raw(cardCta ? html`<span class="diario-card-cta">${cardCta}</span>` : '')}
+      <div class="home-top-actions">
+        <button class="oposicion-chip" id="btn-cambiar-op"
+                title="Cambiar de oposición">
+          <span class="oposicion-chip-ico">📚</span>
+          <span class="oposicion-chip-nombre">${op.nombre || 'Elige una oposición'}</span>
+          <span class="oposicion-chip-caret" aria-hidden="true">▾</span>
         </button>
-
-        <div class="diario-pie">
-          ${raw(racha > 0 ? html`
-            <button class="diario-chip" id="chip-racha" type="button"
-                    title="Ver estadísticas">
-              <span aria-hidden="true">🔥</span>
-              <span>${racha} día${racha === 1 ? '' : 's'} de racha</span>
-            </button>
-          ` : '')}
-          ${raw(temas.length > 0 ? html`
-            <a class="diario-link" id="link-temas" href="#/tema/${temas[0].id}">
-              Ver todos los temas
-            </a>
-          ` : '')}
-        </div>
+        ${raw(temas.length > 0 ? html`
+          <button class="repaso-chip" id="btn-repasar-op"
+                  title="Repasar toda la oposición (40 preguntas)">
+            <span class="repaso-chip-ico" aria-hidden="true">🔁</span>
+            <span class="repaso-chip-label">Repasar</span>
+          </button>
+        ` : '')}
       </div>
+
+      <header class="home-head">
+        <span class="home-head-emoji" aria-hidden="true">📚</span>
+        <div>
+          <h1 class="home-title">Temas</h1>
+          <p class="home-subtitle">Explora todos los temas y sigue tu progreso</p>
+        </div>
+      </header>
+
+      ${raw(temaContinuar ? html`
+        <button class="continuar-card" id="btn-continuar"
+                data-tema="${temaContinuar.id}"
+                style="--tema-border:${raw(varsCont.border)}; --tema-soft:${raw(varsCont.soft)}; --tema-strong:${raw(varsCont.strong)};">
+          <span class="continuar-icono" aria-hidden="true">${_iconoTema(temaContinuar.nombre, temas.indexOf(temaContinuar))}</span>
+          <span class="continuar-copy">
+            <small>Continúa por donde lo dejaste</small>
+            <strong>${temaContinuar.nombre}</strong>
+            <span class="continuar-meta">
+              ${temaContinuar.pct}% completado · ${(temaContinuar.modulos || []).length} módulo${(temaContinuar.modulos || []).length === 1 ? '' : 's'}
+            </span>
+          </span>
+          <span class="continuar-cta">Continuar</span>
+        </button>
+      ` : '')}
+
+      ${raw(temas.length > 0 ? html`
+        <section class="stat-strip" aria-label="Resumen de tu progreso">
+          <div class="stat-cell">
+            <span class="stat-ico stat-ico-temas" aria-hidden="true">📗</span>
+            <strong>${temas.length}</strong>
+            <small>Temas</small>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-ico stat-ico-prog" aria-hidden="true">✓</span>
+            <strong>${progresoGlobal}%</strong>
+            <small>Progreso global</small>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-ico stat-ico-time" aria-hidden="true">⏱</span>
+            <strong>${tiempoEstim}</strong>
+            <small>Tiempo total</small>
+          </div>
+          <div class="stat-cell">
+            <span class="stat-ico stat-ico-fire ${racha > 0 ? 'on' : ''}" aria-hidden="true">🔥</span>
+            <strong>${racha}</strong>
+            <small>Racha actual</small>
+          </div>
+        </section>
+      ` : '')}
+
+      ${raw(temas.length > 0 ? html`
+        <div class="section-head">
+          <h2>Todos los temas</h2>
+        </div>
+
+        <div class="tema-lista">
+          ${raw(temas.map((t, idx) => {
+            const pal = _paletaTema(idx);
+            const totalModulos = (t.modulos || []).length;
+            const totalPreg = Number(t.preguntas_total) || 0;
+            const iconoTema = _iconoTema(t.nombre, idx);
+            // Chip principal: preguntas si el backend nuevo ya las devuelve;
+            // si no, número de secciones como fallback compatible con la RPC
+            // antigua para que no salga "0 preguntas" en instancias que
+            // todavía no hayan aplicado la migración 2026-07-29.
+            const totalSecc = (t.modulos || []).reduce(
+              (n, m) => n + (Number(m.secciones_total) || 0), 0);
+            const chipMuted = totalPreg > 0
+              ? `${totalPreg} pregunta${totalPreg === 1 ? '' : 's'}`
+              : `${totalSecc} sección${totalSecc === 1 ? '' : 'es'}`;
+            return html`
+              <button class="tema-tile" data-tema="${t.id}"
+                      style="--tema-border:${raw(pal.border)}; --tema-soft:${raw(pal.soft)}; --tema-strong:${raw(pal.strong)};">
+                <span class="tema-tile-icono" aria-hidden="true">
+                  <span class="tema-tile-icono-emoji">${iconoTema}</span>
+                </span>
+                <span class="tema-tile-body">
+                  <strong class="tema-tile-titulo">${idx + 1}. ${t.nombre}</strong>
+                  <span class="tema-tile-chips">
+                    <span class="tema-tile-chip">${totalModulos} módulo${totalModulos === 1 ? '' : 's'}</span>
+                    <span class="tema-tile-chip muted">${chipMuted}</span>
+                  </span>
+                </span>
+                <span class="tema-tile-progreso" aria-hidden="true">
+                  ${raw(_svgProgreso(t.pct, { size: 44, stroke: 4, color: pal.border }))}
+                </span>
+                <span class="tema-tile-caret" aria-hidden="true">›</span>
+              </button>`;
+          }).join(''))}
+        </div>
+
+        <aside class="consejo-card">
+          <span class="consejo-ico" aria-hidden="true">💡</span>
+          <div>
+            <strong>Consejo del día</strong>
+            <p>${_consejoDelDia()}</p>
+          </div>
+          <span class="consejo-caret" aria-hidden="true">›</span>
+        </aside>
+      ` : '')}
+
+      ${raw(temas.length === 0
+        ? (admin
+            ? html`
+              <div class="empty">
+                <p>Esta oposición aún no tiene temas asignados.</p>
+                <button class="btn btn-pri" id="btn-gestionar-op">
+                  ➕ Añadir temas desde el panel admin
+                </button>
+              </div>`
+            : '<div class="empty">Esta oposición aún no tiene temas asignados.</div>')
+        : '')}
     `;
 
+    root.querySelectorAll('.tema-tile').forEach(c => {
+      c.onclick = () => navigate(`#/tema/${c.dataset.tema}`);
+    });
+    const bc = root.querySelector('#btn-continuar');
+    if (bc) bc.onclick = () => navigate(`#/tema/${bc.dataset.tema}`);
+    const btnR = root.querySelector('#btn-repasar-op');
+    if (btnR) btnR.onclick = () => navigate(`#/repaso/${opId}`);
     root.querySelector('#btn-cambiar-op').onclick = () => _abrirSelectorOposicion();
-
-    const card = root.querySelector('.diario-card[data-href]');
-    if (card) card.onclick = () => navigate(card.dataset.href);
-
-    const cr = root.querySelector('#chip-racha');
-    if (cr) cr.onclick = () => navigate('#/estadisticas');
+    const btnG = root.querySelector('#btn-gestionar-op');
+    if (btnG) btnG.onclick = () => navigate(`#/admin/contenido/oposicion/${opId}`);
   }
 
   // Devuelve `mis_oposiciones` como un array simple.
@@ -1309,15 +1303,6 @@
     if (!intento_id) return empty('No se pudo iniciar el test.');
     const preguntas = await S.rpc('preguntas_de_intento', { p_intento_id: intento_id });
     if (!preguntas || preguntas.length === 0) return empty('El test no tiene preguntas.');
-    // Aleatorizamos las opciones de cada pregunta *una sola vez* al empezar
-    // el intento: si la primera opción escrita en BD fuera siempre la
-    // correcta (bug histórico del importador), el usuario acabaría
-    // aprendiéndose la posición en vez del contenido. Reordenamos las
-    // referencias in-place; el flag `.correcta` viaja con cada objeto, así
-    // que la puntuación sigue siendo correcta sin tocar el backend.
-    for (const p of preguntas) {
-      if (Array.isArray(p.opciones)) shuffleInPlace(p.opciones);
-    }
     // Fija el snapshot ANTES del test para que al finalizar el diff detecte
     // los retos/logros que se hayan desbloqueado durante este intento.
     gamif.snapshot();
@@ -1455,14 +1440,7 @@
   }
 
 
-  // ── Vista: perfil (autoservicio) ───────────────────────────────────
-  //
-  // Reúne cuenta, apariencia, oposiciones y accesos a piezas que salen
-  // del menú inferior (Logros, Tablón). El rediseño colapsó la barra
-  // inferior a 4 pestañas (Inicio · Plan · Estadísticas · Perfil), así
-  // que este es el lugar natural para acceder al resto sin scrolls
-  // extra en la portada. Sigue expuesta como `/mi-cuenta` por
-  // compatibilidad — ambas rutas se resuelven aquí.
+  // ── Vista: mi cuenta (autoservicio) ────────────────────────────────
   async function viewMiCuenta() {
     loading();
     try {
@@ -1470,33 +1448,9 @@
       const ss = await S.rpc('mis_sesiones');
       const mias = await _misOposiciones().catch(() => []);
       const tema = getTheme();
-      const opActiva = getCtx().oposicion_id;
 
       root.innerHTML = html`
-        <div class="view-head"><h2>Perfil</h2></div>
-
-        <div class="panel-card">
-          <h3 class="card-title"><span class="ico">🧭</span> Accesos</h3>
-          <p class="card-subtitle">Piezas que ya no viven en el menú inferior.</p>
-          <div class="perfil-accesos">
-            <button class="op-card" type="button" data-goto="logros">
-              <span class="op-card-ico" aria-hidden="true">🏆</span>
-              <span class="op-card-body">
-                <strong>Logros y retos</strong>
-                <span class="check-item-desc">Medallas, retos diarios, semanales y mensuales.</span>
-              </span>
-            </button>
-            <button class="op-card" type="button" data-goto="tablon" ${opActiva ? '' : 'disabled'}>
-              <span class="op-card-ico" aria-hidden="true">📌</span>
-              <span class="op-card-body">
-                <strong>Tablón</strong>
-                <span class="check-item-desc">${opActiva
-                  ? 'Enlaces útiles de la oposición activa.'
-                  : 'Elige primero una oposición.'}</span>
-              </span>
-            </button>
-          </div>
-        </div>
+        <div class="view-head"><h2>Mi cuenta</h2></div>
 
         <div class="panel-card">
           <h3 class="card-title"><span class="ico">👤</span> Datos de la cuenta</h3>
@@ -1603,19 +1557,6 @@
           </div>
         </div>
       `;
-
-      // Accesos rápidos (Logros / Tablón).
-      root.querySelectorAll('[data-goto]').forEach(b => {
-        b.onclick = () => {
-          const dest = b.dataset.goto;
-          if (dest === 'logros') navigate('#/logros');
-          if (dest === 'tablon') {
-            const op = getCtx().oposicion_id;
-            if (op) navigate(`#/tablon/${op}`);
-            else showToast('Elige primero una oposición.');
-          }
-        };
-      });
 
       // Theme selector.
       root.querySelectorAll('[data-theme]').forEach(b => {
@@ -2828,46 +2769,15 @@
   // Formato aceptado (array):
   //   [{
   //     "pregunta": "enunciado",
-  //     "opciones": [
-  //       {"texto": "…", "correcta": true},
-  //       {"texto": "…", "correcta": false},
-  //       …
-  //     ],
+  //     "opciones": ["Correcta", "Opción 2", "Opción 3", "Opción 4"],
   //     "explicacion": "…"
   //   }, ...]
-  //
-  // Formatos aceptados para las opciones (en orden de prioridad):
-  //   1. Objeto `{texto, correcta}` con `correcta` booleano — el más
-  //      explícito. Se admite marcar más de una como correcta (preguntas
-  //      multi-respuesta).
-  //   2. String con prefijo `*` — ese asterisco marca la correcta. Ej.
-  //      `"* Congreso"` == `{texto: "Congreso", correcta: true}`.
-  //   3. String plano sin `*` — sólo se acepta como fallback si NADIE
-  //      en la pregunta marcó nada; en ese caso caemos al viejo convenio
-  //      "la primera es la correcta", que ya no es la vía recomendada
-  //      pero mantiene compatibilidad con imports antiguos.
-  //
-  // `admin_crear_pregunta` es UPSERT por hash de contenido, así que
-  // reintentar la misma subida no duplica.
+  // La PRIMERA opción es la correcta (convención acordada); el resto se
+  // marcan como incorrectas. `admin_crear_pregunta` es UPSERT por hash
+  // de contenido, así que reintentar la misma subida no duplica.
   function _subirPreguntasJSON(seccionId) {
     let parsed = null;   // array normalizado listo para enviar
     let raw = '';        // texto original para la vista de previsualización
-
-    function _parseOpcion(t) {
-      // Devuelve {texto, correcta, marcada} donde `marcada=true` si la
-      // opción llegó con marcador explícito (`correcta:true` u `*` prefijo).
-      if (t && typeof t === 'object' && !Array.isArray(t)) {
-        const texto = String(t.texto ?? '').trim();
-        const correcta = !!t.correcta;
-        return { texto, correcta, marcada: correcta };
-      }
-      const s = String(t ?? '');
-      const trimmed = s.trim();
-      if (trimmed.startsWith('*')) {
-        return { texto: trimmed.replace(/^\*\s*/, '').trim(), correcta: true, marcada: true };
-      }
-      return { texto: trimmed, correcta: false, marcada: false };
-    }
 
     function _validar(text) {
       let data;
@@ -2883,20 +2793,12 @@
           : String(p.explicacion).trim() || null;
         if (!enunciado) throw new Error(`pregunta_${i+1}_sin_enunciado`);
         if (ops.length < 2) throw new Error(`pregunta_${i+1}_pocas_opciones`);
-        let opciones = ops.map(_parseOpcion);
+        const opciones = ops.map((t, j) => ({
+          texto: String(t ?? '').trim(),
+          correcta: j === 0,
+        }));
         if (opciones.some(o => !o.texto)) throw new Error(`pregunta_${i+1}_opcion_vacia`);
-        // Si NADIE marcó explícitamente, caemos al viejo convenio: la
-        // primera es la correcta. Con al menos una marca, respetamos las
-        // marcas.
-        if (!opciones.some(o => o.marcada)) {
-          opciones = opciones.map((o, j) => ({ ...o, correcta: j === 0 }));
-        }
-        // Descartamos el flag interno `marcada` antes de enviar al RPC.
-        const opcionesFinal = opciones.map(o => ({ texto: o.texto, correcta: o.correcta }));
-        if (!opcionesFinal.some(o => o.correcta)) {
-          throw new Error(`pregunta_${i+1}_sin_correcta`);
-        }
-        return { enunciado, opciones: opcionesFinal, explicacion };
+        return { enunciado, opciones, explicacion };
       });
     }
 
@@ -2904,10 +2806,8 @@
       titulo: 'Subir preguntas desde JSON',
       contenido: html`
         <p class="muted small" style="margin:0 0 .75rem">
-          Formato esperado (array). Marca la opción correcta con
-          <code>correcta:&nbsp;true</code> en el objeto o con un
-          <code>*</code> al principio del texto. Si no marcas ninguna,
-          se asume la primera (compatibilidad hacia atrás).
+          Formato esperado (array). La <strong>primera opción</strong> de cada
+          pregunta es la correcta.
         </p>
         <label class="json-drop" for="fp-json">
           <span id="fp-json-label">📁 Elegir fichero <code>.json</code> o pegar debajo</span>
@@ -2917,15 +2817,7 @@
           <label for="ta-json">O pega el JSON aquí</label>
           <textarea id="ta-json" rows="8" spellcheck="false"
             placeholder='[
-  {
-    "pregunta": "…",
-    "opciones": [
-      {"texto": "Op 1", "correcta": false},
-      {"texto": "Op 2", "correcta": true},
-      {"texto": "Op 3", "correcta": false}
-    ],
-    "explicacion": "…"
-  }
+  {"pregunta": "…", "opciones": ["Correcta", "Op2", "Op3", "Op4"], "explicacion": "…"}
 ]'></textarea>
         </div>
         <div class="json-preview__summary" id="sum-json" hidden></div>
@@ -3801,66 +3693,21 @@
 
 
   // ── Vista: plan de estudio ─────────────────────────────────────────
-  //
-  // El plan como tal (calendario personal generado) sigue "próximamente",
-  // pero esta vista es también la casa del **repaso**: el botón "Repasar"
-  // que antes vivía en el Inicio ahora ancla aquí, junto a lo que "toca
-  // hoy". Cuando el planificador real esté conectado, encima aparecerá la
-  // sesión programada; el bloque de repaso se queda como acción diaria.
+  // Primera base visual del planificador. La generación se conectará al
+  // backend cuando exista; mientras tanto explicamos qué datos solicitará
+  // sin guardar respuestas ni prometer un calendario que aún no se genera.
   async function viewPlan() {
-    loading();
-    const opId = getCtx().oposicion_id;
-    // Sondeo silencioso al pool de repaso: nos dice cuántas preguntas
-    // hay elegibles ahora mismo, sin todavía crear ningún intento. Si el
-    // usuario no tiene ninguna sección completada, la RPC devuelve `[]`
-    // y ocultamos la sección para no ofrecer un botón que va a fallar.
-    // Cap 40 = el mismo tamaño que ofrece el intento real, así el número
-    // que ve encaja con lo que va a estudiar.
-    let repasoPendientes = 0;
-    if (opId) {
-      try {
-        const pool = await S.rpc('preguntas_repaso_oposicion',
-          { p_oposicion_id: opId, p_n: 40 });
-        if (Array.isArray(pool)) repasoPendientes = pool.length;
-      } catch (_) { /* silencioso — el bloque cae al empty */ }
-    }
-
     root.innerHTML = html`
       <header class="plan-cabecera">
         <span class="plan-cabecera-icono" aria-hidden="true">📅</span>
         <div>
+          <span class="kv-badge">Próximamente</span>
           <h1>Tu plan de estudio</h1>
-          <p>Lo que toca hoy y el repaso pendiente, en un solo sitio.</p>
+          <p>Un calendario personal para avanzar en tu oposición con constancia y sin agobios.</p>
         </div>
       </header>
 
-      ${raw(opId ? html`
-        <section class="panel-card plan-repaso">
-          <h2 class="card-title"><span class="ico" aria-hidden="true">🔁</span> Repaso pendiente</h2>
-          ${raw(repasoPendientes > 0 ? html`
-            <p class="card-subtitle">
-              Hay <strong>${repasoPendientes}</strong> pregunta${repasoPendientes === 1 ? '' : 's'}
-              lista${repasoPendientes === 1 ? '' : 's'} para repasar hoy — las que más te
-              conviene refrescar según tu histórico de fallos y espaciado.
-            </p>
-            <button class="btn btn-primary" id="btn-repasar-pendiente" type="button">
-              Repasar ${repasoPendientes >= 40 ? '40 preguntas' : `${repasoPendientes} pregunta${repasoPendientes === 1 ? '' : 's'}`}
-            </button>
-          ` : html`
-            <p class="card-subtitle">
-              Todavía no tienes nada que repasar. Cuando completes tu primera sección,
-              las preguntas irán entrando aquí siguiendo el ritmo de tu progreso.
-            </p>
-          `)}
-        </section>
-      ` : html`
-        <section class="panel-card plan-repaso">
-          <p class="card-subtitle">Elige una oposición para ver tu repaso pendiente.</p>
-        </section>
-      `)}
-
       <section class="panel-card plan-presentacion">
-        <span class="kv-badge">Próximamente</span>
         <h2 class="card-title">Un plan adaptado a tu día a día</h2>
         <p>Te haremos unas preguntas breves y distribuiremos el temario en sesiones realistas.</p>
         <div class="plan-pasos" aria-label="Cómo se creará tu plan">
@@ -3873,7 +3720,7 @@
       <section class="panel-card plan-vista-previa">
         <div>
           <h2 class="card-title">Aquí verás tu calendario</h2>
-          <p class="card-subtitle">Cada día mostrará la lección que te toca. Podrás generar un plan nuevo cuando cambie tu disponibilidad.</p>
+          <p class="card-subtitle">Cada día mostrará la lección o el repaso que te toca. También podrás generar un plan nuevo cuando cambie tu disponibilidad.</p>
         </div>
         <div class="plan-semana" aria-hidden="true">
           <span>L<em></em></span><span>M<em></em></span><span>X<em></em></span>
@@ -3884,9 +3731,6 @@
       <button class="btn btn-primary plan-accion" type="button" disabled>
         Crear mi plan · Disponible próximamente
       </button>`;
-
-    const br = root.querySelector('#btn-repasar-pendiente');
-    if (br) br.onclick = () => navigate(`#/repaso/${opId}`);
   }
 
 
@@ -3908,10 +3752,6 @@
     if (id === 'home')                navigate('#/');
     if (id === 'plan')                navigate('#/plan');
     if (id === 'estadisticas')        navigate('#/estadisticas');
-    if (id === 'perfil')              navigate('#/perfil');
-    // Logros y Tablón salen del menú inferior pero siguen alcanzables
-    // desde el propio Perfil (u otra vía). Los mantenemos aquí por si el
-    // header los volviera a exponer en el futuro.
     if (id === 'logros')              navigate('#/logros');
     if (id === 'cambiar-oposicion')   _abrirSelectorOposicion();
     if (id === 'tablon') {
