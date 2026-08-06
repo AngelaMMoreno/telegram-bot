@@ -1,14 +1,14 @@
 {
   "Servers": {
     "1": {
-      "Name": "aprentix (prod)",
+      "Name": "aprentix",
       "Group": "Servers",
-      "Host": "db-prod",
+      "Host": "db",
       "Port": 5432,
       "MaintenanceDB": "aprentix",
       "Username": "aprentix",
       "SSLMode": "prefer",
-      "Comment": "Producción - base aprentix (contenedor db-prod)"
+      "Comment": "Postgres del stack Aprentix (intra-red dokploy)"
     },
     "2": {
       "Name": "aprentix-desa",
@@ -18,7 +18,7 @@
       "MaintenanceDB": "aprentix_desa",
       "Username": "aprentix",
       "SSLMode": "prefer",
-      "Comment": "Desarrollo - base aprentix_desa (contenedor db-desa)"
+      "Comment": "Postgres del stack DESA (rediseño oposiciones). Mismo pgAdmin."
     }
   }
 }
