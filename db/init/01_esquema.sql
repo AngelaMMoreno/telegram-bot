@@ -1562,3 +1562,16 @@ BEGIN
     END IF;
 END
 $password_autenticador$;
+
+-- Las funciones de autenticación se crean después del bloque general de
+-- permisos. Declaramos sus permisos de forma explícita para que PostgREST
+-- pueda exponerlas tanto antes como después de iniciar sesión.
+GRANT EXECUTE ON FUNCTION public.registrar_web(text, text, text) TO web_anon, web_user;
+GRANT EXECUTE ON FUNCTION public.reenviar_verificacion(text) TO web_anon, web_user;
+GRANT EXECUTE ON FUNCTION public.verificar_email(text) TO web_anon, web_user;
+GRANT EXECUTE ON FUNCTION public.login_web(text, text) TO web_anon, web_user;
+
+-- PostgREST mantiene su propio catálogo de funciones. Si este script se
+-- aplica sobre una base ya existente, la notificación evita que continúe
+-- respondiendo PGRST202 con una caché anterior.
+NOTIFY pgrst, 'reload schema';

@@ -229,6 +229,36 @@ SELECT id, destinatario, asunto, enviado_en, ultimo_error
   FROM cola_emails ORDER BY encolado_en DESC LIMIT 20;
 ```
 
+## Error de caché al registrar o iniciar sesión
+
+Si la API responde `Could not find the function public.login_web(...) in the
+schema cache` o el mismo error para `registrar_web`, no es un problema con el
+orden de los argumentos. PostgREST resuelve los argumentos por nombre; el
+mensaje enumera los nombres que recibió y puede mostrarlos en un orden distinto
+al de la declaración SQL.
+
+En una instalación con datos existentes, `db/init/01_esquema.sql` **no vuelve a
+ejecutarse** al redesplegar: la imagen oficial de PostgreSQL sólo procesa
+`/docker-entrypoint-initdb.d` cuando inicializa un directorio de datos vacío.
+Desde pgAdmin, selecciona primero la base indicada en `POSTGRES_DB` del mismo
+entorno que atiende la web (producción o desa), abre
+`db/migrations/02_recargar_funciones_autenticacion.sql` y ejecuta todo su
+contenido en el *Query Tool*.
+
+Después se puede verificar desde el exterior, usando el dominio API del mismo
+entorno:
+
+```bash
+curl -i -X POST "https://${DOMINIO_API}/rpc/login_web" \
+  -H 'Content-Type: application/json' \
+  -d '{"p_email":"no-existe@example.com","p_password":"prueba123"}'
+```
+
+Una respuesta de la función como `credenciales_invalidas` confirma que
+PostgREST ya la encontró. Si todavía aparece `PGRST202`, reinicia únicamente el
+servicio `postgrest` y comprueba que `PGRST_DB_URI`/`POSTGRES_DB` apuntan a la
+misma base que se abrió en pgAdmin.
+
 ## Notificaciones Web Push
 
 1. Genera el par VAPID (o reutiliza el de prod si prefieres compartir
