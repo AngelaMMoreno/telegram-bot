@@ -385,6 +385,11 @@
             <div><strong>Usuarios</strong><span class="muted">Gestionar cuentas y roles</span></div>
             <span class="chevron">›</span>
           </li>
+          <li data-goto="administracion">
+            <span class="ico-round">📚</span>
+            <div><strong>Oposiciones</strong><span class="muted">Importar oposición desde JSON</span></div>
+            <span class="chevron">›</span>
+          </li>
         </ul>
       </article>
 
@@ -444,9 +449,15 @@
         <p class="muted">Podrás cambiarla más tarde desde tu perfil.</p>
       </div>
       <ul class="onboarding-list" data-onboarding></ul>
+      <button class="btn btn-outline btn-block" data-ir-administracion hidden style="margin-top:var(--sp-2)">
+        📚 Importar oposición (admin)
+      </button>
       <div class="sticky-cta">
         <button class="btn btn-primary btn-block" data-onboarding-guardar disabled>
           Continuar
+        </button>
+        <button class="btn btn-ghost btn-block" data-logout style="margin-top:6px;">
+          🚪 Cerrar sesión
         </button>
       </div>
     </section>
@@ -605,6 +616,37 @@
           <input class="input input-mini" type="search" placeholder="Buscar" data-ad-buscar>
         </div>
         <ul class="admin-users" data-ad-users></ul>
+      </article>
+    </section>
+  </template>
+
+  <!-- ─────────────────────── ADMINISTRACIÓN (importar oposiciones) ─────────────────────── -->
+  <template id="tpl-administracion">
+    <section class="view view-administracion">
+      <header class="top-bar">
+        <button class="btn btn-ghost btn-mini" data-volver-administracion>‹</button>
+        <h1 class="admin-title">Administrar oposiciones</h1>
+        <span></span>
+      </header>
+
+      <article class="card">
+        <h2>Importar una oposición</h2>
+        <p class="muted small">
+          Pega el JSON de la oposición. Debe contener al menos <code>slug</code> y
+          <code>nombre</code>; puede incluir sus <code>temas</code>, unidades y preguntas.
+          Si el slug ya existe se reutiliza (no se duplican unidades ni preguntas).
+        </p>
+        <form data-form-importar>
+          <label class="field">
+            <span class="field-lbl">Contenido JSON</span>
+            <textarea data-json-oposicion rows="16" required spellcheck="false"
+                      class="input"
+                      style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:var(--fs-sm);resize:vertical;min-height:280px"
+                      placeholder='{"slug":"auxiliar-administrativo", "nombre":"Auxiliar Administrativo", "temas":[]}'></textarea>
+          </label>
+          <p class="auth-err" data-error-importacion hidden></p>
+          <button class="btn btn-primary btn-block" type="submit" style="margin-top:var(--sp-2)">Importar oposición</button>
+        </form>
       </article>
     </section>
   </template>

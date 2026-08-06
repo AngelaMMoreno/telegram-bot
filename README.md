@@ -83,6 +83,7 @@ Router hash-based:
 - `#/verify?token=…` — aterrizaje del enlace del correo
 - `#/onboarding` — elegir oposición al primer login
 - `#/wizard` — disponibilidad multi-paso (modo → horas → método/examen)
+- `#/administracion` — importar oposiciones desde JSON (solo admin)
 - `#/home`, `#/plan`, `#/stats`, `#/perfil` — cuatro pantallas del mockup
 - `#/unidad/<uuid>` — **unificada** (teoría + CTA test) con
   auto-tracking del tiempo de estudio (`sesion_abrir/tick/cerrar`).

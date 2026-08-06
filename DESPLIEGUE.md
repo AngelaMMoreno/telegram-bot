@@ -56,6 +56,7 @@ JWT_SECRET=…
 
 # Traefik
 DOMINIO_API=api.desa.aprentix.es          # prod: api.aprentix.es
+DOMINIO_LANDING=desa.aprentix.es          # prod: aprentix.es; enlaces de correo
 
 # pgAdmin — SOLO en prod
 COMPOSE_PROFILES=                         # prod: pgadmin
@@ -147,13 +148,18 @@ El detalle de `rclone config` y la restauración están en
    `db/init/01_esquema.sql` se ejecuta y deja:
    - Usuario admin (`admin@aprentix.es` / `${ADMIN_PASS}`) verificado.
    - Catálogos de roles, permisos, retos y logros.
-   - `config.app_url = "http://localhost"` — actualízalo:
+   - La URL de los enlaces de confirmación se toma de
+     `DOMINIO_LANDING` en el stack core. Para una instalación anterior con
+     volumen persistente, ejecuta primero
+     `db/migrations/03_configurar_url_publica.sql` y redespliega core.
+   - `config.app_url = "http://localhost"` queda como respaldo. Si necesitas
+     modificarlo manualmente:
      ```sql
      UPDATE config SET valor = '"https://desa.aprentix.es"'::jsonb
       WHERE clave = 'app_url';
      ```
-     (los links del correo de verificación se construyen con
-     `app_url()`).
+     (los enlaces del correo se construyen con `app_url()`, que prioriza el
+     dominio configurado en PostgreSQL sobre este valor de respaldo).
 
    En prod: `COMPOSE_PROFILES=pgadmin` levanta también pgAdmin.
 
@@ -192,7 +198,12 @@ exista — no bloquea nada.
 
 ## Importar la primera oposición
 
-Login con `admin@aprentix.es`. Desde la consola del navegador:
+El usuario administrador inicial es `admin@aprentix.es` y su contraseña es el
+valor configurado en `ADMIN_PASS` al crear la base de datos. Tras iniciar sesión,
+pulsa **Añadir la primera oposición** y pega el contenido JSON en la pantalla de
+administración.
+
+También se puede importar desde la consola del navegador:
 
 ```js
 const payload = /* JSON con el shape de db/ejemplo_oposicion.json */;
@@ -228,6 +239,47 @@ Comprobar la cola:
 SELECT id, destinatario, asunto, enviado_en, ultimo_error
   FROM cola_emails ORDER BY encolado_en DESC LIMIT 20;
 ```
+
+## Error de caché al registrar o iniciar sesión
+
+Si la API responde `Could not find the function public.login_web(...) in the
+schema cache` o el mismo error para `registrar_web`, no es un problema con el
+orden de los argumentos. PostgREST resuelve los argumentos por nombre; el
+mensaje enumera los nombres que recibió y puede mostrarlos en un orden distinto
+al de la declaración SQL.
+
+Cuando producción y desa comparten `dokploy-network`, no debe usarse el hostname
+genérico `db`: los dos proyectos publican ese alias y Docker puede resolverlo al
+contenedor del otro entorno. El Compose de core construye `PGRST_DB_URI` con el
+alias inequívoco: `db` cuando `DB_ALIAS` está vacío, `db-desa` con
+`DB_ALIAS=desa` y `db-prod` con `DB_ALIAS=prod`. Después de actualizar esta
+configuración hay que redesplegar el stack **core** de ambos entornos, empezando
+por desa.
+
+En una instalación con datos existentes, `db/init/01_esquema.sql` **no vuelve a
+ejecutarse** al redesplegar: la imagen oficial de PostgreSQL sólo procesa
+`/docker-entrypoint-initdb.d` cuando inicializa un directorio de datos vacío.
+Desde pgAdmin, selecciona primero la base indicada en `POSTGRES_DB` del mismo
+entorno que atiende la web (producción o desa), abre
+`db/migrations/02_recargar_funciones_autenticacion.sql` y ejecuta todo su
+contenido en el *Query Tool*.
+
+Después se puede verificar desde el exterior, usando el dominio API del mismo
+entorno:
+
+```bash
+curl -i -X POST "https://${DOMINIO_API}/rpc/login_web" \
+  -H 'Content-Type: application/json' \
+  -d '{"p_email":"no-existe@example.com","p_password":"prueba123"}'
+```
+
+Una respuesta de la función como `credenciales_invalidas` confirma que
+PostgREST ya la encontró. Si todavía aparece `PGRST202`, reinicia únicamente el
+servicio `postgrest` y comprueba dentro del contenedor que `PGRST_DB_URI` sea
+`postgres://autenticador@db-desa:5432/aprentix_desa` en desa y
+`postgres://autenticador@db-prod:5432/aprentix` en producción si se ha definido
+`DB_ALIAS=prod` (o que use `@db:` si el alias está vacío). La base debe coincidir
+con la que se abrió en pgAdmin.
 
 ## Notificaciones Web Push
 

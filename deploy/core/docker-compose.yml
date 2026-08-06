@@ -34,6 +34,10 @@ services:
       - app.admin_pass=${ADMIN_PASS:?ADMIN_PASS requerida}
       - -c
       - app.auth_pass=${AUTH_PASS:?AUTH_PASS requerida}
+      - -c
+      # La función app_url() usa este ajuste para construir enlaces públicos
+      # de confirmación, también cuando la BBDD conserva un volumen antiguo.
+      - app.app_url=https://${DOMINIO_LANDING:?DOMINIO_LANDING requerido}
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ../../db/init:/docker-entrypoint-initdb.d:ro
@@ -58,9 +62,11 @@ services:
       db:
         condition: service_healthy
     environment:
-      # Dentro del MISMO compose la resolución `db` (service name)
-      # sigue funcionando por la red por defecto del proyecto.
-      PGRST_DB_URI:                    postgres://autenticador@db:5432/${POSTGRES_DB}
+      # La red de Dokploy es compartida por prod y desa. Usar `db` aquí
+      # resulta ambiguo porque Compose publica ese alias de servicio para
+      # ambos proyectos; el alias explícito garantiza que cada PostgREST se
+      # conecte a la base de datos de su propio entorno.
+      PGRST_DB_URI:                    postgres://autenticador@db${DB_ALIAS:+-${DB_ALIAS}}:5432/${POSTGRES_DB}
       PGPASSWORD:                      ${AUTH_PASS}
       PGRST_DB_ANON_ROLE:              web_anon
       PGRST_DB_SCHEMAS:                public

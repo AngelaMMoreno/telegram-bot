@@ -31,16 +31,17 @@ const state = {
 // ══════════════════════════════════════════════════════════════════════
 
 const routes = {
-  auth:       renderAuth,
-  verify:     renderVerify,
-  onboarding: renderOnboarding,
-  wizard:     renderWizard,
-  home:       renderHome,
-  plan:       renderPlan,
-  stats:      renderStats,
-  perfil:     renderPerfil,
-  unidad:     renderUnidad,
-  admin:      renderAdmin,
+  auth:           renderAuth,
+  verify:         renderVerify,
+  onboarding:     renderOnboarding,
+  wizard:         renderWizard,
+  home:           renderHome,
+  plan:           renderPlan,
+  stats:          renderStats,
+  perfil:         renderPerfil,
+  unidad:         renderUnidad,
+  admin:          renderAdmin,
+  administracion: renderAdministracion,
 };
 
 function parseHash() {
@@ -123,7 +124,7 @@ function updateNav(name) {
   const map = { home:'home', plan:'plan', stats:'stats', perfil:'perfil' };
   const target = map[name];
   const nav = $('.bottom-nav');
-  if (!nav || ['auth','verify','onboarding','wizard','unidad','admin'].includes(name)) {
+  if (!nav || ['auth','verify','onboarding','wizard','unidad','admin','administracion'].includes(name)) {
     if (nav) nav.remove();
     return;
   }
@@ -165,6 +166,16 @@ function bindCommon(root) {
 function setAvatarChips(root) {
   const nombre = state.session?.nombre || '';
   $$('[data-avatar]', root).forEach(el => { el.textContent = initials(nombre); });
+}
+
+function cerrarSesion() {
+  clearInterval(_sesActiva?.tickTimer);
+  _sesActiva = null;
+  S.clearToken();
+  state.session = null;
+  state.oposiciones = [];
+  state.principalId = null;
+  location.hash = '#/auth';
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -353,10 +364,22 @@ async function renderOnboarding() {
   try { opos = await S.rpc('listar_oposiciones', {}, { api: '/api' }); }
   catch (e) { toast('Error cargando oposiciones: ' + e.message); }
 
+  // Shortcuts globales del onboarding (visibles siempre)
+  const shortAdm = $('[data-ir-administracion]', root);
+  if (shortAdm) {
+    shortAdm.hidden = !state.session?.es_admin;
+    shortAdm.addEventListener('click', () => location.hash = '#/administracion');
+  }
+  const btnLogout = $('[data-logout]', root);
+  if (btnLogout) btnLogout.addEventListener('click', cerrarSesion);
+
   if (!opos.length) {
     ul.innerHTML = `<li style="text-align:center;padding:24px;border:0">
-      <p class="muted">No hay oposiciones disponibles. Un administrador debe importar una primero
-      (vía <code>importar_oposicion</code>).</p></li>`;
+      <p class="muted">No hay oposiciones disponibles. ${
+        state.session?.es_admin
+          ? 'Impórtalas desde la sección "Importar oposición" de arriba.'
+          : 'Un administrador debe importar una primero (vía <code>importar_oposicion</code>).'
+      }</p></li>`;
     return;
   }
 
@@ -777,11 +800,7 @@ async function renderPerfil() {
     applyLabel();
   });
 
-  $('[data-logout]', root).addEventListener('click', () => {
-    S.clearToken();
-    state.session = null; state.oposiciones = [];
-    location.hash = '#/auth';
-  });
+  $('[data-logout]', root).addEventListener('click', cerrarSesion);
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -1020,6 +1039,57 @@ async function renderAdmin() {
   buscar.addEventListener('input', () => {
     clearTimeout(tId);
     tId = setTimeout(() => cargar(buscar.value.trim() || null), 220);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// ADMINISTRACIÓN — importar oposiciones desde JSON
+// ══════════════════════════════════════════════════════════════════════
+
+async function renderAdministracion() {
+  if (!state.session?.es_admin) {
+    toast('Sólo admin');
+    location.hash = state.oposiciones.length ? '#/perfil' : '#/onboarding';
+    return;
+  }
+  mount('tpl-administracion');
+  const root = $('.view-administracion');
+  const form = $('[data-form-importar]', root);
+  const txt  = $('[data-json-oposicion]', root);
+  const err  = $('[data-error-importacion]', root);
+  const btn  = $('button[type="submit"]', form);
+
+  $('[data-volver-administracion]', root).addEventListener('click', () => {
+    location.hash = state.oposiciones.length ? '#/perfil' : '#/onboarding';
+  });
+
+  form.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    err.hidden = true;
+    let payload;
+    try { payload = JSON.parse(txt.value); }
+    catch (_) {
+      err.textContent = 'El contenido no es un JSON válido.';
+      err.hidden = false; txt.focus(); return;
+    }
+    if (!payload || typeof payload !== 'object' || !payload.slug || !payload.nombre) {
+      err.textContent = 'El JSON debe incluir al menos «slug» y «nombre».';
+      err.hidden = false; return;
+    }
+
+    btn.disabled = true; btn.textContent = 'Importando…';
+    try {
+      const r = await S.rpc('importar_oposicion', { p_payload: payload }, { api: '/api' });
+      state.oposiciones = [];
+      toast('Oposición importada. Nuevos: ' + (r.temas_nuevos || 0) +
+            ' · Reutilizados: ' + (r.temas_reutilizados || 0));
+      txt.value = '';
+    } catch (e) {
+      err.textContent = 'No se pudo importar: ' + e.message;
+      err.hidden = false;
+    } finally {
+      btn.disabled = false; btn.textContent = 'Importar oposición';
+    }
   });
 }
 
