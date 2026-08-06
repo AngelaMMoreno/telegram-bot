@@ -638,3 +638,150 @@ p  { margin: 0; }
 }
 .bottom-nav button.active { color: var(--pri-d); background: var(--pri-light); }
 .bottom-nav svg { width: 22px; height: 22px; }
+
+/* ─── Botón grande "Estudiar" ─────────────────────────────────────── */
+.btn-estudiar {
+  min-height: 72px;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--pri) 0%, var(--pri-d) 60%, var(--pri-hover) 100%);
+  color: #fff;
+  box-shadow: var(--shadow-md);
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: var(--sp-3);
+  align-items: center;
+  text-align: left;
+  font-weight: 700;
+}
+.btn-estudiar em { display: block; font-style: normal; color: rgba(255,255,255,.85); margin-top: 2px; }
+.btn-estudiar strong { font-size: var(--fs-lg); }
+.btn-estudiar-ico {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(255,255,255,.22);
+  display: grid; place-items: center; font-size: 1.1rem;
+}
+
+/* ─── Resumen semanal (banner Home) ───────────────────────────────── */
+.card-resumen-semanal {
+  display: grid; grid-template-columns: 56px 1fr; gap: var(--sp-3);
+  background: linear-gradient(135deg, var(--accent-soft) 0%, var(--pri-soft) 100%);
+  border-color: var(--pri-light);
+}
+.rs-ico {
+  width: 56px; height: 56px; border-radius: 18px;
+  background: var(--pri-light); color: var(--pri-d);
+  display: grid; place-items: center; font-size: 1.6rem;
+}
+.rs-txt { min-width: 0; }
+.rs-mensaje { margin: 6px 0 var(--sp-2); font-weight: 600; color: var(--txt); }
+.rs-stats {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+}
+.rs-stats span { display: flex; flex-direction: column; }
+.rs-stats strong { color: var(--pri-d); font-size: var(--fs-md); }
+
+/* ─── Modal genérico ──────────────────────────────────────────────── */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(20,30,26,.55);
+  backdrop-filter: blur(4px);
+  display: grid; place-items: center;
+  padding: var(--sp-3);
+  z-index: 50;
+  animation: fade .15s ease;
+}
+.modal {
+  position: relative;
+  background: var(--bg-panel);
+  color: var(--txt);
+  border-radius: var(--radius-xl);
+  padding: var(--sp-4);
+  width: 100%; max-width: 420px;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+}
+.modal h2 { margin: 0 0 var(--sp-1); color: var(--pri-d); }
+.modal-close {
+  position: absolute; top: 8px; right: 8px;
+  width: 40px; height: 40px; border-radius: 50%;
+  font-size: 1.6rem; color: var(--txt-soft);
+}
+.tiempo-picker {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0 var(--sp-2);
+}
+.tiempo-picker label { display: flex; flex-direction: column; font-weight: 600; font-size: var(--fs-sm); gap: 6px; }
+.tiempo-picker input {
+  padding: 12px 14px; border-radius: 12px;
+  border: 1.5px solid var(--border); background: var(--bg);
+  text-align: center; font-size: var(--fs-lg); font-weight: 700;
+}
+.tiempo-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.tiempo-chips button {
+  padding: 6px 12px; border-radius: 999px;
+  background: var(--bg-alt); border: 1px solid var(--border);
+  font-weight: 600; font-size: var(--fs-sm); color: var(--pri-d);
+}
+.tiempo-chips button:hover { border-color: var(--pri); }
+
+/* ─── Modo estudio (fullscreen) ───────────────────────────────────── */
+.view-estudio {
+  min-height: 100dvh;
+  padding: max(var(--sp-3), env(safe-area-inset-top)) var(--sp-3)
+           max(var(--sp-4), env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: var(--sp-3);
+}
+.estudio-head {
+  display: grid; grid-template-columns: auto 1fr auto;
+  align-items: center; gap: var(--sp-2);
+}
+.estudio-meta { text-align: center; }
+.estudio-meta strong { display: block; font-size: var(--fs-lg); color: var(--pri-d); }
+
+.cronometro {
+  position: relative;
+  width: min(280px, 70vw); height: min(280px, 70vw);
+  margin: var(--sp-2) auto;
+}
+.crono-ring { width: 100%; height: 100%; transform: rotate(-90deg); transform-origin: center; }
+.crono-bg { fill: none; stroke: var(--bg-alt); stroke-width: 12; }
+.crono-fg {
+  fill: none;
+  stroke: var(--pri);
+  stroke-width: 12;
+  stroke-linecap: round;
+  stroke-dasharray: 0 100;
+  transition: stroke-dasharray 1s linear;
+}
+.crono-txt {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.crono-txt strong {
+  font-size: clamp(2.6rem, 12vw, 4rem);
+  font-weight: 800; letter-spacing: -0.03em; color: var(--txt);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.estudio-cuerpo {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-3);
+}
+.estudio-descanso {
+  text-align: center; padding: var(--sp-5) var(--sp-3);
+}
+.estudio-descanso .emoji { font-size: 4rem; display: block; margin-bottom: var(--sp-2); }
+.estudio-descanso h3 { color: var(--pri-d); margin: 0 0 var(--sp-1); }
+.estudio-final {
+  text-align: center; padding: var(--sp-5) var(--sp-3);
+  background: linear-gradient(160deg, var(--pri-soft), var(--accent-soft));
+  border-radius: var(--radius-lg);
+}
+.estudio-final .emoji { font-size: 4rem; display: block; margin-bottom: var(--sp-2); }
+.estudio-cta { display: flex; flex-direction: column; gap: 8px; }

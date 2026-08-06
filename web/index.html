@@ -144,6 +144,27 @@
         </svg>
       </div>
 
+      <button class="btn btn-primary btn-block btn-estudiar" data-abrir-estudiar>
+        <span class="btn-estudiar-ico">▶</span>
+        <span>
+          <strong>Estudiar</strong>
+          <em class="muted small">Modo estudio guiado con cronómetro</em>
+        </span>
+      </button>
+
+      <article class="card card-resumen-semanal" data-resumen-semanal hidden>
+        <div class="rs-ico">📊</div>
+        <div class="rs-txt">
+          <span class="chip chip-soft">Resumen de la semana</span>
+          <p data-rs-mensaje class="rs-mensaje">—</p>
+          <div class="rs-stats">
+            <span><strong data-rs-min>0m</strong><span class="muted small">estudiadas</span></span>
+            <span><strong data-rs-obj>0%</strong><span class="muted small">objetivos</span></span>
+            <span><strong data-rs-prec>0%</strong><span class="muted small">precisión</span></span>
+          </div>
+        </div>
+      </article>
+
       <article class="card card-continua" data-continua>
         <div class="card-head">
           <span class="chip chip-soft">🌱 Continúa estudiando</span>
@@ -617,6 +638,77 @@
         </div>
         <ul class="admin-users" data-ad-users></ul>
       </article>
+    </section>
+  </template>
+
+  <!-- ─────────────────────── MODO ESTUDIO (fullscreen) ─────────────────────── -->
+  <template id="tpl-estudiar-modal">
+    <div class="modal-backdrop" data-modal>
+      <div class="modal">
+        <button class="modal-close" data-modal-close aria-label="Cerrar">×</button>
+        <h2>¿Cuánto tiempo tienes ahora?</h2>
+        <p class="muted small">Prepararemos una sesión adaptada a tus minutos.</p>
+        <div class="tiempo-picker">
+          <label>Horas
+            <input type="number" min="0" max="6" value="0" data-h inputmode="numeric">
+          </label>
+          <label>Min
+            <input type="number" min="0" max="55" step="5" value="45" data-m inputmode="numeric">
+          </label>
+        </div>
+        <div class="tiempo-chips">
+          <button type="button" data-quick="25">25 min</button>
+          <button type="button" data-quick="45">45 min</button>
+          <button type="button" data-quick="60">1 h</button>
+          <button type="button" data-quick="90">1 h 30</button>
+          <button type="button" data-quick="120">2 h</button>
+        </div>
+        <div class="field" style="margin-top:var(--sp-2)">
+          <span class="field-lbl">Sistema de estudio</span>
+          <select class="input" data-sistema></select>
+        </div>
+        <button class="btn btn-primary btn-block" data-empezar-estudio style="margin-top:var(--sp-3)">
+          Empezar ahora
+        </button>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-estudio">
+    <section class="view view-estudio">
+      <header class="estudio-head">
+        <button class="btn btn-ghost btn-mini" data-estudio-salir aria-label="Salir">×</button>
+        <div class="estudio-meta">
+          <span class="muted small" data-estudio-idx>Bloque 1/1</span>
+          <strong data-estudio-tipo>Estudio</strong>
+        </div>
+        <span></span>
+      </header>
+
+      <div class="cronometro" data-crono>
+        <svg viewBox="0 0 200 200" class="crono-ring">
+          <circle cx="100" cy="100" r="86" class="crono-bg"/>
+          <circle cx="100" cy="100" r="86" class="crono-fg" data-crono-ring
+                  pathLength="100" transform="rotate(-90 100 100)"/>
+        </svg>
+        <div class="crono-txt">
+          <strong data-crono-mmss>00:00</strong>
+          <span class="muted small" data-crono-total>de 25 min</span>
+        </div>
+      </div>
+
+      <div class="estudio-cuerpo" data-estudio-cuerpo>
+        <!-- Se rellena dinámicamente según el tipo de bloque -->
+      </div>
+
+      <div class="estudio-cta">
+        <button class="btn btn-outline btn-block" data-estudio-saltar hidden>
+          ⏭ Saltar descanso
+        </button>
+        <button class="btn btn-primary btn-block" data-estudio-siguiente>
+          Siguiente
+        </button>
+      </div>
     </section>
   </template>
 

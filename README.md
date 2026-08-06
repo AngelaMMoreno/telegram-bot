@@ -84,6 +84,7 @@ Router hash-based:
 - `#/onboarding` — elegir oposición al primer login
 - `#/wizard` — disponibilidad multi-paso (modo → horas → método/examen)
 - `#/administracion` — importar oposiciones desde JSON (solo admin)
+- `#/estudio` — **Modo Estudio** fullscreen con cronómetro (avance automático + saltar descanso)
 - `#/home`, `#/plan`, `#/stats`, `#/perfil` — cuatro pantallas del mockup
 - `#/unidad/<uuid>` — **unificada** (teoría + CTA test) con
   auto-tracking del tiempo de estudio (`sesion_abrir/tick/cerrar`).
@@ -109,6 +110,14 @@ Router hash-based:
 7. Si el usuario no cumple el plan, el botón "Reprogramar" del
    Plan salta las sesiones pasadas no hechas y redistribuye lo
    pendiente.
+8. Botón **Estudiar** en Home → dice cuánto tiempo tiene → la app
+   entra en **Modo Estudio** guiado con cronómetro grande.
+   Intercala teoría, tests, repasos vencidos (SM-2) y descansos
+   según el sistema elegido (Pomodoro, Ultradiano…). Al acabar,
+   suma XP y actualiza métricas.
+9. Cada semana calcula rendimiento y **ajusta la carga** ±20 % / +15 %
+   según cumplimiento.  Nunca deprime al usuario — mensajes siempre
+   constructivos.
 
 Ver [`DESPLIEGUE.md`](DESPLIEGUE.md) para el paso a paso completo
 y el estado de funcionalidades (listas / beta / pendientes).

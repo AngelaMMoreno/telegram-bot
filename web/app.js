@@ -42,6 +42,7 @@ const routes = {
   unidad:         renderUnidad,
   admin:          renderAdmin,
   administracion: renderAdministracion,
+  estudio:        renderEstudio,
 };
 
 function parseHash() {
@@ -124,7 +125,7 @@ function updateNav(name) {
   const map = { home:'home', plan:'plan', stats:'stats', perfil:'perfil' };
   const target = map[name];
   const nav = $('.bottom-nav');
-  if (!nav || ['auth','verify','onboarding','wizard','unidad','admin','administracion'].includes(name)) {
+  if (!nav || ['auth','verify','onboarding','wizard','unidad','admin','administracion','estudio'].includes(name)) {
     if (nav) nav.remove();
     return;
   }
@@ -513,6 +514,21 @@ async function renderHome() {
   const root = $('.view-home');
   bindCommon(root);
   setAvatarChips(root);
+
+  // Botón Estudiar
+  $('[data-abrir-estudiar]', root).addEventListener('click', abrirModalEstudio);
+
+  // Resumen semanal
+  try {
+    const rs = await S.rpc('resumen_semanal', {}, { api: '/api' });
+    if (rs && rs.minutos_estudiados !== undefined) {
+      $('[data-resumen-semanal]', root).hidden = false;
+      $('[data-rs-mensaje]', root).textContent = rs.mensaje || '';
+      $('[data-rs-min]', root).textContent = fmtMin(rs.minutos_estudiados);
+      $('[data-rs-obj]', root).textContent = (rs.objetivos_cumplidos || 0) + '%';
+      $('[data-rs-prec]', root).textContent = (rs.precision_media || 0) + '%';
+    }
+  } catch (_) {}
 
   let data = null;
   try { data = await S.rpc('dashboard_inicio', {}, { api: '/api' }); }
@@ -1092,6 +1108,198 @@ async function renderAdministracion() {
     }
   });
 }
+
+// ══════════════════════════════════════════════════════════════════════
+// MODO ESTUDIO — modal + vista fullscreen + cronómetro
+// ══════════════════════════════════════════════════════════════════════
+
+let _estudioTimer = null;
+let _sistemas = null;
+
+async function abrirModalEstudio() {
+  // Carga sistemas de estudio (una vez)
+  if (!_sistemas) {
+    try { _sistemas = await S.rpc('sistemas_estudio', {}, { api: '/api' }); }
+    catch (_) { _sistemas = []; }
+    // Alternativa: leer via REST sin RPC (tabla pública)
+    if (!Array.isArray(_sistemas) || !_sistemas.length) {
+      const r = await fetch('/api/sistemas_estudio?select=id,nombre,codigo&activo=eq.true',
+                             { headers: authHeaders() });
+      _sistemas = r.ok ? await r.json() : [];
+    }
+  }
+
+  const tpl = document.getElementById('tpl-estudiar-modal');
+  document.body.appendChild(tpl.content.cloneNode(true));
+  const back = $('[data-modal]');
+  const sel  = $('[data-sistema]', back);
+  sel.innerHTML = _sistemas.map(s =>
+    `<option value="${s.id}">${escapeHtml(s.nombre)}</option>`).join('') ||
+    '<option value="">Pomodoro clásico</option>';
+
+  const h = $('[data-h]', back), m = $('[data-m]', back);
+  $$('[data-quick]', back).forEach(b => b.addEventListener('click', () => {
+    const total = +b.dataset.quick;
+    h.value = Math.floor(total / 60);
+    m.value = total % 60;
+  }));
+
+  function cerrar() { back.remove(); }
+  $('[data-modal-close]', back).addEventListener('click', cerrar);
+  back.addEventListener('click', ev => { if (ev.target === back) cerrar(); });
+
+  $('[data-empezar-estudio]', back).addEventListener('click', async () => {
+    const total = (parseInt(h.value, 10) || 0) * 60 + (parseInt(m.value, 10) || 0);
+    if (total < 10) return toast('Al menos 10 minutos');
+    const sistema = parseInt(sel.value, 10) || null;
+    try {
+      await S.rpc('iniciar_estudio',
+        { p_minutos_total: total, p_sistema_id: sistema }, { api: '/api' });
+      cerrar();
+      location.hash = '#/estudio';
+    } catch (e) {
+      toast(e.message.includes('minutos_insuficientes')
+        ? 'Al menos 10 minutos.' : 'No se pudo iniciar: ' + e.message);
+    }
+  });
+}
+
+function authHeaders() {
+  const t = S.getToken();
+  return t ? { Authorization: 'Bearer ' + t, Accept: 'application/json' }
+           : { Accept: 'application/json' };
+}
+
+async function renderEstudio() {
+  // Carga sesión activa
+  let ses = null;
+  try { ses = await S.rpc('obtener_sesion_activa', {}, { api: '/api' }); }
+  catch (_) {}
+  if (!ses || !ses.plan_bloques) {
+    toast('No hay sesión activa. Pulsa "Estudiar" primero.');
+    location.hash = '#/home';
+    return;
+  }
+
+  mount('tpl-estudio');
+  const root = $('.view-estudio');
+  await sesionCerrarPrevia();  // por si hay auto-tracking de otra unidad
+
+  const bloques = ses.plan_bloques;
+  let idx = ses.bloque_idx || 0;
+  const totalIniciado = new Date(ses.bloque_iniciado || ses.iniciada_en).getTime();
+
+  $('[data-estudio-salir]', root).addEventListener('click', async () => {
+    if (!confirm('¿Terminar la sesión ahora?')) return;
+    clearInterval(_estudioTimer);
+    try { await S.rpc('cerrar_estudio', {}, { api: '/api' }); } catch (_) {}
+    location.hash = '#/home';
+  });
+
+  let bloqueActual;
+  let bloqueIniciadoTs = totalIniciado;
+
+  async function pintarBloque() {
+    bloqueActual = bloques[idx];
+    if (!bloqueActual || bloqueActual.tipo === 'final') return terminar();
+
+    $('[data-estudio-idx]', root).textContent = `Bloque ${idx + 1} de ${bloques.length - 1}`;
+    const tipoLbl = ({
+      estudio:        'Estudia',
+      repaso:         'Repasa',
+      test:           'Test rápido',
+      descanso:       'Descanso',
+      descanso_largo: 'Descanso largo',
+    })[bloqueActual.tipo] || 'Sesión';
+    $('[data-estudio-tipo]', root).textContent = tipoLbl;
+    $('[data-crono-total]', root).textContent = 'de ' + (bloqueActual.minutos || 0) + ' min';
+    $('[data-estudio-saltar]', root).hidden =
+      !['descanso', 'descanso_largo'].includes(bloqueActual.tipo);
+
+    const cuerpo = $('[data-estudio-cuerpo]', root);
+    if (bloqueActual.tipo === 'descanso' || bloqueActual.tipo === 'descanso_largo') {
+      cuerpo.innerHTML = `
+        <div class="estudio-descanso">
+          <span class="emoji">☕</span>
+          <h3>Toca respirar</h3>
+          <p class="muted">Levántate, mira lejos, un vaso de agua.</p>
+        </div>`;
+    } else if (bloqueActual.tipo === 'estudio' && bloqueActual.unidad_id) {
+      try {
+        const u = await S.rpc('obtener_unidad',
+          { p_unidad_id: bloqueActual.unidad_id }, { api: '/api' });
+        cuerpo.innerHTML = `<div class="prose">${mdBasic(u.teoria_md || '_Sin contenido_')}</div>`;
+      } catch (_) {
+        cuerpo.innerHTML = `<p class="muted">No se ha podido cargar la unidad.</p>`;
+      }
+    } else if (bloqueActual.tipo === 'repaso' && bloqueActual.preguntas_ids?.length) {
+      cuerpo.innerHTML = `<div class="prose"><h2>Repaso rápido</h2>
+        <p>${bloqueActual.preguntas_ids.length} preguntas vencidas. Piénsalas y comprueba.</p>
+        <p class="muted small">Próximamente aquí verás las preguntas y podrás responder para actualizar tu repaso.</p></div>`;
+    } else {
+      cuerpo.innerHTML = `<p class="muted">Bloque listo.</p>`;
+    }
+
+    bloqueIniciadoTs = Date.now();
+    clearInterval(_estudioTimer);
+    _estudioTimer = setInterval(tickCronometro, 1000);
+    tickCronometro();
+  }
+
+  function tickCronometro() {
+    const minutos = bloqueActual?.minutos || 0;
+    const seg = Math.max(0, Math.floor((Date.now() - bloqueIniciadoTs) / 1000));
+    const total = minutos * 60;
+    const restante = Math.max(0, total - seg);
+    const mm = String(Math.floor(restante / 60)).padStart(2, '0');
+    const ss = String(restante % 60).padStart(2, '0');
+    $('[data-crono-mmss]', root).textContent = mm + ':' + ss;
+    const pct = total ? Math.min(100, (seg / total) * 100) : 0;
+    $('[data-crono-ring]', root).style.strokeDasharray = pct + ' 100';
+    if (restante === 0) {
+      clearInterval(_estudioTimer);
+      // avance automático
+      avanzar();
+    }
+  }
+
+  async function avanzar() {
+    try {
+      const sig = await S.rpc('siguiente_bloque_estudio', {}, { api: '/api' });
+      idx += 1;
+      if (!sig || sig.tipo === 'final') return terminar();
+      pintarBloque();
+    } catch (e) { toast(e.message); }
+  }
+
+  $('[data-estudio-siguiente]', root).addEventListener('click', avanzar);
+  $('[data-estudio-saltar]', root).addEventListener('click', async () => {
+    try {
+      await S.rpc('saltar_descanso', {}, { api: '/api' });
+      idx += 1;
+      pintarBloque();
+    } catch (e) { toast(e.message); }
+  });
+
+  async function terminar() {
+    clearInterval(_estudioTimer);
+    let res = null;
+    try { res = await S.rpc('cerrar_estudio', {}, { api: '/api' }); } catch (_) {}
+    const cuerpo = $('[data-estudio-cuerpo]', root);
+    cuerpo.innerHTML = `<div class="estudio-final">
+      <span class="emoji">🎉</span>
+      <h2>¡Sesión completada!</h2>
+      <p>Has estudiado durante <strong>${res?.minutos_totales || 0}</strong> min.</p>
+      <p class="muted">+${res?.minutos_totales || 0} XP</p>
+    </div>`;
+    $('[data-estudio-siguiente]', root).textContent = 'Volver al Inicio';
+    $('[data-estudio-siguiente]', root).onclick = () => location.hash = '#/home';
+    $('[data-estudio-saltar]', root).hidden = true;
+  }
+
+  pintarBloque();
+}
+
 
 // ══════════════════════════════════════════════════════════════════════
 // Utils varios

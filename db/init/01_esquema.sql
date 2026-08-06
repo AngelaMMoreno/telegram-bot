@@ -1946,6 +1946,702 @@ ALTER TABLE sesiones_estudio
 
 
 -- =============================================================================
+--          SISTEMAS DE ESTUDIO, MODO ESTUDIO Y REPETICIÓN ESPACIADA
+-- =============================================================================
+-- Sistemas de estudio (Pomodoro, Ultradian, etc.) que dictan el
+-- patrón de bloques que genera el modo estudio.  Cada uno define
+-- min_estudio + min_descanso_corto + ciclos_hasta_descanso_largo +
+-- min_descanso_largo.  El motor `iniciar_estudio` mezcla estos
+-- bloques con bloques de test y de repaso vencido.
+
+CREATE TABLE IF NOT EXISTS sistemas_estudio (
+    id                          serial PRIMARY KEY,
+    codigo                      text UNIQUE NOT NULL,
+    nombre                      text NOT NULL,
+    descripcion                 text,
+    min_estudio                 int  NOT NULL CHECK (min_estudio  > 0),
+    min_descanso_corto          int  NOT NULL CHECK (min_descanso_corto >= 0),
+    ciclos_hasta_descanso_largo int  NOT NULL DEFAULT 4 CHECK (ciclos_hasta_descanso_largo > 0),
+    min_descanso_largo          int  NOT NULL DEFAULT 15 CHECK (min_descanso_largo >= 0),
+    activo                      boolean NOT NULL DEFAULT true
+);
+
+-- Sesión de estudio EN CURSO (una a la vez por usuario).  Contiene
+-- la secuencia de bloques generada por `iniciar_estudio`.  Bloque
+-- estructura: {tipo, minutos, unidad_id?, tema_nombre?, preguntas_ids?}.
+CREATE TABLE IF NOT EXISTS sesion_activa (
+    usuario_id       uuid PRIMARY KEY REFERENCES usuarios(id) ON DELETE CASCADE,
+    iniciada_en      timestamptz NOT NULL DEFAULT now(),
+    plan_bloques     jsonb NOT NULL,
+    bloque_idx       int  NOT NULL DEFAULT 0,
+    bloque_iniciado  timestamptz NOT NULL DEFAULT now(),
+    minutos_totales  int  NOT NULL,
+    sistema_id       int  REFERENCES sistemas_estudio(id) ON DELETE SET NULL
+);
+
+-- Repetición espaciada tipo SM-2 simplificado (Ebbinghaus + Anki).
+-- Un intervalo por (usuario, pregunta):
+--   ease_factor: 1.3 – 2.5 (baja con fallos, sube con aciertos)
+--   intervalo_dias: días hasta el próximo repaso
+--   Al acertar N veces seguidas → intervalo x ease_factor
+--   Al fallar → intervalo=0 (repaso mismo día + siguiente día)
+CREATE TABLE IF NOT EXISTS repasos_pregunta (
+    usuario_id       uuid NOT NULL REFERENCES usuarios(id)  ON DELETE CASCADE,
+    pregunta_id      uuid NOT NULL REFERENCES preguntas(id) ON DELETE CASCADE,
+    ease_factor      numeric(3,2) NOT NULL DEFAULT 2.5 CHECK (ease_factor BETWEEN 1.3 AND 3.0),
+    intervalo_dias   int NOT NULL DEFAULT 0,
+    aciertos_ok      int NOT NULL DEFAULT 0,   -- aciertos consecutivos
+    fallos_total     int NOT NULL DEFAULT 0,
+    ultimo_repaso    timestamptz NOT NULL DEFAULT now(),
+    siguiente_repaso timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (usuario_id, pregunta_id)
+);
+CREATE INDEX IF NOT EXISTS repasos_pregunta_vencidos_idx
+    ON repasos_pregunta (usuario_id, siguiente_repaso);
+
+-- Snapshot semanal de métricas (para poder graficar tendencia y
+-- justificar ajustes de carga).  El domingo por la noche o al primer
+-- login del lunes se calcula el snapshot de la semana anterior.
+CREATE TABLE IF NOT EXISTS metricas_semanales (
+    usuario_id           uuid NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    semana_inicio        date NOT NULL,    -- lunes de la semana medida
+    minutos_estudiados   int  NOT NULL DEFAULT 0,
+    minutos_planificados int  NOT NULL DEFAULT 0,
+    precision_media      int  NOT NULL DEFAULT 0,  -- %
+    fatiga_delta         numeric(5,2),                -- diff aciertos 1ª mitad - 2ª mitad sesión (%)
+    dias_activos         int  NOT NULL DEFAULT 0,
+    objetivos_cumplidos  int  NOT NULL DEFAULT 0,  -- %
+    tema_foco            uuid,                        -- tema con peor rendimiento
+    creado_en            timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (usuario_id, semana_inicio)
+);
+CREATE INDEX IF NOT EXISTS metricas_semanales_uid_idx
+    ON metricas_semanales (usuario_id, semana_inicio DESC);
+
+-- Añade referencia opcional al sistema de estudio en plan_estudio.
+ALTER TABLE plan_estudio
+    ADD COLUMN IF NOT EXISTS sistema_estudio_id int
+        REFERENCES sistemas_estudio(id) ON DELETE SET NULL;
+
+-- Semilla de sistemas de estudio contrastados.
+INSERT INTO sistemas_estudio(codigo, nombre, descripcion,
+    min_estudio, min_descanso_corto, ciclos_hasta_descanso_largo, min_descanso_largo) VALUES
+    ('pomodoro',        'Pomodoro clásico',
+        '25 min de estudio y 5 min de descanso. Cada 4 ciclos, 15 min de descanso largo.',
+        25, 5, 4, 15),
+    ('pomodoro_largo',  'Pomodoro largo',
+        '50 min de estudio y 10 min de descanso. Cada 3 ciclos, 20 min largo.',
+        50, 10, 3, 20),
+    ('ultradian',       'Ritmo ultradiano',
+        '90 min de estudio profundo y 20 min de descanso. Óptimo para tareas de fondo.',
+        90, 20, 2, 30),
+    ('bloques_45',      'Bloques de 45',
+        '45 min estudio + 15 min descanso. Buen equilibrio entre foco y respiro.',
+        45, 15, 3, 25),
+    ('sprints',         'Sprints cortos',
+        '15 min estudio y 3 min descanso. Ideal para materia densa cuando cuesta arrancar.',
+        15, 3, 6, 20)
+ON CONFLICT (codigo) DO UPDATE
+   SET nombre                      = EXCLUDED.nombre,
+       descripcion                 = EXCLUDED.descripcion,
+       min_estudio                 = EXCLUDED.min_estudio,
+       min_descanso_corto          = EXCLUDED.min_descanso_corto,
+       ciclos_hasta_descanso_largo = EXCLUDED.ciclos_hasta_descanso_largo,
+       min_descanso_largo          = EXCLUDED.min_descanso_largo;
+
+-- Permisos y RLS
+ALTER TABLE sistemas_estudio      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sesion_activa         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE repasos_pregunta      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE metricas_semanales    ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS sistemas_lectura ON sistemas_estudio;
+CREATE POLICY sistemas_lectura ON sistemas_estudio FOR SELECT USING (true);
+GRANT SELECT ON sistemas_estudio TO web_anon, web_user;
+
+DROP POLICY IF EXISTS sesion_activa_propia ON sesion_activa;
+CREATE POLICY sesion_activa_propia ON sesion_activa
+    USING (usuario_id = jwt_usuario_id() OR es_admin())
+    WITH CHECK (usuario_id = jwt_usuario_id());
+GRANT SELECT, INSERT, UPDATE, DELETE ON sesion_activa TO web_user;
+ALTER TABLE sesion_activa ALTER COLUMN usuario_id SET DEFAULT jwt_usuario_id();
+
+DROP POLICY IF EXISTS repasos_pregunta_propios ON repasos_pregunta;
+CREATE POLICY repasos_pregunta_propios ON repasos_pregunta
+    USING (usuario_id = jwt_usuario_id() OR es_admin())
+    WITH CHECK (usuario_id = jwt_usuario_id());
+GRANT SELECT, INSERT, UPDATE, DELETE ON repasos_pregunta TO web_user;
+ALTER TABLE repasos_pregunta ALTER COLUMN usuario_id SET DEFAULT jwt_usuario_id();
+
+DROP POLICY IF EXISTS metricas_semanales_propias ON metricas_semanales;
+CREATE POLICY metricas_semanales_propias ON metricas_semanales
+    USING (usuario_id = jwt_usuario_id() OR es_admin())
+    WITH CHECK (usuario_id = jwt_usuario_id());
+GRANT SELECT, INSERT, UPDATE ON metricas_semanales TO web_user;
+ALTER TABLE metricas_semanales ALTER COLUMN usuario_id SET DEFAULT jwt_usuario_id();
+
+
+-- =============================================================================
+--          RPCs DE REPETICIÓN ESPACIADA (SM-2 simplificado)
+-- =============================================================================
+-- Al responder una pregunta desde el modo estudio o desde un test,
+-- el frontend llama a `registrar_respuesta_espaciada` con el
+-- resultado.  El algoritmo:
+--
+--   ACIERTO:
+--     aciertos_ok += 1
+--     ease_factor = min(3.0, ease_factor + 0.1)
+--     nuevo intervalo:
+--       aciertos_ok == 1 → 1 día
+--       aciertos_ok == 2 → 3 días
+--       aciertos_ok == 3 → 7 días
+--       aciertos_ok >= 4 → intervalo_dias * ease_factor  (Anki-like)
+--
+--   FALLO:
+--     aciertos_ok = 0
+--     fallos_total += 1
+--     ease_factor = max(1.3, ease_factor - 0.2)
+--     intervalo = 0  → se repite HOY (al final del día en el modo
+--     estudio siguiente); si vuelve a fallar mañana, otra vuelta.
+
+CREATE OR REPLACE FUNCTION registrar_respuesta_espaciada(
+    p_pregunta_id uuid,
+    p_correcta    boolean
+) RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_uid  uuid := jwt_usuario_id();
+    v_row  repasos_pregunta;
+    v_int  int;
+    v_ef   numeric(3,2);
+    v_ok   int;
+BEGIN
+    IF v_uid IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
+
+    SELECT * INTO v_row FROM repasos_pregunta
+     WHERE usuario_id = v_uid AND pregunta_id = p_pregunta_id;
+
+    IF v_row.pregunta_id IS NULL THEN
+        v_ef := 2.5; v_int := 0; v_ok := 0;
+    ELSE
+        v_ef := v_row.ease_factor;
+        v_int := v_row.intervalo_dias;
+        v_ok := v_row.aciertos_ok;
+    END IF;
+
+    IF p_correcta THEN
+        v_ok := v_ok + 1;
+        v_ef := LEAST(3.0, v_ef + 0.1);
+        v_int := CASE
+            WHEN v_ok = 1 THEN 1
+            WHEN v_ok = 2 THEN 3
+            WHEN v_ok = 3 THEN 7
+            ELSE GREATEST(1, ROUND(GREATEST(v_int, 1) * v_ef))::int
+        END;
+    ELSE
+        v_ok := 0;
+        v_ef := GREATEST(1.3, v_ef - 0.2);
+        v_int := 0;                    -- repaso mismo día
+    END IF;
+
+    INSERT INTO repasos_pregunta(usuario_id, pregunta_id,
+            ease_factor, intervalo_dias, aciertos_ok, fallos_total,
+            ultimo_repaso, siguiente_repaso)
+    VALUES (v_uid, p_pregunta_id, v_ef, v_int, v_ok,
+            CASE WHEN p_correcta THEN 0 ELSE 1 END,
+            now(), now() + (v_int || ' days')::interval)
+    ON CONFLICT (usuario_id, pregunta_id) DO UPDATE
+       SET ease_factor      = EXCLUDED.ease_factor,
+           intervalo_dias   = EXCLUDED.intervalo_dias,
+           aciertos_ok      = EXCLUDED.aciertos_ok,
+           fallos_total     = repasos_pregunta.fallos_total
+                               + CASE WHEN p_correcta THEN 0 ELSE 1 END,
+           ultimo_repaso    = now(),
+           siguiente_repaso = now() + (EXCLUDED.intervalo_dias || ' days')::interval;
+
+    RETURN jsonb_build_object(
+        'intervalo_dias', v_int,
+        'ease_factor',    v_ef,
+        'siguiente_repaso', now() + (v_int || ' days')::interval
+    );
+END $$;
+
+-- Devuelve N ids de pregunta vencidas (siguiente_repaso <= now())
+-- ordenadas por urgencia (más olvidadas primero).
+CREATE OR REPLACE FUNCTION siguientes_repasos(p_max int DEFAULT 10) RETURNS uuid[]
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(array_agg(pregunta_id ORDER BY siguiente_repaso), ARRAY[]::uuid[])
+      FROM (
+        SELECT pregunta_id, siguiente_repaso
+          FROM repasos_pregunta
+         WHERE usuario_id = jwt_usuario_id()
+           AND siguiente_repaso <= now()
+         ORDER BY siguiente_repaso
+         LIMIT p_max
+      ) t;
+$$;
+
+
+-- =============================================================================
+--                   MODO ESTUDIO — iniciar / siguiente / cerrar
+-- =============================================================================
+-- El usuario pulsa "Estudiar" y dice cuántos minutos tiene.  El
+-- motor genera una secuencia adaptada a su sistema de estudio,
+-- intercalando bloques de tipo:
+--   estudio  → unidad pendiente (misma que el plan del día)
+--   repaso   → preguntas vencidas de repasos_pregunta
+--   test     → test rápido de una unidad casi acabada
+--   descanso → según el sistema
+--
+-- El frontend consume `sesion_activa` y va llamando a
+-- `siguiente_bloque_estudio()` que devuelve el bloque siguiente y
+-- marca el anterior como cerrado.
+
+CREATE OR REPLACE FUNCTION iniciar_estudio(
+    p_minutos_total int,
+    p_sistema_id    int DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_uid   uuid := jwt_usuario_id();
+    v_plan  plan_estudio;
+    v_sis   sistemas_estudio;
+    v_bloques jsonb := '[]'::jsonb;
+    v_minutos_restantes int := p_minutos_total;
+    v_ciclo int := 0;
+    v_unids uuid[];
+    v_idx   int := 1;
+    v_repasos uuid[];
+    v_repaso_pos int := 1;
+BEGIN
+    IF v_uid IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
+    IF p_minutos_total < 10 THEN RAISE EXCEPTION 'minutos_insuficientes'; END IF;
+
+    -- Sistema: parámetro > plan > default 'pomodoro'.
+    SELECT * INTO v_plan FROM plan_estudio
+     WHERE usuario_id = v_uid AND activo LIMIT 1;
+
+    SELECT * INTO v_sis FROM sistemas_estudio
+     WHERE id = COALESCE(p_sistema_id, v_plan.sistema_estudio_id)
+        OR codigo = 'pomodoro'
+     ORDER BY (id = COALESCE(p_sistema_id, v_plan.sistema_estudio_id)) DESC
+     LIMIT 1;
+
+    -- Cola de unidades pendientes.
+    SELECT COALESCE(array_agg(u.id ORDER BY ot.orden, u.orden), ARRAY[]::uuid[])
+      INTO v_unids
+      FROM oposicion_temas ot
+      JOIN unidades u ON u.tema_id = ot.tema_id
+ LEFT JOIN progreso_unidad pu
+        ON pu.unidad_id = u.id AND pu.usuario_id = v_uid
+     WHERE ot.oposicion_id = COALESCE(
+             v_plan.oposicion_id,
+             (SELECT oposicion_id FROM usuario_oposiciones
+               WHERE usuario_id = v_uid AND principal LIMIT 1))
+       AND COALESCE(pu.teoria_completada, false) = false;
+
+    v_repasos := siguientes_repasos(50);
+
+    -- Genera bloques hasta agotar los minutos.
+    WHILE v_minutos_restantes >= v_sis.min_estudio LOOP
+        -- Bloque de estudio: primero repaso si hay vencidos.
+        IF v_repaso_pos <= cardinality(v_repasos) THEN
+            v_bloques := v_bloques || jsonb_build_object(
+                'tipo',    'repaso',
+                'minutos', v_sis.min_estudio,
+                'preguntas_ids', ARRAY(
+                    SELECT v_repasos[i]
+                      FROM generate_series(v_repaso_pos,
+                           LEAST(v_repaso_pos + 4, cardinality(v_repasos))) i
+                )
+            );
+            v_repaso_pos := v_repaso_pos + 5;
+        ELSIF v_idx <= cardinality(v_unids) THEN
+            v_bloques := v_bloques || jsonb_build_object(
+                'tipo',      'estudio',
+                'minutos',   v_sis.min_estudio,
+                'unidad_id', v_unids[v_idx]
+            );
+            v_idx := v_idx + 1;
+        ELSE
+            -- Nada que estudiar → salir
+            EXIT;
+        END IF;
+
+        v_minutos_restantes := v_minutos_restantes - v_sis.min_estudio;
+        v_ciclo := v_ciclo + 1;
+
+        -- Descanso.
+        IF v_ciclo % v_sis.ciclos_hasta_descanso_largo = 0
+           AND v_minutos_restantes >= v_sis.min_descanso_largo THEN
+            v_bloques := v_bloques || jsonb_build_object(
+                'tipo', 'descanso_largo', 'minutos', v_sis.min_descanso_largo);
+            v_minutos_restantes := v_minutos_restantes - v_sis.min_descanso_largo;
+        ELSIF v_minutos_restantes >= v_sis.min_descanso_corto THEN
+            v_bloques := v_bloques || jsonb_build_object(
+                'tipo', 'descanso', 'minutos', v_sis.min_descanso_corto);
+            v_minutos_restantes := v_minutos_restantes - v_sis.min_descanso_corto;
+        END IF;
+    END LOOP;
+
+    -- Cierre + celebración final.
+    v_bloques := v_bloques || jsonb_build_object(
+        'tipo', 'final', 'minutos', 0);
+
+    -- Reemplaza sesión previa si la hubiera.
+    DELETE FROM sesion_activa WHERE usuario_id = v_uid;
+    INSERT INTO sesion_activa(usuario_id, plan_bloques, minutos_totales, sistema_id)
+    VALUES (v_uid, v_bloques, p_minutos_total, v_sis.id);
+
+    RETURN jsonb_build_object(
+        'ok', true, 'bloques', v_bloques,
+        'sistema', jsonb_build_object('id', v_sis.id, 'nombre', v_sis.nombre,
+                                       'codigo', v_sis.codigo));
+END $$;
+
+-- Marca el bloque actual como cerrado y devuelve el siguiente.
+CREATE OR REPLACE FUNCTION siguiente_bloque_estudio() RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_uid uuid := jwt_usuario_id();
+    v_s   sesion_activa;
+    v_siguiente jsonb;
+BEGIN
+    SELECT * INTO v_s FROM sesion_activa WHERE usuario_id = v_uid;
+    IF v_s.usuario_id IS NULL THEN RAISE EXCEPTION 'sin_sesion_activa'; END IF;
+
+    UPDATE sesion_activa
+       SET bloque_idx = bloque_idx + 1,
+           bloque_iniciado = now()
+     WHERE usuario_id = v_uid;
+
+    v_siguiente := (v_s.plan_bloques -> (v_s.bloque_idx + 1));
+    RETURN COALESCE(v_siguiente, jsonb_build_object('tipo', 'final'));
+END $$;
+
+-- Saltar descanso (sólo si el bloque actual es descanso).  Reduce
+-- los minutos totales de la sesión y avanza al siguiente.
+CREATE OR REPLACE FUNCTION saltar_descanso() RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_uid  uuid := jwt_usuario_id();
+    v_s    sesion_activa;
+    v_bloq jsonb;
+BEGIN
+    SELECT * INTO v_s FROM sesion_activa WHERE usuario_id = v_uid;
+    IF v_s.usuario_id IS NULL THEN RAISE EXCEPTION 'sin_sesion_activa'; END IF;
+    v_bloq := v_s.plan_bloques -> v_s.bloque_idx;
+    IF v_bloq->>'tipo' NOT IN ('descanso', 'descanso_largo') THEN
+        RAISE EXCEPTION 'bloque_no_es_descanso';
+    END IF;
+    RETURN siguiente_bloque_estudio();
+END $$;
+
+-- Cierra la sesión, calcula minutos activos totales y devuelve
+-- resumen (aciertos, fatiga aproximada).
+CREATE OR REPLACE FUNCTION cerrar_estudio() RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_uid    uuid := jwt_usuario_id();
+    v_s      sesion_activa;
+    v_min    int;
+BEGIN
+    SELECT * INTO v_s FROM sesion_activa WHERE usuario_id = v_uid;
+    IF v_s.usuario_id IS NULL THEN RETURN jsonb_build_object('ok', true); END IF;
+
+    v_min := EXTRACT(EPOCH FROM (now() - v_s.iniciada_en))::int / 60;
+    DELETE FROM sesion_activa WHERE usuario_id = v_uid;
+
+    -- Suma XP proporcional a los minutos activos reales.
+    UPDATE usuario_gamificacion
+       SET xp_total = xp_total + v_min,
+           ultimo_dia_activo = current_date,
+           actualizado_en = now()
+     WHERE usuario_id = v_uid;
+
+    RETURN jsonb_build_object(
+        'ok', true,
+        'minutos_totales', v_min,
+        'bloques_completados', v_s.bloque_idx
+    );
+END $$;
+
+-- Devuelve la sesión activa (para restaurar al recargar la SPA).
+CREATE OR REPLACE FUNCTION obtener_sesion_activa() RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT CASE WHEN usuario_id IS NULL THEN NULL::jsonb
+                ELSE jsonb_build_object(
+                    'iniciada_en',     iniciada_en,
+                    'plan_bloques',    plan_bloques,
+                    'bloque_idx',      bloque_idx,
+                    'bloque_iniciado', bloque_iniciado,
+                    'minutos_totales', minutos_totales,
+                    'sistema_id',      sistema_id
+                ) END
+      FROM sesion_activa WHERE usuario_id = jwt_usuario_id();
+$$;
+
+
+-- =============================================================================
+--        MÉTRICAS SEMANALES (rendimiento, fatiga, consistencia, foco)
+-- =============================================================================
+-- Calcula el snapshot de la semana pasada (o de una fecha dada) y
+-- lo persiste.  Devuelve el objeto con TODAS las métricas + un
+-- mensaje motivador según el cumplimiento.
+
+CREATE OR REPLACE FUNCTION calcular_metricas_semanales(p_semana_inicio date DEFAULT NULL)
+RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_uid    uuid := jwt_usuario_id();
+    v_lunes  date := COALESCE(p_semana_inicio,
+                        date_trunc('week', current_date - interval '7 days')::date);
+    v_domingo date := v_lunes + 6;
+    v_minutos int;
+    v_planif  int;
+    v_precision int;
+    v_dias_act int;
+    v_obj_pct int;
+    v_fatiga  numeric(5,2);
+    v_tema_foco uuid;
+    v_msg  text;
+    v_row  metricas_semanales;
+BEGIN
+    IF v_uid IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
+
+    -- Minutos activos reales (sesiones_estudio).
+    SELECT COALESCE(SUM(minutos_activos), 0)::int INTO v_minutos
+      FROM sesiones_estudio
+     WHERE usuario_id = v_uid
+       AND abierta_en::date BETWEEN v_lunes AND v_domingo;
+
+    -- Minutos planificados según plan del usuario.
+    SELECT COALESCE(SUM(minutos), 0)::int INTO v_planif
+      FROM plan_sesiones ps
+      JOIN plan_estudio p ON p.id = ps.plan_id
+     WHERE p.usuario_id = v_uid
+       AND ps.fecha BETWEEN v_lunes AND v_domingo;
+
+    -- Precisión media (%).
+    SELECT COALESCE(ROUND(AVG(CASE WHEN r.correcta THEN 100 ELSE 0 END))::int, 0)
+      INTO v_precision
+      FROM respuestas r
+      JOIN intentos i ON i.id = r.intento_id
+     WHERE i.usuario_id = v_uid
+       AND r.respondida_en::date BETWEEN v_lunes AND v_domingo;
+
+    -- Días activos.
+    SELECT COUNT(DISTINCT abierta_en::date) INTO v_dias_act
+      FROM sesiones_estudio
+     WHERE usuario_id = v_uid
+       AND abierta_en::date BETWEEN v_lunes AND v_domingo;
+
+    -- % objetivos cumplidos.
+    v_obj_pct := CASE WHEN v_planif = 0 THEN 0
+                      ELSE LEAST(100, ROUND(v_minutos::numeric * 100 / v_planif))::int
+                 END;
+
+    -- Fatiga: correlación negativa entre "posición temporal en la
+    -- sesión" y "acierto".  Aproximación: diferencia de precisión
+    -- entre la 1ª mitad y la 2ª mitad de cada intento.
+    WITH intentos_semana AS (
+        SELECT i.id
+          FROM intentos i
+         WHERE i.usuario_id = v_uid
+           AND i.iniciado_en::date BETWEEN v_lunes AND v_domingo
+           AND i.finalizado_en IS NOT NULL
+    ),
+    con_pos AS (
+        SELECT r.intento_id, r.correcta,
+               row_number() OVER (PARTITION BY r.intento_id ORDER BY r.id) AS pos,
+               count(*)     OVER (PARTITION BY r.intento_id) AS total
+          FROM respuestas r
+         WHERE r.intento_id IN (SELECT id FROM intentos_semana)
+    )
+    SELECT ROUND(
+             (avg(CASE WHEN pos <= total/2 AND correcta THEN 100
+                       WHEN pos <= total/2 THEN 0 END) -
+              avg(CASE WHEN pos >  total/2 AND correcta THEN 100
+                       WHEN pos >  total/2 THEN 0 END))::numeric, 2)
+      INTO v_fatiga FROM con_pos;
+
+    -- Tema foco = peor porcentaje de aciertos en la semana.
+    SELECT t.id INTO v_tema_foco
+      FROM temas t
+      JOIN unidades u ON u.tema_id = t.id
+      JOIN preguntas p ON p.unidad_id = u.id
+      JOIN respuestas r ON r.pregunta_id = p.id
+      JOIN intentos i ON i.id = r.intento_id
+     WHERE i.usuario_id = v_uid
+       AND r.respondida_en::date BETWEEN v_lunes AND v_domingo
+     GROUP BY t.id
+     ORDER BY avg(CASE WHEN r.correcta THEN 1.0 ELSE 0 END)
+     LIMIT 1;
+
+    -- Persistir snapshot.
+    INSERT INTO metricas_semanales(usuario_id, semana_inicio,
+        minutos_estudiados, minutos_planificados, precision_media,
+        fatiga_delta, dias_activos, objetivos_cumplidos, tema_foco)
+    VALUES (v_uid, v_lunes, v_minutos, v_planif, v_precision,
+            v_fatiga, v_dias_act, v_obj_pct, v_tema_foco)
+    ON CONFLICT (usuario_id, semana_inicio) DO UPDATE
+       SET minutos_estudiados   = EXCLUDED.minutos_estudiados,
+           minutos_planificados = EXCLUDED.minutos_planificados,
+           precision_media      = EXCLUDED.precision_media,
+           fatiga_delta         = EXCLUDED.fatiga_delta,
+           dias_activos         = EXCLUDED.dias_activos,
+           objetivos_cumplidos  = EXCLUDED.objetivos_cumplidos,
+           tema_foco            = EXCLUDED.tema_foco
+    RETURNING * INTO v_row;
+
+    -- Mensaje motivador (nunca deprimir):
+    v_msg := CASE
+        WHEN v_obj_pct >= 90 THEN '¡Semana brillante! Vas fuerte y con constancia.'
+        WHEN v_obj_pct >= 60 THEN 'Buena semana. Con un empujoncito llegas al 100%.'
+        WHEN v_obj_pct >= 30 THEN 'Has puesto minutos importantes. La próxima subimos.'
+        ELSE 'Pequeños pasos también cuentan. Vamos a por una semana redonda.'
+    END;
+
+    RETURN jsonb_build_object(
+        'semana_inicio', v_lunes,
+        'minutos_estudiados', v_minutos,
+        'minutos_planificados', v_planif,
+        'precision_media', v_precision,
+        'fatiga_delta', v_fatiga,
+        'dias_activos', v_dias_act,
+        'objetivos_cumplidos', v_obj_pct,
+        'tema_foco', v_tema_foco,
+        'mensaje', v_msg
+    );
+END $$;
+
+-- Ajusta la carga del próximo plan según el cumplimiento semanal:
+--  < 50% → -20%   |  50-90% → sin cambio  |  > 90% → +15%
+CREATE OR REPLACE FUNCTION ajustar_carga_semanal() RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_uid   uuid := jwt_usuario_id();
+    v_plan  plan_estudio;
+    v_snap  metricas_semanales;
+    v_mul   numeric := 1.0;
+    v_hpd   jsonb;
+    v_dow   text;
+BEGIN
+    SELECT * INTO v_plan FROM plan_estudio WHERE usuario_id = v_uid AND activo LIMIT 1;
+    IF v_plan.id IS NULL THEN RETURN jsonb_build_object('ok', false, 'motivo', 'sin_plan'); END IF;
+
+    -- Snapshot de la semana anterior.
+    SELECT * INTO v_snap FROM metricas_semanales
+     WHERE usuario_id = v_uid
+     ORDER BY semana_inicio DESC LIMIT 1;
+
+    IF v_snap.usuario_id IS NULL THEN RETURN jsonb_build_object('ok', false, 'motivo', 'sin_datos'); END IF;
+
+    v_mul := CASE
+        WHEN v_snap.objetivos_cumplidos < 50 THEN 0.8
+        WHEN v_snap.objetivos_cumplidos > 90 THEN 1.15
+        ELSE 1.0
+    END;
+
+    IF v_mul <> 1.0 THEN
+        v_hpd := v_plan.horas_por_dia;
+        FOR v_dow IN SELECT unnest(ARRAY['lun','mar','mie','jue','vie','sab','dom']) LOOP
+            v_hpd := jsonb_set(v_hpd, ARRAY[v_dow],
+                to_jsonb(GREATEST(0, ROUND((COALESCE((v_hpd->>v_dow)::numeric, 0) * v_mul)::numeric, 1))));
+        END LOOP;
+        UPDATE plan_estudio
+           SET horas_por_dia = v_hpd, actualizado_en = now()
+         WHERE id = v_plan.id;
+        PERFORM generar_plan(v_plan.id, 14);
+    END IF;
+
+    RETURN jsonb_build_object('ok', true, 'multiplicador', v_mul);
+END $$;
+
+-- Resumen semanal para banner al inicio.
+CREATE OR REPLACE FUNCTION resumen_semanal() RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_snap metricas_semanales;
+BEGIN
+    -- Si no hay snapshot esta semana, calcúlalo.
+    SELECT * INTO v_snap FROM metricas_semanales
+     WHERE usuario_id = jwt_usuario_id()
+     ORDER BY semana_inicio DESC LIMIT 1;
+    IF v_snap.usuario_id IS NULL OR v_snap.semana_inicio <
+       (date_trunc('week', current_date - interval '7 days')::date) THEN
+        PERFORM calcular_metricas_semanales();
+        SELECT * INTO v_snap FROM metricas_semanales
+         WHERE usuario_id = jwt_usuario_id()
+         ORDER BY semana_inicio DESC LIMIT 1;
+    END IF;
+    RETURN COALESCE(row_to_json(v_snap)::jsonb, 'null'::jsonb);
+END $$;
+
+
+-- =============================================================================
+--                 NOTIFICACIONES AUTOMÁTICAS (encola cola_push)
+-- =============================================================================
+-- Función utilitaria que un cron externo puede llamar cada día para
+-- encolar avisos:
+--   - Usuarios inactivos >24 h que no han estudiado hoy → recordatorio.
+--   - Domingos → resumen de la semana + objetivos siguientes.
+-- No manda notificación si ya hay una encolada sin enviar para
+-- ese usuario en las últimas 20 h (evita ruido).
+
+CREATE OR REPLACE FUNCTION encolar_notificaciones_diarias() RETURNS int
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+    v_n int := 0;
+    r   record;
+BEGIN
+    -- Recordatorio de estudio: activos, verificados, con plan, sin
+    -- sesión en las últimas 24 h.
+    FOR r IN
+        SELECT u.id, u.nombre
+          FROM usuarios u
+          JOIN plan_estudio p ON p.usuario_id = u.id AND p.activo
+         WHERE u.activo AND u.email_verificado
+           AND NOT EXISTS (
+                SELECT 1 FROM sesiones_estudio s
+                 WHERE s.usuario_id = u.id
+                   AND s.abierta_en > now() - interval '24 hours')
+           AND NOT EXISTS (
+                SELECT 1 FROM cola_push cp
+                 WHERE cp.usuario_id = u.id
+                   AND cp.encolado_en > now() - interval '20 hours'
+                   AND cp.enviado_en IS NULL)
+    LOOP
+        INSERT INTO cola_push(usuario_id, titulo, cuerpo, url)
+        VALUES (r.id,
+                'Te esperamos, ' || r.nombre,
+                'Un bloque corto de estudio hoy suma mucho. ¿Le damos?',
+                app_url());
+        v_n := v_n + 1;
+    END LOOP;
+
+    -- Domingos: resumen + objetivos.
+    IF EXTRACT(ISODOW FROM current_date)::int = 7 THEN
+        FOR r IN
+            SELECT u.id, u.nombre
+              FROM usuarios u
+              JOIN plan_estudio p ON p.usuario_id = u.id AND p.activo
+             WHERE u.activo AND u.email_verificado
+        LOOP
+            INSERT INTO cola_push(usuario_id, titulo, cuerpo, url)
+            VALUES (r.id,
+                    'Nueva semana, ' || r.nombre,
+                    'Vamos a revisar cómo fue la semana y qué toca ahora.',
+                    app_url());
+            v_n := v_n + 1;
+        END LOOP;
+    END IF;
+
+    RETURN v_n;
+END $$;
+
+
+-- =============================================================================
 --                        PUSH — configuración y prueba
 -- =============================================================================
 

@@ -320,6 +320,37 @@ No hay que cambiar YAMLs, ni Dockerfiles, ni SQL — sólo el `.env`.
 
 ## Estado de las funcionalidades
 
+### Sistema adaptativo (nuevo) ✅
+
+- **Modo Estudio**: botón "Estudiar" en Home → modal "¿Cuánto tiempo tienes?"
+  (horas + minutos, chips 25/45/60/90/120, selector de sistema) →
+  vista fullscreen con **cronómetro grande**, bloque actual (teoría,
+  repaso, descanso), botón "Saltar descanso" en descansos, avance
+  automático al llegar a 00:00.
+- **Sistemas de estudio** contrastados semillados:
+  Pomodoro clásico (25/5), Pomodoro largo (50/10), Ultradiano (90/20),
+  Bloques de 45, Sprints cortos (15/3).  Cada uno define
+  ciclos hasta descanso largo.
+- **Repetición espaciada SM-2 simplificado**:
+  - Al acertar: intervalos 1, 3, 7 días, luego `intervalo × ease_factor`
+    (ease entre 1.3 y 3.0; sube 0.1 con acierto, baja 0.2 con fallo).
+  - Al fallar: intervalo=0 → repaso mismo día (y otra vez al día
+    siguiente si vuelve a fallar).
+  - RPCs: `registrar_respuesta_espaciada(pregunta, correcta)`,
+    `siguientes_repasos(N)`.
+- **Métricas semanales** (`calcular_metricas_semanales`):
+  minutos estudiados vs planificados, precisión media, **fatiga
+  cognitiva** (Δ precisión entre 1ª y 2ª mitad de la sesión), días
+  activos, % objetivos cumplidos, tema foco (peor rendimiento).
+- **Ajuste de carga automático** (`ajustar_carga_semanal`):
+  <50% cumplido → carga −20%; >90% → +15%; regenera plan.
+- **Resumen semanal** (`resumen_semanal`) — se ejecuta la primera vez
+  que abre la Home cada semana y muestra banner con mensaje motivador
+  (nunca deprimente).
+- **Notificaciones automáticas** (`encolar_notificaciones_diarias`):
+  inactivos >24 h → recordatorio; domingos → resumen + objetivos.
+  Se llama desde un cron externo o manualmente desde pgAdmin.
+
 ### Listas ✅
 - Registro con verificación por email (SMTP configurable).
 - Login por email, JWT de PostgREST.
@@ -356,7 +387,34 @@ No hay que cambiar YAMLs, ni Dockerfiles, ni SQL — sólo el `.env`.
   `SELECT push_enviar_prueba()` desde pgAdmin para probar el
   circuito una vez suscrito.
 
+### Cron sugerido (opcional)
+
+Para que las notificaciones de recordatorio funcionen automáticamente,
+programa esto cada día a las 9:00 y 20:00 (o desde un `cron` externo):
+
+```sql
+SELECT encolar_notificaciones_diarias();
+```
+
+Y esto los lunes al calcular la semana anterior + ajustar carga:
+
+```sql
+SELECT calcular_metricas_semanales();
+SELECT ajustar_carga_semanal();
+```
+
+Puedes lanzarlas con `pg_cron`, o desde el propio worker
+`notificador` extendiéndolo, o desde un job de Dokploy.
+
 ### Sin implementar aún 🚧
+- **Preguntas en el bloque de repaso del modo estudio**: por ahora
+  se muestra el número de preguntas vencidas pero no se renderizan
+  las opciones para responder inline (la RPC
+  `registrar_respuesta_espaciada` existe y funciona; solo falta el
+  render como los tests actuales).
+- **Simulacro mensual automático**: RPCs de intento con
+  `tipo='simulacro'` ya existen; falta un generador que coja N
+  preguntas al azar de toda la oposición con cronómetro y baremo.
 - **Editor visual** de oposiciones desde el admin.  Hoy los
   contenidos se cargan por RPC `importar_oposicion(payload)` con
   JSON.
