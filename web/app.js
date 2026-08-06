@@ -175,6 +175,14 @@ function setAvatarChips(root) {
   $$('[data-avatar]', root).forEach(el => { el.textContent = initials(nombre); });
 }
 
+function cerrarSesion() {
+  S.clearToken();
+  state.session = null;
+  state.oposiciones = [];
+  state.principalId = null;
+  location.hash = '#/auth';
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // AUTH — login + registro
 // ═══════════════════════════════════════════════════════════════════════
@@ -408,6 +416,7 @@ async function renderOnboarding() {
   const accesoAdministracion = $('[data-ir-administracion]', root);
   accesoAdministracion.hidden = !state.session?.es_admin;
   accesoAdministracion.addEventListener('click', () => { location.hash = '#/administracion'; });
+  $('[data-logout]', root).addEventListener('click', cerrarSesion);
 
   $$('li', ul).forEach(li => {
     li.addEventListener('click', () => {
@@ -736,11 +745,7 @@ async function renderPerfil() {
   });
 
   // Logout
-  $('[data-logout]', root).addEventListener('click', () => {
-    S.clearToken();
-    state.session = null; state.oposiciones = [];
-    location.hash = '#/auth';
-  });
+  $('[data-logout]', root).addEventListener('click', cerrarSesion);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
