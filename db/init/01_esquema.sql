@@ -681,6 +681,7 @@ ALTER TABLE temas                ALTER COLUMN autor_id   SET DEFAULT jwt_usuario
 CREATE OR REPLACE FUNCTION app_url() RETURNS text
 LANGUAGE sql STABLE AS $$
     SELECT COALESCE(
+        NULLIF(current_setting('app.app_url', true), ''),
         (SELECT valor #>> '{}' FROM config WHERE clave = 'app_url'),
         'http://localhost'
     );
