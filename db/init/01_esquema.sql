@@ -247,11 +247,16 @@ CREATE TABLE IF NOT EXISTS respuestas (
 );
 CREATE INDEX IF NOT EXISTS respuestas_intento_idx ON respuestas (intento_id);
 
+-- El progreso se DERIVA de sesiones_estudio + intentos: `teoria_completada`
+-- pasa a true cuando el tiempo activo acumulado supera minutos_est*0.8, y
+-- las notas se calculan a partir de `intentos.nota`.  Ver la RPC
+-- `refrescar_progreso_unidad()` más abajo.
 CREATE TABLE IF NOT EXISTS progreso_unidad (
     usuario_id           uuid NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
     unidad_id            uuid NOT NULL REFERENCES unidades(id) ON DELETE CASCADE,
     teoria_completada    boolean NOT NULL DEFAULT false,
     teoria_vista_en      timestamptz,
+    minutos_estudiados   int  NOT NULL DEFAULT 0,   -- suma de sesiones_estudio activas
     intentos_test        int  NOT NULL DEFAULT 0,
     mejor_nota           numeric(5,2),
     ultima_nota          numeric(5,2),
@@ -259,6 +264,28 @@ CREATE TABLE IF NOT EXISTS progreso_unidad (
     PRIMARY KEY (usuario_id, unidad_id)
 );
 CREATE INDEX IF NOT EXISTS progreso_unidad_usuario_idx ON progreso_unidad (usuario_id);
+
+-- Registro fino del tiempo activo por (usuario, unidad).  El frontend
+-- abre una sesión al entrar en la unidad y va enviando pings de
+-- "sigo aquí"; al cerrar (blur / navegación / cierre de pestaña)
+-- envía el cierre.  Si el ping no llega en X minutos, la sesión se
+-- cierra sola vía RPC `sesiones_cerrar_zombies()`.
+CREATE TABLE IF NOT EXISTS sesiones_estudio (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    usuario_id      uuid NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+    unidad_id       uuid NOT NULL REFERENCES unidades(id) ON DELETE CASCADE,
+    abierta_en      timestamptz NOT NULL DEFAULT now(),
+    ultima_actividad timestamptz NOT NULL DEFAULT now(),
+    cerrada_en      timestamptz,
+    -- Minutos ACTIVOS reales (sólo los ticks recibidos).  Al cerrar
+    -- se calcula la diferencia final; en vivo el frontend puede
+    -- estimar añadiendo `min(now(), ultima_actividad + 60s)`.
+    minutos_activos int  NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS sesiones_estudio_usuario_idx
+    ON sesiones_estudio (usuario_id, unidad_id);
+CREATE INDEX IF NOT EXISTS sesiones_estudio_abiertas_idx
+    ON sesiones_estudio (usuario_id) WHERE cerrada_en IS NULL;
 
 CREATE TABLE IF NOT EXISTS marcadores (
     usuario_id     uuid NOT NULL REFERENCES usuarios(id)  ON DELETE CASCADE,
@@ -282,8 +309,19 @@ CREATE TABLE IF NOT EXISTS plan_estudio (
     usuario_id      uuid NOT NULL REFERENCES usuarios(id)   ON DELETE CASCADE,
     oposicion_id    uuid NOT NULL REFERENCES oposiciones(id) ON DELETE CASCADE,
     fecha_examen    date,
+    -- Modo de disponibilidad: 'semanal' (usa horas_semana) o 'diario'
+    -- (usa horas_por_dia con detalle L..D).  El motor de generación
+    -- interpreta cada modo por separado.
+    modo_disponibilidad text NOT NULL DEFAULT 'diario'
+                          CHECK (modo_disponibilidad IN ('semanal','diario')),
+    horas_semana    numeric(5,2),                    -- solo modo='semanal'
+    -- Horas por día lun..dom. NULL o 0 = día sin estudio. Ejemplo:
+    -- '{"lun":1.5, "mar":2, "mie":1.5, "jue":3, "vie":1.5, "sab":3, "dom":0}'
+    horas_por_dia   jsonb NOT NULL DEFAULT
+        '{"lun":2,"mar":2,"mie":2,"jue":2,"vie":2,"sab":2,"dom":0}'::jsonb,
+    -- Se conserva por compatibilidad con las RPCs previas.  El wizard
+    -- rellena automáticamente estos dos a partir de horas_por_dia.
     horas_dia       numeric(4,2) NOT NULL DEFAULT 2 CHECK (horas_dia > 0),
-    -- 7 booleans (lun..dom) con qué días del semana estudia.
     dias_semana     boolean[] NOT NULL DEFAULT ARRAY[true,true,true,true,true,true,false],
     ritmo           text NOT NULL DEFAULT 'normal'
                        CHECK (ritmo IN ('relajado','normal','intensivo')),
@@ -295,6 +333,17 @@ CREATE TABLE IF NOT EXISTS plan_estudio (
     UNIQUE (usuario_id, oposicion_id)
 );
 CREATE INDEX IF NOT EXISTS plan_estudio_usuario_idx ON plan_estudio (usuario_id) WHERE activo;
+
+-- Migración: añade columnas nuevas a plan_estudio si la tabla existía
+-- desde una versión anterior del esquema.
+ALTER TABLE plan_estudio
+    ADD COLUMN IF NOT EXISTS modo_disponibilidad text NOT NULL DEFAULT 'diario'
+        CHECK (modo_disponibilidad IN ('semanal','diario'));
+ALTER TABLE plan_estudio
+    ADD COLUMN IF NOT EXISTS horas_semana numeric(5,2);
+ALTER TABLE plan_estudio
+    ADD COLUMN IF NOT EXISTS horas_por_dia jsonb NOT NULL DEFAULT
+        '{"lun":2,"mar":2,"mie":2,"jue":2,"vie":2,"sab":2,"dom":0}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS plan_sesiones (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -444,6 +493,22 @@ GRANT SELECT ON config TO web_anon, web_user;
 GRANT INSERT, UPDATE, DELETE ON config TO web_user;
 
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO web_user;
+
+
+-- =============================================================================
+--                            GRANT EXECUTE en funciones
+-- =============================================================================
+-- PostgREST oculta las funciones sin EXECUTE al rol que hace la
+-- llamada.  Registro y verificación son anónimos → web_anon.  Login
+-- también es anónimo (el usuario aún no tiene JWT).  Todo lo demás
+-- requiere JWT → web_user.
+--
+-- Se aplica al FINAL de las declaraciones de funciones (ver más
+-- abajo).  Definimos aquí un DO block que barre TODAS las funciones
+-- del esquema public y les da EXECUTE apropiado, para que baste con
+-- añadir una función nueva sin acordarse del GRANT.
+-- La ejecución REAL de este bloque va después de crear las funciones
+-- (fin del fichero).
 
 
 -- =============================================================================
@@ -1434,6 +1499,452 @@ $$;
 
 
 -- =============================================================================
+--            SESIONES DE ESTUDIO — auto-tracking del progreso
+-- =============================================================================
+-- El frontend abre una sesión al entrar en la unidad, envía un tick
+-- de "sigo aquí" cada 30-60 s y cierra al salir.  Un tick sólo
+-- suma tiempo si la ventana está VISIBLE (Page Visibility API).
+--
+-- `refrescar_progreso_unidad()` deriva `teoria_completada` y
+-- `minutos_estudiados` a partir de las sesiones cerradas + estimación
+-- de la abierta.  Se ejecuta al abrir/cerrar/tick para mantener el
+-- dashboard vivo sin agregados nocturnos.
+
+CREATE OR REPLACE FUNCTION sesion_abrir(p_unidad_id uuid) RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_uid uuid := jwt_usuario_id();
+    v_id  uuid;
+BEGIN
+    IF v_uid IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
+    -- Cierra sesiones huérfanas del propio usuario (inactividad > 15 min).
+    UPDATE sesiones_estudio
+       SET cerrada_en = COALESCE(cerrada_en, ultima_actividad)
+     WHERE usuario_id = v_uid
+       AND cerrada_en IS NULL
+       AND ultima_actividad < now() - interval '15 minutes';
+
+    INSERT INTO sesiones_estudio(usuario_id, unidad_id)
+    VALUES (v_uid, p_unidad_id)
+    RETURNING id INTO v_id;
+
+    RETURN jsonb_build_object('sesion_id', v_id);
+END $$;
+
+-- Cada tick suma como MUCHO `p_delta_seg` (por defecto 60 s).  El
+-- frontend manda un tick cuando la pestaña está visible; si el usuario
+-- cambia de pestaña, deja de mandar → deja de sumar.
+CREATE OR REPLACE FUNCTION sesion_tick(p_sesion_id uuid, p_delta_seg int DEFAULT 60)
+RETURNS void
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_uid uuid := jwt_usuario_id();
+    v_ok  boolean;
+BEGIN
+    UPDATE sesiones_estudio
+       SET ultima_actividad = now(),
+           minutos_activos  = minutos_activos + GREATEST(0, p_delta_seg) / 60.0
+     WHERE id = p_sesion_id AND usuario_id = v_uid AND cerrada_en IS NULL
+     RETURNING true INTO v_ok;
+    IF v_ok THEN
+        PERFORM refrescar_progreso_unidad(
+            v_uid,
+            (SELECT unidad_id FROM sesiones_estudio WHERE id = p_sesion_id)
+        );
+    END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION sesion_cerrar(p_sesion_id uuid) RETURNS void
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_uid   uuid := jwt_usuario_id();
+    v_unid  uuid;
+BEGIN
+    UPDATE sesiones_estudio
+       SET cerrada_en = now(), ultima_actividad = now()
+     WHERE id = p_sesion_id AND usuario_id = v_uid AND cerrada_en IS NULL
+     RETURNING unidad_id INTO v_unid;
+    IF v_unid IS NOT NULL THEN
+        PERFORM refrescar_progreso_unidad(v_uid, v_unid);
+    END IF;
+END $$;
+
+-- Recalcula `progreso_unidad` para (usuario, unidad) a partir de
+-- las sesiones (cerradas o abiertas) + intentos. `teoria_completada`
+-- se marca cuando el tiempo activo acumulado supera el 80 % del
+-- estimado `unidades.minutos_est`.
+CREATE OR REPLACE FUNCTION refrescar_progreso_unidad(p_usr uuid, p_unid uuid)
+RETURNS void
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_minutos int;
+    v_umbral  int;
+    v_intentos int;
+    v_ultima   numeric(5,2);
+    v_mejor    numeric(5,2);
+BEGIN
+    SELECT COALESCE(ROUND(SUM(minutos_activos))::int, 0) INTO v_minutos
+      FROM sesiones_estudio
+     WHERE usuario_id = p_usr AND unidad_id = p_unid;
+
+    SELECT GREATEST(5, (minutos_est * 0.8)::int) INTO v_umbral
+      FROM unidades WHERE id = p_unid;
+
+    SELECT count(*), max(nota),
+           (SELECT nota FROM intentos
+             WHERE usuario_id = p_usr AND unidad_id = p_unid
+               AND finalizado_en IS NOT NULL
+             ORDER BY finalizado_en DESC LIMIT 1)
+      INTO v_intentos, v_mejor, v_ultima
+      FROM intentos
+     WHERE usuario_id = p_usr AND unidad_id = p_unid
+       AND finalizado_en IS NOT NULL;
+
+    INSERT INTO progreso_unidad(usuario_id, unidad_id,
+                                 teoria_completada, teoria_vista_en,
+                                 minutos_estudiados,
+                                 intentos_test, mejor_nota, ultima_nota,
+                                 actualizado_en)
+    VALUES (p_usr, p_unid,
+            v_minutos >= v_umbral,
+            CASE WHEN v_minutos >= v_umbral THEN now() ELSE NULL END,
+            v_minutos,
+            COALESCE(v_intentos, 0), v_mejor, v_ultima,
+            now())
+    ON CONFLICT (usuario_id, unidad_id) DO UPDATE
+       SET teoria_completada  = EXCLUDED.teoria_completada
+                                OR progreso_unidad.teoria_completada,
+           teoria_vista_en    = COALESCE(progreso_unidad.teoria_vista_en,
+                                          EXCLUDED.teoria_vista_en),
+           minutos_estudiados = EXCLUDED.minutos_estudiados,
+           intentos_test      = EXCLUDED.intentos_test,
+           mejor_nota         = EXCLUDED.mejor_nota,
+           ultima_nota        = EXCLUDED.ultima_nota,
+           actualizado_en     = now();
+END $$;
+
+-- Cierra sesiones huérfanas (llamable desde un cron externo, o desde
+-- la propia SPA al abrir una nueva).
+CREATE OR REPLACE FUNCTION sesiones_cerrar_zombies() RETURNS int
+LANGUAGE plpgsql AS $$
+DECLARE v_n int;
+BEGIN
+    UPDATE sesiones_estudio
+       SET cerrada_en = ultima_actividad
+     WHERE cerrada_en IS NULL
+       AND ultima_actividad < now() - interval '30 minutes';
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    RETURN v_n;
+END $$;
+
+
+-- =============================================================================
+--                    WIZARD DE DISPONIBILIDAD + MOTOR DE PLAN
+-- =============================================================================
+
+-- Guarda las respuestas del wizard.  Si el plan ya existe para la
+-- oposición, se actualiza; si no, se crea.  Devuelve el plan_id.
+CREATE OR REPLACE FUNCTION guardar_disponibilidad(
+    p_oposicion_id  uuid,
+    p_modo          text,                        -- 'semanal' | 'diario'
+    p_horas_semana  numeric DEFAULT NULL,        -- solo modo='semanal'
+    p_horas_por_dia jsonb   DEFAULT NULL,        -- solo modo='diario'
+    p_fecha_examen  date    DEFAULT NULL,
+    p_ritmo         text    DEFAULT 'normal',
+    p_metodo        text    DEFAULT 'cortas'
+) RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_uid    uuid := jwt_usuario_id();
+    v_id     uuid;
+    v_hd     numeric(4,2);
+    v_dw     boolean[];
+BEGIN
+    IF v_uid IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
+    IF p_modo NOT IN ('semanal','diario') THEN RAISE EXCEPTION 'modo_invalido'; END IF;
+
+    -- Derivar horas_dia y dias_semana (compat con RPCs previas).
+    IF p_modo = 'semanal' THEN
+        v_hd := ROUND((COALESCE(p_horas_semana, 10) / 6)::numeric, 2);
+        v_dw := ARRAY[true,true,true,true,true,true,false];
+    ELSE
+        v_dw := ARRAY[
+            COALESCE((p_horas_por_dia->>'lun')::numeric, 0) > 0,
+            COALESCE((p_horas_por_dia->>'mar')::numeric, 0) > 0,
+            COALESCE((p_horas_por_dia->>'mie')::numeric, 0) > 0,
+            COALESCE((p_horas_por_dia->>'jue')::numeric, 0) > 0,
+            COALESCE((p_horas_por_dia->>'vie')::numeric, 0) > 0,
+            COALESCE((p_horas_por_dia->>'sab')::numeric, 0) > 0,
+            COALESCE((p_horas_por_dia->>'dom')::numeric, 0) > 0
+        ];
+        v_hd := GREATEST(0.1, ROUND((
+            COALESCE((p_horas_por_dia->>'lun')::numeric, 0) +
+            COALESCE((p_horas_por_dia->>'mar')::numeric, 0) +
+            COALESCE((p_horas_por_dia->>'mie')::numeric, 0) +
+            COALESCE((p_horas_por_dia->>'jue')::numeric, 0) +
+            COALESCE((p_horas_por_dia->>'vie')::numeric, 0) +
+            COALESCE((p_horas_por_dia->>'sab')::numeric, 0) +
+            COALESCE((p_horas_por_dia->>'dom')::numeric, 0)
+        ) / 7, 2));
+    END IF;
+
+    INSERT INTO plan_estudio(usuario_id, oposicion_id, fecha_examen,
+                              modo_disponibilidad, horas_semana, horas_por_dia,
+                              horas_dia, dias_semana, ritmo, metodo,
+                              activo, actualizado_en)
+    VALUES (v_uid, p_oposicion_id, p_fecha_examen,
+            p_modo, p_horas_semana,
+            COALESCE(p_horas_por_dia, '{"lun":2,"mar":2,"mie":2,"jue":2,"vie":2,"sab":2,"dom":0}'::jsonb),
+            v_hd, v_dw, p_ritmo, p_metodo,
+            true, now())
+    ON CONFLICT (usuario_id, oposicion_id) DO UPDATE
+       SET fecha_examen        = EXCLUDED.fecha_examen,
+           modo_disponibilidad = EXCLUDED.modo_disponibilidad,
+           horas_semana        = EXCLUDED.horas_semana,
+           horas_por_dia       = EXCLUDED.horas_por_dia,
+           horas_dia           = EXCLUDED.horas_dia,
+           dias_semana         = EXCLUDED.dias_semana,
+           ritmo               = EXCLUDED.ritmo,
+           metodo              = EXCLUDED.metodo,
+           activo              = true,
+           actualizado_en      = now()
+    RETURNING id INTO v_id;
+
+    -- Al guardar, regenera el plan de los próximos 14 días.
+    PERFORM generar_plan(v_id, 14);
+    RETURN jsonb_build_object('plan_id', v_id);
+END $$;
+
+-- Motor MUY simple de generación de plan:
+--   - borra las sesiones NO completadas de los próximos p_dias
+--   - para cada día con horas > 0, crea bloques de 25/45 min con las
+--     unidades pendientes (no marcadas como teoria_completada) por
+--     orden de oposicion_temas.orden + unidades.orden.
+--   - añade un bloque final de "repaso" si sobran minutos.
+CREATE OR REPLACE FUNCTION generar_plan(p_plan_id uuid, p_dias int DEFAULT 14)
+RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_plan    plan_estudio;
+    v_hoy     date := current_date;
+    v_dia     date;
+    v_dow_es  text;
+    v_hd      numeric;
+    v_min     int;
+    v_bloque  int;
+    v_creadas int := 0;
+    v_uid     uuid;
+    v_unid    uuid;
+    v_unids   uuid[];
+    v_idx     int;
+BEGIN
+    SELECT * INTO v_plan FROM plan_estudio WHERE id = p_plan_id;
+    IF v_plan.id IS NULL THEN RAISE EXCEPTION 'plan_no_existe'; END IF;
+    v_uid := v_plan.usuario_id;
+
+    -- Cola de unidades pendientes de la oposición del plan.
+    SELECT COALESCE(array_agg(u.id ORDER BY ot.orden, u.orden), ARRAY[]::uuid[])
+      INTO v_unids
+      FROM oposicion_temas ot
+      JOIN unidades u ON u.tema_id = ot.tema_id
+ LEFT JOIN progreso_unidad pu
+        ON pu.unidad_id = u.id AND pu.usuario_id = v_uid
+     WHERE ot.oposicion_id = v_plan.oposicion_id
+       AND COALESCE(pu.teoria_completada, false) = false;
+
+    IF cardinality(v_unids) = 0 THEN
+        RETURN jsonb_build_object('creadas', 0, 'motivo', 'sin_unidades_pendientes');
+    END IF;
+
+    -- Limpia sesiones futuras NO completadas de este plan.
+    DELETE FROM plan_sesiones
+     WHERE plan_id = p_plan_id
+       AND fecha >= v_hoy
+       AND NOT completada;
+
+    v_idx := 1;
+    FOR i IN 0..(p_dias - 1) LOOP
+        v_dia := v_hoy + i;
+        v_dow_es := CASE EXTRACT(ISODOW FROM v_dia)::int
+                        WHEN 1 THEN 'lun' WHEN 2 THEN 'mar' WHEN 3 THEN 'mie'
+                        WHEN 4 THEN 'jue' WHEN 5 THEN 'vie' WHEN 6 THEN 'sab'
+                        WHEN 7 THEN 'dom' END;
+        v_hd  := COALESCE((v_plan.horas_por_dia->>v_dow_es)::numeric, 0);
+        v_min := (v_hd * 60)::int;
+        IF v_min <= 0 THEN CONTINUE; END IF;
+
+        -- Método 'cortas' → bloques de 25 min; 'profundas' → 45 min.
+        v_bloque := CASE WHEN v_plan.metodo = 'profundas' THEN 45 ELSE 25 END;
+
+        WHILE v_min >= v_bloque AND v_idx <= cardinality(v_unids) LOOP
+            v_unid := v_unids[v_idx];
+            INSERT INTO plan_sesiones(plan_id, fecha, minutos, unidad_id, tipo)
+            VALUES (p_plan_id, v_dia, v_bloque, v_unid, 'estudio');
+            v_creadas := v_creadas + 1;
+            v_min := v_min - v_bloque - 5;   -- 5 min de respiro
+            v_idx := v_idx + 1;
+        END LOOP;
+
+        -- Añade un bloque de repaso al final del día si queda tiempo.
+        IF v_min >= 15 THEN
+            INSERT INTO plan_sesiones(plan_id, fecha, minutos, tipo)
+            VALUES (p_plan_id, v_dia, LEAST(v_min, 30), 'repaso');
+            v_creadas := v_creadas + 1;
+        END IF;
+    END LOOP;
+
+    RETURN jsonb_build_object('creadas', v_creadas);
+END $$;
+
+-- Reprograma: si el usuario no ha cumplido las sesiones de hoy y
+-- días anteriores, se marca las no-completadas como saltadas y se
+-- vuelve a llamar a generar_plan para llenar los próximos 14 días.
+CREATE OR REPLACE FUNCTION reprogramar_plan(p_plan_id uuid) RETURNS jsonb
+LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE plan_sesiones
+       SET nota_libre = COALESCE(nota_libre, '') || ' [saltada]'
+     WHERE plan_id = p_plan_id
+       AND fecha < current_date
+       AND NOT completada
+       AND (nota_libre IS NULL OR nota_libre NOT LIKE '%[saltada]%');
+
+    DELETE FROM plan_sesiones
+     WHERE plan_id = p_plan_id
+       AND fecha < current_date
+       AND NOT completada;
+
+    RETURN generar_plan(p_plan_id, 14);
+END $$;
+
+-- Devuelve el plan de HOY (o el día que pases).
+CREATE OR REPLACE FUNCTION plan_del_dia(p_fecha date DEFAULT current_date) RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'id',           ps.id,
+        'hora_inicio',  ps.hora_inicio,
+        'minutos',      ps.minutos,
+        'tipo',         ps.tipo,
+        'completada',   ps.completada,
+        'unidad_id',    ps.unidad_id,
+        'unidad',       u.nombre,
+        'tema',         t.nombre,
+        'tema_icono',   t.icono
+    ) ORDER BY ps.hora_inicio NULLS LAST, ps.id), '[]'::jsonb)
+      FROM plan_estudio p
+      JOIN plan_sesiones ps ON ps.plan_id = p.id
+ LEFT JOIN unidades u ON u.id = ps.unidad_id
+ LEFT JOIN temas t ON t.id = u.tema_id
+     WHERE p.usuario_id = jwt_usuario_id()
+       AND p.activo
+       AND ps.fecha = p_fecha;
+$$;
+
+
+-- =============================================================================
+--                    GESTIÓN DE USUARIOS (ADMIN)
+-- =============================================================================
+
+CREATE OR REPLACE FUNCTION admin_listar_usuarios(p_query text DEFAULT NULL,
+                                                 p_limit int DEFAULT 50)
+RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'id',                u.id,
+        'email',             u.email,
+        'nombre',            u.nombre,
+        'email_verificado',  u.email_verificado,
+        'activo',            u.activo,
+        'creado_en',         u.creado_en,
+        'roles',             (SELECT array_agg(rol_id ORDER BY rol_id)
+                                FROM usuario_roles WHERE usuario_id = u.id),
+        'oposiciones',       (SELECT array_agg(o.nombre)
+                                FROM usuario_oposiciones uo
+                                JOIN oposiciones o ON o.id = uo.oposicion_id
+                               WHERE uo.usuario_id = u.id)
+    ) ORDER BY u.creado_en DESC), '[]'::jsonb)
+      FROM usuarios u
+     WHERE es_admin()
+       AND (p_query IS NULL OR
+            u.email ILIKE '%' || p_query || '%' OR
+            u.nombre ILIKE '%' || p_query || '%')
+     LIMIT p_limit;
+$$;
+
+CREATE OR REPLACE FUNCTION admin_set_activo(p_usuario_id uuid, p_activo boolean)
+RETURNS void
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
+    UPDATE usuarios SET activo = p_activo WHERE id = p_usuario_id;
+END $$;
+
+CREATE OR REPLACE FUNCTION admin_toggle_rol(p_usuario_id uuid, p_rol text, p_asignar boolean)
+RETURNS void
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
+    IF p_asignar THEN
+        INSERT INTO usuario_roles(usuario_id, rol_id) VALUES (p_usuario_id, p_rol)
+        ON CONFLICT DO NOTHING;
+    ELSE
+        DELETE FROM usuario_roles WHERE usuario_id = p_usuario_id AND rol_id = p_rol;
+    END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION admin_verificar_email(p_usuario_id uuid) RETURNS void
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
+    UPDATE usuarios SET email_verificado = true WHERE id = p_usuario_id;
+END $$;
+
+CREATE OR REPLACE FUNCTION admin_stats() RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT CASE WHEN NOT es_admin() THEN 'null'::jsonb ELSE jsonb_build_object(
+        'usuarios',          (SELECT count(*) FROM usuarios),
+        'usuarios_activos',  (SELECT count(*) FROM usuarios WHERE activo),
+        'usuarios_verif',    (SELECT count(*) FROM usuarios WHERE email_verificado),
+        'oposiciones',       (SELECT count(*) FROM oposiciones),
+        'temas',             (SELECT count(*) FROM temas),
+        'unidades',          (SELECT count(*) FROM unidades),
+        'preguntas',         (SELECT count(*) FROM preguntas),
+        'emails_pendientes', (SELECT count(*) FROM cola_emails WHERE enviado_en IS NULL),
+        'push_pendientes',   (SELECT count(*) FROM cola_push WHERE enviado_en IS NULL)
+    ) END;
+$$;
+
+-- Política RLS para que un admin pueda ver todos los email_tokens y
+-- cola_emails desde la SPA (útil para "reenviar verificación" y
+-- diagnóstico de correo).
+ALTER TABLE email_tokens ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS email_tokens_admin ON email_tokens;
+CREATE POLICY email_tokens_admin ON email_tokens
+    FOR SELECT TO web_user USING (es_admin());
+
+ALTER TABLE cola_emails ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS cola_emails_admin ON cola_emails;
+CREATE POLICY cola_emails_admin ON cola_emails
+    FOR SELECT TO web_user USING (es_admin());
+GRANT SELECT ON cola_emails, email_tokens TO web_user;
+
+ALTER TABLE cola_push ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS cola_push_admin ON cola_push;
+CREATE POLICY cola_push_admin ON cola_push
+    FOR SELECT TO web_user USING (es_admin());
+GRANT SELECT ON cola_push TO web_user;
+
+ALTER TABLE sesiones_estudio ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS sesiones_propias ON sesiones_estudio;
+CREATE POLICY sesiones_propias ON sesiones_estudio
+    USING (usuario_id = jwt_usuario_id() OR es_admin())
+    WITH CHECK (usuario_id = jwt_usuario_id());
+GRANT SELECT, INSERT, UPDATE ON sesiones_estudio TO web_user;
+ALTER TABLE sesiones_estudio
+    ALTER COLUMN usuario_id SET DEFAULT jwt_usuario_id();
+
+
+-- =============================================================================
 --                        PUSH — configuración y prueba
 -- =============================================================================
 
@@ -1512,6 +2023,44 @@ INSERT INTO logros_catalogo(codigo, titulo, descripcion, objetivo, xp, icono) VA
     ('logro_1000_xp',      'Nivel avanzado',     'Alcanza los 1.000 XP.',               1000, 300, '⭐'),
     ('logro_100_correctas','Ojo de halcón',      'Acumula 100 respuestas correctas.',   100, 250, '🦅')
 ON CONFLICT (codigo) DO NOTHING;
+
+-- =============================================================================
+--                 GRANT EXECUTE en TODAS las funciones (barrido)
+-- =============================================================================
+-- Barre todas las funciones del schema public y les da EXECUTE al
+-- rol apropiado.  Las de auth (login/registro/verify/reenvío) tienen
+-- que ser ejecutables por `web_anon` (sin JWT).  El resto se ofrece
+-- a `web_user`.  Todas las nuevas se benefician automáticamente sin
+-- tener que acordarse del GRANT.
+
+DO $grant_exec$
+DECLARE
+    r          record;
+    v_anon_ok  text[] := ARRAY[
+        'login_web', 'registrar_web', 'verificar_email',
+        'reenviar_verificacion', 'push_config_publica'
+    ];
+BEGIN
+    FOR r IN
+        SELECT p.oid, p.proname, pg_get_function_identity_arguments(p.oid) AS args
+          FROM pg_proc p
+          JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public'
+    LOOP
+        EXECUTE format('GRANT EXECUTE ON FUNCTION public.%I(%s) TO web_user',
+                       r.proname, r.args);
+        IF r.proname = ANY(v_anon_ok) THEN
+            EXECUTE format('GRANT EXECUTE ON FUNCTION public.%I(%s) TO web_anon',
+                           r.proname, r.args);
+        END IF;
+    END LOOP;
+END
+$grant_exec$;
+
+-- Fuerza recarga del schema cache de PostgREST tras el init.  Con
+-- esto no hay que hacer NOTIFY a mano después de un `psql < schema`.
+NOTIFY pgrst, 'reload schema';
+
 
 -- Usuario admin de bootstrap (marcado como verificado para poder
 -- entrar sin pasar por el flujo SMTP).

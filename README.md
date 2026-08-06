@@ -82,7 +82,32 @@ Router hash-based:
   repetir con indicador de fuerza)
 - `#/verify?token=…` — aterrizaje del enlace del correo
 - `#/onboarding` — elegir oposición al primer login
+- `#/wizard` — disponibilidad multi-paso (modo → horas → método/examen)
 - `#/home`, `#/plan`, `#/stats`, `#/perfil` — cuatro pantallas del mockup
-- `#/unidad/<uuid>` — teoría + test en pestañas
+- `#/unidad/<uuid>` — **unificada** (teoría + CTA test) con
+  auto-tracking del tiempo de estudio (`sesion_abrir/tick/cerrar`).
+- `#/admin` — gestión de usuarios (sólo `es_admin`)
 
-Ver [`DESPLIEGUE.md`](DESPLIEGUE.md) para el paso a paso completo.
+## Flujo del usuario nuevo
+
+1. Se da de alta con email + contraseña.
+2. Confirma su correo (enlace enviado por el mailer).
+3. Al primer login → **elige oposición** (`onboarding`).
+4. **Wizard de disponibilidad**:
+   - Elige entre "horas semanales" (input global) o "detalle por
+     día" (cuadrícula L-D con horas por día).
+   - Ajusta las horas.
+   - Indica fecha del examen (opcional), método
+     (cortas 25 min / profundas 45 min) y ritmo (relajado /
+     normal / intensivo).
+5. El motor genera un **plan de 14 días** distribuyendo las
+   unidades pendientes por los días con horas disponibles.
+6. Al abrir una unidad se registra tiempo activo automáticamente;
+   `teoria_completada` se marca sola al 80 % del tiempo estimado
+   — no hay botón "marcar como leída".
+7. Si el usuario no cumple el plan, el botón "Reprogramar" del
+   Plan salta las sesiones pasadas no hechas y redistribuye lo
+   pendiente.
+
+Ver [`DESPLIEGUE.md`](DESPLIEGUE.md) para el paso a paso completo
+y el estado de funcionalidades (listas / beta / pendientes).

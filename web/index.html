@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Aprentix · Tu oposición, a tu ritmo</title>
 
+  <link rel="manifest" href="/manifest.webmanifest">
   <meta name="application-name" content="Aprentix">
   <meta name="theme-color" content="#6B8E23" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#101E1A" media="(prefers-color-scheme: dark)">
@@ -12,16 +13,15 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Aprentix">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="icon" type="image/svg+xml" href="/icons/icon-any.svg">
+  <link rel="mask-icon" href="/icons/icon-mono.svg" color="#6B8E23">
 
-  <!-- Favicon inline en SVG para no depender de otro fetch. -->
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='50' font-size='52'%3E🦊%3C/text%3E%3C/svg%3E">
-
-  <!-- Paleta verde salvia + modo oscuro bioluminiscente. -->
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="style.css">
 
   <script>
-    // Aplica el tema antes del primer render para evitar el flash.
     (function () {
       var m = document.cookie.match(/(?:^|;\s*)aprentix_theme=(dark|light)/);
       var theme = m ? m[1] : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
@@ -32,61 +32,53 @@
   <script src="session.js"></script>
 </head>
 <body>
-  <!-- ═══════════════════════════════════════════════════════════
-       Layout general.
-       Fondos ambientales solarpunk pintados con CSS puro sobre :root.
-       Toda la app usa una capa `.app-root` que envuelve el contenido
-       para poder empujar el bottom-nav.
-       ═══════════════════════════════════════════════════════════ -->
-  <div class="ambient"></div>
+  <div class="ambient" aria-hidden="true"></div>
 
   <div id="app" class="app-root"></div>
 
-  <!-- Vistas / templates.  Se clonan al DOM desde JS según la ruta. -->
-
-  <!--──────────────── AUTH: login + registro (mismo layout) ────────────────-->
+  <!-- ─────────────────────── AUTH ─────────────────────── -->
   <template id="tpl-auth">
     <div class="auth-view">
       <header class="auth-hero">
-        <div class="fox-badge fox-badge-lg"></div>
+        <img class="brand-logo" src="/logo.svg" alt="Aprentix">
         <h1>Aprentix</h1>
         <p class="tagline">Tu oposición, a tu ritmo.</p>
       </header>
 
       <div class="auth-card">
-        <div class="auth-tabs">
-          <button class="auth-tab active" data-tab="login">Entrar</button>
-          <button class="auth-tab" data-tab="register">Crear cuenta</button>
+        <div class="auth-tabs" role="tablist">
+          <button class="auth-tab active" data-tab="login" role="tab">Entrar</button>
+          <button class="auth-tab"        data-tab="register" role="tab">Crear cuenta</button>
         </div>
 
-        <form data-panel="login" class="auth-panel active" autocomplete="on">
+        <form data-panel="login" class="auth-panel active" autocomplete="on" novalidate>
           <label>
             <span>Correo electrónico</span>
-            <input name="email" type="email" autocomplete="email" required>
+            <input name="email" type="email" autocomplete="email" inputmode="email" required>
           </label>
           <label>
             <span>Contraseña</span>
             <input name="password" type="password" autocomplete="current-password" required>
           </label>
-          <button class="btn btn-primary" type="submit">Entrar</button>
+          <button class="btn btn-primary btn-block" type="submit">Entrar</button>
           <p class="auth-err" data-err hidden></p>
           <p class="auth-forgot">
-            <button type="button" data-reenviar>Reenviar confirmación</button>
+            <button type="button" data-reenviar>¿No has recibido el correo?</button>
           </p>
         </form>
 
-        <form data-panel="register" class="auth-panel" autocomplete="off">
+        <form data-panel="register" class="auth-panel" autocomplete="off" novalidate>
           <label>
             <span>Nombre</span>
             <input name="nombre" type="text" autocomplete="name" required>
           </label>
           <label>
             <span>Correo electrónico</span>
-            <input name="email" type="email" autocomplete="email" required>
+            <input name="email" type="email" autocomplete="email" inputmode="email" required>
           </label>
           <label>
             <span>Repite el correo</span>
-            <input name="email2" type="email" autocomplete="email" required>
+            <input name="email2" type="email" autocomplete="email" inputmode="email" required>
           </label>
           <p class="mini-hint" data-email-match hidden></p>
 
@@ -105,7 +97,7 @@
           </label>
           <p class="mini-hint" data-pw-match hidden></p>
 
-          <button class="btn btn-primary" type="submit">Crear cuenta</button>
+          <button class="btn btn-primary btn-block" type="submit">Crear cuenta</button>
           <p class="auth-err" data-err hidden></p>
           <p class="auth-mini">
             Al continuar aceptas recibir un correo de verificación desde
@@ -116,28 +108,40 @@
     </div>
   </template>
 
-  <!--──────────────── HOME / INICIO ────────────────-->
+  <!-- ─────────────────────── HOME ─────────────────────── -->
   <template id="tpl-home">
     <section class="view view-home">
       <header class="top-bar">
         <button class="chip chip-level" data-open-perfil>
-          <span class="fox-badge"></span>
+          <img class="fox-mini" src="/logo.svg" alt="">
           <span data-nivel>Nivel 1</span>
         </button>
-        <button class="chip chip-racha">
+        <button class="chip chip-racha" data-goto="stats">
           <span class="chip-ico">☀️</span>
           <strong data-racha>0</strong> días
         </button>
-        <button class="avatar-btn" data-open-perfil>
-          <span class="avatar" data-avatar>K</span>
+        <button class="avatar-btn" data-open-perfil aria-label="Perfil">
+          <span class="avatar" data-avatar>?</span>
         </button>
       </header>
 
-      <div class="hero hero-home">
+      <div class="hero">
         <span class="pill">Hoy</span>
         <h1>Sigue con tu oposición</h1>
         <p class="muted">Avanza con sesiones breves, enfoque claro y descansos bien medidos.</p>
-        <div class="hero-art art-home" aria-hidden="true"></div>
+        <svg class="hero-decor" viewBox="0 0 200 120" aria-hidden="true">
+          <defs>
+            <linearGradient id="hd-sky" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--accent-soft)"/>
+              <stop offset="100%" stop-color="transparent"/>
+            </linearGradient>
+          </defs>
+          <circle cx="170" cy="30" r="18" fill="var(--accent)" opacity=".55"/>
+          <circle cx="170" cy="30" r="30" fill="url(#hd-sky)"/>
+          <path d="M0,100 Q40,60 90,90 T200,90 L200,120 L0,120 Z" fill="var(--pri-soft)"/>
+          <path d="M20,100 q10,-25 20,-5 M60,100 q12,-30 24,-8 M110,100 q10,-25 20,-5 M155,100 q12,-30 24,-8"
+                stroke="var(--pri-d)" stroke-width="2" fill="none" opacity=".55" stroke-linecap="round"/>
+        </svg>
       </div>
 
       <article class="card card-continua" data-continua>
@@ -157,15 +161,15 @@
           </div>
         </div>
         <button class="btn btn-primary btn-cta" data-continua-btn>
-          <span class="play-ico">▶</span> Continuar
+          <span class="play-ico" aria-hidden="true">▶</span> Continuar
         </button>
       </article>
 
       <section class="section">
         <div class="section-head">
-          <h2><span class="section-sun">🌤</span> Tu día de hoy</h2>
+          <h2><span class="section-sun" aria-hidden="true">🌤</span> Tu día de hoy</h2>
           <button class="chip chip-outline" data-goto="plan">
-            <span class="chip-ico">📅</span> Ver plan completo
+            <span class="chip-ico">📅</span> Ver plan
           </button>
         </div>
         <ul class="list list-hoy" data-hoy></ul>
@@ -188,27 +192,34 @@
     </section>
   </template>
 
-  <!--──────────────── PLAN ────────────────-->
+  <!-- ─────────────────────── PLAN ─────────────────────── -->
   <template id="tpl-plan">
     <section class="view view-plan">
       <header class="top-bar">
-        <span class="fox-badge"></span>
+        <img class="brand-mini" src="/logo.svg" alt="">
         <button class="chip chip-level" data-open-perfil>
           <span class="chip-ico">🌿</span><span data-nivel>Nivel 1</span>
         </button>
         <button class="chip chip-racha">
           <span class="chip-ico">☀️</span><strong data-racha>0</strong> días
         </button>
-        <button class="avatar-btn" data-open-perfil>
-          <span class="avatar" data-avatar>K</span>
+        <button class="avatar-btn" data-open-perfil aria-label="Perfil">
+          <span class="avatar" data-avatar>?</span>
         </button>
       </header>
 
-      <div class="hero hero-plan">
+      <div class="hero">
         <span class="pill">Hoy</span>
         <h1>Tu plan</h1>
         <p class="muted">Organiza tus sesiones y mantén un ritmo realista cada día.</p>
-        <div class="hero-art art-plan" aria-hidden="true"></div>
+        <svg class="hero-decor" viewBox="0 0 200 120" aria-hidden="true">
+          <rect x="60" y="30" width="80" height="70" rx="6" fill="var(--pri-soft)"/>
+          <path d="M60,30 L100,10 L140,30" fill="var(--pri-light)" stroke="var(--pri-d)" stroke-width="2"/>
+          <line x1="60" y1="55" x2="140" y2="55" stroke="var(--pri-d)" opacity=".3"/>
+          <line x1="60" y1="75" x2="140" y2="75" stroke="var(--pri-d)" opacity=".3"/>
+          <circle cx="100" cy="70" r="12" fill="var(--leaf-soft)"/>
+          <path d="M100,60 Q108,70 100,80 Q92,70 100,60 Z" fill="var(--pri)" opacity=".9"/>
+        </svg>
       </div>
 
       <nav class="week-strip" data-week></nav>
@@ -230,60 +241,38 @@
         <div class="hito-ico">🎯</div>
         <div class="hito-txt">
           <span class="chip chip-soft">Próximo hito</span>
-          <h3 data-hito-nombre>Simulacro general</h3>
-          <p class="muted" data-hito-desc>En — días</p>
+          <h3 data-hito-nombre>Examen</h3>
+          <p class="muted" data-hito-desc>Configura la fecha en tu plan</p>
         </div>
-        <span class="chevron">›</span>
-      </article>
-
-      <article class="card">
-        <h2>🌿 Tu estrategia semanal</h2>
-        <ul class="list list-plain">
-          <li>
-            <span class="ico-round">🕒</span>
-            <div><strong>Bloques cortos</strong><span class="muted">Sesiones de 20–30 min</span></div>
-            <span class="chevron">›</span>
-          </li>
-          <li>
-            <span class="ico-round">📅</span>
-            <div><strong>Días fuertes</strong><span class="muted">Martes, jueves y sábado</span></div>
-            <span class="chevron">›</span>
-          </li>
-          <li>
-            <span class="ico-round">🔁</span>
-            <div><strong>Repasos</strong><span class="muted">Cada 2 días</span></div>
-            <span class="chevron">›</span>
-          </li>
-        </ul>
+        <span class="chevron" aria-hidden="true">›</span>
       </article>
 
       <div class="plan-actions">
-        <button class="btn btn-primary" data-plan-editar>✏️ Editar plan</button>
-        <button class="btn btn-outline" data-plan-reprog>📅 Reprogramar</button>
+        <button class="btn btn-primary btn-block" data-plan-editar>✏️ Editar disponibilidad</button>
+        <button class="btn btn-outline btn-block" data-plan-reprog>📅 Reprogramar plan</button>
       </div>
     </section>
   </template>
 
-  <!--──────────────── ESTADÍSTICAS ────────────────-->
+  <!-- ─────────────────────── ESTADÍSTICAS ─────────────────────── -->
   <template id="tpl-stats">
     <section class="view view-stats">
       <header class="top-bar">
-        <span class="fox-badge"></span>
+        <img class="brand-mini" src="/logo.svg" alt="">
         <button class="chip chip-level" data-open-perfil>
           <span class="chip-ico">🌿</span><span data-nivel>Nivel 1</span>
         </button>
         <button class="chip chip-racha">
           <span class="chip-ico">🔥</span><strong data-racha>0</strong> días
         </button>
-        <button class="avatar-btn" data-open-perfil>
-          <span class="avatar" data-avatar>K</span>
+        <button class="avatar-btn" data-open-perfil aria-label="Perfil">
+          <span class="avatar" data-avatar>?</span>
         </button>
       </header>
 
-      <div class="hero hero-stats">
+      <div class="hero">
         <h1>Estadísticas</h1>
         <p class="muted">Mide tu constancia y detecta dónde progresas mejor.</p>
-        <div class="hero-art art-stats" aria-hidden="true"></div>
       </div>
 
       <div class="stats-tiles">
@@ -293,18 +282,18 @@
         </div>
         <div class="tile">
           <span class="tile-ico">⏱️</span>
-          <div><span class="muted">Tiempo esta semana</span><strong data-minutos>0m</strong></div>
+          <div><span class="muted">Tiempo semana</span><strong data-minutos>0m</strong></div>
         </div>
         <div class="tile">
           <span class="tile-ico">🎯</span>
-          <div><span class="muted">Precisión media</span><strong data-precision>0%</strong></div>
+          <div><span class="muted">Precisión</span><strong data-precision>0%</strong></div>
         </div>
       </div>
 
       <article class="card">
         <div class="card-head">
           <h2>📊 Actividad semanal</h2>
-          <span class="chip chip-outline">📅 Últimos 7 días</span>
+          <span class="chip chip-outline">📅 7 días</span>
         </div>
         <div class="chart-bars" data-chart aria-label="Actividad semanal"></div>
       </article>
@@ -318,7 +307,7 @@
         <div class="progreso-txt">
           <h2>Progreso total</h2>
           <p><strong data-hechas>0</strong> de <strong data-totales>0</strong> unidades</p>
-          <p class="muted">¡Sigue así!</p>
+          <p class="muted" data-progreso-lema>¡Sigue así!</p>
         </div>
       </article>
 
@@ -326,24 +315,16 @@
         <h2>🌿 Rendimiento por materia</h2>
         <ul class="list list-materias" data-rendimiento></ul>
       </article>
-
-      <article class="card card-tip">
-        <div class="tip-ico">🌼</div>
-        <div>
-          <h3>Recomendación</h3>
-          <p class="muted">Cuando tengas más datos, aquí verás tu mejor franja horaria y los temas a reforzar.</p>
-        </div>
-      </article>
     </section>
   </template>
 
-  <!--──────────────── PERFIL ────────────────-->
+  <!-- ─────────────────────── PERFIL ─────────────────────── -->
   <template id="tpl-perfil">
     <section class="view view-perfil">
       <div class="perfil-hero">
-        <span class="fox-badge fox-badge-hero"></span>
+        <img class="brand-hero" src="/logo.svg" alt="">
         <h1 data-nombre>—</h1>
-        <p class="muted"><span data-email>—</span></p>
+        <p class="muted" data-email>—</p>
         <span class="chip chip-outline"><span class="chip-ico">🌿</span> <span data-nivel>Nivel 1</span></span>
       </div>
 
@@ -383,14 +364,9 @@
       <article class="card">
         <h2>Preferencias</h2>
         <ul class="list list-plain">
-          <li>
+          <li data-goto-wizard>
             <span class="ico-round">📅</span>
-            <div><strong>Disponibilidad</strong><span class="muted">Lunes a sábado · 2 h al día</span></div>
-            <span class="chevron">›</span>
-          </li>
-          <li>
-            <span class="ico-round">🔔</span>
-            <div><strong>Recordatorios</strong><span class="muted">Activados a las 19:00</span></div>
+            <div><strong>Disponibilidad</strong><span class="muted" data-perf-disp>—</span></div>
             <span class="chevron">›</span>
           </li>
           <li>
@@ -401,22 +377,12 @@
         </ul>
       </article>
 
-      <article class="card">
-        <h2>Cuenta</h2>
+      <article class="card" data-admin-card hidden>
+        <h2>🛠️ Administración</h2>
         <ul class="list list-plain">
-          <li>
-            <span class="ico-round">👤</span>
-            <div><strong>Editar perfil</strong><span class="muted">Nombre, meta y avatar</span></div>
-            <span class="chevron">›</span>
-          </li>
-          <li>
-            <span class="ico-round">🛡️</span>
-            <div><strong>Seguridad</strong><span class="muted">Contraseña y acceso</span></div>
-            <span class="chevron">›</span>
-          </li>
-          <li>
-            <span class="ico-round">💬</span>
-            <div><strong>Ayuda y soporte</strong><span class="muted">FAQ y contacto</span></div>
+          <li data-goto="admin">
+            <span class="ico-round">👥</span>
+            <div><strong>Usuarios</strong><span class="muted">Gestionar cuentas y roles</span></div>
             <span class="chevron">›</span>
           </li>
         </ul>
@@ -426,37 +392,38 @@
     </section>
   </template>
 
-  <!--──────────────── ONBOARDING oposición ────────────────-->
-  <template id="tpl-onboarding">
-    <section class="view view-onboarding">
-      <div class="hero hero-onboarding">
-        <span class="fox-badge fox-badge-hero"></span>
-        <h1>Elige tu oposición</h1>
-        <p class="muted">Puedes cambiarla más adelante desde tu perfil.</p>
-      </div>
-      <ul class="onboarding-list" data-onboarding></ul>
-      <button class="btn btn-primary btn-block" data-onboarding-guardar disabled>
-        Continuar
-      </button>
-    </section>
-  </template>
-
-  <!--──────────────── UNIDAD (teoría + test) ────────────────-->
+  <!-- ─────────────────────── UNIDAD (unificada) ─────────────────────── -->
   <template id="tpl-unidad">
     <section class="view view-unidad">
       <header class="unidad-head">
-        <button class="btn btn-ghost btn-mini" data-back>‹ Atrás</button>
-        <h1 data-unidad-nombre>—</h1>
-        <span class="chip chip-soft" data-unidad-min>-- min</span>
+        <button class="btn btn-ghost btn-mini" data-back aria-label="Atrás">‹</button>
+        <div class="unidad-titulo">
+          <span class="muted small" data-unidad-tema>—</span>
+          <h1 data-unidad-nombre>—</h1>
+        </div>
+        <span class="chip chip-soft"><span class="chip-ico">🕒</span> <span data-unidad-min>-- min</span></span>
       </header>
-      <div class="tabs">
-        <button class="tab active" data-tab="teoria">Teoría</button>
-        <button class="tab" data-tab="test">Test</button>
+
+      <div class="unidad-progreso">
+        <div class="progress">
+          <div class="progress-bar"><span data-unidad-fill style="width:0%"></span></div>
+          <span class="progress-label"><span data-unidad-min-actuales>0</span> / <span data-unidad-min-total>0</span> min</span>
+        </div>
       </div>
+
       <article class="card card-teoria" data-panel="teoria">
         <div class="prose" data-teoria></div>
-        <button class="btn btn-primary btn-block" data-marcar-teoria>Marcar como estudiada</button>
       </article>
+
+      <article class="card card-test-cta" data-panel="test-cta">
+        <div class="cta-ico">📝</div>
+        <div>
+          <h3>¿Hacemos un test rápido?</h3>
+          <p class="muted"><span data-preguntas-n>10</span> preguntas para consolidar lo aprendido.</p>
+        </div>
+        <button class="btn btn-primary" data-test-start>Comenzar</button>
+      </article>
+
       <article class="card card-test" data-panel="test" hidden>
         <div class="test-progress" data-test-progress></div>
         <div class="test-q" data-test-q></div>
@@ -468,29 +435,214 @@
     </section>
   </template>
 
-  <!--──────────────── BOTTOM NAV ────────────────-->
+  <!-- ─────────────────────── ONBOARDING oposición ─────────────────────── -->
+  <template id="tpl-onboarding">
+    <section class="view view-onboarding">
+      <div class="hero hero-center">
+        <img class="brand-hero" src="/logo.svg" alt="">
+        <h1>Elige tu oposición</h1>
+        <p class="muted">Podrás cambiarla más tarde desde tu perfil.</p>
+      </div>
+      <ul class="onboarding-list" data-onboarding></ul>
+      <div class="sticky-cta">
+        <button class="btn btn-primary btn-block" data-onboarding-guardar disabled>
+          Continuar
+        </button>
+      </div>
+    </section>
+  </template>
+
+  <!-- ─────────────────────── WIZARD DISPONIBILIDAD ─────────────────────── -->
+  <template id="tpl-wizard">
+    <section class="view view-wizard">
+      <header class="wizard-head">
+        <button class="btn btn-ghost btn-mini" data-wizard-back>‹</button>
+        <div class="wizard-steps">
+          <span class="dot active" data-step="1"></span>
+          <span class="dot" data-step="2"></span>
+          <span class="dot" data-step="3"></span>
+        </div>
+        <span></span>
+      </header>
+
+      <!-- Paso 1: modo -->
+      <div class="wizard-step" data-wstep="1">
+        <div class="hero hero-center">
+          <img class="brand-hero" src="/logo.svg" alt="">
+          <h1>¿Cómo quieres organizarte?</h1>
+          <p class="muted">Puedes indicar un total semanal o afinar día por día.</p>
+        </div>
+        <ul class="option-grid">
+          <li>
+            <label>
+              <input type="radio" name="modo" value="semanal">
+              <div class="option-card">
+                <span class="option-ico">📆</span>
+                <h3>Horas semanales</h3>
+                <p class="muted">"Puedo dedicarle 12 h a la semana"</p>
+              </div>
+            </label>
+          </li>
+          <li>
+            <label>
+              <input type="radio" name="modo" value="diario" checked>
+              <div class="option-card">
+                <span class="option-ico">🗓️</span>
+                <h3>Detalle por día</h3>
+                <p class="muted">"Los jueves y sábados más, domingos descanso"</p>
+              </div>
+            </label>
+          </li>
+        </ul>
+        <div class="sticky-cta">
+          <button class="btn btn-primary btn-block" data-wizard-next="2">Continuar</button>
+        </div>
+      </div>
+
+      <!-- Paso 2: horas -->
+      <div class="wizard-step" data-wstep="2" hidden>
+        <div class="hero">
+          <h1>Tu disponibilidad</h1>
+          <p class="muted" data-wizard-hint>Ajusta las horas para cada día.</p>
+        </div>
+
+        <div data-wizard-semanal hidden>
+          <label class="range-label">
+            <span>Horas a la semana</span>
+            <strong><span data-hs-val>10</span> h</strong>
+          </label>
+          <input type="range" min="1" max="50" value="10" data-hs step="1" class="range">
+          <div class="range-scale"><span>1</span><span>25</span><span>50</span></div>
+        </div>
+
+        <div data-wizard-diario>
+          <ul class="days-grid" data-days>
+            <li><span class="day-lbl">Lun</span>
+              <input type="number" min="0" max="12" step="0.5" value="2" data-day="lun" inputmode="decimal">
+              <span class="day-unit">h</span></li>
+            <li><span class="day-lbl">Mar</span>
+              <input type="number" min="0" max="12" step="0.5" value="2" data-day="mar" inputmode="decimal">
+              <span class="day-unit">h</span></li>
+            <li><span class="day-lbl">Mié</span>
+              <input type="number" min="0" max="12" step="0.5" value="2" data-day="mie" inputmode="decimal">
+              <span class="day-unit">h</span></li>
+            <li><span class="day-lbl">Jue</span>
+              <input type="number" min="0" max="12" step="0.5" value="3" data-day="jue" inputmode="decimal">
+              <span class="day-unit">h</span></li>
+            <li><span class="day-lbl">Vie</span>
+              <input type="number" min="0" max="12" step="0.5" value="2" data-day="vie" inputmode="decimal">
+              <span class="day-unit">h</span></li>
+            <li><span class="day-lbl">Sáb</span>
+              <input type="number" min="0" max="12" step="0.5" value="3" data-day="sab" inputmode="decimal">
+              <span class="day-unit">h</span></li>
+            <li><span class="day-lbl">Dom</span>
+              <input type="number" min="0" max="12" step="0.5" value="0" data-day="dom" inputmode="decimal">
+              <span class="day-unit">h</span></li>
+          </ul>
+          <p class="muted small">Total: <strong data-hd-total>14</strong> h/semana</p>
+        </div>
+
+        <div class="sticky-cta">
+          <button class="btn btn-primary btn-block" data-wizard-next="3">Continuar</button>
+        </div>
+      </div>
+
+      <!-- Paso 3: método + examen -->
+      <div class="wizard-step" data-wstep="3" hidden>
+        <div class="hero">
+          <h1>Últimos detalles</h1>
+          <p class="muted">Cómo prefieres estudiar y cuándo es el examen.</p>
+        </div>
+
+        <div class="field">
+          <label class="field-lbl">Fecha del examen (opcional)</label>
+          <input type="date" data-fecha class="input">
+        </div>
+
+        <div class="field">
+          <span class="field-lbl">Duración de sesiones</span>
+          <div class="segmented" role="radiogroup" data-metodo>
+            <button type="button" data-val="cortas" class="active">Cortas (25 min)</button>
+            <button type="button" data-val="profundas">Profundas (45 min)</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="field-lbl">Ritmo</span>
+          <div class="segmented" role="radiogroup" data-ritmo>
+            <button type="button" data-val="relajado">Relajado</button>
+            <button type="button" data-val="normal" class="active">Normal</button>
+            <button type="button" data-val="intensivo">Intensivo</button>
+          </div>
+        </div>
+
+        <div class="sticky-cta">
+          <button class="btn btn-primary btn-block" data-wizard-finish>Crear mi plan</button>
+        </div>
+      </div>
+    </section>
+  </template>
+
+  <!-- ─────────────────────── ADMIN ─────────────────────── -->
+  <template id="tpl-admin">
+    <section class="view view-admin">
+      <header class="top-bar">
+        <button class="btn btn-ghost btn-mini" data-back>‹</button>
+        <h1 class="admin-title">Administración</h1>
+        <span></span>
+      </header>
+
+      <div class="stats-tiles stats-4">
+        <div class="tile"><span class="tile-ico">👤</span><div><span class="muted">Usuarios</span><strong data-ad-usr>0</strong></div></div>
+        <div class="tile"><span class="tile-ico">📚</span><div><span class="muted">Oposiciones</span><strong data-ad-opos>0</strong></div></div>
+        <div class="tile"><span class="tile-ico">✉️</span><div><span class="muted">Cola email</span><strong data-ad-mail>0</strong></div></div>
+        <div class="tile"><span class="tile-ico">🔔</span><div><span class="muted">Cola push</span><strong data-ad-push>0</strong></div></div>
+      </div>
+
+      <article class="card">
+        <div class="card-head">
+          <h2>Usuarios</h2>
+          <input class="input input-mini" type="search" placeholder="Buscar" data-ad-buscar>
+        </div>
+        <ul class="admin-users" data-ad-users></ul>
+      </article>
+    </section>
+  </template>
+
+  <!-- ─────────────────────── VERIFY ─────────────────────── -->
+  <template id="tpl-verify">
+    <section class="auth-view">
+      <img class="brand-hero" src="/logo.svg" alt="Aprentix">
+      <div class="auth-card" style="text-align:center" data-panel>
+        <h2 style="color:var(--pri-d);margin-top:0">Confirmando tu cuenta…</h2>
+        <p class="muted">Espera un momento.</p>
+      </div>
+    </section>
+  </template>
+
+  <!-- ─────────────────────── BOTTOM NAV ─────────────────────── -->
   <template id="tpl-nav">
     <nav class="bottom-nav" aria-label="Navegación principal">
-      <button data-nav="home" class="active">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></svg>
+      <button data-nav="home" class="active" aria-label="Inicio">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></svg>
         <span>Inicio</span>
       </button>
-      <button data-nav="plan">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>
+      <button data-nav="plan" aria-label="Plan">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>
         <span>Plan</span>
       </button>
-      <button data-nav="stats">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      <button data-nav="stats" aria-label="Estadísticas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
         <span>Estadísticas</span>
       </button>
-      <button data-nav="perfil">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/></svg>
+      <button data-nav="perfil" aria-label="Perfil">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/></svg>
         <span>Perfil</span>
       </button>
     </nav>
   </template>
 
-  <div id="toast" class="toast" hidden></div>
+  <div id="toast" class="toast" role="status" hidden></div>
 
   <script src="app.js"></script>
 </body>

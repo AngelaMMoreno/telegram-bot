@@ -1,23 +1,8 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   Aprentix (DESA)  ──  app.js
+   Aprentix — app.js  (SPA rediseño oposiciones)
    -----------------------------------------------------------------------
-   SPA nueva orientada a oposiciones.  Vistas:
-     - auth         (login + registro con email + confirmar email)
-     - onboarding   (elegir oposición)
-     - home         (mockup 1)
-     - plan         (mockup 2)
-     - stats        (mockup 3)
-     - perfil       (mockup 4)
-     - unidad       (teoría + test)
-     - verify       (aterrizaje del enlace de confirmación de email)
-
-   Toda la comunicación con la BBDD va vía RPCs de PostgREST — reutiliza
-   window.AprentixSession (shared/auth/session.js) para el JWT y la
-   llamada `rpc(fn, args, {api:'/api'})`.
-
-   Este fichero es autosuficiente: no depende de shared/spa-router ni de
-   los componentes web personalizados del sitio anterior (los usaban
-   tests/teoría).  Estilo: vanilla ES2020 sin bundler.
+   Router hash-based, vanilla ES2020, sin bundler.  Reutiliza
+   window.AprentixSession (session.js) para JWT + rpc.
    ═══════════════════════════════════════════════════════════════════════ */
 'use strict';
 
@@ -27,33 +12,38 @@ if (!S) throw new Error('AprentixSession no cargado');
 const $  = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-// ═══════════════════════════════════════════════════════════════════════
-// ROUTER (hash-based; nada de History API porque este bundle vive bajo
-// /app/ sin backend propio — con hashes evitamos que Caddy tenga que
-// reescribir rutas).
-// ═══════════════════════════════════════════════════════════════════════
-
 const state = {
-  session: null,          // { user_id, email, nombre, roles, es_admin, ... }
+  session: null,
   oposiciones: [],
   principalId: null,
+  wizardData: {
+    modo: 'diario',
+    horas_semana: 10,
+    horas_por_dia: { lun:2, mar:2, mie:2, jue:3, vie:2, sab:3, dom:0 },
+    fecha: null,
+    metodo: 'cortas',
+    ritmo: 'normal',
+  },
 };
+
+// ══════════════════════════════════════════════════════════════════════
+// Router
+// ══════════════════════════════════════════════════════════════════════
 
 const routes = {
   auth:       renderAuth,
   verify:     renderVerify,
   onboarding: renderOnboarding,
+  wizard:     renderWizard,
   home:       renderHome,
   plan:       renderPlan,
   stats:      renderStats,
   perfil:     renderPerfil,
   unidad:     renderUnidad,
+  admin:      renderAdmin,
 };
 
 function parseHash() {
-  // #/home        → { name: 'home', params: {} }
-  // #/unidad/UUID → { name: 'unidad', params: { id: 'UUID' } }
-  // #/verify?token=xxx→ { name: 'verify', query: { token: '...' } }
   const raw = location.hash.replace(/^#\/?/, '');
   const [pathPart, queryPart] = raw.split('?');
   const parts = pathPart.split('/').filter(Boolean);
@@ -66,10 +56,9 @@ function parseHash() {
 
 async function router() {
   const r = parseHash();
-  // El aterrizaje de "verificar cuenta" no requiere sesión.
+
   if (r.name === 'verify') return renderVerify(r);
 
-  // Si no hay token, forzamos auth (salvo que ya estemos en auth).
   if (!S.getToken() && r.name !== 'auth') {
     location.hash = '#/auth';
     return;
@@ -77,25 +66,25 @@ async function router() {
 
   if (S.getToken() && !state.session) {
     try {
-      state.session = await S.rpc('mi_sesion', {}, { api: '/api' });
-      state.session = state.session[0] || state.session;    // PostgREST devuelve array
+      const s = await S.rpc('mi_sesion', {}, { api: '/api' });
+      state.session = Array.isArray(s) ? s[0] : s;
     } catch (e) {
-      // Token caducado o inválido → limpia y a login.
       S.clearToken();
       location.hash = '#/auth';
       return;
     }
   }
 
-  // Onboarding se muestra la primera vez (sin oposiciones matriculadas)
   if (state.session && !state.oposiciones.length) {
     try {
       const mis = await S.rpc('mis_oposiciones', {}, { api: '/api' });
       state.oposiciones = mis || [];
       state.principalId = (state.oposiciones.find(o => o.principal) || {}).id || null;
-    } catch (e) { /* silencioso */ }
+    } catch (_) { /* ignore */ }
   }
-  if (state.session && !state.oposiciones.length && r.name !== 'onboarding' && r.name !== 'auth') {
+
+  if (state.session && !state.oposiciones.length
+      && !['onboarding', 'auth', 'wizard'].includes(r.name)) {
     location.hash = '#/onboarding';
     return;
   }
@@ -108,12 +97,12 @@ async function router() {
 window.addEventListener('hashchange', router);
 window.addEventListener('load', router);
 
-// ═══════════════════════════════════════════════════════════════════════
-// Helpers
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
+// Utils
+// ══════════════════════════════════════════════════════════════════════
 
-function mount(templateId) {
-  const tpl = document.getElementById(templateId);
+function mount(tplId) {
+  const tpl = document.getElementById(tplId);
   const app = document.getElementById('app');
   app.innerHTML = '';
   app.appendChild(tpl.content.cloneNode(true));
@@ -131,15 +120,15 @@ function ensureNav() {
 }
 
 function updateNav(name) {
-  const map = { home: 'home', plan: 'plan', stats: 'stats', perfil: 'perfil', unidad: null };
+  const map = { home:'home', plan:'plan', stats:'stats', perfil:'perfil' };
   const target = map[name];
   const nav = $('.bottom-nav');
-  if (!nav || name === 'auth' || name === 'verify' || name === 'onboarding') {
-    nav && nav.remove();
+  if (!nav || ['auth','verify','onboarding','wizard','unidad','admin'].includes(name)) {
+    if (nav) nav.remove();
     return;
   }
-  $$('.bottom-nav [data-nav]').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.nav === target);
+  $$('.bottom-nav [data-nav]').forEach(b => {
+    b.classList.toggle('active', b.dataset.nav === target);
   });
 }
 
@@ -157,6 +146,13 @@ function initials(nombre) {
   return nombre.trim().split(/\s+/).slice(0, 2).map(x => x[0].toUpperCase()).join('');
 }
 
+function fmtMin(min) {
+  if (!min) return '0m';
+  if (min < 60) return min + 'm';
+  const h = Math.floor(min / 60), m = min % 60;
+  return h + 'h' + (m ? ' ' + m + 'm' : '');
+}
+
 function bindCommon(root) {
   $$('[data-open-perfil]', root).forEach(el => {
     el.addEventListener('click', () => location.hash = '#/perfil');
@@ -171,9 +167,9 @@ function setAvatarChips(root) {
   $$('[data-avatar]', root).forEach(el => { el.textContent = initials(nombre); });
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// AUTH — login + registro
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
+// AUTH
+// ══════════════════════════════════════════════════════════════════════
 
 function calcPwLevel(pw) {
   if (!pw) return { nivel: 0, etiqueta: 'Introduce una contraseña' };
@@ -193,19 +189,15 @@ function calcPwLevel(pw) {
 function renderAuth() {
   mount('tpl-auth');
   const root = $('.auth-view');
-  updateNav('auth');
 
-  // Cambio de tab (login / registro)
   $$('.auth-tab', root).forEach(tab => {
     tab.addEventListener('click', () => {
       $$('.auth-tab', root).forEach(t => t.classList.toggle('active', t === tab));
       $$('.auth-panel', root).forEach(p => p.classList.toggle('active', p.dataset.panel === tab.dataset.tab));
-      // Limpia error visible
       $$('[data-err]', root).forEach(e => { e.hidden = true; e.textContent = ''; });
     });
   });
 
-  // Reenvío de verificación
   $('[data-reenviar]', root).addEventListener('click', async () => {
     const email = $('input[name="email"]', $('[data-panel="login"]', root)).value.trim();
     if (!email) return toast('Introduce el correo primero');
@@ -218,24 +210,23 @@ function renderAuth() {
   // LOGIN
   $('[data-panel="login"]', root).addEventListener('submit', async ev => {
     ev.preventDefault();
-    const err = $('[data-err]', ev.currentTarget);
-    err.hidden = true;
+    const err = $('[data-err]', ev.currentTarget); err.hidden = true;
     const email = ev.currentTarget.email.value.trim();
     const pass  = ev.currentTarget.password.value;
     try {
-      const r = await S.rpc('login_web', { p_email: email, p_password: pass }, { api: '/api', token: null });
+      const r = await S.rpc('login_web', { p_email: email, p_password: pass },
+                             { api: '/api', token: null });
       S.setToken(r.token);
       state.session = null; state.oposiciones = [];
       location.hash = '#/home';
     } catch (e) {
-      if (String(e.message).includes('email_no_verificado')) {
-        err.textContent = 'Aún no has confirmado tu correo. Comprueba tu buzón (o pulsa "Reenviar confirmación").';
-      } else if (String(e.message).includes('credenciales')) {
-        err.textContent = 'Correo o contraseña incorrectos.';
-      } else {
-        err.textContent = e.message;
-      }
       err.hidden = false;
+      const m = String(e.message);
+      err.textContent = m.includes('email_no_verificado')
+          ? 'Aún no has confirmado tu correo. Comprueba tu buzón o pulsa "¿No has recibido el correo?".'
+        : m.includes('credenciales')
+          ? 'Correo o contraseña incorrectos.'
+        : e.message;
     }
   });
 
@@ -253,74 +244,58 @@ function renderAuth() {
 
   function updatePw() {
     const { nivel, etiqueta } = calcPwLevel(regPw.value);
-    pwHint.classList.remove('lvl-1', 'lvl-2', 'lvl-3', 'lvl-4');
+    pwHint.classList.remove('lvl-1','lvl-2','lvl-3','lvl-4');
     if (nivel) pwHint.classList.add('lvl-' + nivel);
     pwLabel.textContent = etiqueta;
-    // ancho controlado por CSS via .lvl-N; forzamos "reset" cuando está vacío
     if (!regPw.value) pwFill.style.width = '0%';
   }
   function updateMatch() {
     if (!regPw2.value) { pwMatch.hidden = true; return; }
     pwMatch.hidden = false;
-    if (regPw.value === regPw2.value) {
-      pwMatch.textContent = '✓ Las contraseñas coinciden';
-      pwMatch.classList.remove('err'); pwMatch.classList.add('ok');
-    } else {
-      pwMatch.textContent = '✗ No coinciden';
-      pwMatch.classList.remove('ok'); pwMatch.classList.add('err');
-    }
+    const ok = regPw.value === regPw2.value;
+    pwMatch.textContent = ok ? '✓ Las contraseñas coinciden' : '✗ No coinciden';
+    pwMatch.classList.toggle('ok', ok);
+    pwMatch.classList.toggle('err', !ok);
   }
-  function updateEmailMatch() {
+  function updateEm() {
     if (!regEmail2.value) { emMatch.hidden = true; return; }
     emMatch.hidden = false;
-    if (regEmail.value.trim().toLowerCase() === regEmail2.value.trim().toLowerCase()) {
-      emMatch.textContent = '✓ Los correos coinciden';
-      emMatch.classList.remove('err'); emMatch.classList.add('ok');
-    } else {
-      emMatch.textContent = '✗ No coinciden';
-      emMatch.classList.remove('ok'); emMatch.classList.add('err');
-    }
+    const ok = regEmail.value.trim().toLowerCase() === regEmail2.value.trim().toLowerCase();
+    emMatch.textContent = ok ? '✓ Los correos coinciden' : '✗ No coinciden';
+    emMatch.classList.toggle('ok', ok);
+    emMatch.classList.toggle('err', !ok);
   }
-
   regPw.addEventListener('input', () => { updatePw(); updateMatch(); });
   regPw2.addEventListener('input', updateMatch);
-  regEmail.addEventListener('input', updateEmailMatch);
-  regEmail2.addEventListener('input', updateEmailMatch);
+  regEmail.addEventListener('input', updateEm);
+  regEmail2.addEventListener('input', updateEm);
 
   regPanel.addEventListener('submit', async ev => {
     ev.preventDefault();
-    const err = $('[data-err]', regPanel);
-    err.hidden = true;
+    const err = $('[data-err]', regPanel); err.hidden = true;
     const nombre = regPanel.nombre.value.trim();
     const email  = regEmail.value.trim().toLowerCase();
     const email2 = regEmail2.value.trim().toLowerCase();
     const pw     = regPw.value;
     const pw2    = regPw2.value;
-    if (email !== email2) { err.textContent = 'Los correos no coinciden.'; err.hidden = false; return; }
-    if (pw !== pw2)       { err.textContent = 'Las contraseñas no coinciden.'; err.hidden = false; return; }
-    if (calcPwLevel(pw).nivel < 2) {
-      err.textContent = 'Elige una contraseña más fuerte.'; err.hidden = false; return;
-    }
+    if (email !== email2) return showErr('Los correos no coinciden.');
+    if (pw !== pw2)       return showErr('Las contraseñas no coinciden.');
+    if (calcPwLevel(pw).nivel < 2) return showErr('Elige una contraseña más fuerte.');
+
     try {
-      await S.rpc('registrar_web', {
-        p_email:    email,
-        p_password: pw,
-        p_nombre:   nombre,
-      }, { api: '/api', token: null });
-      // Muestra pantalla de "revisa tu correo"
+      await S.rpc('registrar_web', { p_email: email, p_password: pw, p_nombre: nombre },
+                   { api: '/api', token: null });
       showVerificationPending(email);
     } catch (e) {
-      if (String(e.message).includes('email_registrado')) {
-        err.textContent = 'Ese correo ya está registrado.';
-      } else if (String(e.message).includes('password_debil')) {
-        err.textContent = 'La contraseña debe tener al menos 8 caracteres.';
-      } else if (String(e.message).includes('email_invalido')) {
-        err.textContent = 'El correo no tiene un formato válido.';
-      } else {
-        err.textContent = e.message;
-      }
-      err.hidden = false;
+      const m = String(e.message);
+      showErr(
+        m.includes('email_registrado') ? 'Ese correo ya está registrado.'
+      : m.includes('password_debil')   ? 'La contraseña debe tener al menos 8 caracteres.'
+      : m.includes('email_invalido')   ? 'El correo no tiene un formato válido.'
+      : e.message
+      );
     }
+    function showErr(t){ err.textContent = t; err.hidden = false; }
   });
 }
 
@@ -328,7 +303,7 @@ function showVerificationPending(email) {
   const app = document.getElementById('app');
   app.innerHTML = `
     <section class="auth-view">
-      <div class="fox-badge fox-badge-hero"></div>
+      <img class="brand-hero" src="/logo.svg" alt="Aprentix">
       <div class="auth-card" style="text-align:center">
         <h2 style="color:var(--pri-d);margin-top:0">Revisa tu correo</h2>
         <p>Hemos enviado un enlace de confirmación a<br><strong>${email}</strong>.</p>
@@ -340,18 +315,9 @@ function showVerificationPending(email) {
 }
 
 async function renderVerify(r) {
-  const token = r.query?.token;
-  const app = document.getElementById('app');
-  app.innerHTML = `
-    <section class="auth-view">
-      <div class="fox-badge fox-badge-hero"></div>
-      <div class="auth-card" style="text-align:center" data-panel>
-        <h2 style="color:var(--pri-d);margin-top:0">Confirmando tu cuenta…</h2>
-        <p class="muted">Espera un momento.</p>
-      </div>
-    </section>`;
+  mount('tpl-verify');
   const panel = $('[data-panel]');
-  updateNav('verify');
+  const token = r.query?.token;
   if (!token) {
     panel.innerHTML = `<h2 style="color:var(--danger)">Enlace inválido</h2>
       <p>Falta el token en la URL.</p>
@@ -367,14 +333,14 @@ async function renderVerify(r) {
   } catch (e) {
     panel.innerHTML = `
       <h2 style="color:var(--danger);margin-top:0">Enlace caducado o ya usado</h2>
-      <p>Solicita un nuevo enlace desde "Reenviar confirmación" en la pantalla de acceso.</p>
+      <p>Solicita uno nuevo desde "¿No has recibido el correo?" en el acceso.</p>
       <button class="btn btn-outline btn-block" onclick="location.hash='#/auth'">Volver</button>`;
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// ONBOARDING
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
+// ONBOARDING oposición
+// ══════════════════════════════════════════════════════════════════════
 
 async function renderOnboarding() {
   mount('tpl-onboarding');
@@ -384,22 +350,26 @@ async function renderOnboarding() {
   let seleccionada = null;
 
   let opos = [];
-  try {
-    opos = await S.rpc('listar_oposiciones', {}, { api: '/api' });
-  } catch (e) {
-    toast('Error cargando oposiciones: ' + e.message);
+  try { opos = await S.rpc('listar_oposiciones', {}, { api: '/api' }); }
+  catch (e) { toast('Error cargando oposiciones: ' + e.message); }
+
+  if (!opos.length) {
+    ul.innerHTML = `<li style="text-align:center;padding:24px;border:0">
+      <p class="muted">No hay oposiciones disponibles. Un administrador debe importar una primero
+      (vía <code>importar_oposicion</code>).</p></li>`;
+    return;
   }
 
   ul.innerHTML = opos.map(o => `
     <li data-id="${o.id}">
       <span class="ico-round">📘</span>
       <div>
-        <strong>${o.nombre}</strong>
-        <span class="muted">${o.organismo || ''} · ${o.num_temas || 0} temas</span>
+        <strong>${escapeHtml(o.nombre)}</strong>
+        <span class="muted">${escapeHtml(o.organismo || '')} · ${o.num_temas || 0} temas</span>
       </div>
       <span class="chevron">›</span>
     </li>
-  `).join('') || '<p class="muted">No hay oposiciones disponibles. Contacta con el administrador para importar una.</p>';
+  `).join('');
 
   $$('li', ul).forEach(li => {
     li.addEventListener('click', () => {
@@ -413,18 +383,107 @@ async function renderOnboarding() {
   btn.addEventListener('click', async () => {
     if (!seleccionada) return;
     try {
-      await S.rpc('matricular_oposicion', {
-        p_oposicion_id: seleccionada, p_principal: true,
+      await S.rpc('matricular_oposicion',
+        { p_oposicion_id: seleccionada, p_principal: true },
+        { api: '/api' });
+      state.oposiciones = [];
+      // Tras elegir oposición → wizard de disponibilidad
+      location.hash = '#/wizard';
+    } catch (e) { toast('Error: ' + e.message); }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// WIZARD disponibilidad
+// ══════════════════════════════════════════════════════════════════════
+
+async function renderWizard() {
+  mount('tpl-wizard');
+  const root = $('.view-wizard');
+  let paso = 1;
+
+  function showStep(n) {
+    paso = n;
+    $$('.wizard-step', root).forEach(s => { s.hidden = s.dataset.wstep !== String(n); });
+    $$('.wizard-steps .dot', root).forEach(d =>
+      d.classList.toggle('active', +d.dataset.step === n));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // Paso 1 → siguiente
+  $('[data-wizard-next="2"]', root).addEventListener('click', () => {
+    const modoInput = $('input[name="modo"]:checked', root);
+    state.wizardData.modo = modoInput?.value || 'diario';
+    const hint = $('[data-wizard-hint]', root);
+    $('[data-wizard-semanal]', root).hidden = state.wizardData.modo !== 'semanal';
+    $('[data-wizard-diario]', root).hidden  = state.wizardData.modo !== 'diario';
+    hint.textContent = state.wizardData.modo === 'semanal'
+      ? 'Suma total de horas por semana. El plan repartirá entre lunes y sábado.'
+      : 'Ajusta las horas para cada día. Deja 0 los días que no puedes.';
+    showStep(2);
+  });
+
+  // Paso 2: sliders/inputs
+  const hs = $('[data-hs]', root);
+  const hsVal = $('[data-hs-val]', root);
+  hs.addEventListener('input', () => { hsVal.textContent = hs.value; state.wizardData.horas_semana = +hs.value; });
+  const totalEl = $('[data-hd-total]', root);
+  function recalcTotal() {
+    const t = ['lun','mar','mie','jue','vie','sab','dom']
+      .reduce((s, d) => s + (parseFloat($(`[data-day="${d}"]`, root)?.value) || 0), 0);
+    totalEl.textContent = t;
+    ['lun','mar','mie','jue','vie','sab','dom'].forEach(d => {
+      state.wizardData.horas_por_dia[d] = parseFloat($(`[data-day="${d}"]`, root)?.value) || 0;
+    });
+  }
+  $$('[data-day]', root).forEach(inp => inp.addEventListener('input', recalcTotal));
+  recalcTotal();
+
+  $('[data-wizard-next="3"]', root).addEventListener('click', () => showStep(3));
+
+  // Paso 3
+  $$('[data-metodo] button', root).forEach(b => b.addEventListener('click', () => {
+    $$('[data-metodo] button', root).forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    state.wizardData.metodo = b.dataset.val;
+  }));
+  $$('[data-ritmo] button', root).forEach(b => b.addEventListener('click', () => {
+    $$('[data-ritmo] button', root).forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    state.wizardData.ritmo = b.dataset.val;
+  }));
+  $('[data-fecha]', root).addEventListener('change', ev => {
+    state.wizardData.fecha = ev.target.value || null;
+  });
+
+  $('[data-wizard-back]', root).addEventListener('click', () => {
+    if (paso > 1) return showStep(paso - 1);
+    location.hash = '#/perfil';
+  });
+
+  $('[data-wizard-finish]', root).addEventListener('click', async () => {
+    const opos = state.principalId || (state.oposiciones[0] || {}).id;
+    if (!opos) { toast('Elige primero una oposición'); return location.hash = '#/onboarding'; }
+    const w = state.wizardData;
+    try {
+      await S.rpc('guardar_disponibilidad', {
+        p_oposicion_id:  opos,
+        p_modo:          w.modo,
+        p_horas_semana:  w.modo === 'semanal' ? w.horas_semana : null,
+        p_horas_por_dia: w.modo === 'diario'  ? w.horas_por_dia : null,
+        p_fecha_examen:  w.fecha,
+        p_ritmo:         w.ritmo,
+        p_metodo:        w.metodo,
       }, { api: '/api' });
-      state.oposiciones = []; // fuerza recarga
+      toast('¡Plan creado! Vamos allá.');
       location.hash = '#/home';
     } catch (e) { toast('Error: ' + e.message); }
   });
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
 // HOME
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
 
 async function renderHome() {
   mount('tpl-home');
@@ -433,17 +492,15 @@ async function renderHome() {
   setAvatarChips(root);
 
   let data = null;
-  try {
-    data = await S.rpc('dashboard_inicio', {}, { api: '/api' });
-  } catch (e) { toast('Error cargando datos: ' + e.message); return; }
+  try { data = await S.rpc('dashboard_inicio', {}, { api: '/api' }); }
+  catch (e) { toast('Error cargando datos: ' + e.message); return; }
 
   $('[data-nivel]', root).textContent = 'Nivel ' + (data.nivel || 1);
   $('[data-racha]', root).textContent = data.racha_dias || 0;
   $('[data-racha2]', root).textContent = data.racha_dias || 0;
-  $('[data-minutos]', root).textContent = (data.minutos_semana || 0) + 'm';
+  $('[data-minutos]', root).textContent = fmtMin(data.minutos_semana || 0);
   $('[data-pct]', root).textContent = (data.porcentaje || 0) + '%';
 
-  // Continúa estudiando
   const c = data.continua;
   const cardC = $('.card-continua', root);
   if (c) {
@@ -453,9 +510,8 @@ async function renderHome() {
     $('[data-continua-min]', cardC).textContent = (c.minutos_est || 20) + ' min';
     $('[data-continua-fill]', cardC).style.width = (c.progreso_pct || 0) + '%';
     $('[data-continua-pct]', cardC).textContent = c.progreso_pct || 0;
-    $('[data-continua-btn]', cardC).addEventListener('click', () => {
-      location.hash = '#/unidad/' + c.id;
-    });
+    $('[data-continua-btn]', cardC).addEventListener('click',
+      () => location.hash = '#/unidad/' + c.id);
   } else {
     cardC.innerHTML = `<div class="card-body">
       <div class="book-avatar">✅</div>
@@ -464,36 +520,52 @@ async function renderHome() {
     </div>`;
   }
 
-  // Bloques de "Tu día de hoy" — mientras el motor de plan no exista,
-  // proponemos un plan tipo con la unidad "continua" + repaso + descanso.
+  // Plan de hoy real
+  let hoy = [];
+  try { hoy = await S.rpc('plan_del_dia', {}, { api: '/api' }); } catch (_) {}
   const hoyUl = $('[data-hoy]', root);
-  const bloques = [];
-  if (c) bloques.push({
-    ico: '📋', clase: 'ico-verde',
-    titulo: 'Sesión 1', desc: `Test de la unidad ${c.nombre}`, action: () => location.hash = '#/unidad/' + c.id,
-  });
-  bloques.push({
-    ico: '📖', clase: 'ico-repaso',
-    titulo: 'Repaso', desc: 'Preguntas falladas', action: () => toast('Próximamente'),
-  });
-  bloques.push({
-    ico: '☕', clase: 'ico-descanso',
-    titulo: 'Descanso', desc: 'Pausa recomendada en 40 min', action: () => toast('Buen momento para una pausa'),
-  });
-  hoyUl.innerHTML = bloques.map((b, i) => `
-    <li data-i="${i}">
-      <span class="ico-round ${b.clase}">${b.ico}</span>
-      <div><strong>${b.titulo}</strong><span class="muted">${b.desc}</span></div>
-      <span class="chevron">›</span>
-    </li>`).join('');
-  $$('[data-i]', hoyUl).forEach(li => {
-    li.addEventListener('click', () => bloques[+li.dataset.i].action());
-  });
+  if (hoy.length) {
+    hoyUl.innerHTML = hoy.map((b, i) => {
+      const ico = b.tipo === 'repaso'   ? { c:'ico-repaso',   e:'📖' }
+                : b.tipo === 'descanso' ? { c:'ico-descanso', e:'☕' }
+                : b.tipo === 'test'     ? { c:'ico-repaso',   e:'📋' }
+                : b.tipo === 'simulacro'? { c:'ico-repaso',   e:'🎯' }
+                                        : { c:'ico-verde',    e:'📚' };
+      const hora = b.hora_inicio ? b.hora_inicio.slice(0,5) + ' · ' : '';
+      const nombre = b.unidad || (b.tema ? b.tema : 'Sesión');
+      return `<li data-i="${i}">
+        <span class="ico-round ${ico.c}">${ico.e}</span>
+        <div>
+          <strong>${hora}${escapeHtml(nombre)}</strong>
+          <span class="muted">${b.tipo === 'estudio' ? 'Estudia' : b.tipo} · ${b.minutos} min</span>
+        </div>
+        <span class="chevron">›</span></li>`;
+    }).join('');
+    $$('[data-i]', hoyUl).forEach(li => {
+      li.addEventListener('click', () => {
+        const b = hoy[+li.dataset.i];
+        if (b.unidad_id) location.hash = '#/unidad/' + b.unidad_id;
+      });
+    });
+  } else if (c) {
+    hoyUl.innerHTML = `<li>
+      <span class="ico-round ico-verde">📚</span>
+      <div><strong>Continúa donde lo dejaste</strong>
+      <span class="muted">${escapeHtml(c.nombre)} · ${c.minutos_est || 20} min</span></div>
+      <span class="chevron">›</span></li>`;
+    $('li', hoyUl).addEventListener('click', () => location.hash = '#/unidad/' + c.id);
+  } else {
+    hoyUl.innerHTML = `<li style="border:0">
+      <span class="ico-round">🌱</span>
+      <div><strong>Aún no tienes plan</strong>
+      <span class="muted">Configura tu disponibilidad desde el Perfil</span></div>
+      <span class="chevron">›</span></li>`;
+  }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
 // PLAN
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
 
 async function renderPlan() {
   mount('tpl-plan');
@@ -501,65 +573,89 @@ async function renderPlan() {
   bindCommon(root);
   setAvatarChips(root);
 
-  $('[data-nivel]', root).textContent = 'Nivel ' + ((await sessionData()).nivel || 1);
-  $('[data-racha]', root).textContent = (await sessionData()).racha || 0;
+  const [dashData, perfilData] = await Promise.all([
+    S.rpc('dashboard_inicio', {}, { api: '/api' }).catch(() => ({})),
+    S.rpc('dashboard_perfil', {}, { api: '/api' }).catch(() => ({})),
+  ]);
 
-  // Semana Lun–Dom con el día actual resaltado
-  const nombres = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  $('[data-nivel]', root).textContent = 'Nivel ' + (dashData.nivel || 1);
+  $('[data-racha]', root).textContent = dashData.racha_dias || 0;
+
+  // Semana
+  const nombres = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
   const hoy = new Date();
-  const dow = (hoy.getDay() + 6) % 7; // 0..6, Lun=0
-  const inicio = new Date(hoy);
-  inicio.setDate(hoy.getDate() - dow);
+  const dow = (hoy.getDay() + 6) % 7;
+  const inicio = new Date(hoy); inicio.setDate(hoy.getDate() - dow);
   const week = $('[data-week]', root);
   week.innerHTML = Array.from({length: 7}, (_, i) => {
     const d = new Date(inicio); d.setDate(inicio.getDate() + i);
-    const isToday = i === dow;
-    return `<button class="${isToday ? 'active' : ''}" data-day="${i}">
-              ${nombres[i]}<strong>${d.getDate()}</strong>
-            </button>`;
+    return `<button class="${i === dow ? 'active' : ''}" data-day="${i}" data-fecha="${d.toISOString().slice(0,10)}">
+              ${nombres[i]}<strong>${d.getDate()}</strong></button>`;
   }).join('');
 
-  // Plan de hoy — de momento se genera a partir de la primera unidad
-  // pendiente + un repaso + un descanso.  Cuando el motor de planning
-  // real esté implementado, se leerá de plan_sesiones.
-  const cInicio = await S.rpc('dashboard_inicio', {}, { api: '/api' });
-  const c = cInicio.continua;
-  const bloques = [];
-  if (c) bloques.push({ hora: '08:00', ico: '⚖️', titulo: c.tema_nombre, sub: c.nombre + ' · ' + (c.minutos_est || 25) + ' min' });
-  bloques.push({ hora: '18:30', ico: '📋', titulo: 'Repaso', sub: 'Repaso + test · 40 min' });
-  bloques.push({ hora: '20:00', ico: '🧘', titulo: 'Descanso activo', sub: 'Pausa guiada · 10 min' });
+  async function cargarDia(fechaISO) {
+    let sesiones = [];
+    try { sesiones = await S.rpc('plan_del_dia', { p_fecha: fechaISO }, { api: '/api' }); } catch (_) {}
+    $('[data-bloques]', root).textContent = sesiones.length + ' bloques';
+    const timeline = $('[data-timeline]', root);
+    if (!sesiones.length) {
+      timeline.innerHTML = `<li style="text-align:center;padding:20px 0;border:0">
+        <p class="muted">No hay bloques planificados para este día.</p></li>`;
+    } else {
+      timeline.innerHTML = sesiones.map(b => {
+        const ico = b.tipo === 'repaso'   ? '📖'
+                  : b.tipo === 'descanso' ? '☕'
+                  : b.tipo === 'test'     ? '📋'
+                  : b.tipo === 'simulacro'? '🎯'
+                                          : (b.tema_icono || '📚');
+        const hora = b.hora_inicio ? b.hora_inicio.slice(0,5) : '—';
+        return `<li class="${b.completada ? 'completada' : ''}">
+          <span class="t-ico">${ico}</span>
+          <div>
+            <span class="t-hora">${hora} · ${escapeHtml(b.tema || b.tipo)}</span>
+            <span class="t-nombre">${escapeHtml(b.unidad || b.tipo)}</span>
+            <span class="t-sub">${b.minutos} min</span>
+          </div>
+          <span class="t-status">${b.completada ? '✅' : '⏱'}</span></li>`;
+      }).join('');
+    }
+    const total = sesiones.length;
+    const done = sesiones.filter(s => s.completada).length;
+    const pct = total ? Math.round(done / total * 100) : 0;
+    $('[data-plan-fill]', root).style.width = pct + '%';
+    $('[data-plan-pct]', root).textContent = pct;
+  }
+  cargarDia(hoy.toISOString().slice(0,10));
+  $$('button[data-fecha]', week).forEach(btn => {
+    btn.addEventListener('click', () => {
+      $$('button[data-fecha]', week).forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      cargarDia(btn.dataset.fecha);
+    });
+  });
 
-  $('[data-bloques]', root).textContent = bloques.length + ' bloques';
-  $('[data-timeline]', root).innerHTML = bloques.map(b => `
-    <li>
-      <span class="t-ico">${b.ico}</span>
-      <div>
-        <span class="t-hora">${b.hora} · ${b.titulo}</span>
-        <p>${b.sub}</p>
-      </div>
-    </li>`).join('');
-
-  const pct = cInicio.porcentaje || 0;
-  $('[data-plan-fill]', root).style.width = pct + '%';
-  $('[data-plan-pct]', root).textContent = pct;
-
-  // Próximo hito: usa fecha_examen del plan si existe
-  const perfil = await S.rpc('dashboard_perfil', {}, { api: '/api' });
-  const plan = perfil.plan;
+  // Hito
+  const plan = perfilData.plan;
   if (plan && plan.fecha_examen) {
     const dias = Math.max(0, Math.round((new Date(plan.fecha_examen) - new Date()) / 86400000));
+    $('[data-hito-nombre]', root).textContent = 'Examen';
     $('[data-hito-desc]', root).textContent = 'En ' + dias + ' días';
-  } else {
-    $('[data-hito-desc]', root).textContent = 'Configura tu plan para verlo';
   }
 
-  $('[data-plan-editar]', root).addEventListener('click', () => toast('El wizard de plan llegará en la próxima iteración.'));
-  $('[data-plan-reprog]', root).addEventListener('click', () => toast('El wizard de plan llegará en la próxima iteración.'));
+  $('[data-plan-editar]', root).addEventListener('click', () => location.hash = '#/wizard');
+  $('[data-plan-reprog]', root).addEventListener('click', async () => {
+    if (!plan?.id) return toast('No hay plan aún');
+    try {
+      const r = await S.rpc('reprogramar_plan', { p_plan_id: plan.id }, { api: '/api' });
+      toast('Plan reprogramado: ' + (r.creadas || 0) + ' bloques');
+      renderPlan();
+    } catch (e) { toast(e.message); }
+  });
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// ESTADÍSTICAS
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
+// STATS
+// ══════════════════════════════════════════════════════════════════════
 
 async function renderStats() {
   mount('tpl-stats');
@@ -568,9 +664,8 @@ async function renderStats() {
   setAvatarChips(root);
 
   let d = null;
-  try {
-    d = await S.rpc('dashboard_estadisticas', {}, { api: '/api' });
-  } catch (e) { toast('Error cargando estadísticas'); return; }
+  try { d = await S.rpc('dashboard_estadisticas', {}, { api: '/api' }); }
+  catch (e) { toast('Error cargando estadísticas'); return; }
 
   $('[data-racha]', root).textContent = d.racha_dias || 0;
   $('[data-racha2]', root).textContent = (d.racha_dias || 0) + ' días';
@@ -580,93 +675,108 @@ async function renderStats() {
   $('[data-totales]', root).textContent = d.unidades_totales || 0;
   $('[data-ring]', root).style.strokeDasharray = (d.porcentaje || 0) + ' 100';
   $('[data-ring-txt]', root).textContent = (d.porcentaje || 0) + '%';
+  $('[data-progreso-lema]', root).textContent = (d.porcentaje || 0) >= 60
+    ? '¡Muy buen ritmo!' : (d.porcentaje || 0) >= 20 ? '¡Sigue así!' : 'A por ello.';
 
-  // Chart de barras (7 días).  Rellena con 0 los días que faltan.
-  const dows = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+  const dows = ['L','M','X','J','V','S','D'];
   const hoy = new Date();
   const dias = Array.from({length: 7}, (_, i) => {
     const d0 = new Date(hoy); d0.setDate(hoy.getDate() - (6 - i));
-    const key = d0.toISOString().slice(0, 10);
-    const found = (d.actividad_semanal || []).find(x => x.dia === key);
-    return { key, dow: dows[(d0.getDay() + 6) % 7], minutos: found ? found.minutos : 0 };
+    const key = d0.toISOString().slice(0,10);
+    const f = (d.actividad_semanal || []).find(x => x.dia === key);
+    return { dow: dows[(d0.getDay() + 6) % 7], minutos: f ? f.minutos : 0 };
   });
   const max = Math.max(60, ...dias.map(x => x.minutos));
-  $('[data-chart]', root).innerHTML = dias.map(x => `
-    <div class="bar" data-dow="${x.dow}" style="height:${Math.max(6, Math.round(x.minutos / max * 100))}%"></div>
-  `).join('');
+  $('[data-chart]', root).innerHTML = dias.map(x =>
+    `<div class="bar" data-dow="${x.dow}" style="height:${Math.max(6, Math.round(x.minutos / max * 100))}%"></div>`
+  ).join('');
 
-  // Rendimiento por materia (barra por tema)
   const ul = $('[data-rendimiento]', root);
   ul.innerHTML = (d.rendimiento || []).slice(0, 6).map(r => `
     <li>
       <span class="ico-round">${r.icono || '📘'}</span>
       <div class="m-nombre">
-        <strong>${r.nombre}</strong>
+        <strong>${escapeHtml(r.nombre)}</strong>
         <div class="progress"><div class="progress-bar"><span style="width:${r.porcentaje}%"></span></div></div>
       </div>
-      <span class="m-pct">${r.porcentaje}%</span>
-    </li>`).join('') || '<li class="muted">Aún no hay resultados. Completa algunos tests para ver este ranking.</li>';
+      <span class="m-pct">${r.porcentaje}%</span></li>`).join('') ||
+    '<li class="muted">Aún no hay resultados. Completa algunos tests para ver este ranking.</li>';
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
 // PERFIL
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
 
 async function renderPerfil() {
   mount('tpl-perfil');
   const root = $('.view-perfil');
   bindCommon(root);
 
-  let d = null;
-  try { d = await S.rpc('dashboard_perfil', {}, { api: '/api' }); }
-  catch (e) { toast('Error cargando perfil'); return; }
+  const [pd, di] = await Promise.all([
+    S.rpc('dashboard_perfil', {}, { api: '/api' }).catch(() => ({})),
+    S.rpc('dashboard_inicio', {}, { api: '/api' }).catch(() => ({})),
+  ]);
 
-  $('[data-nombre]', root).textContent = d.nombre;
-  $('[data-email]', root).textContent = d.email + (d.email_verificado ? '' : ' (sin verificar)');
-  $('[data-nivel]', root).textContent = 'Nivel ' + (d.nivel || 1);
-  $('[data-racha]', root).textContent = (d.racha || 0) + ' días';
-  $('[data-xp]', root).textContent = d.xp || 0;
-  const opStats = await S.rpc('dashboard_inicio', {}, { api: '/api' });
-  $('[data-pct]', root).textContent = (opStats.porcentaje || 0) + '%';
+  $('[data-nombre]', root).textContent = pd.nombre || '—';
+  $('[data-email]', root).textContent = pd.email + (pd.email_verificado ? '' : ' (sin verificar)');
+  $('[data-nivel]', root).textContent = 'Nivel ' + (pd.nivel || 1);
+  $('[data-racha]', root).textContent = (pd.racha || 0) + ' días';
+  $('[data-xp]', root).textContent = pd.xp || 0;
+  $('[data-pct]', root).textContent = (di.porcentaje || 0) + '%';
 
-  // Objetivo
-  if (d.oposicion_activa) {
-    $('[data-obj-titulo]', root).textContent = d.oposicion_activa.nombre;
-    if (d.plan && d.plan.fecha_examen) {
-      const dias = Math.max(0, Math.round((new Date(d.plan.fecha_examen) - new Date()) / 86400000));
+  if (pd.oposicion_activa) {
+    $('[data-obj-titulo]', root).textContent = pd.oposicion_activa.nombre;
+    if (pd.plan?.fecha_examen) {
+      const dias = Math.max(0, Math.round((new Date(pd.plan.fecha_examen) - new Date()) / 86400000));
       $('[data-obj-desc]', root).textContent = 'Examen en ' + dias + ' días';
     } else {
-      $('[data-obj-desc]', root).textContent = 'Sin fecha de examen — edítalo desde el Plan.';
+      $('[data-obj-desc]', root).textContent = 'Configura tu plan desde "Disponibilidad".';
     }
-    $('[data-obj-fill]', root).style.width = (opStats.porcentaje || 0) + '%';
-    $('[data-obj-pct]', root).textContent = opStats.porcentaje || 0;
+    $('[data-obj-fill]', root).style.width = (di.porcentaje || 0) + '%';
+    $('[data-obj-pct]', root).textContent = di.porcentaje || 0;
   }
 
-  // Logros
-  const logros = d.logros || [];
+  const logros = pd.logros || [];
   $('[data-logros]', root).innerHTML = logros.map(l => `
-    <li class="${l.obtenido ? 'obtenido' : ''}" title="${l.titulo}">
+    <li class="${l.obtenido ? 'obtenido' : ''}" title="${escapeHtml(l.titulo)}">
       <span class="logro-ico">${l.icono}</span>
-      <span>${l.titulo}</span>
-    </li>`).join('') || '<li class="muted">Sin logros aún</li>';
+      <span>${escapeHtml(l.titulo)}</span></li>`).join('') ||
+    '<li class="muted">Sin logros aún</li>';
 
-  // Toggle tema
+  // Disponibilidad label
+  if (pd.plan) {
+    const hpd = pd.plan.horas_por_dia || {};
+    const total = ['lun','mar','mie','jue','vie','sab','dom']
+      .reduce((s,d) => s + (hpd[d] || 0), 0);
+    $('[data-perf-disp]', root).textContent =
+      pd.plan.modo_disponibilidad === 'semanal'
+        ? (pd.plan.horas_semana || 0) + ' h/semana'
+        : total + ' h/semana · detalle por día';
+  } else {
+    $('[data-perf-disp]', root).textContent = 'Sin configurar';
+  }
+
+  $('[data-goto-wizard]', root).addEventListener('click', () => location.hash = '#/wizard');
+
+  // Admin card
+  if (state.session?.es_admin) $('[data-admin-card]', root).hidden = false;
+
+  // Theme toggle
   const themeBtn = $('[data-toggle-theme]', root);
   const themeLbl = $('[data-theme-label]', root);
-  const applyThemeLabel = () => {
+  const applyLabel = () => {
     const t = document.documentElement.getAttribute('data-theme') || 'auto';
     themeLbl.textContent = t === 'dark' ? 'Oscuro' : t === 'light' ? 'Claro' : 'Automático';
   };
-  applyThemeLabel();
+  applyLabel();
   themeBtn.addEventListener('click', () => {
     const cur = document.documentElement.getAttribute('data-theme');
     const nxt = cur === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', nxt);
     document.cookie = `aprentix_theme=${nxt};path=/;max-age=${60*60*24*365}`;
-    applyThemeLabel();
+    applyLabel();
   });
 
-  // Logout
   $('[data-logout]', root).addEventListener('click', () => {
     S.clearToken();
     state.session = null; state.oposiciones = [];
@@ -674,13 +784,16 @@ async function renderPerfil() {
   });
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// UNIDAD (teoría + test)
-// ═══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════
+// UNIDAD (unificada teoría+test) con AUTO-TRACKING
+// ══════════════════════════════════════════════════════════════════════
+
+let _sesActiva = null;   // { sesionId, unidadId, tickTimer, seconds, minutosEst }
 
 async function renderUnidad(r) {
   const uid = r.params?.id;
   if (!uid) { location.hash = '#/home'; return; }
+  await sesionCerrarPrevia();
   mount('tpl-unidad');
   const root = $('.view-unidad');
   $('[data-back]', root).addEventListener('click', () => history.back());
@@ -689,47 +802,82 @@ async function renderUnidad(r) {
   try { u = await S.rpc('obtener_unidad', { p_unidad_id: uid }, { api: '/api' }); }
   catch (e) { toast('Error cargando unidad'); return; }
 
+  const tema = u.tema_id ? await S.rpc('obtener_tema',
+      { p_tema_id: u.tema_id }, { api: '/api' }).catch(() => null) : null;
+
+  $('[data-unidad-tema]', root).textContent = tema?.nombre || 'Tema';
   $('[data-unidad-nombre]', root).textContent = u.nombre;
   $('[data-unidad-min]', root).textContent = (u.minutos_est || 15) + ' min';
+  $('[data-preguntas-n]', root).textContent = u.num_preguntas || 0;
 
-  // Render markdown MUY básico (sin dependencia externa).  Convertimos
-  // ##, ###, listas y saltos.  Es suficiente para material corto; para
-  // markdown complejo el import JSON puede traer HTML directamente en
-  // teoria_md.
-  $('[data-teoria]', root).innerHTML = mdBasic(u.teoria_md || '_(Sin contenido)_');
+  $('[data-teoria]', root).innerHTML = mdBasic(u.teoria_md || '_(Sin contenido de teoría todavía)_');
+  const minAcum = (u.progreso && u.progreso.minutos_estudiados) || 0;
+  $('[data-unidad-min-actuales]', root).textContent = minAcum;
+  $('[data-unidad-min-total]', root).textContent = u.minutos_est || 15;
+  $('[data-unidad-fill]', root).style.width =
+    Math.min(100, Math.round((minAcum / Math.max(1, u.minutos_est || 15)) * 100)) + '%';
 
-  $('[data-marcar-teoria]', root).addEventListener('click', async () => {
-    try {
-      await S.rpc('marcar_teoria', { p_unidad_id: uid, p_completada: true }, { api: '/api' });
-      toast('¡Teoría marcada como estudiada!');
-    } catch (e) { toast(e.message); }
+  // Si no hay preguntas, oculta el CTA del test
+  if (!u.num_preguntas) $('[data-panel="test-cta"]', root).hidden = true;
+
+  // Botón "Comenzar test"
+  $('[data-test-start]', root).addEventListener('click', async () => {
+    $('[data-panel="test-cta"]', root).hidden = true;
+    await iniciarTest(uid, root);
   });
 
-  // Tabs teoría / test
-  const tabTeoria = $('.tab[data-tab="teoria"]', root);
-  const tabTest   = $('.tab[data-tab="test"]', root);
-  const pTeoria = $('[data-panel="teoria"]', root);
-  const pTest   = $('[data-panel="test"]', root);
-  function setTab(name) {
-    tabTeoria.classList.toggle('active', name === 'teoria');
-    tabTest.classList.toggle('active', name === 'test');
-    pTeoria.hidden = name !== 'teoria';
-    pTest.hidden   = name !== 'test';
-  }
-  tabTeoria.addEventListener('click', () => setTab('teoria'));
-  tabTest.addEventListener('click', async () => {
-    setTab('test');
-    if (!pTest.dataset.loaded) await iniciarTest(uid, root);
-  });
+  // Abre sesión de estudio y arranca ticks
+  await sesionAbrir(uid, u.minutos_est || 15);
+}
+
+async function sesionAbrir(unidadId, minutosEst) {
+  try {
+    const r = await S.rpc('sesion_abrir', { p_unidad_id: unidadId }, { api: '/api' });
+    _sesActiva = {
+      sesionId: r.sesion_id,
+      unidadId,
+      minutosEst,
+      seconds: 0,
+    };
+    // Un tick cada 30 s SOLO si la pestaña está visible.
+    _sesActiva.tickTimer = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      _sesActiva.seconds += 30;
+      S.rpc('sesion_tick',
+        { p_sesion_id: _sesActiva.sesionId, p_delta_seg: 30 },
+        { api: '/api' }).catch(() => {});
+      // Actualiza barra de progreso local
+      const min = Math.round(_sesActiva.seconds / 60);
+      const el1 = document.querySelector('[data-unidad-min-actuales]');
+      const el2 = document.querySelector('[data-unidad-fill]');
+      if (el1) el1.textContent = min;
+      if (el2) el2.style.width = Math.min(100,
+        Math.round((min / Math.max(1, _sesActiva.minutosEst)) * 100)) + '%';
+    }, 30000);
+    // Cierre limpio al salir
+    window.addEventListener('pagehide', sesionCerrarPrevia, { once: true });
+    window.addEventListener('beforeunload', sesionCerrarPrevia, { once: true });
+  } catch (e) { /* silencioso */ }
+}
+
+async function sesionCerrarPrevia() {
+  if (!_sesActiva) return;
+  const s = _sesActiva; _sesActiva = null;
+  clearInterval(s.tickTimer);
+  try {
+    await S.rpc('sesion_cerrar', { p_sesion_id: s.sesionId }, { api: '/api' });
+  } catch (_) {}
 }
 
 async function iniciarTest(uid, root) {
   const pTest = $('[data-panel="test"]', root);
-  pTest.dataset.loaded = '1';
+  pTest.hidden = false;
   let sesion = null;
   try { sesion = await S.rpc('iniciar_test_unidad', { p_unidad_id: uid, p_n: 10 }, { api: '/api' }); }
   catch (e) {
-    pTest.innerHTML = `<p class="muted">${e.message.includes('sin_preguntas') ? 'Esta unidad todavía no tiene preguntas.' : e.message}</p>`;
+    pTest.innerHTML = `<p class="muted">${
+      String(e.message).includes('sin_preguntas')
+        ? 'Esta unidad todavía no tiene preguntas.' : e.message}</p>`;
     return;
   }
 
@@ -744,8 +892,9 @@ async function iniciarTest(uid, root) {
       $('[data-test-explicacion]', pTest).hidden = true;
       $('[data-test-siguiente]', pTest).hidden = true;
       const nota = Math.round((correctas / total) * 10 * 100) / 100;
-      $('[data-test-resultado]', pTest).innerHTML = `<div>Nota: <strong>${nota}</strong> / 10</div>
-        <div class="muted">${correctas} correctas de ${total}</div>`;
+      $('[data-test-resultado]', pTest).innerHTML =
+        `<div>Nota: <strong>${nota}</strong> / 10</div>
+         <div class="muted">${correctas} correctas de ${total}</div>`;
       $('[data-test-resultado]', pTest).hidden = false;
       $('[data-test-progress]', pTest).textContent = '';
       S.rpc('finalizar_intento', { p_intento_id: sesion.intento_id }, { api: '/api' })
@@ -759,8 +908,6 @@ async function iniciarTest(uid, root) {
     $('[data-test-siguiente]', pTest).hidden = true;
     const opts = $('[data-test-options]', pTest);
     opts.innerHTML = '';
-    // Barajamos el orden de las opciones aunque el JSON traiga la
-    // correcta siempre primera (evita que se sospeche del orden).
     const barajadas = [...p.opciones].sort(() => Math.random() - .5);
     barajadas.forEach(o => {
       const b = document.createElement('button');
@@ -777,7 +924,8 @@ async function iniciarTest(uid, root) {
           }, { api: '/api' });
         } catch (e) { toast(e.message); return; }
         if (r.correcta) { b.classList.add('correcta'); correctas++; }
-        else            { b.classList.add('incorrecta');
+        else {
+          b.classList.add('incorrecta');
           const buenoBtn = $$('button', opts).find(x => x.textContent === r.correcta_esperada);
           if (buenoBtn) buenoBtn.classList.add('correcta');
         }
@@ -794,35 +942,111 @@ async function iniciarTest(uid, root) {
   paint();
 }
 
-// Cache de dashboard_inicio para no lanzar 2 RPCs cuando plan pide "nivel"
-let _sess = null;
-async function sessionData() {
-  if (_sess) return _sess;
+// ══════════════════════════════════════════════════════════════════════
+// ADMIN
+// ══════════════════════════════════════════════════════════════════════
+
+async function renderAdmin() {
+  if (!state.session?.es_admin) { toast('Sólo admin'); location.hash = '#/perfil'; return; }
+  mount('tpl-admin');
+  const root = $('.view-admin');
+  $('[data-back]', root).addEventListener('click', () => history.back());
+
   try {
-    const d = await S.rpc('dashboard_inicio', {}, { api: '/api' });
-    _sess = { nivel: d.nivel, racha: d.racha_dias };
-  } catch (_) { _sess = { nivel: 1, racha: 0 }; }
-  return _sess;
+    const s = await S.rpc('admin_stats', {}, { api: '/api' });
+    if (s) {
+      $('[data-ad-usr]', root).textContent  = s.usuarios || 0;
+      $('[data-ad-opos]', root).textContent = s.oposiciones || 0;
+      $('[data-ad-mail]', root).textContent = s.emails_pendientes || 0;
+      $('[data-ad-push]', root).textContent = s.push_pendientes || 0;
+    }
+  } catch (_) {}
+
+  async function cargar(q = null) {
+    let users = [];
+    try { users = await S.rpc('admin_listar_usuarios',
+        { p_query: q, p_limit: 100 }, { api: '/api' }); }
+    catch (_) {}
+    const ul = $('[data-ad-users]', root);
+    ul.innerHTML = users.map(u => {
+      const roles = (u.roles || []).map(r =>
+        `<span class="u-tag ${r === 'admin' ? 'warn' : ''}">${r}</span>`).join('');
+      return `<li>
+        <div class="u-meta">
+          <span class="u-mail">${escapeHtml(u.email)}</span>
+          <span class="u-nombre">${escapeHtml(u.nombre)}</span>
+          <div class="u-tags">
+            ${roles}
+            ${u.activo ? '<span class="u-tag ok">activo</span>' : '<span class="u-tag warn">inactivo</span>'}
+            ${u.email_verificado ? '' : '<span class="u-tag warn">sin verificar</span>'}
+          </div>
+        </div>
+        <div class="u-actions">
+          <button class="btn btn-mini btn-outline" data-act="toggle" data-id="${u.id}" data-val="${!u.activo}">
+            ${u.activo ? 'Desactivar' : 'Activar'}
+          </button>
+          ${u.email_verificado ? '' :
+            `<button class="btn btn-mini btn-outline" data-act="verify" data-id="${u.id}">Verificar</button>`}
+          <button class="btn btn-mini btn-outline" data-act="rol-admin" data-id="${u.id}"
+                  data-val="${!(u.roles || []).includes('admin')}">
+            ${(u.roles || []).includes('admin') ? 'Quitar admin' : 'Hacer admin'}
+          </button>
+        </div>
+      </li>`;
+    }).join('');
+
+    $$('[data-act]', ul).forEach(b => b.addEventListener('click', async () => {
+      const id = b.dataset.id, act = b.dataset.act;
+      try {
+        if (act === 'toggle') {
+          await S.rpc('admin_set_activo',
+            { p_usuario_id: id, p_activo: b.dataset.val === 'true' }, { api: '/api' });
+        } else if (act === 'verify') {
+          await S.rpc('admin_verificar_email', { p_usuario_id: id }, { api: '/api' });
+        } else if (act === 'rol-admin') {
+          await S.rpc('admin_toggle_rol',
+            { p_usuario_id: id, p_rol: 'admin', p_asignar: b.dataset.val === 'true' },
+            { api: '/api' });
+        }
+        toast('Hecho');
+        cargar($('[data-ad-buscar]', root).value.trim() || null);
+      } catch (e) { toast(e.message); }
+    }));
+  }
+  cargar();
+
+  const buscar = $('[data-ad-buscar]', root);
+  let tId;
+  buscar.addEventListener('input', () => {
+    clearTimeout(tId);
+    tId = setTimeout(() => cargar(buscar.value.trim() || null), 220);
+  });
 }
 
-function fmtMin(min) {
-  if (min < 60) return min + 'm';
-  const h = Math.floor(min / 60), m = min % 60;
-  return h + 'h ' + (m ? m + 'm' : '');
+// ══════════════════════════════════════════════════════════════════════
+// Utils varios
+// ══════════════════════════════════════════════════════════════════════
+
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
-/** Markdown reducido: h1..h3, listas, negritas, párrafos.  */
+/** Markdown mínimo. */
 function mdBasic(txt) {
   return txt
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/^### (.+)$/gm, '<h3>$1</h3>')
     .replace(/^## (.+)$/gm,  '<h2>$1</h2>')
     .replace(/^# (.+)$/gm,   '<h1>$1</h1>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/_([^_\n]+)_/g, '<em>$1</em>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/^\- (.+)$/gm, '<li>$1</li>')
     .replace(/(<li>.+<\/li>\n?)+/g, m => '<ul>' + m + '</ul>')
     .replace(/\n{2,}/g, '</p><p>')
-    .replace(/^(?!<)(.+)$/gm, '$1')
+    .replace(/^(?!<[uho])(.+)$/gm, '$1')
     .replace(/^(.*)$/s, '<p>$1</p>');
 }

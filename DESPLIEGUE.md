@@ -266,11 +266,66 @@ Cuando esta rama esté validada y merges a `main`:
 
 No hay que cambiar YAMLs, ni Dockerfiles, ni SQL — sólo el `.env`.
 
-## Qué queda para siguientes iteraciones
+## Estado de las funcionalidades
 
-- **Motor real del plan de estudio**: la vista Plan hoy pinta
-  bloques de muestra a partir de la unidad pendiente.
-- **Editor visual** de oposiciones desde admin.  Ahora la carga es
-  por RPC `importar_oposicion(payload)`.
-- **Motor de retos**: incrementar `retos_usuario.progreso` dentro de
-  `finalizar_intento()` según cada `codigo` del catálogo.
+### Listas ✅
+- Registro con verificación por email (SMTP configurable).
+- Login por email, JWT de PostgREST.
+- Onboarding + wizard de disponibilidad (semanal / detalle por día).
+- Motor básico de generación de plan (14 días).
+- Reprogramar plan (marca las sesiones no cumplidas y regenera).
+- Vista de unidad **unificada** (teoría + CTA test): sin pestañas.
+- **Auto-tracking** del tiempo de estudio (Page Visibility API).
+  `teoria_completada` se marca sola al llegar al 80% del tiempo
+  estimado.
+- Test rápido dentro de la unidad (10 preguntas).
+- Estadísticas: racha, tiempo semanal, precisión, anillo de
+  progreso, chart de barras, rendimiento por tema.
+- Perfil con XP / nivel / logros y toggle de tema.
+- Admin: listado de usuarios, activar/desactivar, verificar email
+  manual, hacer/quitar admin, contadores de cola email/push.
+- pgAdmin único (prod) compartido para ambas BBDD.
+- Backups nocturnos con restic + rclone → Google Drive.
+
+### En beta / muy básico 🌱
+- **Motor de plan**: reparte unidades en bloques de 25/45 min por
+  las horas disponibles, sin heurística de dificultad ni de
+  repasos espaciados.  Suficiente para dar una lista de tareas
+  realista, pero no óptimo.
+- **Retos**: catálogo semillado pero el motor que incrementa
+  `retos_usuario.progreso` tras `finalizar_intento()` aún no está
+  hecho.  Los retos se ven "estáticos" en la SPA.
+- **Simulacros**: la tabla y el tipo existen (`tipo='simulacro'`
+  en intentos), pero no hay generador de "N preguntas al azar de
+  toda la oposición" ni cronómetro dedicado.
+- **Web Push**: infraestructura completa (cola_push, worker,
+  VAPID), pero la SPA aún NO tiene botón "Activar notificaciones"
+  que llame a `pushManager.subscribe`.  Vale usar
+  `SELECT push_enviar_prueba()` desde pgAdmin para probar el
+  circuito una vez suscrito.
+
+### Sin implementar aún 🚧
+- **Editor visual** de oposiciones desde el admin.  Hoy los
+  contenidos se cargan por RPC `importar_oposicion(payload)` con
+  JSON.
+- **Recuperación de contraseña** (`reset_password` como tipo de
+  `email_tokens` ya existe, pero la RPC y la UI no).
+- **Sesiones multi-dispositivo / revocación de tokens.**
+- **Estadísticas por unidad/tema** con desglose de tiempo y
+  respuestas correctas.
+- **Recordatorios push programados** por franjas horarias del
+  usuario.
+- **Import/export CSV** de preguntas.
+- **PWA offline real** (service worker).  Está el manifest pero
+  sin worker registrado.
+- **Métricas de admin en tiempo real** (websocket o polling
+  automático).
+
+### Historial de la BBDD
+- El esquema es **idempotente**: usa `IF NOT EXISTS`, `CREATE OR
+  REPLACE`, `DROP POLICY IF EXISTS` + `CREATE POLICY`, y
+  `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` para migrar tablas
+  existentes.  Se puede relanzar sobre una BBDD parcialmente
+  inicializada sin borrar el volumen.
+- `NOTIFY pgrst, 'reload schema';` al final del init — no hace
+  falta reiniciar PostgREST tras redesplegar.
