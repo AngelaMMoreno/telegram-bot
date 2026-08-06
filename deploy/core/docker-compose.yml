@@ -1,21 +1,27 @@
 # =============================================================================
-# Stack CORE ─ el estado (Postgres) y la API (PostgREST).
+# Stack CORE ─ db + postgrest.
 #
-# Redespliega este stack cuando cambies:
-#   - db/init/01_esquema.sql
-#   - la versión de PostgREST
+# Convive con OTROS despliegues del mismo repo (dev, desa, prod) en el
+# mismo host Dokploy — sin colisionar en `dokploy-network` — gracias
+# al sufijo STACK_SUFFIX que se propaga a:
+#   - container_name (docker daemon)
+#   - alias explícito en dokploy-network (para pgAdmin y otros stacks)
+#   - nombres de routers de Traefik (globales)
 #
-# Nombres de servicio neutros (`db`, `postgrest`), sin `container_name`:
-# Dokploy los aísla por proyecto y en `dokploy-network` se resuelven
-# por el alias del nombre del servicio, exactamente igual que en el
-# stack de producción.  Cambiar la rama y desplegar es la operación
-# equivalente en cualquier entorno.
+# STACK_SUFFIX vacío  →  container `db`, alias `db`         (default: producción)
+# STACK_SUFFIX=-desa  →  container `db-desa`, alias `db-desa`
+#
+# El resto de variables (DB_NAME, DB_PASS, DOMINIO_API, ...) sólo
+# cambian de valor entre entornos; sus NOMBRES son los mismos.
 # =============================================================================
 
 services:
 
   db:
     image: postgres:16
+    # Sufijo vacío en prod → container `db`, igual que en el stack de
+    # producción histórico.  En desa se lanza como `db-desa`.
+    container_name: db${STACK_SUFFIX}
     environment:
       POSTGRES_DB:       ${DB_NAME:?DB_NAME requerida}
       POSTGRES_USER:     aprentix
@@ -29,11 +35,16 @@ services:
       - -c
       - app.auth_pass=${AUTH_PASS:?AUTH_PASS requerida}
     volumes:
-      # Volumen nombrado (scoped por proyecto en Dokploy).
       - pg_data:/var/lib/postgresql/data
       - ../../db/init:/docker-entrypoint-initdb.d:ro
     restart: unless-stopped
-    networks: [dokploy-network]
+    networks:
+      dokploy-network:
+        # Alias explícito: reemplaza el default (service name = `db`)
+        # y así prod (`db`) y desa (`db-desa`) no compiten por el
+        # mismo nombre DNS en la red compartida.
+        aliases:
+          - db${STACK_SUFFIX}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U aprentix -d ${DB_NAME}"]
       interval: 10s
@@ -42,10 +53,14 @@ services:
 
   postgrest:
     image: postgrest/postgrest:v12.2.3
+    container_name: postgrest${STACK_SUFFIX}
     depends_on:
       db:
         condition: service_healthy
     environment:
+      # Dentro del MISMO compose se resuelve por service name (`db`),
+      # así que el URI no lleva sufijo aquí; el sufijo sólo entra en
+      # los cross-stack (app→postgrest, mailer→db, ...).
       PGRST_DB_URI:                    postgres://autenticador@db:5432/${DB_NAME}
       PGPASSWORD:                      ${AUTH_PASS}
       PGRST_DB_ANON_ROLE:              web_anon
@@ -53,15 +68,21 @@ services:
       PGRST_JWT_SECRET:                ${JWT_SECRET}
       PGRST_OPENAPI_SERVER_PROXY_URI:  https://${DOMINIO_API}
     restart: unless-stopped
-    networks: [dokploy-network]
+    networks:
+      dokploy-network:
+        aliases:
+          - postgrest${STACK_SUFFIX}
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=dokploy-network"
-      - "traefik.http.routers.aprentix-api.rule=Host(`${DOMINIO_API}`)"
-      - "traefik.http.routers.aprentix-api.entrypoints=websecure"
-      - "traefik.http.routers.aprentix-api.tls=true"
-      - "traefik.http.routers.aprentix-api.tls.certresolver=letsencrypt"
-      - "traefik.http.services.aprentix-api.loadbalancer.server.port=3000"
+      # Router y service de Traefik con sufijo (deben ser únicos en
+      # toda la instancia Traefik).
+      - "traefik.http.routers.aprentix-api${STACK_SUFFIX}.rule=Host(`${DOMINIO_API}`)"
+      - "traefik.http.routers.aprentix-api${STACK_SUFFIX}.entrypoints=websecure"
+      - "traefik.http.routers.aprentix-api${STACK_SUFFIX}.tls=true"
+      - "traefik.http.routers.aprentix-api${STACK_SUFFIX}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.aprentix-api${STACK_SUFFIX}.service=aprentix-api${STACK_SUFFIX}"
+      - "traefik.http.services.aprentix-api${STACK_SUFFIX}.loadbalancer.server.port=3000"
 
 volumes:
   pg_data:

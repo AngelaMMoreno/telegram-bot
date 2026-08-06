@@ -1,10 +1,9 @@
 # =============================================================================
-# Stack APP ─ frontend Caddy + SPA.
+# Stack APP ─ Caddy + SPA.
 #
-# Redespliega este stack cuando cambies web/ (index.html, style.css,
-# app.js, tokens.css, session.js).  La imagen se construye con la SPA
-# copiada dentro y Caddy sirve estáticos + proxy /api → PostgREST del
-# stack core.
+# Puede coexistir con otras instancias del mismo repo (prod + desa)
+# gracias al sufijo STACK_SUFFIX (ver README).  El Caddyfile lee
+# POSTGREST_UPSTREAM para saber a qué stack `postgrest` proxyar.
 # =============================================================================
 
 services:
@@ -13,16 +12,25 @@ services:
     build:
       context: ../..
       dockerfile: deploy/app/Dockerfile
+    container_name: app${STACK_SUFFIX}
+    environment:
+      # Hostname:puerto del PostgREST del MISMO entorno.  El Caddyfile
+      # lo lee como {env.POSTGREST_UPSTREAM}.
+      POSTGREST_UPSTREAM: postgrest${STACK_SUFFIX}:3000
     restart: unless-stopped
-    networks: [dokploy-network]
+    networks:
+      dokploy-network:
+        aliases:
+          - app${STACK_SUFFIX}
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=dokploy-network"
-      - "traefik.http.routers.aprentix-web.rule=Host(`${DOMINIO_WEB}`)"
-      - "traefik.http.routers.aprentix-web.entrypoints=websecure"
-      - "traefik.http.routers.aprentix-web.tls=true"
-      - "traefik.http.routers.aprentix-web.tls.certresolver=letsencrypt"
-      - "traefik.http.services.aprentix-web.loadbalancer.server.port=80"
+      - "traefik.http.routers.aprentix-web${STACK_SUFFIX}.rule=Host(`${DOMINIO_WEB}`)"
+      - "traefik.http.routers.aprentix-web${STACK_SUFFIX}.entrypoints=websecure"
+      - "traefik.http.routers.aprentix-web${STACK_SUFFIX}.tls=true"
+      - "traefik.http.routers.aprentix-web${STACK_SUFFIX}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.aprentix-web${STACK_SUFFIX}.service=aprentix-web${STACK_SUFFIX}"
+      - "traefik.http.services.aprentix-web${STACK_SUFFIX}.loadbalancer.server.port=80"
 
 networks:
   dokploy-network:

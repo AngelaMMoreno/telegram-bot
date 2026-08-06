@@ -1,26 +1,64 @@
 # Despliegue
 
-El repo se organiza en **cuatro stacks** independientes bajo
-`deploy/`, para que cada uno sea una Compose Application separada en
-Dokploy con su propio `.env` — así puedes redesplegar sólo el
-frontend, o sólo el mailer, sin tocar la BBDD.
+Cuatro stacks independientes bajo `deploy/`, cada uno con SU PROPIO
+`.env`.  Los nombres de variable son los mismos en cualquier entorno
+— sólo cambia el valor.
 
-Todos los nombres de variable son los mismos en cualquier entorno;
-sólo cambia el valor.  Cuando esta rama se merge a `main` para
-producción, redesplegar es literalmente cambiar el `.env` de cada
-stack.
+Dos despliegues del mismo repo pueden coexistir en el mismo host
+Dokploy (por ejemplo `prod` + `desa`) sin colisionar en
+`dokploy-network`, usando la variable **`STACK_SUFFIX`**.
 
 ## Stacks
 
 | Carpeta | Contenido | Publica | Redespliega cuando cambian… |
 |---|---|---|---|
-| `deploy/core/`        | db + postgrest             | `${DOMINIO_API}` | `db/init/01_esquema.sql`, versión de PostgREST |
-| `deploy/app/`         | Caddy + SPA (build)        | `${DOMINIO_WEB}` | `web/*`, `deploy/app/Caddyfile`, `deploy/app/Dockerfile` |
-| `deploy/mailer/`      | worker SMTP                | –                | `mailer/*` |
-| `deploy/notificador/` | worker Web Push            | –                | `notificador/*` |
+| `deploy/core/`        | db + postgrest     | `${DOMINIO_API}` | `db/init/01_esquema.sql`, versión de PostgREST |
+| `deploy/app/`         | Caddy + SPA        | `${DOMINIO_WEB}` | `web/*`, `deploy/app/Caddyfile`, `deploy/app/Dockerfile` |
+| `deploy/mailer/`      | worker SMTP        | –                | `mailer/*` |
+| `deploy/notificador/` | worker Web Push    | –                | `notificador/*` |
 
-Los cuatro comparten la red externa `dokploy-network` — Traefik ve
-`postgrest` y `app`, y los workers hablan con `db` por nombre.
+## Coexistencia desa + prod (STACK_SUFFIX)
+
+`STACK_SUFFIX` se propaga a cuatro sitios:
+
+1. `container_name` (nombre real del contenedor en el daemon).
+2. Alias explícito en `dokploy-network` (para que otros stacks y
+   pgAdmin resuelvan el hostname correcto).
+3. Nombres de routers/services de Traefik (deben ser únicos
+   globalmente).
+4. Hostnames que los otros stacks usan para conectar
+   (`postgrest${STACK_SUFFIX}`, `db${STACK_SUFFIX}`).
+
+Regla: **el mismo valor en los 4 `.env` de un mismo entorno**.
+
+| | `STACK_SUFFIX` | container | alias en `dokploy-network` |
+|---|---|---|---|
+| Producción | *(vacío)* | `db`, `postgrest`, `app`, `mailer`, `notificador` | `db`, `postgrest`, ... |
+| Desarrollo | `-desa`   | `db-desa`, `postgrest-desa`, `app-desa`, `mailer-desa`, `notificador-desa` | `db-desa`, `postgrest-desa`, ... |
+
+En cada Compose Application de Dokploy, `.env` de `deploy/<stack>/`
+lleva `STACK_SUFFIX=-desa` para el despliegue de desa, y vacío para
+prod.  Los YAMLs no cambian.
+
+## Valores por entorno (resumen)
+
+**Producción** (rama `main` cuando esta llegue allí):
+
+```
+STACK_SUFFIX=
+DB_NAME=aprentix
+DOMINIO_WEB=aprentix.es
+DOMINIO_API=api.aprentix.es
+```
+
+**Desa** (rama `claude/redesign-oposiciones-9bdwaq`):
+
+```
+STACK_SUFFIX=-desa
+DB_NAME=aprentix_desa
+DOMINIO_WEB=desa.aprentix.es
+DOMINIO_API=api.desa.aprentix.es
+```
 
 ## Prerequisitos
 
@@ -30,26 +68,25 @@ Los cuatro comparten la red externa `dokploy-network` — Traefik ve
 
 ## Orden de despliegue (primera vez)
 
-1. **`deploy/core`** primero (`db` y `postgrest`).  Al arrancar sobre
-   una BBDD vacía, `db/init/01_esquema.sql` se ejecuta entero y deja:
-   - Usuario admin (`admin@aprentix.es` / `${ADMIN_PASS}`) ya verificado.
+1. **`deploy/core`** primero.  Al arrancar sobre BBDD vacía,
+   `db/init/01_esquema.sql` se ejecuta y deja:
+   - Usuario admin (`admin@aprentix.es` / `${ADMIN_PASS}`) verificado.
    - Catálogos de roles, permisos, retos y logros.
-   - Fila `config.app_url = "http://localhost"` — actualízala al
-     dominio real:
+   - `config.app_url = "http://localhost"` — actualízalo:
      ```sql
      UPDATE config SET valor = '"https://desa.aprentix.es"'::jsonb
       WHERE clave = 'app_url';
      ```
-     El correo de verificación usa `app_url()` para construir el
-     enlace: sin esto, los links irán a localhost.
+     (los links del correo de verificación se construyen con
+     `app_url()`).
 
-2. **`deploy/app`** — el frontend.  Sirve en `${DOMINIO_WEB}` y
-   proxya `/api/*` a `postgrest:3000`.
+2. **`deploy/app`** — frontend.  Sirve en `${DOMINIO_WEB}` y proxya
+   `/api/*` a `postgrest${STACK_SUFFIX}:3000` (Caddy lo lee de
+   `POSTGREST_UPSTREAM`).
 
-3. **`deploy/mailer`** — worker SMTP.  Sin él, los registros se
-   encolan pero nadie envía el correo de verificación.
+3. **`deploy/mailer`** — worker SMTP.
 
-4. **`deploy/notificador`** — worker Web Push (opcional al arrancar).
+4. **`deploy/notificador`** — worker Web Push.
 
 Cada stack lee su propio `.env`.  Copia el `.env.example` de cada
 carpeta y ajusta valores.
@@ -64,20 +101,45 @@ docker compose up -d
 
 El `docker-compose.yml` del raíz usa `include:` para fusionar los
 cuatro stacks en un único proyecto Docker Compose.  Todos leen del
-mismo `.env` (superset).
+mismo `.env` (superset).  Deja `STACK_SUFFIX=` vacío en local.
 
-## Actualizar solo un stack
+## Reutilizar el pgAdmin de producción para ver desa
 
-En Dokploy, redespliega la Compose Application correspondiente:
+Añade una entrada al `servers.json` del pgAdmin existente y
+redespliega ese stack.  Como el pgAdmin y `db-desa` están ambos en
+`dokploy-network`, la resolución del hostname `db-desa` funciona
+directamente:
 
-- Cambio de frontend → redespliega `deploy/app`.
-- Cambio de esquema BBDD → redespliega `deploy/core` (o aplica el
-  `ALTER` a mano desde pgAdmin).
-- Nueva plantilla de email → redespliega `deploy/mailer`.
+```json
+{
+  "Servers": {
+    "1": {
+      "Name": "aprentix",
+      "Group": "Servers",
+      "Host": "db",
+      "Port": 5432,
+      "MaintenanceDB": "aprentix",
+      "Username": "aprentix",
+      "SSLMode": "prefer",
+      "Comment": "Producción"
+    },
+    "2": {
+      "Name": "aprentix-desa",
+      "Group": "Servers",
+      "Host": "db-desa",
+      "Port": 5432,
+      "MaintenanceDB": "aprentix_desa",
+      "Username": "aprentix",
+      "SSLMode": "prefer",
+      "Comment": "Entorno de desarrollo (misma pgAdmin, otra BBDD)"
+    }
+  }
+}
+```
 
 ## Importar la primera oposición
 
-Login con `admin@aprentix.es`.  Desde la consola del navegador:
+Login con `admin@aprentix.es`. Desde la consola del navegador:
 
 ```js
 const payload = /* JSON con el shape de db/ejemplo_oposicion.json */;
@@ -94,13 +156,13 @@ curl -X POST "https://${DOMINIO_API}/rpc/importar_oposicion" \
      -d @db/ejemplo_oposicion.json
 ```
 
-Los temas se identifican por `slug`. Si el slug ya existe, el tema
-se **reutiliza** — no se duplican sus unidades ni preguntas.
+Los temas se identifican por `slug`. Si el slug ya existe, el tema se
+**reutiliza** — no se duplican sus unidades ni preguntas.
 
 ## Correo (SMTP)
 
 El registro encola una fila en `cola_emails`.  `deploy/mailer` la
-vacía enviando por SMTP con las variables `SMTP_*`.  Para Gmail
+vacía enviando por SMTP con las variables `SMTP_*`.  Con Gmail
 necesitas una **contraseña de aplicación**, no la de la cuenta.
 
 Comprobar la cola:
@@ -129,41 +191,24 @@ SELECT id, destinatario, asunto, enviado_en, ultimo_error
    ```
    El worker despacha en el siguiente tick.
 
-## Reutilizar un pgAdmin existente
-
-Este stack no incluye pgAdmin.  Si tienes uno en otro proyecto,
-añade una entrada a su `servers.json` con `Host: db` y
-`MaintenanceDB: <DB_NAME>`, y redespliegua el pgAdmin.
-
-Como el pgAdmin y la BBDD están ambos en `dokploy-network`, la
-resolución de hostname funciona directamente — igual que en el
-stack de producción.
-
-Nota: si ya tienes otro `db` en la red compartida (por ejemplo, un
-prod corriendo en paralelo), habrá colisión de alias en
-`dokploy-network`.  Cuando esta rama sustituya a la de prod la
-colisión desaparece; para coexistir temporalmente, la solución es
-añadir `container_name: aprentix-desa-db` (y usar ese nombre desde
-`postgrest`, `mailer`, `notificador` y pgAdmin).
-
-## Migración de la rama a producción
+## Migrar esta rama a producción
 
 Cuando esta rama esté validada en desa y merges a `main`:
 
 1. En Dokploy, cambia la rama de cada Compose Application a `main`.
-2. Ajusta los valores del `.env` de cada stack:
-   - `DB_NAME=aprentix` (no `aprentix_desa`)
+2. Ajusta el `.env` de cada stack:
+   - `STACK_SUFFIX=` (vacío — vuelve al naming de prod)
+   - `DB_NAME=aprentix`
    - `DOMINIO_WEB=aprentix.es`, `DOMINIO_API=api.aprentix.es`
    - Contraseñas y VAPID de producción.
 3. Redespliega los cuatro stacks.
 
-No hay que cambiar YAMLs, ni Dockerfiles, ni SQL.  Todo lo que
-diferencia dev / desa / prod está en el `.env`.
+No hay que cambiar YAMLs, ni Dockerfiles, ni SQL — sólo el `.env`.
 
 ## Qué queda para siguientes iteraciones
 
-- **Motor real del plan de estudio**: hoy la vista Plan pinta bloques
-  de muestra a partir de la unidad pendiente.  La tabla
+- **Motor real del plan de estudio**: la vista Plan hoy pinta
+  bloques de muestra a partir de la unidad pendiente.  La tabla
   `plan_sesiones` ya existe para persistir el calendario diario que
   genere el motor.
 - **Editor visual** de oposiciones desde admin.  Ahora la carga es

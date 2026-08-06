@@ -65,9 +65,17 @@ proyecto y todos ven las mismas variables.
 
 Los nombres son **idénticos** en dev, desa y prod — sólo cambia el
 valor.  Cambiar de entorno al que apunta un deploy es editar el
-`.env` de ese stack, no el YAML.  Cuando merges esta rama a
-`main` sólo hay que ajustar `DB_NAME`, `DOMINIO_WEB` y `DOMINIO_API`
-al entorno de destino (más contraseñas y VAPID); el resto es igual.
+`.env` de ese stack, no el YAML.
+
+## Coexistencia desa + prod en el mismo Dokploy
+
+Un `STACK_SUFFIX` por `.env` (vacío en prod, `-desa` en desa) se
+propaga a `container_name`, alias de red y nombres de routers
+Traefik.  Así los dos despliegues comparten `dokploy-network` sin
+chocar: prod usa `db`, `postgrest`, `app`; desa usa `db-desa`,
+`postgrest-desa`, `app-desa`.  El pgAdmin de prod puede añadir un
+segundo servidor apuntando a `db-desa` sin más cambios.  Detalle
+completo en [`DESPLIEGUE.md`](DESPLIEGUE.md).
 
 ## Rutas de la SPA
 

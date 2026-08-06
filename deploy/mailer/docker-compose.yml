@@ -1,8 +1,8 @@
 # =============================================================================
 # Stack MAILER ─ worker SMTP.
 #
-# Consume la tabla `cola_emails` de la BBDD (habla con `db` por la
-# red compartida con el stack core) y envía cada fila por SMTP.
+# Consume `cola_emails` de la BBDD.  Alcanza al `db` del stack CORE
+# del MISMO entorno vía el alias `db${STACK_SUFFIX}` en dokploy-network.
 # =============================================================================
 
 services:
@@ -11,8 +11,9 @@ services:
     build:
       context: ../../mailer
       dockerfile: Dockerfile
+    container_name: mailer${STACK_SUFFIX}
     environment:
-      DATABASE_URL: postgres://aprentix@db:5432/${DB_NAME}
+      DATABASE_URL: postgres://aprentix@db${STACK_SUFFIX}:5432/${DB_NAME}
       PGPASSWORD:   ${DB_PASS}
       SMTP_HOST:    ${SMTP_HOST}
       SMTP_PORT:    ${SMTP_PORT:-587}
@@ -24,7 +25,10 @@ services:
       BATCH:        ${MAILER_BATCH:-25}
       LOG_LEVEL:    ${MAILER_LOG:-INFO}
     restart: unless-stopped
-    networks: [dokploy-network]
+    networks:
+      dokploy-network:
+        aliases:
+          - mailer${STACK_SUFFIX}
 
 networks:
   dokploy-network:

@@ -1,5 +1,7 @@
 # Gateway público del frontend.  Traefik termina TLS y entrega HTTP
-# por :80.  Sirve la SPA como estáticos y proxya /api/* a PostgREST.
+# por :80.  La misma imagen sirve para dev, desa y prod: el hostname
+# del PostgREST al que proxyar se lee de la variable de entorno
+# POSTGREST_UPSTREAM (por defecto `postgrest:3000`).
 
 :80 {
     encode zstd gzip
@@ -7,7 +9,7 @@
     # ── API pública ──
     handle /api/* {
         uri strip_prefix /api
-        reverse_proxy postgrest:3000
+        reverse_proxy {$POSTGREST_UPSTREAM}
     }
 
     # ── SPA (raíz) ──

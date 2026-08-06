@@ -1,8 +1,8 @@
 # =============================================================================
 # Stack NOTIFICADOR ─ worker Web Push.
 #
-# Consume la tabla `cola_push` de la BBDD y despacha cada fila como
-# Web Push VAPID a las suscripciones activas del usuario.
+# Consume `cola_push` de la BBDD.  Alcanza al `db` del stack CORE
+# del MISMO entorno vía el alias `db${STACK_SUFFIX}` en dokploy-network.
 # =============================================================================
 
 services:
@@ -11,8 +11,9 @@ services:
     build:
       context: ../../notificador
       dockerfile: Dockerfile
+    container_name: notificador${STACK_SUFFIX}
     environment:
-      DATABASE_URL:      postgres://aprentix@db:5432/${DB_NAME}
+      DATABASE_URL:      postgres://aprentix@db${STACK_SUFFIX}:5432/${DB_NAME}
       PGPASSWORD:        ${DB_PASS}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_PUBLIC_KEY:  ${VAPID_PUBLIC_KEY:-}
@@ -21,7 +22,10 @@ services:
       BATCH:             ${NOTIF_BATCH:-50}
       LOG_LEVEL:         ${NOTIF_LOG:-INFO}
     restart: unless-stopped
-    networks: [dokploy-network]
+    networks:
+      dokploy-network:
+        aliases:
+          - notificador${STACK_SUFFIX}
 
 networks:
   dokploy-network:
