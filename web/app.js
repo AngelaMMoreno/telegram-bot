@@ -8,6 +8,7 @@
      - plan         (mockup 2)
      - stats        (mockup 3)
      - perfil       (mockup 4)
+     - administracion (importar oposiciones, solo administradores)
      - unidad       (teoría + test)
      - verify       (aterrizaje del enlace de confirmación de email)
 
@@ -47,6 +48,7 @@ const routes = {
   plan:       renderPlan,
   stats:      renderStats,
   perfil:     renderPerfil,
+  administracion: renderizarAdministracion,
   unidad:     renderUnidad,
 };
 
@@ -95,7 +97,9 @@ async function router() {
       state.principalId = (state.oposiciones.find(o => o.principal) || {}).id || null;
     } catch (e) { /* silencioso */ }
   }
-  if (state.session && !state.oposiciones.length && r.name !== 'onboarding' && r.name !== 'auth') {
+  const rutaPermitidaSinOposicion = r.name === 'onboarding' || r.name === 'auth'
+    || (r.name === 'administracion' && state.session.es_admin);
+  if (state.session && !state.oposiciones.length && !rutaPermitidaSinOposicion) {
     location.hash = '#/onboarding';
     return;
   }
@@ -131,7 +135,7 @@ function ensureNav() {
 }
 
 function updateNav(name) {
-  const map = { home: 'home', plan: 'plan', stats: 'stats', perfil: 'perfil', unidad: null };
+  const map = { home: 'home', plan: 'plan', stats: 'stats', perfil: 'perfil', unidad: null, administracion: null };
   const target = map[name];
   const nav = $('.bottom-nav');
   if (!nav || name === 'auth' || name === 'verify' || name === 'onboarding') {
@@ -401,6 +405,10 @@ async function renderOnboarding() {
     </li>
   `).join('') || '<p class="muted">No hay oposiciones disponibles. Contacta con el administrador para importar una.</p>';
 
+  const accesoAdministracion = $('[data-ir-administracion]', root);
+  accesoAdministracion.hidden = !state.session?.es_admin;
+  accesoAdministracion.addEventListener('click', () => { location.hash = '#/administracion'; });
+
   $$('li', ul).forEach(li => {
     li.addEventListener('click', () => {
       $$('li', ul).forEach(x => x.classList.remove('selected'));
@@ -419,6 +427,64 @@ async function renderOnboarding() {
       state.oposiciones = []; // fuerza recarga
       location.hash = '#/home';
     } catch (e) { toast('Error: ' + e.message); }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// ADMINISTRACIÓN — importar oposiciones desde JSON
+// ═══════════════════════════════════════════════════════════════════════
+
+async function renderizarAdministracion() {
+  if (!state.session?.es_admin) {
+    toast('Esta sección es exclusiva para administradores.', 'error');
+    location.hash = state.oposiciones.length ? '#/home' : '#/onboarding';
+    return;
+  }
+
+  mount('tpl-administracion');
+  const root = $('.view-administracion');
+  const formulario = $('[data-form-importar]', root);
+  const campoJson = $('[data-json-oposicion]', root);
+  const error = $('[data-error-importacion]', root);
+  const boton = $('button[type="submit"]', formulario);
+
+  $('[data-volver-administracion]', root).addEventListener('click', () => {
+    location.hash = state.oposiciones.length ? '#/perfil' : '#/onboarding';
+  });
+
+  formulario.addEventListener('submit', async evento => {
+    evento.preventDefault();
+    error.hidden = true;
+    let contenido;
+    try {
+      contenido = JSON.parse(campoJson.value);
+    } catch (_) {
+      error.textContent = 'El contenido no es un JSON válido.';
+      error.hidden = false;
+      campoJson.focus();
+      return;
+    }
+
+    if (!contenido || typeof contenido !== 'object' || !contenido.slug || !contenido.nombre) {
+      error.textContent = 'El JSON debe incluir, como mínimo, los campos «slug» y «nombre».';
+      error.hidden = false;
+      return;
+    }
+
+    boton.disabled = true;
+    boton.textContent = 'Importando…';
+    try {
+      await S.rpc('importar_oposicion', { p_payload: contenido }, { api: '/api' });
+      state.oposiciones = [];
+      toast('Oposición importada correctamente. Ya está disponible para elegirla.');
+      location.hash = '#/onboarding';
+    } catch (e) {
+      error.textContent = 'No se pudo importar: ' + e.message;
+      error.hidden = false;
+    } finally {
+      boton.disabled = false;
+      boton.textContent = 'Importar oposición';
+    }
   });
 }
 
@@ -616,6 +682,9 @@ async function renderPerfil() {
   mount('tpl-perfil');
   const root = $('.view-perfil');
   bindCommon(root);
+  const accesoAdministracion = $('[data-ir-administracion]', root);
+  accesoAdministracion.hidden = !state.session?.es_admin;
+  accesoAdministracion.addEventListener('click', () => { location.hash = '#/administracion'; });
 
   let d = null;
   try { d = await S.rpc('dashboard_perfil', {}, { api: '/api' }); }

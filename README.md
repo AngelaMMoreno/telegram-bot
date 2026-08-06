@@ -82,6 +82,7 @@ Router hash-based:
   repetir con indicador de fuerza)
 - `#/verify?token=…` — aterrizaje del enlace del correo
 - `#/onboarding` — elegir oposición al primer login
+- `#/administracion` — importar oposiciones desde JSON (solo para administradores)
 - `#/home`, `#/plan`, `#/stats`, `#/perfil` — cuatro pantallas del mockup
 - `#/unidad/<uuid>` — teoría + test en pestañas
 
