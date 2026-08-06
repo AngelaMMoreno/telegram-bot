@@ -1,8 +1,8 @@
 # =============================================================================
 # Stack NOTIFICADOR ─ worker Web Push.
 #
-# Consume `cola_push` de la BBDD.  Alcanza al `db` del stack CORE
-# del MISMO entorno vía el alias `db${STACK_SUFFIX}` en dokploy-network.
+# Consume `cola_push` de la BBDD del stack core del mismo entorno,
+# vía el alias `db-${DB_ALIAS}` en dokploy-network.
 # =============================================================================
 
 services:
@@ -11,21 +11,21 @@ services:
     build:
       context: ../../notificador
       dockerfile: Dockerfile
-    container_name: notificador${STACK_SUFFIX}
+    container_name: notificador-${DB_ALIAS:?DB_ALIAS requerida}
     environment:
-      DATABASE_URL:      postgres://aprentix@db${STACK_SUFFIX}:5432/${DB_NAME}
+      DATABASE_URL:      postgres://${POSTGRES_USER:-aprentix}@db-${DB_ALIAS}:5432/${POSTGRES_DB}
       PGPASSWORD:        ${DB_PASS}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_PUBLIC_KEY:  ${VAPID_PUBLIC_KEY:-}
       VAPID_SUBJECT:     ${VAPID_SUBJECT:-mailto:soporte@aprentix.es}
-      TICK_SECONDS:      ${NOTIF_TICK:-60}
-      BATCH:             ${NOTIF_BATCH:-50}
-      LOG_LEVEL:         ${NOTIF_LOG:-INFO}
+      TICK_SECONDS:      ${TICK_SECONDS:-300}
+      BATCH_LIMIT:       ${BATCH_LIMIT:-500}
+      LOG_LEVEL:         ${LOG_LEVEL:-INFO}
     restart: unless-stopped
     networks:
       dokploy-network:
         aliases:
-          - notificador${STACK_SUFFIX}
+          - notificador-${DB_ALIAS}
 
 networks:
   dokploy-network:

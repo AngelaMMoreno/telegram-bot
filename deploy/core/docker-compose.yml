@@ -1,30 +1,26 @@
 # =============================================================================
-# Stack CORE ─ db + postgrest.
+# Stack CORE ─ db + postgrest (+ pgadmin opcional).
 #
-# Convive con OTROS despliegues del mismo repo (dev, desa, prod) en el
-# mismo host Dokploy — sin colisionar en `dokploy-network` — gracias
-# al sufijo STACK_SUFFIX que se propaga a:
-#   - container_name (docker daemon)
-#   - alias explícito en dokploy-network (para pgAdmin y otros stacks)
-#   - nombres de routers de Traefik (globales)
+# DB_ALIAS distingue despliegues coexistentes en el mismo Dokploy:
+#   - DB_ALIAS=prod  → container `db-prod`,  alias `db-prod`, router `aprentix-api-prod`
+#   - DB_ALIAS=desa  → container `db-desa`,  alias `db-desa`, router `aprentix-api-desa`
 #
-# STACK_SUFFIX vacío  →  container `db`, alias `db`         (default: producción)
-# STACK_SUFFIX=-desa  →  container `db-desa`, alias `db-desa`
+# Regla: el mismo DB_ALIAS en los 4 .env del mismo entorno.
 #
-# El resto de variables (DB_NAME, DB_PASS, DOMINIO_API, ...) sólo
-# cambian de valor entre entornos; sus NOMBRES son los mismos.
+# pgAdmin se despliega SOLO cuando `COMPOSE_PROFILES=pgadmin`.  Así el
+# stack de producción arranca pgAdmin y el de desa NO — la misma
+# instancia de pgAdmin gestiona ambas BBDD (con dos entradas en
+# `pgadmin/servers.json`).
 # =============================================================================
 
 services:
 
   db:
     image: postgres:16
-    # Sufijo vacío en prod → container `db`, igual que en el stack de
-    # producción histórico.  En desa se lanza como `db-desa`.
-    container_name: db${STACK_SUFFIX}
+    container_name: db-${DB_ALIAS:?DB_ALIAS requerida}
     environment:
-      POSTGRES_DB:       ${DB_NAME:?DB_NAME requerida}
-      POSTGRES_USER:     aprentix
+      POSTGRES_DB:       ${POSTGRES_DB:?POSTGRES_DB requerida}
+      POSTGRES_USER:     ${POSTGRES_USER:-aprentix}
       POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS requerida}
     command:
       - postgres
@@ -40,28 +36,27 @@ services:
     restart: unless-stopped
     networks:
       dokploy-network:
-        # Alias explícito: reemplaza el default (service name = `db`)
-        # y así prod (`db`) y desa (`db-desa`) no compiten por el
-        # mismo nombre DNS en la red compartida.
+        # Alias explícito: reemplaza al default (service name) y evita
+        # que dos deploys (`prod` + `desa`) compitan por el mismo
+        # hostname DNS en la red compartida.
         aliases:
-          - db${STACK_SUFFIX}
+          - db-${DB_ALIAS}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aprentix -d ${DB_NAME}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aprentix} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 10
 
   postgrest:
     image: postgrest/postgrest:v12.2.3
-    container_name: postgrest${STACK_SUFFIX}
+    container_name: postgrest-${DB_ALIAS}
     depends_on:
       db:
         condition: service_healthy
     environment:
-      # Dentro del MISMO compose se resuelve por service name (`db`),
-      # así que el URI no lleva sufijo aquí; el sufijo sólo entra en
-      # los cross-stack (app→postgrest, mailer→db, ...).
-      PGRST_DB_URI:                    postgres://autenticador@db:5432/${DB_NAME}
+      # Dentro del MISMO compose la resolución `db` (service name)
+      # sigue funcionando por la red por defecto del proyecto.
+      PGRST_DB_URI:                    postgres://autenticador@db:5432/${POSTGRES_DB}
       PGPASSWORD:                      ${AUTH_PASS}
       PGRST_DB_ANON_ROLE:              web_anon
       PGRST_DB_SCHEMAS:                public
@@ -71,21 +66,54 @@ services:
     networks:
       dokploy-network:
         aliases:
-          - postgrest${STACK_SUFFIX}
+          - postgrest-${DB_ALIAS}
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=dokploy-network"
-      # Router y service de Traefik con sufijo (deben ser únicos en
-      # toda la instancia Traefik).
-      - "traefik.http.routers.aprentix-api${STACK_SUFFIX}.rule=Host(`${DOMINIO_API}`)"
-      - "traefik.http.routers.aprentix-api${STACK_SUFFIX}.entrypoints=websecure"
-      - "traefik.http.routers.aprentix-api${STACK_SUFFIX}.tls=true"
-      - "traefik.http.routers.aprentix-api${STACK_SUFFIX}.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.aprentix-api${STACK_SUFFIX}.service=aprentix-api${STACK_SUFFIX}"
-      - "traefik.http.services.aprentix-api${STACK_SUFFIX}.loadbalancer.server.port=3000"
+      - "traefik.http.routers.aprentix-api-${DB_ALIAS}.rule=Host(`${DOMINIO_API}`)"
+      - "traefik.http.routers.aprentix-api-${DB_ALIAS}.entrypoints=websecure"
+      - "traefik.http.routers.aprentix-api-${DB_ALIAS}.tls=true"
+      - "traefik.http.routers.aprentix-api-${DB_ALIAS}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.aprentix-api-${DB_ALIAS}.service=aprentix-api-${DB_ALIAS}"
+      - "traefik.http.services.aprentix-api-${DB_ALIAS}.loadbalancer.server.port=3000"
+
+  # pgAdmin ─ SOLO se levanta cuando COMPOSE_PROFILES=pgadmin (típico
+  # en el .env de producción).  El servers.json del repo trae ya las
+  # entradas de db-prod y db-desa, así que la misma instancia sirve
+  # para las dos BBDD sin duplicar pgAdmin.
+  pgadmin:
+    image: dpage/pgadmin4:9
+    container_name: pgadmin
+    profiles: [pgadmin]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL:    ${PGADMIN_EMAIL:-admin@aprentix.es}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASS:-cambia_esto}
+      PGADMIN_CONFIG_PROXY_X_FOR_COUNT:    "1"
+      PGADMIN_CONFIG_PROXY_X_PROTO_COUNT:  "1"
+      PGADMIN_CONFIG_PROXY_X_HOST_COUNT:   "1"
+      PGADMIN_CONFIG_PROXY_X_PORT_COUNT:   "1"
+      PGADMIN_CONFIG_PROXY_X_PREFIX_COUNT: "1"
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ../../pgadmin/servers.json:/pgadmin4/servers.json:ro
+    restart: unless-stopped
+    networks: [dokploy-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=dokploy-network"
+      - "traefik.http.routers.aprentix-pgadmin.rule=Host(`${DOMINIO_PGADMIN:-pgadmin.aprentix.es}`)"
+      - "traefik.http.routers.aprentix-pgadmin.entrypoints=websecure"
+      - "traefik.http.routers.aprentix-pgadmin.tls=true"
+      - "traefik.http.routers.aprentix-pgadmin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.aprentix-pgadmin.loadbalancer.server.port=80"
 
 volumes:
   pg_data:
+  pgadmin_data:
 
 networks:
   dokploy-network:

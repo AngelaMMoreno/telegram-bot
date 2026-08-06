@@ -1,8 +1,8 @@
 # =============================================================================
 # Stack MAILER ─ worker SMTP.
 #
-# Consume `cola_emails` de la BBDD.  Alcanza al `db` del stack CORE
-# del MISMO entorno vía el alias `db${STACK_SUFFIX}` en dokploy-network.
+# Consume `cola_emails` de la BBDD del stack core del mismo entorno,
+# vía el alias `db-${DB_ALIAS}` en dokploy-network.
 # =============================================================================
 
 services:
@@ -11,24 +11,25 @@ services:
     build:
       context: ../../mailer
       dockerfile: Dockerfile
-    container_name: mailer${STACK_SUFFIX}
+    container_name: mailer-${DB_ALIAS:?DB_ALIAS requerida}
     environment:
-      DATABASE_URL: postgres://aprentix@db${STACK_SUFFIX}:5432/${DB_NAME}
-      PGPASSWORD:   ${DB_PASS}
-      SMTP_HOST:    ${SMTP_HOST}
-      SMTP_PORT:    ${SMTP_PORT:-587}
-      SMTP_USER:    ${SMTP_USER:-}
-      SMTP_PASS:    ${SMTP_PASS:-}
-      SMTP_FROM:    ${SMTP_FROM:-No Contestar <no-reply@aprentix.es>}
-      SMTP_TLS:     ${SMTP_TLS:-starttls}
-      TICK_SECONDS: ${MAILER_TICK:-30}
-      BATCH:        ${MAILER_BATCH:-25}
-      LOG_LEVEL:    ${MAILER_LOG:-INFO}
+      DATABASE_URL:        postgres://${POSTGRES_USER:-aprentix}@db-${DB_ALIAS}:5432/${POSTGRES_DB}
+      PGPASSWORD:          ${DB_PASS}
+      MAILER_DEV_LOG_ONLY: ${MAILER_DEV_LOG_ONLY:-0}
+      SMTP_HOST:           ${SMTP_HOST}
+      SMTP_PORT:           ${SMTP_PORT:-587}
+      SMTP_USER:           ${SMTP_USER:-}
+      SMTP_PASS:           ${SMTP_PASS:-}
+      SMTP_FROM:           ${SMTP_FROM:-No Contestar <no-reply@aprentix.es>}
+      SMTP_TLS:            ${SMTP_TLS:-starttls}
+      TICK_SECONDS:        ${TICK_SECONDS:-30}
+      BATCH_LIMIT:         ${BATCH_LIMIT:-25}
+      LOG_LEVEL:           ${LOG_LEVEL:-INFO}
     restart: unless-stopped
     networks:
       dokploy-network:
         aliases:
-          - mailer${STACK_SUFFIX}
+          - mailer-${DB_ALIAS}
 
 networks:
   dokploy-network:

@@ -4,60 +4,104 @@ Cuatro stacks independientes bajo `deploy/`, cada uno con SU PROPIO
 `.env`.  Los nombres de variable son los mismos en cualquier entorno
 — sólo cambia el valor.
 
-Dos despliegues del mismo repo pueden coexistir en el mismo host
-Dokploy (por ejemplo `prod` + `desa`) sin colisionar en
-`dokploy-network`, usando la variable **`STACK_SUFFIX`**.
-
 ## Stacks
 
 | Carpeta | Contenido | Publica | Redespliega cuando cambian… |
 |---|---|---|---|
-| `deploy/core/`        | db + postgrest     | `${DOMINIO_API}` | `db/init/01_esquema.sql`, versión de PostgREST |
-| `deploy/app/`         | Caddy + SPA        | `${DOMINIO_WEB}` | `web/*`, `deploy/app/Caddyfile`, `deploy/app/Dockerfile` |
-| `deploy/mailer/`      | worker SMTP        | –                | `mailer/*` |
-| `deploy/notificador/` | worker Web Push    | –                | `notificador/*` |
+| `deploy/core/`        | db + postgrest (+ pgadmin opcional)    | `${DOMINIO_API}`, `${DOMINIO_PGADMIN}` | `db/init/01_esquema.sql`, versión de PostgREST, `pgadmin/servers.json` |
+| `deploy/app/`         | Caddy + SPA                             | `${DOMINIO_LANDING}` (+ `_ALT`)         | `web/*`, `deploy/app/Caddyfile`, `deploy/app/Dockerfile` |
+| `deploy/mailer/`      | worker SMTP                             | –                                       | `mailer/*` |
+| `deploy/notificador/` | worker Web Push                         | –                                       | `notificador/*` |
 
-## Coexistencia desa + prod (STACK_SUFFIX)
+## Coexistencia desa + prod (DB_ALIAS)
 
-`STACK_SUFFIX` se propaga a cuatro sitios:
+`DB_ALIAS` se propaga a `container_name`, aliases de red, nombres de
+routers Traefik y a los hostnames que otros stacks usan para
+conectar.  Prod usa `DB_ALIAS=prod`, desa usa `DB_ALIAS=desa`.  El
+mismo YAML sirve para los dos entornos.
 
-1. `container_name` (nombre real del contenedor en el daemon).
-2. Alias explícito en `dokploy-network` (para que otros stacks y
-   pgAdmin resuelvan el hostname correcto).
-3. Nombres de routers/services de Traefik (deben ser únicos
-   globalmente).
-4. Hostnames que los otros stacks usan para conectar
-   (`postgrest${STACK_SUFFIX}`, `db${STACK_SUFFIX}`).
+**Regla**: el mismo valor de `DB_ALIAS` en los 4 `.env` de un
+mismo entorno.
 
-Regla: **el mismo valor en los 4 `.env` de un mismo entorno**.
+## Variables por stack
 
-| | `STACK_SUFFIX` | container | alias en `dokploy-network` |
-|---|---|---|---|
-| Producción | *(vacío)* | `db`, `postgrest`, `app`, `mailer`, `notificador` | `db`, `postgrest`, ... |
-| Desarrollo | `-desa`   | `db-desa`, `postgrest-desa`, `app-desa`, `mailer-desa`, `notificador-desa` | `db-desa`, `postgrest-desa`, ... |
+Los `.env.example` de cada carpeta traen los valores de desa como
+default.  Para prod cambia lo mismo pero al valor de prod.
 
-En cada Compose Application de Dokploy, `.env` de `deploy/<stack>/`
-lleva `STACK_SUFFIX=-desa` para el despliegue de desa, y vacío para
-prod.  Los YAMLs no cambian.
-
-## Valores por entorno (resumen)
-
-**Producción** (rama `main` cuando esta llegue allí):
+### `deploy/core/.env`
 
 ```
-STACK_SUFFIX=
-DB_NAME=aprentix
-DOMINIO_WEB=aprentix.es
-DOMINIO_API=api.aprentix.es
+# Distintivo del entorno
+DB_ALIAS=desa                             # prod: prod
+
+# PostgreSQL
+POSTGRES_DB=aprentix_desa                 # prod: aprentix
+POSTGRES_USER=aprentix
+DB_PASS=…
+AUTH_PASS=…
+ADMIN_PASS=…
+
+# JWT (MISMO valor en todos los .env del mismo entorno)
+JWT_SECRET=…
+
+# Traefik
+DOMINIO_API=api.desa.aprentix.es          # prod: api.aprentix.es
+
+# pgAdmin — SOLO en prod
+COMPOSE_PROFILES=                         # prod: pgadmin
+PGADMIN_EMAIL=cccoboss12@gmail.com
+PGADMIN_PASS=…
+DOMINIO_PGADMIN=pgadmin.aprentix.es
 ```
 
-**Desa** (rama `claude/redesign-oposiciones-9bdwaq`):
+### `deploy/app/.env`
 
 ```
-STACK_SUFFIX=-desa
-DB_NAME=aprentix_desa
-DOMINIO_WEB=desa.aprentix.es
-DOMINIO_API=api.desa.aprentix.es
+DB_ALIAS=desa                             # prod: prod
+POSTGRES_DB=aprentix_desa                 # prod: aprentix
+JWT_SECRET=…                              # el mismo que core
+
+DOMINIO_LANDING=desa.aprentix.es          # prod: aprentix.es
+DOMINIO_LANDING_ALT=www.desa.aprentix.es  # prod: www.aprentix.es
+```
+
+### `deploy/mailer/.env`
+
+```
+DB_ALIAS=desa                             # prod: prod
+POSTGRES_DB=aprentix_desa                 # prod: aprentix
+POSTGRES_USER=aprentix
+DB_PASS=…
+
+MAILER_DEV_LOG_ONLY=0                     # 1 → loguea correos, no envía
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=angcar.morcob@gmail.com
+SMTP_PASS=…
+SMTP_FROM=No Contestar <no-reply@aprentix.es>
+SMTP_TLS=starttls
+
+TICK_SECONDS=30
+BATCH_LIMIT=25
+LOG_LEVEL=INFO
+```
+
+### `deploy/notificador/.env`
+
+```
+DB_ALIAS=desa                             # prod: prod
+POSTGRES_DB=aprentix_desa                 # prod: aprentix
+POSTGRES_USER=aprentix
+DB_PASS=…
+
+# MISMAS claves que en prod si quieres reutilizar suscripciones
+VAPID_PRIVATE_KEY=…
+VAPID_PUBLIC_KEY=…
+VAPID_SUBJECT=mailto:cccoboss12@gmail.com
+
+TICK_SECONDS=300
+BATCH_LIMIT=500
+LOG_LEVEL=INFO
 ```
 
 ## Prerequisitos
@@ -80,16 +124,15 @@ DOMINIO_API=api.desa.aprentix.es
      (los links del correo de verificación se construyen con
      `app_url()`).
 
-2. **`deploy/app`** — frontend.  Sirve en `${DOMINIO_WEB}` y proxya
-   `/api/*` a `postgrest${STACK_SUFFIX}:3000` (Caddy lo lee de
+   En prod: `COMPOSE_PROFILES=pgadmin` levanta también pgAdmin.
+
+2. **`deploy/app`** — frontend en `${DOMINIO_LANDING}`, proxya
+   `/api/*` a `postgrest-${DB_ALIAS}:3000` (Caddy lee
    `POSTGREST_UPSTREAM`).
 
 3. **`deploy/mailer`** — worker SMTP.
 
 4. **`deploy/notificador`** — worker Web Push.
-
-Cada stack lee su propio `.env`.  Copia el `.env.example` de cada
-carpeta y ajusta valores.
 
 ## Dev local
 
@@ -99,43 +142,19 @@ $EDITOR .env
 docker compose up -d
 ```
 
-El `docker-compose.yml` del raíz usa `include:` para fusionar los
-cuatro stacks en un único proyecto Docker Compose.  Todos leen del
-mismo `.env` (superset).  Deja `STACK_SUFFIX=` vacío en local.
+El maestro (`include:`) fusiona los cuatro composes en un único
+proyecto.  Todos leen del mismo `.env`.  Deja
+`DB_ALIAS=desa` (o el que uses) y `COMPOSE_PROFILES=` vacío para no
+levantar pgAdmin en local.
 
-## Reutilizar el pgAdmin de producción para ver desa
+## Compartir el pgAdmin de producción para ver desa
 
-Añade una entrada al `servers.json` del pgAdmin existente y
-redespliega ese stack.  Como el pgAdmin y `db-desa` están ambos en
-`dokploy-network`, la resolución del hostname `db-desa` funciona
-directamente:
-
-```json
-{
-  "Servers": {
-    "1": {
-      "Name": "aprentix",
-      "Group": "Servers",
-      "Host": "db",
-      "Port": 5432,
-      "MaintenanceDB": "aprentix",
-      "Username": "aprentix",
-      "SSLMode": "prefer",
-      "Comment": "Producción"
-    },
-    "2": {
-      "Name": "aprentix-desa",
-      "Group": "Servers",
-      "Host": "db-desa",
-      "Port": 5432,
-      "MaintenanceDB": "aprentix_desa",
-      "Username": "aprentix",
-      "SSLMode": "prefer",
-      "Comment": "Entorno de desarrollo (misma pgAdmin, otra BBDD)"
-    }
-  }
-}
-```
+Ya está.  `pgadmin/servers.json` trae dos entradas
+(`aprentix (prod)` → `db-prod`, `aprentix-desa` → `db-desa`).  Como
+pgAdmin y ambos `db-*` están en `dokploy-network`, la resolución
+funciona directa.  Cuando desa aún no esté desplegado, la entrada
+de desa aparecerá pero fallará al conectar hasta que el `db-desa`
+exista — no bloquea nada.
 
 ## Importar la primera oposición
 
@@ -156,14 +175,18 @@ curl -X POST "https://${DOMINIO_API}/rpc/importar_oposicion" \
      -d @db/ejemplo_oposicion.json
 ```
 
-Los temas se identifican por `slug`. Si el slug ya existe, el tema se
-**reutiliza** — no se duplican sus unidades ni preguntas.
+Los temas se identifican por `slug`. Si el slug ya existe, el tema
+se **reutiliza** — no se duplican unidades ni preguntas.
 
 ## Correo (SMTP)
 
-El registro encola una fila en `cola_emails`.  `deploy/mailer` la
-vacía enviando por SMTP con las variables `SMTP_*`.  Con Gmail
-necesitas una **contraseña de aplicación**, no la de la cuenta.
+El registro encola una fila en `cola_emails`. `deploy/mailer` la
+vacía con las credenciales `SMTP_*`. Con Gmail hace falta una
+**contraseña de aplicación**, no la de la cuenta.
+
+Modo dev: `MAILER_DEV_LOG_ONLY=1` — el mailer no abre conexión SMTP
+y sólo loguea el correo por stdout.  Útil para arrancar desa sin
+tocar SMTP.
 
 Comprobar la cola:
 
@@ -174,7 +197,8 @@ SELECT id, destinatario, asunto, enviado_en, ultimo_error
 
 ## Notificaciones Web Push
 
-1. Genera el par VAPID una única vez:
+1. Genera el par VAPID (o reutiliza el de prod si prefieres compartir
+   suscripciones):
    ```bash
    docker run --rm -v $PWD/notificador:/w -w /w python:3.12-slim \
      sh -c 'pip install py-vapid && python gen_vapid.py'
@@ -189,18 +213,19 @@ SELECT id, destinatario, asunto, enviado_en, ultimo_error
    ```sql
    SELECT push_enviar_prueba();
    ```
-   El worker despacha en el siguiente tick.
 
 ## Migrar esta rama a producción
 
-Cuando esta rama esté validada en desa y merges a `main`:
+Cuando esta rama esté validada y merges a `main`:
 
 1. En Dokploy, cambia la rama de cada Compose Application a `main`.
 2. Ajusta el `.env` de cada stack:
-   - `STACK_SUFFIX=` (vacío — vuelve al naming de prod)
-   - `DB_NAME=aprentix`
-   - `DOMINIO_WEB=aprentix.es`, `DOMINIO_API=api.aprentix.es`
-   - Contraseñas y VAPID de producción.
+   - `DB_ALIAS=prod`
+   - `POSTGRES_DB=aprentix`
+   - `DOMINIO_LANDING=aprentix.es`, `DOMINIO_LANDING_ALT=www.aprentix.es`
+   - `DOMINIO_API=api.aprentix.es`
+   - En core: `COMPOSE_PROFILES=pgadmin`
+   - Contraseñas, JWT_SECRET y VAPID de producción.
 3. Redespliega los cuatro stacks.
 
 No hay que cambiar YAMLs, ni Dockerfiles, ni SQL — sólo el `.env`.
@@ -208,9 +233,7 @@ No hay que cambiar YAMLs, ni Dockerfiles, ni SQL — sólo el `.env`.
 ## Qué queda para siguientes iteraciones
 
 - **Motor real del plan de estudio**: la vista Plan hoy pinta
-  bloques de muestra a partir de la unidad pendiente.  La tabla
-  `plan_sesiones` ya existe para persistir el calendario diario que
-  genere el motor.
+  bloques de muestra a partir de la unidad pendiente.
 - **Editor visual** de oposiciones desde admin.  Ahora la carga es
   por RPC `importar_oposicion(payload)`.
 - **Motor de retos**: incrementar `retos_usuario.progreso` dentro de

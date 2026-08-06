@@ -16,13 +16,13 @@ Ciclo por tick (TICK_SECONDS, por defecto 60 s):
   3. Marca la fila como enviada o incrementa `intentos` con `ultimo_error`.
 
 Variables de entorno:
-  DATABASE_URL       postgres://aprentix@db:5432/<DB_NAME>
+  DATABASE_URL       postgres://aprentix@db-<alias>:5432/<db_name>
   PGPASSWORD         contraseña del rol de conexión
   VAPID_PRIVATE_KEY  clave privada VAPID (PEM con saltos reales o "\\n")
   VAPID_PUBLIC_KEY   solo para log (opcional)
   VAPID_SUBJECT      mailto:soporte@aprentix.es
-  TICK_SECONDS       intervalo entre ciclos (default 60)
-  BATCH              máximo de mensajes por tick (default 50)
+  TICK_SECONDS       intervalo entre ciclos (default 300)
+  BATCH_LIMIT        máximo de mensajes por tick (default 500)
 """
 
 from __future__ import annotations
@@ -66,8 +66,8 @@ def _normalizar_vapid_key(raw: str) -> str:
 DATABASE_URL      = os.environ["DATABASE_URL"]
 VAPID_PRIVATE_KEY = _normalizar_vapid_key(os.environ["VAPID_PRIVATE_KEY"])
 VAPID_SUBJECT     = os.environ.get("VAPID_SUBJECT", "mailto:soporte@aprentix.es")
-TICK_SECONDS      = int(os.environ.get("TICK_SECONDS", "60"))
-BATCH             = int(os.environ.get("BATCH", "50"))
+TICK_SECONDS      = int(os.environ.get("TICK_SECONDS", "300"))
+BATCH_LIMIT       = int(os.environ.get("BATCH_LIMIT", "500"))
 
 
 logging.basicConfig(
@@ -139,7 +139,7 @@ def _tick(cn: psycopg.Connection) -> int:
              LIMIT %s
              FOR UPDATE SKIP LOCKED
             """,
-            (BATCH,),
+            (BATCH_LIMIT,),
         )
         pendientes = cur.fetchall()
 
@@ -168,8 +168,8 @@ def _tick(cn: psycopg.Connection) -> int:
 
 
 def main() -> int:
-    log.info("arranca notificador subject=%s batch=%s tick=%ss",
-             VAPID_SUBJECT, BATCH, TICK_SECONDS)
+    log.info("arranca notificador subject=%s batch_limit=%s tick=%ss",
+             VAPID_SUBJECT, BATCH_LIMIT, TICK_SECONDS)
 
     stop = {"flag": False}
     def _handler(signum, _frame):  # noqa: ARG001

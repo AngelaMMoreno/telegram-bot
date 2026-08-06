@@ -17,16 +17,18 @@ Ciclo por tick (TICK_SECONDS, por defecto 30 s):
   3. Duerme TICK_SECONDS y repite.
 
 Variables de entorno:
-  DATABASE_URL     postgres://aprentix@db:5432/aprentix_desa
-  PGPASSWORD       contraseña del rol de conexión
-  SMTP_HOST        smtp.gmail.com
-  SMTP_PORT        587
-  SMTP_USER        usuario SMTP
-  SMTP_PASS        contraseña SMTP
-  SMTP_FROM        "No Contestar <no-reply@aprentix.es>"
-  SMTP_TLS         starttls | ssl | none  (default: starttls)
-  TICK_SECONDS     intervalo entre ciclos (default: 30)
-  BATCH            máximo de emails por tick (default: 25)
+  DATABASE_URL          postgres://aprentix@db-<alias>:5432/<db_name>
+  PGPASSWORD            contraseña del rol de conexión
+  MAILER_DEV_LOG_ONLY   "1" → loguea el correo por stdout en vez de enviarlo
+                        (útil para arrancar en desa sin credenciales SMTP)
+  SMTP_HOST             smtp.gmail.com
+  SMTP_PORT             587
+  SMTP_USER             usuario SMTP
+  SMTP_PASS             contraseña SMTP
+  SMTP_FROM             "No Contestar <no-reply@aprentix.es>"
+  SMTP_TLS              starttls | ssl | none  (default: starttls)
+  TICK_SECONDS          intervalo entre ciclos (default: 30)
+  BATCH_LIMIT           máximo de emails por tick (default: 25)
 """
 
 from __future__ import annotations
@@ -44,15 +46,16 @@ from email.utils import formataddr, parseaddr
 import psycopg
 
 
-DATABASE_URL = os.environ["DATABASE_URL"]
-SMTP_HOST    = os.environ["SMTP_HOST"]
-SMTP_PORT    = int(os.environ.get("SMTP_PORT", "587"))
-SMTP_USER    = os.environ.get("SMTP_USER") or None
-SMTP_PASS    = os.environ.get("SMTP_PASS") or None
-SMTP_FROM    = os.environ.get("SMTP_FROM", "No Contestar <no-reply@aprentix.es>")
-SMTP_TLS     = os.environ.get("SMTP_TLS", "starttls").lower()  # starttls|ssl|none
-TICK_SECONDS = int(os.environ.get("TICK_SECONDS", "30"))
-BATCH        = int(os.environ.get("BATCH", "25"))
+DATABASE_URL         = os.environ["DATABASE_URL"]
+MAILER_DEV_LOG_ONLY  = os.environ.get("MAILER_DEV_LOG_ONLY", "0") == "1"
+SMTP_HOST            = os.environ.get("SMTP_HOST") or ""
+SMTP_PORT            = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER            = os.environ.get("SMTP_USER") or None
+SMTP_PASS            = os.environ.get("SMTP_PASS") or None
+SMTP_FROM            = os.environ.get("SMTP_FROM", "No Contestar <no-reply@aprentix.es>")
+SMTP_TLS             = os.environ.get("SMTP_TLS", "starttls").lower()  # starttls|ssl|none
+TICK_SECONDS         = int(os.environ.get("TICK_SECONDS", "30"))
+BATCH_LIMIT          = int(os.environ.get("BATCH_LIMIT", "25"))
 
 
 logging.basicConfig(
@@ -106,11 +109,27 @@ def _tick(cn: psycopg.Connection) -> int:
              LIMIT %s
              FOR UPDATE SKIP LOCKED
             """,
-            (BATCH,),
+            (BATCH_LIMIT,),
         )
         pendientes = cur.fetchall()
     if not pendientes:
         return 0
+
+    # Modo dev: no abre conexión SMTP; simplemente loguea el correo y
+    # lo marca como enviado.  Útil para levantar desa sin credenciales
+    # o para depurar plantillas sin spammear buzones reales.
+    if MAILER_DEV_LOG_ONLY:
+        for row_id, destinatario, asunto, txt, _html in pendientes:
+            log.info("[DEV_LOG_ONLY] id=%s to=%s asunto=%r\n%s",
+                     row_id, destinatario, asunto, txt)
+            with cn.cursor() as cur:
+                cur.execute(
+                    "UPDATE cola_emails SET enviado_en = now(), intentos = intentos + 1 "
+                    "WHERE id = %s",
+                    (row_id,),
+                )
+            cn.commit()
+        return len(pendientes)
 
     enviados = 0
     smtp = None
@@ -149,10 +168,13 @@ def _tick(cn: psycopg.Connection) -> int:
 
 
 def main() -> int:
-    log.info(
-        "arranca mailer host=%s puerto=%s tls=%s from=%s batch=%s tick=%ss",
-        SMTP_HOST, SMTP_PORT, SMTP_TLS, SMTP_FROM, BATCH, TICK_SECONDS,
-    )
+    if MAILER_DEV_LOG_ONLY:
+        log.info("arranca mailer en MODO DEV (los correos se loguean, NO se envían)")
+    else:
+        log.info(
+            "arranca mailer host=%s puerto=%s tls=%s from=%s batch_limit=%s tick=%ss",
+            SMTP_HOST, SMTP_PORT, SMTP_TLS, SMTP_FROM, BATCH_LIMIT, TICK_SECONDS,
+        )
     # SIGTERM/SIGINT para parada limpia (Docker lo envía al detener).
     stop = {"flag": False}
 

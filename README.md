@@ -18,64 +18,63 @@ oposiciones  N:M  temas (reutilizables)  1:N  unidades  1:N  preguntas
 ├── db/
 │   ├── init/01_esquema.sql       ← esquema autoritativo (RLS + RPCs)
 │   └── ejemplo_oposicion.json    ← payload para importar_oposicion()
-├── web/                     ← SPA autocontenida (sin subcarpeta shared/)
-│   ├── index.html
-│   ├── style.css
-│   ├── app.js
-│   ├── tokens.css                ← paleta + modo oscuro
-│   └── session.js                ← window.AprentixSession (JWT + rpc)
+├── pgadmin/
+│   └── servers.json              ← entradas para prod (db-prod) + desa (db-desa)
+├── web/                     ← SPA autocontenida
+│   ├── index.html, style.css, app.js, tokens.css, session.js
 ├── mailer/                  ← worker SMTP (consume cola_emails)
-│   ├── Dockerfile, mailer.py, requirements.txt
 ├── notificador/             ← worker Web Push (consume cola_push)
-│   ├── Dockerfile, notificador.py, gen_vapid.py, requirements.txt
 └── deploy/                  ← un stack Dokploy por carpeta
-    ├── core/          → db + postgrest
-    │   ├── docker-compose.yml
-    │   └── .env.example
+    ├── core/          → db + postgrest + (opcional) pgadmin
     ├── app/           → Caddy + SPA
-    │   ├── Dockerfile
-    │   ├── Caddyfile
-    │   ├── docker-compose.yml
-    │   └── .env.example
     ├── mailer/
-    │   ├── docker-compose.yml
-    │   └── .env.example
     └── notificador/
-        ├── docker-compose.yml
-        └── .env.example
 ```
 
 En **Dokploy** cada carpeta bajo `deploy/` es una Compose Application
 independiente con SU PROPIO `.env` — así puedes redesplegar sólo
 `deploy/app` cuando cambia el frontend sin tocar la BBDD ni los
-workers, exactamente igual que en producción.
+workers.
 
 En **dev local** basta con:
 
 ```bash
-cp .env.example .env
-$EDITOR .env
-docker compose up -d
+cp .env.example .env  &&  $EDITOR .env  &&  docker compose up -d
 ```
 
 El maestro (`include:`) fusiona los cuatro composes en un único
-proyecto y todos ven las mismas variables.
-
-## Mismas variables en todo entorno
-
-Los nombres son **idénticos** en dev, desa y prod — sólo cambia el
-valor.  Cambiar de entorno al que apunta un deploy es editar el
-`.env` de ese stack, no el YAML.
+proyecto y todos leen del mismo `.env`.
 
 ## Coexistencia desa + prod en el mismo Dokploy
 
-Un `STACK_SUFFIX` por `.env` (vacío en prod, `-desa` en desa) se
-propaga a `container_name`, alias de red y nombres de routers
-Traefik.  Así los dos despliegues comparten `dokploy-network` sin
-chocar: prod usa `db`, `postgrest`, `app`; desa usa `db-desa`,
-`postgrest-desa`, `app-desa`.  El pgAdmin de prod puede añadir un
-segundo servidor apuntando a `db-desa` sin más cambios.  Detalle
-completo en [`DESPLIEGUE.md`](DESPLIEGUE.md).
+Una única variable — **`DB_ALIAS`** — distingue los dos despliegues.
+Se propaga a:
+
+1. `container_name` (nombre real del contenedor).
+2. Alias explícito en `dokploy-network` (para que otros stacks y
+   pgAdmin encuentren el hostname correcto).
+3. Nombres de routers/services de Traefik (deben ser únicos).
+4. Hostnames que usan los otros stacks para conectar
+   (`postgrest-${DB_ALIAS}`, `db-${DB_ALIAS}`).
+
+| Entorno | `DB_ALIAS` | container / alias |
+|---|---|---|
+| Producción | `prod` | `db-prod`, `postgrest-prod`, `app-prod`, `mailer-prod`, `notificador-prod` |
+| Desa       | `desa` | `db-desa`, `postgrest-desa`, `app-desa`, `mailer-desa`, `notificador-desa` |
+
+**Regla**: el mismo `DB_ALIAS` en los 4 `.env` de un mismo entorno.
+
+## pgAdmin compartido
+
+Se despliega **una sola instancia** de pgAdmin (en el stack `core`
+de prod, activada por `COMPOSE_PROFILES=pgadmin`).  Su
+`servers.json` (`pgadmin/servers.json`) ya trae dos entradas:
+
+- `aprentix (prod)` → host `db-prod` / db `aprentix`
+- `aprentix-desa`   → host `db-desa` / db `aprentix_desa`
+
+En desa deja `COMPOSE_PROFILES=` vacío y no se levanta un segundo
+pgAdmin — todo se gestiona desde el de prod.
 
 ## Rutas de la SPA
 

@@ -1,9 +1,9 @@
 # =============================================================================
 # Stack APP ─ Caddy + SPA.
 #
-# Puede coexistir con otras instancias del mismo repo (prod + desa)
-# gracias al sufijo STACK_SUFFIX (ver README).  El Caddyfile lee
-# POSTGREST_UPSTREAM para saber a qué stack `postgrest` proxyar.
+# El Caddyfile lee POSTGREST_UPSTREAM (`postgrest-${DB_ALIAS}:3000`)
+# para saber a qué stack `postgrest` proxyar.  La misma imagen sirve
+# para prod y desa cambiando sólo el .env.
 # =============================================================================
 
 services:
@@ -12,25 +12,24 @@ services:
     build:
       context: ../..
       dockerfile: deploy/app/Dockerfile
-    container_name: app${STACK_SUFFIX}
+    container_name: app-${DB_ALIAS:?DB_ALIAS requerida}
     environment:
-      # Hostname:puerto del PostgREST del MISMO entorno.  El Caddyfile
-      # lo lee como {env.POSTGREST_UPSTREAM}.
-      POSTGREST_UPSTREAM: postgrest${STACK_SUFFIX}:3000
+      POSTGREST_UPSTREAM: postgrest-${DB_ALIAS}:3000
     restart: unless-stopped
     networks:
       dokploy-network:
         aliases:
-          - app${STACK_SUFFIX}
+          - app-${DB_ALIAS}
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=dokploy-network"
-      - "traefik.http.routers.aprentix-web${STACK_SUFFIX}.rule=Host(`${DOMINIO_WEB}`)"
-      - "traefik.http.routers.aprentix-web${STACK_SUFFIX}.entrypoints=websecure"
-      - "traefik.http.routers.aprentix-web${STACK_SUFFIX}.tls=true"
-      - "traefik.http.routers.aprentix-web${STACK_SUFFIX}.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.aprentix-web${STACK_SUFFIX}.service=aprentix-web${STACK_SUFFIX}"
-      - "traefik.http.services.aprentix-web${STACK_SUFFIX}.loadbalancer.server.port=80"
+      # Router acepta el dominio principal y (opcional) el alt (`www.`)
+      - "traefik.http.routers.aprentix-web-${DB_ALIAS}.rule=Host(`${DOMINIO_LANDING}`) || Host(`${DOMINIO_LANDING_ALT:-www.dummy.invalid}`)"
+      - "traefik.http.routers.aprentix-web-${DB_ALIAS}.entrypoints=websecure"
+      - "traefik.http.routers.aprentix-web-${DB_ALIAS}.tls=true"
+      - "traefik.http.routers.aprentix-web-${DB_ALIAS}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.aprentix-web-${DB_ALIAS}.service=aprentix-web-${DB_ALIAS}"
+      - "traefik.http.services.aprentix-web-${DB_ALIAS}.loadbalancer.server.port=80"
 
 networks:
   dokploy-network:
