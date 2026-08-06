@@ -608,6 +608,26 @@ img, svg { display: block; max-width: 100%; }
 .onboarding-list li strong { display: block; }
 .onboarding-list li .muted { font-size: .85rem; }
 
+/* ─── Administración ───────────────────────────────────────────────── */
+
+.admin-importacion form { display: grid; gap: 16px; }
+.campo-json { display: grid; gap: 8px; font-weight: 700; }
+.campo-json textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 260px;
+  padding: 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-panel);
+  color: var(--txt);
+  font: 500 .88rem/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.campo-json textarea:focus {
+  outline: 3px solid color-mix(in srgb, var(--pri) 22%, transparent);
+  border-color: var(--pri);
+}
+
 /* ─── Bottom nav ────────────────────────────────────────────────────── */
 
 .bottom-nav {

@@ -422,6 +422,10 @@
         </ul>
       </article>
 
+      <button class="btn btn-primary btn-block" data-ir-administracion hidden>
+        ⚙️ Administrar oposiciones
+      </button>
+
       <button class="btn btn-outline btn-block" data-logout>🚪 Cerrar sesión</button>
     </section>
   </template>
@@ -435,9 +439,39 @@
         <p class="muted">Puedes cambiarla más adelante desde tu perfil.</p>
       </div>
       <ul class="onboarding-list" data-onboarding></ul>
+      <button class="btn btn-outline btn-block" data-ir-administracion hidden>
+        ⚙️ Añadir la primera oposición
+      </button>
       <button class="btn btn-primary btn-block" data-onboarding-guardar disabled>
         Continuar
       </button>
+    </section>
+  </template>
+
+  <!--──────────────── ADMINISTRACIÓN ────────────────-->
+  <template id="tpl-administracion">
+    <section class="view view-administracion">
+      <header class="unidad-head">
+        <button class="btn btn-ghost btn-mini" data-volver-administracion>‹ Volver</button>
+        <h1>Administrar oposiciones</h1>
+      </header>
+
+      <article class="card admin-importacion">
+        <h2>Importar una oposición</h2>
+        <p class="muted">
+          Pega el JSON de la oposición. Debe contener al menos <code>slug</code> y
+          <code>nombre</code>; también puede incluir sus temas, unidades y preguntas.
+        </p>
+        <form data-form-importar>
+          <label class="campo-json">
+            <span>Contenido JSON</span>
+            <textarea data-json-oposicion rows="16" required spellcheck="false"
+              placeholder='{"slug":"auxiliar-administrativo", "nombre":"Auxiliar Administrativo", "temas":[]}'></textarea>
+          </label>
+          <p class="auth-err" data-error-importacion hidden></p>
+          <button class="btn btn-primary btn-block" type="submit">Importar oposición</button>
+        </form>
+      </article>
     </section>
   </template>
 

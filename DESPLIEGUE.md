@@ -198,7 +198,12 @@ exista — no bloquea nada.
 
 ## Importar la primera oposición
 
-Login con `admin@aprentix.es`. Desde la consola del navegador:
+El usuario administrador inicial es `admin@aprentix.es` y su contraseña es el
+valor configurado en `ADMIN_PASS` al crear la base de datos. Tras iniciar sesión,
+pulsa **Añadir la primera oposición** y pega el contenido JSON en la pantalla de
+administración.
+
+También se puede importar desde la consola del navegador:
 
 ```js
 const payload = /* JSON con el shape de db/ejemplo_oposicion.json */;
