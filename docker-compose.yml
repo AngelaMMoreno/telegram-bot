@@ -19,3 +19,4 @@ include:
   - deploy/app/docker-compose.yml
   - deploy/mailer/docker-compose.yml
   - deploy/notificador/docker-compose.yml
+  - deploy/backups/docker-compose.yml

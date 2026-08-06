@@ -1,0 +1,71 @@
+# =============================================================================
+# Stack BACKUPS — snapshots automáticos a Google Drive.
+#
+# Contenedor único (dcron) que cada noche a las 03:30 (BACKUP_CRON)
+# lanza `backup.sh`:
+#   - pg_dump de la BBDD del stack core → snapshot 'db' en restic.
+#   - restic forget --keep-last N --prune para no llenar Drive.
+#
+# En este rediseño la teoría vive dentro de la BBDD (columna
+# `unidades.teoria_md`), así que YA NO hay snapshot 'teoria' de
+# ficheros — todo lo relevante está en el dump SQL.
+#
+# El repositorio restic vive en Google Drive vía rclone.  Se genera
+# el `rclone.conf` una vez con `rclone config` en tu máquina local
+# y se copia al VPS a /mnt/data/backup-config/rclone.conf.  Ver
+# `deploy/backups/README.md`.
+#
+# Se conecta al `db` (prod, sin sufijo) o al `db-desa` (desa) según
+# DB_ALIAS, por la red externa dokploy-network.  Depende de que el
+# stack core esté levantado.
+# =============================================================================
+
+services:
+
+  backups:
+    build: .
+    container_name: backups${DB_ALIAS:+-${DB_ALIAS}}
+    # crond (BusyBox) llama a setpgid(0,0) al arrancar y el kernel
+    # se lo prohíbe cuando corre como PID 1 (EPERM); sin `init: true`
+    # el contenedor entra en bucle de reinicios.
+    init: true
+    environment:
+      # ── BBDD (mismas credenciales que el stack core del mismo entorno) ──
+      # Hostname: `db` en prod, `db-desa` en desa (según DB_ALIAS).
+      PGHOST:     ${PGHOST:-db${DB_ALIAS:+-${DB_ALIAS}}}
+      PGPORT:     ${PGPORT:-5432}
+      PGUSER:     ${PGUSER:-${POSTGRES_USER:-aprentix}}
+      PGDATABASE: ${PGDATABASE:-${POSTGRES_DB:?POSTGRES_DB requerida}}
+      PGPASSWORD: ${DB_PASS:?DB_PASS requerida (misma que en el stack core)}
+
+      # ── Repositorio restic ──────────────────────────────────────────
+      # Formato: rclone:<remote>:<carpeta>.  El remote (p. ej. gdrive)
+      # debe existir en el rclone.conf montado más abajo.
+      RESTIC_REPOSITORY: '${RESTIC_REPOSITORY:?ej: rclone:gdrive:aprentix-backups}'
+      RESTIC_PASSWORD:   ${RESTIC_PASSWORD:?Contraseña del repo restic}
+      RESTIC_HOST:       ${RESTIC_HOST:-aprentix}
+
+      # ── Retención y horario ─────────────────────────────────────────
+      KEEP_LAST:   ${KEEP_LAST:-2}
+      BACKUP_CRON: ${BACKUP_CRON:-30 3 * * *}
+      TZ:          ${TZ:-Europe/Madrid}
+
+    volumes:
+      # rclone.conf con el token OAuth de Google Drive.  Se monta
+      # como CARPETA (no como fichero) para poder ejecutar
+      # `rclone config` dentro del contenedor la primera vez y
+      # persistir el resultado en el host.
+      - /mnt/data/backup-config:/root/.config/rclone
+      # Cache local de restic — acelera los `forget --prune` y los
+      # backups diarios.
+      - restic_cache:/root/.cache/restic
+
+    restart: unless-stopped
+    networks: [dokploy-network]
+
+volumes:
+  restic_cache:
+
+networks:
+  dokploy-network:
+    external: true

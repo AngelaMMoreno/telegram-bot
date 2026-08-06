@@ -12,6 +12,7 @@ Cuatro stacks independientes bajo `deploy/`, cada uno con SU PROPIO
 | `deploy/app/`         | Caddy + SPA                             | `${DOMINIO_LANDING}` (+ `_ALT`)         | `web/*`, `deploy/app/Caddyfile`, `deploy/app/Dockerfile` |
 | `deploy/mailer/`      | worker SMTP                             | –                                       | `mailer/*` |
 | `deploy/notificador/` | worker Web Push                         | –                                       | `notificador/*` |
+| `deploy/backups/`     | restic + rclone → Google Drive          | –                                       | `deploy/backups/*` |
 
 ## Coexistencia desa + prod (DB_ALIAS)
 
@@ -112,6 +113,27 @@ TICK_SECONDS=300
 BATCH_LIMIT=500
 LOG_LEVEL=INFO
 ```
+
+### `deploy/backups/.env`
+
+```
+DB_ALIAS=desa                                                 # prod: (vacío)
+POSTGRES_DB=aprentix_desa                                     # prod: aprentix
+POSTGRES_USER=aprentix
+DB_PASS=…                                                      # la misma que core
+
+# Carpeta DIFERENTE en Drive para no mezclar prod y desa
+RESTIC_REPOSITORY=rclone:gdrive:aprentix_desa-backups          # prod: rclone:gdrive:aprentix-backups
+RESTIC_PASSWORD=…                                              # sin ella no se puede restaurar
+RESTIC_HOST=aprentix
+
+KEEP_LAST=2
+BACKUP_CRON=30 3 * * *
+TZ=Europe/Madrid
+```
+
+El detalle de `rclone config` y la restauración están en
+[`deploy/backups/README.md`](deploy/backups/README.md).
 
 ## Prerequisitos
 

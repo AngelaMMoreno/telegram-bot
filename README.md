@@ -28,7 +28,8 @@ oposiciones  N:M  temas (reutilizables)  1:N  unidades  1:N  preguntas
     ├── core/          → db + postgrest + (opcional) pgadmin
     ├── app/           → Caddy + SPA
     ├── mailer/
-    └── notificador/
+    ├── notificador/
+    └── backups/       → restic + rclone → Google Drive
 ```
 
 En **Dokploy** cada carpeta bajo `deploy/` es una Compose Application
