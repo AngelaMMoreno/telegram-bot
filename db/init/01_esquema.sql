@@ -9,10 +9,11 @@
 --
 --   oposiciones  ─N:M→  temas (reutilizables)  1:N→  unidades  1:N→  preguntas
 --
--- El fichero se ejecuta sobre una BBDD vacía
--- (docker-entrypoint-initdb.d).  No hay migraciones parciales: si se
--- necesita evolucionar el esquema, se edita aquí y se aplica el ALTER
--- correspondiente contra el entorno vivo.
+-- El fichero puede ejecutarse sobre una BBDD vacía o relanzarse sobre una
+-- instalación previa. Los objetos simples usan IF NOT EXISTS; triggers y
+-- políticas se recrean para aplicar su definición actual. Esto evita errores
+-- por objetos existentes, pero no sustituye a migraciones ALTER cuando cambia
+-- la estructura de una tabla ya creada.
 -- =============================================================================
 
 
@@ -24,7 +25,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;    -- búsqueda difusa opcional
 --                                  IDENTIDAD
 -- =============================================================================
 
-CREATE TABLE usuarios (
+CREATE TABLE IF NOT EXISTS usuarios (
     id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     -- El email es el login. Un trigger lo normaliza a minúsculas antes
     -- de insertar, así el UNIQUE por email es case-insensitive de
@@ -48,27 +49,28 @@ BEGIN
     RETURN NEW;
 END $$;
 
+DROP TRIGGER IF EXISTS usuarios_email_normalize ON usuarios;
 CREATE TRIGGER usuarios_email_normalize
     BEFORE INSERT OR UPDATE OF email ON usuarios
     FOR EACH ROW EXECUTE FUNCTION normalizar_email();
 
-CREATE TABLE roles (
+CREATE TABLE IF NOT EXISTS roles (
     id          text PRIMARY KEY,             -- admin | editor | alumno
     descripcion text
 );
 
-CREATE TABLE permisos (
+CREATE TABLE IF NOT EXISTS permisos (
     id          text PRIMARY KEY,             -- oposicion.gestionar, ...
     descripcion text
 );
 
-CREATE TABLE rol_permisos (
+CREATE TABLE IF NOT EXISTS rol_permisos (
     rol_id      text REFERENCES roles(id)    ON DELETE CASCADE,
     permiso_id  text REFERENCES permisos(id) ON DELETE CASCADE,
     PRIMARY KEY (rol_id, permiso_id)
 );
 
-CREATE TABLE usuario_roles (
+CREATE TABLE IF NOT EXISTS usuario_roles (
     usuario_id  uuid REFERENCES usuarios(id) ON DELETE CASCADE,
     rol_id      text REFERENCES roles(id)    ON DELETE CASCADE,
     PRIMARY KEY (usuario_id, rol_id)
@@ -76,7 +78,7 @@ CREATE TABLE usuario_roles (
 
 -- Tokens para acciones asíncronas por email (confirmación de cuenta y
 -- reset de contraseña).  Solo un token vivo por (usuario, tipo).
-CREATE TABLE email_tokens (
+CREATE TABLE IF NOT EXISTS email_tokens (
     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     usuario_id  uuid NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
     tipo        text NOT NULL CHECK (tipo IN ('verificar_email','reset_password')),
@@ -85,7 +87,7 @@ CREATE TABLE email_tokens (
     usado_en    timestamptz,
     creado_en   timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX email_tokens_activos_idx ON email_tokens (usuario_id, tipo)
+CREATE INDEX IF NOT EXISTS email_tokens_activos_idx ON email_tokens (usuario_id, tipo)
     WHERE usado_en IS NULL;
 
 
@@ -95,7 +97,7 @@ CREATE INDEX email_tokens_activos_idx ON email_tokens (usuario_id, tipo)
 -- Dos colas de trabajo (una fila = una notificación a enviar). La BBDD
 -- sólo encola; los workers Python (mailer, notificador) consumen.
 
-CREATE TABLE cola_emails (
+CREATE TABLE IF NOT EXISTS cola_emails (
     id            bigserial PRIMARY KEY,
     destinatario  text NOT NULL,
     asunto        text NOT NULL,
@@ -107,10 +109,10 @@ CREATE TABLE cola_emails (
     enviado_en    timestamptz,
     ultimo_error  text
 );
-CREATE INDEX cola_emails_pendiente_idx ON cola_emails (encolado_en)
+CREATE INDEX IF NOT EXISTS cola_emails_pendiente_idx ON cola_emails (encolado_en)
     WHERE enviado_en IS NULL;
 
-CREATE TABLE cola_push (
+CREATE TABLE IF NOT EXISTS cola_push (
     id            bigserial PRIMARY KEY,
     usuario_id    uuid NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
     titulo        text NOT NULL,
@@ -123,16 +125,16 @@ CREATE TABLE cola_push (
     enviado_en    timestamptz,
     ultimo_error  text
 );
-CREATE INDEX cola_push_pendiente_idx ON cola_push (encolado_en)
+CREATE INDEX IF NOT EXISTS cola_push_pendiente_idx ON cola_push (encolado_en)
     WHERE enviado_en IS NULL;
-CREATE INDEX cola_push_usuario_idx  ON cola_push (usuario_id);
+CREATE INDEX IF NOT EXISTS cola_push_usuario_idx  ON cola_push (usuario_id);
 
 
 -- =============================================================================
 --             OPOSICIONES, TEMAS (REUTILIZABLES) Y UNIDADES
 -- =============================================================================
 
-CREATE TABLE oposiciones (
+CREATE TABLE IF NOT EXISTS oposiciones (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     slug         text UNIQUE NOT NULL,
     nombre       text NOT NULL,
@@ -146,7 +148,7 @@ CREATE TABLE oposiciones (
 -- Un tema es reutilizable: la misma "Constitución Española" puede
 -- formar parte de varias oposiciones.  Vive en su propia tabla y se
 -- enlaza a las oposiciones vía `oposicion_temas` (N:M) con orden.
-CREATE TABLE temas (
+CREATE TABLE IF NOT EXISTS temas (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     slug         text UNIQUE NOT NULL,
     nombre       text NOT NULL,
@@ -156,18 +158,18 @@ CREATE TABLE temas (
     autor_id     uuid REFERENCES usuarios(id) ON DELETE SET NULL
 );
 
-CREATE TABLE oposicion_temas (
+CREATE TABLE IF NOT EXISTS oposicion_temas (
     oposicion_id uuid NOT NULL REFERENCES oposiciones(id) ON DELETE CASCADE,
     tema_id      uuid NOT NULL REFERENCES temas(id)       ON DELETE CASCADE,
     orden        int  NOT NULL,
     PRIMARY KEY (oposicion_id, tema_id),
     UNIQUE (oposicion_id, orden)
 );
-CREATE INDEX oposicion_temas_tema_idx ON oposicion_temas (tema_id);
+CREATE INDEX IF NOT EXISTS oposicion_temas_tema_idx ON oposicion_temas (tema_id);
 
 -- Cada tema tiene unidades.  Una unidad contiene teoría (markdown) y
 -- puede tener preguntas asociadas para el test de esa unidad.
-CREATE TABLE unidades (
+CREATE TABLE IF NOT EXISTS unidades (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tema_id       uuid NOT NULL REFERENCES temas(id) ON DELETE CASCADE,
     slug          text NOT NULL,
@@ -180,11 +182,11 @@ CREATE TABLE unidades (
     UNIQUE (tema_id, slug),
     UNIQUE (tema_id, orden)
 );
-CREATE INDEX unidades_tema_idx ON unidades (tema_id);
+CREATE INDEX IF NOT EXISTS unidades_tema_idx ON unidades (tema_id);
 
 -- Preguntas SIEMPRE cuelgan de una unidad. Al reutilizar un tema, sus
 -- preguntas se reutilizan también.
-CREATE TABLE preguntas (
+CREATE TABLE IF NOT EXISTS preguntas (
     id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     unidad_id      uuid NOT NULL REFERENCES unidades(id) ON DELETE CASCADE,
     enunciado      text NOT NULL,
@@ -195,21 +197,21 @@ CREATE TABLE preguntas (
     creada_en      timestamptz NOT NULL DEFAULT now(),
     autor_id       uuid REFERENCES usuarios(id) ON DELETE SET NULL
 );
-CREATE INDEX preguntas_unidad_idx ON preguntas (unidad_id);
+CREATE INDEX IF NOT EXISTS preguntas_unidad_idx ON preguntas (unidad_id);
 
 
 -- =============================================================================
 --                     MATRÍCULA DEL ALUMNO EN OPOSICIONES
 -- =============================================================================
 
-CREATE TABLE usuario_oposiciones (
+CREATE TABLE IF NOT EXISTS usuario_oposiciones (
     usuario_id    uuid NOT NULL REFERENCES usuarios(id)   ON DELETE CASCADE,
     oposicion_id  uuid NOT NULL REFERENCES oposiciones(id) ON DELETE CASCADE,
     matriculado_en timestamptz NOT NULL DEFAULT now(),
     principal     boolean NOT NULL DEFAULT false,
     PRIMARY KEY (usuario_id, oposicion_id)
 );
-CREATE UNIQUE INDEX usuario_oposiciones_principal_idx
+CREATE UNIQUE INDEX IF NOT EXISTS usuario_oposiciones_principal_idx
     ON usuario_oposiciones (usuario_id) WHERE principal;
 
 
@@ -217,7 +219,7 @@ CREATE UNIQUE INDEX usuario_oposiciones_principal_idx
 --                                   ACTIVIDAD
 -- =============================================================================
 
-CREATE TABLE intentos (
+CREATE TABLE IF NOT EXISTS intentos (
     id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     usuario_id     uuid NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
     unidad_id      uuid NOT NULL REFERENCES unidades(id) ON DELETE CASCADE,
@@ -230,10 +232,10 @@ CREATE TABLE intentos (
     finalizado_en  timestamptz,
     nota           numeric(5,2)
 );
-CREATE INDEX intentos_usuario_idx ON intentos (usuario_id, iniciado_en DESC);
-CREATE INDEX intentos_unidad_idx  ON intentos (unidad_id);
+CREATE INDEX IF NOT EXISTS intentos_usuario_idx ON intentos (usuario_id, iniciado_en DESC);
+CREATE INDEX IF NOT EXISTS intentos_unidad_idx  ON intentos (unidad_id);
 
-CREATE TABLE respuestas (
+CREATE TABLE IF NOT EXISTS respuestas (
     id             bigserial PRIMARY KEY,
     intento_id     uuid NOT NULL REFERENCES intentos(id)  ON DELETE CASCADE,
     pregunta_id    uuid NOT NULL REFERENCES preguntas(id) ON DELETE CASCADE,
@@ -243,9 +245,9 @@ CREATE TABLE respuestas (
     correcta       boolean NOT NULL,
     respondida_en  timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX respuestas_intento_idx ON respuestas (intento_id);
+CREATE INDEX IF NOT EXISTS respuestas_intento_idx ON respuestas (intento_id);
 
-CREATE TABLE progreso_unidad (
+CREATE TABLE IF NOT EXISTS progreso_unidad (
     usuario_id           uuid NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
     unidad_id            uuid NOT NULL REFERENCES unidades(id) ON DELETE CASCADE,
     teoria_completada    boolean NOT NULL DEFAULT false,
@@ -256,9 +258,9 @@ CREATE TABLE progreso_unidad (
     actualizado_en       timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (usuario_id, unidad_id)
 );
-CREATE INDEX progreso_unidad_usuario_idx ON progreso_unidad (usuario_id);
+CREATE INDEX IF NOT EXISTS progreso_unidad_usuario_idx ON progreso_unidad (usuario_id);
 
-CREATE TABLE marcadores (
+CREATE TABLE IF NOT EXISTS marcadores (
     usuario_id     uuid NOT NULL REFERENCES usuarios(id)  ON DELETE CASCADE,
     tipo           text NOT NULL CHECK (tipo IN ('fallo','favorita')),
     pregunta_id    uuid NOT NULL REFERENCES preguntas(id) ON DELETE CASCADE,
@@ -275,7 +277,7 @@ CREATE TABLE marcadores (
 -- ya hay dónde guardar las respuestas del wizard (disponibilidad,
 -- fecha del examen, ritmo…) y las sesiones diarias.
 
-CREATE TABLE plan_estudio (
+CREATE TABLE IF NOT EXISTS plan_estudio (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     usuario_id      uuid NOT NULL REFERENCES usuarios(id)   ON DELETE CASCADE,
     oposicion_id    uuid NOT NULL REFERENCES oposiciones(id) ON DELETE CASCADE,
@@ -292,9 +294,9 @@ CREATE TABLE plan_estudio (
     actualizado_en  timestamptz NOT NULL DEFAULT now(),
     UNIQUE (usuario_id, oposicion_id)
 );
-CREATE INDEX plan_estudio_usuario_idx ON plan_estudio (usuario_id) WHERE activo;
+CREATE INDEX IF NOT EXISTS plan_estudio_usuario_idx ON plan_estudio (usuario_id) WHERE activo;
 
-CREATE TABLE plan_sesiones (
+CREATE TABLE IF NOT EXISTS plan_sesiones (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     plan_id       uuid NOT NULL REFERENCES plan_estudio(id) ON DELETE CASCADE,
     fecha         date NOT NULL,
@@ -307,7 +309,7 @@ CREATE TABLE plan_sesiones (
     completada_en timestamptz,
     nota_libre    text
 );
-CREATE INDEX plan_sesiones_plan_fecha_idx ON plan_sesiones (plan_id, fecha);
+CREATE INDEX IF NOT EXISTS plan_sesiones_plan_fecha_idx ON plan_sesiones (plan_id, fecha);
 
 
 -- =============================================================================
@@ -318,7 +320,7 @@ CREATE INDEX plan_sesiones_plan_fecha_idx ON plan_sesiones (plan_id, fecha);
 -- lunes de la semana, primer día del mes).  Cambiar de periodo crea
 -- una fila nueva sin tocar la anterior.
 
-CREATE TABLE retos_catalogo (
+CREATE TABLE IF NOT EXISTS retos_catalogo (
     id           serial PRIMARY KEY,
     codigo       text UNIQUE NOT NULL,
     titulo       text NOT NULL,
@@ -330,7 +332,7 @@ CREATE TABLE retos_catalogo (
     activo       boolean NOT NULL DEFAULT true
 );
 
-CREATE TABLE retos_usuario (
+CREATE TABLE IF NOT EXISTS retos_usuario (
     usuario_id     uuid NOT NULL REFERENCES usuarios(id)      ON DELETE CASCADE,
     reto_id        int  NOT NULL REFERENCES retos_catalogo(id) ON DELETE CASCADE,
     periodo_inicio date NOT NULL,
@@ -338,9 +340,9 @@ CREATE TABLE retos_usuario (
     completado_en  timestamptz,
     PRIMARY KEY (usuario_id, reto_id, periodo_inicio)
 );
-CREATE INDEX retos_usuario_uid_idx ON retos_usuario (usuario_id, periodo_inicio DESC);
+CREATE INDEX IF NOT EXISTS retos_usuario_uid_idx ON retos_usuario (usuario_id, periodo_inicio DESC);
 
-CREATE TABLE logros_catalogo (
+CREATE TABLE IF NOT EXISTS logros_catalogo (
     id           serial PRIMARY KEY,
     codigo       text UNIQUE NOT NULL,
     titulo       text NOT NULL,
@@ -351,7 +353,7 @@ CREATE TABLE logros_catalogo (
     activo       boolean NOT NULL DEFAULT true
 );
 
-CREATE TABLE logros_usuario (
+CREATE TABLE IF NOT EXISTS logros_usuario (
     usuario_id  uuid NOT NULL REFERENCES usuarios(id)       ON DELETE CASCADE,
     logro_id    int  NOT NULL REFERENCES logros_catalogo(id) ON DELETE CASCADE,
     progreso    int  NOT NULL DEFAULT 0,
@@ -359,7 +361,7 @@ CREATE TABLE logros_usuario (
     PRIMARY KEY (usuario_id, logro_id)
 );
 
-CREATE TABLE usuario_gamificacion (
+CREATE TABLE IF NOT EXISTS usuario_gamificacion (
     usuario_id        uuid PRIMARY KEY REFERENCES usuarios(id) ON DELETE CASCADE,
     xp_total          int  NOT NULL DEFAULT 0,
     racha_actual      int  NOT NULL DEFAULT 0,
@@ -373,12 +375,12 @@ CREATE TABLE usuario_gamificacion (
 --                          CONFIG Y NOTIFICACIONES PUSH
 -- =============================================================================
 
-CREATE TABLE config (
+CREATE TABLE IF NOT EXISTS config (
     clave  text PRIMARY KEY,
     valor  jsonb
 );
 
-CREATE TABLE push_suscripciones (
+CREATE TABLE IF NOT EXISTS push_suscripciones (
     endpoint     text PRIMARY KEY,
     usuario_id   uuid NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
     p256dh       text NOT NULL,
@@ -390,7 +392,7 @@ CREATE TABLE push_suscripciones (
     ultima_ok_en timestamptz,
     ultimo_error text
 );
-CREATE INDEX push_suscripciones_usuario_idx
+CREATE INDEX IF NOT EXISTS push_suscripciones_usuario_idx
     ON push_suscripciones (usuario_id) WHERE activa;
 
 
@@ -398,9 +400,25 @@ CREATE INDEX push_suscripciones_usuario_idx
 --                             ROLES POSTGRES Y GRANTS
 -- =============================================================================
 
-CREATE ROLE web_anon    NOLOGIN;
-CREATE ROLE web_user    NOLOGIN;
-CREATE ROLE autenticador LOGIN;
+DO $crear_roles$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'web_anon') THEN
+        CREATE ROLE web_anon NOLOGIN;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'web_user') THEN
+        CREATE ROLE web_user NOLOGIN;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'autenticador') THEN
+        CREATE ROLE autenticador LOGIN;
+    END IF;
+END
+$crear_roles$;
+
+-- Asegura los atributos esperados también cuando los roles ya existían.
+ALTER ROLE web_anon NOLOGIN;
+ALTER ROLE web_user NOLOGIN;
+ALTER ROLE autenticador LOGIN;
+
 GRANT web_anon, web_user TO autenticador;
 
 GRANT USAGE ON SCHEMA public TO web_anon, web_user;
@@ -512,42 +530,59 @@ $$;
 --                                POLÍTICAS RLS
 -- =============================================================================
 
+DROP POLICY IF EXISTS usr_self ON usuarios;
 CREATE POLICY usr_self       ON usuarios FOR SELECT USING (id = jwt_usuario_id() OR es_admin());
+DROP POLICY IF EXISTS usr_admin_all ON usuarios;
 CREATE POLICY usr_admin_all  ON usuarios FOR ALL TO web_user USING (es_admin()) WITH CHECK (es_admin());
 
+DROP POLICY IF EXISTS opos_lectura ON oposiciones;
 CREATE POLICY opos_lectura ON oposiciones FOR SELECT USING (activa OR jwt_usuario_id() IS NOT NULL);
+DROP POLICY IF EXISTS opos_insert ON oposiciones;
 CREATE POLICY opos_insert  ON oposiciones FOR INSERT WITH CHECK (tiene_permiso('oposicion.gestionar'));
+DROP POLICY IF EXISTS opos_update ON oposiciones;
 CREATE POLICY opos_update  ON oposiciones FOR UPDATE USING (tiene_permiso('oposicion.gestionar'));
+DROP POLICY IF EXISTS opos_delete ON oposiciones;
 CREATE POLICY opos_delete  ON oposiciones FOR DELETE USING (tiene_permiso('oposicion.gestionar'));
 
+DROP POLICY IF EXISTS tema_lectura ON temas;
 CREATE POLICY tema_lectura ON temas FOR SELECT USING (jwt_usuario_id() IS NOT NULL);
+DROP POLICY IF EXISTS tema_admin ON temas;
 CREATE POLICY tema_admin   ON temas FOR ALL TO web_user
     USING (tiene_permiso('oposicion.gestionar'))
     WITH CHECK (tiene_permiso('oposicion.gestionar'));
 
+DROP POLICY IF EXISTS ot_lectura ON oposicion_temas;
 CREATE POLICY ot_lectura  ON oposicion_temas FOR SELECT USING (jwt_usuario_id() IS NOT NULL);
+DROP POLICY IF EXISTS ot_admin ON oposicion_temas;
 CREATE POLICY ot_admin    ON oposicion_temas FOR ALL TO web_user
     USING (tiene_permiso('oposicion.gestionar'))
     WITH CHECK (tiene_permiso('oposicion.gestionar'));
 
+DROP POLICY IF EXISTS unid_lectura ON unidades;
 CREATE POLICY unid_lectura ON unidades FOR SELECT USING (jwt_usuario_id() IS NOT NULL);
+DROP POLICY IF EXISTS unid_admin ON unidades;
 CREATE POLICY unid_admin   ON unidades FOR ALL TO web_user
     USING (tiene_permiso('oposicion.gestionar'))
     WITH CHECK (tiene_permiso('oposicion.gestionar'));
 
+DROP POLICY IF EXISTS preg_lectura ON preguntas;
 CREATE POLICY preg_lectura ON preguntas FOR SELECT USING (jwt_usuario_id() IS NOT NULL);
+DROP POLICY IF EXISTS preg_admin ON preguntas;
 CREATE POLICY preg_admin   ON preguntas FOR ALL TO web_user
     USING (tiene_permiso('oposicion.gestionar'))
     WITH CHECK (tiene_permiso('oposicion.gestionar'));
 
+DROP POLICY IF EXISTS uo_propias ON usuario_oposiciones;
 CREATE POLICY uo_propias ON usuario_oposiciones
     USING (usuario_id = jwt_usuario_id() OR es_admin())
     WITH CHECK (usuario_id = jwt_usuario_id());
 
+DROP POLICY IF EXISTS intentos_propios ON intentos;
 CREATE POLICY intentos_propios ON intentos
     USING (usuario_id = jwt_usuario_id() OR es_admin())
     WITH CHECK (usuario_id = jwt_usuario_id() OR es_admin());
 
+DROP POLICY IF EXISTS respuestas_propias ON respuestas;
 CREATE POLICY respuestas_propias ON respuestas
     USING (EXISTS (SELECT 1 FROM intentos i
                     WHERE i.id = respuestas.intento_id
@@ -556,18 +591,22 @@ CREATE POLICY respuestas_propias ON respuestas
                          WHERE i.id = respuestas.intento_id
                            AND i.usuario_id = jwt_usuario_id()));
 
+DROP POLICY IF EXISTS marcadores_propios ON marcadores;
 CREATE POLICY marcadores_propios ON marcadores
     USING (usuario_id = jwt_usuario_id() OR es_admin())
     WITH CHECK (usuario_id = jwt_usuario_id());
 
+DROP POLICY IF EXISTS progreso_propio ON progreso_unidad;
 CREATE POLICY progreso_propio ON progreso_unidad
     USING (usuario_id = jwt_usuario_id() OR es_admin())
     WITH CHECK (usuario_id = jwt_usuario_id());
 
+DROP POLICY IF EXISTS plan_propio ON plan_estudio;
 CREATE POLICY plan_propio ON plan_estudio
     USING (usuario_id = jwt_usuario_id() OR es_admin())
     WITH CHECK (usuario_id = jwt_usuario_id());
 
+DROP POLICY IF EXISTS plan_ses_propio ON plan_sesiones;
 CREATE POLICY plan_ses_propio ON plan_sesiones
     USING (EXISTS (SELECT 1 FROM plan_estudio p
                     WHERE p.id = plan_sesiones.plan_id
@@ -576,29 +615,39 @@ CREATE POLICY plan_ses_propio ON plan_sesiones
                          WHERE p.id = plan_sesiones.plan_id
                            AND p.usuario_id = jwt_usuario_id()));
 
+DROP POLICY IF EXISTS retos_cat_lectura ON retos_catalogo;
 CREATE POLICY retos_cat_lectura ON retos_catalogo FOR SELECT
     USING (jwt_usuario_id() IS NOT NULL);
+DROP POLICY IF EXISTS retos_cat_admin ON retos_catalogo;
 CREATE POLICY retos_cat_admin ON retos_catalogo FOR ALL TO web_user
     USING (es_admin()) WITH CHECK (es_admin());
+DROP POLICY IF EXISTS logros_cat_lectura ON logros_catalogo;
 CREATE POLICY logros_cat_lectura ON logros_catalogo FOR SELECT
     USING (jwt_usuario_id() IS NOT NULL);
+DROP POLICY IF EXISTS logros_cat_admin ON logros_catalogo;
 CREATE POLICY logros_cat_admin ON logros_catalogo FOR ALL TO web_user
     USING (es_admin()) WITH CHECK (es_admin());
 
+DROP POLICY IF EXISTS retos_usr_propios ON retos_usuario;
 CREATE POLICY retos_usr_propios ON retos_usuario
     USING (usuario_id = jwt_usuario_id() OR es_admin())
     WITH CHECK (usuario_id = jwt_usuario_id());
+DROP POLICY IF EXISTS logros_usr_propios ON logros_usuario;
 CREATE POLICY logros_usr_propios ON logros_usuario
     USING (usuario_id = jwt_usuario_id() OR es_admin())
     WITH CHECK (usuario_id = jwt_usuario_id());
+DROP POLICY IF EXISTS gamif_propia ON usuario_gamificacion;
 CREATE POLICY gamif_propia ON usuario_gamificacion
     USING (usuario_id = jwt_usuario_id() OR es_admin())
     WITH CHECK (usuario_id = jwt_usuario_id());
 
+DROP POLICY IF EXISTS config_lectura ON config;
 CREATE POLICY config_lectura ON config FOR SELECT USING (true);
+DROP POLICY IF EXISTS config_admin ON config;
 CREATE POLICY config_admin   ON config FOR ALL TO web_user
     USING (es_admin()) WITH CHECK (es_admin());
 
+DROP POLICY IF EXISTS push_sus_propias ON push_suscripciones;
 CREATE POLICY push_sus_propias ON push_suscripciones
     FOR ALL TO web_user
     USING (usuario_id = jwt_usuario_id() OR es_admin())
@@ -642,7 +691,7 @@ CREATE OR REPLACE FUNCTION registrar_web(
     p_password text,
     p_nombre   text DEFAULT NULL
 ) RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER AS $$
+LANGUAGE plpgsql SECURITY DEFINER AS $registrar_web$
 DECLARE
     v_email  text := lower(btrim(p_email));
     v_nombre text := COALESCE(NULLIF(btrim(p_nombre), ''), split_part(v_email, '@', 1));
@@ -676,8 +725,8 @@ BEGIN
         'Confirma tu cuenta en Aprentix',
         format(E'Hola %s,\n\nConfirma tu cuenta abriendo este enlace:\n%s/#/verify?token=%s\n\nEl enlace caduca en 3 días.\n\n— Aprentix',
                v_nombre, app_url(), v_token),
-        -- Etiqueta $html$ para no colisionar con el delimitador del
-        -- cuerpo de la función (dollar-quotes anidados).
+        -- Etiqueta $html$ para separar claramente el bloque HTML del
+        -- delimitador exterior usado por esta función.
         format($html$<p>Hola <strong>%s</strong>,</p>
 <p>Confirma tu cuenta pulsando el botón:</p>
 <p><a href="%s/#/verify?token=%s" style="background:#6B8E23;color:#fff;padding:12px 22px;border-radius:22px;text-decoration:none;display:inline-block">Confirmar mi cuenta</a></p>
@@ -688,7 +737,7 @@ BEGIN
     );
 
     RETURN jsonb_build_object('ok', true, 'user_id', v_id, 'requiere_verificacion', true);
-END $$;
+END $registrar_web$;
 
 CREATE OR REPLACE FUNCTION reenviar_verificacion(p_email text) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER AS $$
@@ -1422,18 +1471,23 @@ END $$;
 INSERT INTO roles(id, descripcion) VALUES
     ('admin',   'Superusuario del sistema'),
     ('editor',  'Puede crear/editar oposiciones, temas y unidades'),
-    ('alumno',  'Usuario estándar que estudia');
+    ('alumno',  'Usuario estándar que estudia')
+ON CONFLICT (id) DO UPDATE
+SET descripcion = EXCLUDED.descripcion;
 
 INSERT INTO permisos(id, descripcion) VALUES
     ('oposicion.gestionar', 'Crear/editar oposiciones, temas, unidades y preguntas'),
     ('usuarios.gestionar',  'Ver y administrar cuentas de usuario'),
-    ('config.gestionar',    'Editar la tabla config');
+    ('config.gestionar',    'Editar la tabla config')
+ON CONFLICT (id) DO UPDATE
+SET descripcion = EXCLUDED.descripcion;
 
 INSERT INTO rol_permisos(rol_id, permiso_id) VALUES
     ('admin',  'oposicion.gestionar'),
     ('admin',  'usuarios.gestionar'),
     ('admin',  'config.gestionar'),
-    ('editor', 'oposicion.gestionar');
+    ('editor', 'oposicion.gestionar')
+ON CONFLICT (rol_id, permiso_id) DO NOTHING;
 
 -- Config inicial. El dominio se ajusta desde fuera (variable de entorno
 -- APP_URL en el arranque del contenedor de db → ver docker-entrypoint
@@ -1441,36 +1495,70 @@ INSERT INTO rol_permisos(rol_id, permiso_id) VALUES
 INSERT INTO config(clave, valor) VALUES
     ('app_url',          '"http://localhost"'::jsonb),
     ('app_nombre',       '"Aprentix"'::jsonb),
-    ('push_vapid_public', 'null'::jsonb);
+    ('push_vapid_public', 'null'::jsonb)
+ON CONFLICT (clave) DO NOTHING;
 
 INSERT INTO retos_catalogo(codigo, titulo, descripcion, periodo, objetivo, xp, icono) VALUES
     ('reto_diario_test',  '3 tests al día',      'Completa 3 tests en un solo día.',        'diario',  3,  20, '🎯'),
     ('reto_semanal_hora', '5 horas esta semana', 'Suma 5 horas de estudio en la semana.',   'semanal', 300, 80, '⏱️'),
     ('reto_semanal_racha','Mantén la racha',     'Estudia 7 días seguidos.',                'semanal', 7,  50, '🔥'),
-    ('reto_mensual_temas','8 temas al mes',       'Completa la teoría de 8 temas nuevos.',  'mensual', 8,  200,'📚');
+    ('reto_mensual_temas','8 temas al mes',       'Completa la teoría de 8 temas nuevos.',  'mensual', 8,  200,'📚')
+ON CONFLICT (codigo) DO NOTHING;
 
 INSERT INTO logros_catalogo(codigo, titulo, descripcion, objetivo, xp, icono) VALUES
     ('logro_primer_test',  'Primera pisada',     'Completa tu primer test.',            1,   50, '🥾'),
     ('logro_racha_10',     'Racha de 10 días',   'Estudia 10 días seguidos.',           10, 150, '🔥'),
     ('logro_10_temas',     'Coleccionista',      'Completa la teoría de 10 temas.',     10, 200, '📖'),
     ('logro_1000_xp',      'Nivel avanzado',     'Alcanza los 1.000 XP.',               1000, 300, '⭐'),
-    ('logro_100_correctas','Ojo de halcón',      'Acumula 100 respuestas correctas.',   100, 250, '🦅');
+    ('logro_100_correctas','Ojo de halcón',      'Acumula 100 respuestas correctas.',   100, 250, '🦅')
+ON CONFLICT (codigo) DO NOTHING;
 
 -- Usuario admin de bootstrap (marcado como verificado para poder
 -- entrar sin pasar por el flujo SMTP).
-DO $$
-DECLARE v_admin uuid;
+DO $bootstrap_admin$
+DECLARE
+    v_admin      uuid;
+    v_admin_pass text := current_setting('app.admin_pass', true);
 BEGIN
-    INSERT INTO usuarios(email, nombre, password_hash, email_verificado)
-    VALUES ('admin@aprentix.es', 'Admin',
-            crypt(current_setting('app.admin_pass'), gen_salt('bf', 12)),
-            true)
-    RETURNING id INTO v_admin;
-    INSERT INTO usuario_roles(usuario_id, rol_id) VALUES (v_admin, 'admin');
-    INSERT INTO usuario_gamificacion(usuario_id) VALUES (v_admin);
-END $$;
+    SELECT id INTO v_admin
+      FROM usuarios
+     WHERE email = 'admin@aprentix.es';
 
-DO $$ BEGIN
-    EXECUTE format('ALTER ROLE autenticador WITH PASSWORD %L',
-                   current_setting('app.auth_pass'));
-END $$;
+    IF v_admin IS NULL THEN
+        IF v_admin_pass IS NULL OR v_admin_pass = '' THEN
+            RAISE EXCEPTION 'Falta configurar app.admin_pass para crear el usuario administrador inicial';
+        END IF;
+
+        INSERT INTO usuarios(email, nombre, password_hash, email_verificado)
+        VALUES ('admin@aprentix.es', 'Admin',
+                crypt(v_admin_pass, gen_salt('bf', 12)),
+                true)
+        RETURNING id INTO v_admin;
+    ELSE
+        UPDATE usuarios
+           SET email_verificado = true,
+               activo = true
+         WHERE id = v_admin;
+    END IF;
+
+    INSERT INTO usuario_roles(usuario_id, rol_id)
+    VALUES (v_admin, 'admin')
+    ON CONFLICT (usuario_id, rol_id) DO NOTHING;
+
+    INSERT INTO usuario_gamificacion(usuario_id)
+    VALUES (v_admin)
+    ON CONFLICT (usuario_id) DO NOTHING;
+END
+$bootstrap_admin$;
+
+DO $password_autenticador$
+DECLARE
+    v_auth_pass text := current_setting('app.auth_pass', true);
+BEGIN
+    IF v_auth_pass IS NOT NULL AND v_auth_pass <> '' THEN
+        EXECUTE format('ALTER ROLE autenticador WITH PASSWORD %L', v_auth_pass);
+    ELSE
+        RAISE NOTICE 'app.auth_pass no está configurado; se conserva la contraseña actual de autenticador';
+    END IF;
+END
+$password_autenticador$;
