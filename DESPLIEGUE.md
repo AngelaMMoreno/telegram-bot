@@ -16,9 +16,18 @@ Cuatro stacks independientes bajo `deploy/`, cada uno con SU PROPIO
 ## Coexistencia desa + prod (DB_ALIAS)
 
 `DB_ALIAS` se propaga a `container_name`, aliases de red, nombres de
-routers Traefik y a los hostnames que otros stacks usan para
-conectar.  Prod usa `DB_ALIAS=prod`, desa usa `DB_ALIAS=desa`.  El
-mismo YAML sirve para los dos entornos.
+routers Traefik y a los hostnames que los otros stacks usan.  Con la
+forma `${DB_ALIAS:+-${DB_ALIAS}}` el sufijo se **omite** cuando la
+variable está vacía y se añade cuando tiene valor:
+
+| Entorno | `DB_ALIAS` | container / alias | router Traefik |
+|---|---|---|---|
+| **Prod** | *(vacío)*  | `db`, `postgrest`, `app`, `mailer`, `notificador`                | `aprentix-api`, `aprentix-web` |
+| **Desa** | `desa`     | `db-desa`, `postgrest-desa`, `app-desa`, `mailer-desa`, `notif…` | `aprentix-api-desa`, `aprentix-web-desa` |
+
+Prod se queda tal cual está hoy (no hay que renombrar containers ni
+tocar el `servers.json` del pgAdmin).  Desa suma su sufijo y
+convive con prod en `dokploy-network` sin colisiones.
 
 **Regla**: el mismo valor de `DB_ALIAS` en los 4 `.env` de un
 mismo entorno.
@@ -32,7 +41,7 @@ default.  Para prod cambia lo mismo pero al valor de prod.
 
 ```
 # Distintivo del entorno
-DB_ALIAS=desa                             # prod: prod
+DB_ALIAS=desa                             # prod: (vacío)
 
 # PostgreSQL
 POSTGRES_DB=aprentix_desa                 # prod: aprentix
@@ -57,7 +66,7 @@ DOMINIO_PGADMIN=pgadmin.aprentix.es
 ### `deploy/app/.env`
 
 ```
-DB_ALIAS=desa                             # prod: prod
+DB_ALIAS=desa                             # prod: (vacío)
 POSTGRES_DB=aprentix_desa                 # prod: aprentix
 JWT_SECRET=…                              # el mismo que core
 
@@ -68,7 +77,7 @@ DOMINIO_LANDING_ALT=www.desa.aprentix.es  # prod: www.aprentix.es
 ### `deploy/mailer/.env`
 
 ```
-DB_ALIAS=desa                             # prod: prod
+DB_ALIAS=desa                             # prod: (vacío)
 POSTGRES_DB=aprentix_desa                 # prod: aprentix
 POSTGRES_USER=aprentix
 DB_PASS=…
@@ -89,7 +98,7 @@ LOG_LEVEL=INFO
 ### `deploy/notificador/.env`
 
 ```
-DB_ALIAS=desa                             # prod: prod
+DB_ALIAS=desa                             # prod: (vacío)
 POSTGRES_DB=aprentix_desa                 # prod: aprentix
 POSTGRES_USER=aprentix
 DB_PASS=…
@@ -149,9 +158,12 @@ levantar pgAdmin en local.
 
 ## Compartir el pgAdmin de producción para ver desa
 
-Ya está.  `pgadmin/servers.json` trae dos entradas
-(`aprentix (prod)` → `db-prod`, `aprentix-desa` → `db-desa`).  Como
-pgAdmin y ambos `db-*` están en `dokploy-network`, la resolución
+Ya está.  `pgadmin/servers.json` trae dos entradas:
+
+- `aprentix`      → `Host: db`,      `MaintenanceDB: aprentix`
+- `aprentix-desa` → `Host: db-desa`, `MaintenanceDB: aprentix_desa`
+
+Como pgAdmin y ambos `db` están en `dokploy-network`, la resolución
 funciona directa.  Cuando desa aún no esté desplegado, la entrada
 de desa aparecerá pero fallará al conectar hasta que el `db-desa`
 exista — no bloquea nada.
@@ -220,7 +232,9 @@ Cuando esta rama esté validada y merges a `main`:
 
 1. En Dokploy, cambia la rama de cada Compose Application a `main`.
 2. Ajusta el `.env` de cada stack:
-   - `DB_ALIAS=prod`
+   - `DB_ALIAS=` (vacío) — mantiene los nombres actuales `db`,
+     `postgrest`, `app` sin renombrar containers ni tocar el
+     `pgadmin/servers.json`.
    - `POSTGRES_DB=aprentix`
    - `DOMINIO_LANDING=aprentix.es`, `DOMINIO_LANDING_ALT=www.aprentix.es`
    - `DOMINIO_API=api.aprentix.es`

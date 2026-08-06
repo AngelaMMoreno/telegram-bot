@@ -48,30 +48,27 @@ proyecto y todos leen del mismo `.env`.
 ## Coexistencia desa + prod en el mismo Dokploy
 
 Una única variable — **`DB_ALIAS`** — distingue los dos despliegues.
-Se propaga a:
 
-1. `container_name` (nombre real del contenedor).
-2. Alias explícito en `dokploy-network` (para que otros stacks y
-   pgAdmin encuentren el hostname correcto).
-3. Nombres de routers/services de Traefik (deben ser únicos).
-4. Hostnames que usan los otros stacks para conectar
-   (`postgrest-${DB_ALIAS}`, `db-${DB_ALIAS}`).
+- **Prod**: `DB_ALIAS=` **vacío** — mantiene los nombres actuales
+  (`db`, `postgrest`, `app`, `mailer`).  Sin migración de containers.
+- **Desa**: `DB_ALIAS=desa` — todo lleva sufijo (`db-desa`,
+  `postgrest-desa`, `app-desa`, `mailer-desa`, `notificador-desa`).
 
-| Entorno | `DB_ALIAS` | container / alias |
-|---|---|---|
-| Producción | `prod` | `db-prod`, `postgrest-prod`, `app-prod`, `mailer-prod`, `notificador-prod` |
-| Desa       | `desa` | `db-desa`, `postgrest-desa`, `app-desa`, `mailer-desa`, `notificador-desa` |
+El sufijo se calcula con `${DB_ALIAS:+-${DB_ALIAS}}` en cada YAML,
+así el mismo compose sirve para ambos entornos sin duplicarlos.
+Se propaga a `container_name`, aliases de red y nombres de routers
+Traefik.
 
 **Regla**: el mismo `DB_ALIAS` en los 4 `.env` de un mismo entorno.
 
 ## pgAdmin compartido
 
-Se despliega **una sola instancia** de pgAdmin (en el stack `core`
-de prod, activada por `COMPOSE_PROFILES=pgadmin`).  Su
-`servers.json` (`pgadmin/servers.json`) ya trae dos entradas:
+Se despliega **una sola instancia** de pgAdmin en el stack `core`
+de prod, activada por `COMPOSE_PROFILES=pgadmin`.  Su `servers.json`
+ya trae dos entradas:
 
-- `aprentix (prod)` → host `db-prod` / db `aprentix`
-- `aprentix-desa`   → host `db-desa` / db `aprentix_desa`
+- `aprentix`      → host `db`      / db `aprentix`
+- `aprentix-desa` → host `db-desa` / db `aprentix_desa`
 
 En desa deja `COMPOSE_PROFILES=` vacío y no se levanta un segundo
 pgAdmin — todo se gestiona desde el de prod.

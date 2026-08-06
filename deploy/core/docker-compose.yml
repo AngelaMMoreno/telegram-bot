@@ -2,22 +2,26 @@
 # Stack CORE ─ db + postgrest (+ pgadmin opcional).
 #
 # DB_ALIAS distingue despliegues coexistentes en el mismo Dokploy:
-#   - DB_ALIAS=prod  → container `db-prod`,  alias `db-prod`, router `aprentix-api-prod`
-#   - DB_ALIAS=desa  → container `db-desa`,  alias `db-desa`, router `aprentix-api-desa`
+#   - DB_ALIAS vacío  → container `db`,        alias `db`,        router `aprentix-api`
+#   - DB_ALIAS=desa   → container `db-desa`,   alias `db-desa`,   router `aprentix-api-desa`
+#
+# El sufijo se construye con la forma shell `${DB_ALIAS:+-${DB_ALIAS}}`
+# (si DB_ALIAS está definido y no vacío, expande a `-<valor>`).  Así
+# el mismo YAML sirve para producción (compatible con los nombres
+# `db`, `postgrest`, `app` actuales) y para desa (`db-desa`, ...).
 #
 # Regla: el mismo DB_ALIAS en los 4 .env del mismo entorno.
 #
 # pgAdmin se despliega SOLO cuando `COMPOSE_PROFILES=pgadmin`.  Así el
-# stack de producción arranca pgAdmin y el de desa NO — la misma
-# instancia de pgAdmin gestiona ambas BBDD (con dos entradas en
-# `pgadmin/servers.json`).
+# stack de producción arranca pgAdmin y desa NO — la misma instancia
+# gestiona ambas BBDD (con dos entradas en `pgadmin/servers.json`).
 # =============================================================================
 
 services:
 
   db:
     image: postgres:16
-    container_name: db-${DB_ALIAS:?DB_ALIAS requerida}
+    container_name: db${DB_ALIAS:+-${DB_ALIAS}}
     environment:
       POSTGRES_DB:       ${POSTGRES_DB:?POSTGRES_DB requerida}
       POSTGRES_USER:     ${POSTGRES_USER:-aprentix}
@@ -36,11 +40,11 @@ services:
     restart: unless-stopped
     networks:
       dokploy-network:
-        # Alias explícito: reemplaza al default (service name) y evita
-        # que dos deploys (`prod` + `desa`) compitan por el mismo
+        # Alias explícito: reemplaza al default (service name = `db`)
+        # y evita que dos deploys (prod + desa) compitan por el mismo
         # hostname DNS en la red compartida.
         aliases:
-          - db-${DB_ALIAS}
+          - db${DB_ALIAS:+-${DB_ALIAS}}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aprentix} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -49,7 +53,7 @@ services:
 
   postgrest:
     image: postgrest/postgrest:v12.2.3
-    container_name: postgrest-${DB_ALIAS}
+    container_name: postgrest${DB_ALIAS:+-${DB_ALIAS}}
     depends_on:
       db:
         condition: service_healthy
@@ -66,21 +70,21 @@ services:
     networks:
       dokploy-network:
         aliases:
-          - postgrest-${DB_ALIAS}
+          - postgrest${DB_ALIAS:+-${DB_ALIAS}}
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=dokploy-network"
-      - "traefik.http.routers.aprentix-api-${DB_ALIAS}.rule=Host(`${DOMINIO_API}`)"
-      - "traefik.http.routers.aprentix-api-${DB_ALIAS}.entrypoints=websecure"
-      - "traefik.http.routers.aprentix-api-${DB_ALIAS}.tls=true"
-      - "traefik.http.routers.aprentix-api-${DB_ALIAS}.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.aprentix-api-${DB_ALIAS}.service=aprentix-api-${DB_ALIAS}"
-      - "traefik.http.services.aprentix-api-${DB_ALIAS}.loadbalancer.server.port=3000"
+      - "traefik.http.routers.aprentix-api${DB_ALIAS:+-${DB_ALIAS}}.rule=Host(`${DOMINIO_API}`)"
+      - "traefik.http.routers.aprentix-api${DB_ALIAS:+-${DB_ALIAS}}.entrypoints=websecure"
+      - "traefik.http.routers.aprentix-api${DB_ALIAS:+-${DB_ALIAS}}.tls=true"
+      - "traefik.http.routers.aprentix-api${DB_ALIAS:+-${DB_ALIAS}}.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.aprentix-api${DB_ALIAS:+-${DB_ALIAS}}.service=aprentix-api${DB_ALIAS:+-${DB_ALIAS}}"
+      - "traefik.http.services.aprentix-api${DB_ALIAS:+-${DB_ALIAS}}.loadbalancer.server.port=3000"
 
   # pgAdmin ─ SOLO se levanta cuando COMPOSE_PROFILES=pgadmin (típico
   # en el .env de producción).  El servers.json del repo trae ya las
-  # entradas de db-prod y db-desa, así que la misma instancia sirve
-  # para las dos BBDD sin duplicar pgAdmin.
+  # entradas de `db` (prod) y `db-desa`, así que la misma instancia
+  # sirve para las dos BBDD sin duplicar pgAdmin.
   pgadmin:
     image: dpage/pgadmin4:9
     container_name: pgadmin

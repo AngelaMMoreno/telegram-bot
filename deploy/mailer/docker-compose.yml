@@ -1,8 +1,9 @@
 # =============================================================================
 # Stack MAILER ─ worker SMTP.
 #
-# Consume `cola_emails` de la BBDD del stack core del mismo entorno,
-# vía el alias `db-${DB_ALIAS}` en dokploy-network.
+# Consume `cola_emails` de la BBDD del stack core del mismo entorno.
+# Alcanza `db` (prod) o `db-desa` (desa) por el alias en
+# dokploy-network, según DB_ALIAS.
 # =============================================================================
 
 services:
@@ -11,9 +12,9 @@ services:
     build:
       context: ../../mailer
       dockerfile: Dockerfile
-    container_name: mailer-${DB_ALIAS:?DB_ALIAS requerida}
+    container_name: mailer${DB_ALIAS:+-${DB_ALIAS}}
     environment:
-      DATABASE_URL:        postgres://${POSTGRES_USER:-aprentix}@db-${DB_ALIAS}:5432/${POSTGRES_DB}
+      DATABASE_URL:        postgres://${POSTGRES_USER:-aprentix}@db${DB_ALIAS:+-${DB_ALIAS}}:5432/${POSTGRES_DB}
       PGPASSWORD:          ${DB_PASS}
       MAILER_DEV_LOG_ONLY: ${MAILER_DEV_LOG_ONLY:-0}
       SMTP_HOST:           ${SMTP_HOST}
@@ -29,7 +30,7 @@ services:
     networks:
       dokploy-network:
         aliases:
-          - mailer-${DB_ALIAS}
+          - mailer${DB_ALIAS:+-${DB_ALIAS}}
 
 networks:
   dokploy-network:
