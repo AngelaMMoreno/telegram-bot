@@ -676,12 +676,14 @@ BEGIN
         'Confirma tu cuenta en Aprentix',
         format(E'Hola %s,\n\nConfirma tu cuenta abriendo este enlace:\n%s/#/verify?token=%s\n\nEl enlace caduca en 3 días.\n\n— Aprentix',
                v_nombre, app_url(), v_token),
-        format($$<p>Hola <strong>%s</strong>,</p>
+        -- Etiqueta $html$ para no chocar con el $$ que delimita el
+        -- cuerpo de la función.
+        format($html$<p>Hola <strong>%s</strong>,</p>
 <p>Confirma tu cuenta pulsando el botón:</p>
 <p><a href="%s/#/verify?token=%s" style="background:#6B8E23;color:#fff;padding:12px 22px;border-radius:22px;text-decoration:none;display:inline-block">Confirmar mi cuenta</a></p>
 <p>O copia este enlace en tu navegador:<br><code>%s/#/verify?token=%s</code></p>
 <p style="color:#62705A">El enlace caduca en 3 días.</p>
-<p style="color:#62705A">— Equipo Aprentix</p>$$,
+<p style="color:#62705A">— Equipo Aprentix</p>$html$,
                v_nombre, app_url(), v_token, app_url(), v_token)
     );
 
