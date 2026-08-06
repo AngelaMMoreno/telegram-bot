@@ -56,6 +56,7 @@ JWT_SECRET=…
 
 # Traefik
 DOMINIO_API=api.desa.aprentix.es          # prod: api.aprentix.es
+DOMINIO_LANDING=desa.aprentix.es          # prod: aprentix.es; enlaces de correo
 
 # pgAdmin — SOLO en prod
 COMPOSE_PROFILES=                         # prod: pgadmin
@@ -147,13 +148,18 @@ El detalle de `rclone config` y la restauración están en
    `db/init/01_esquema.sql` se ejecuta y deja:
    - Usuario admin (`admin@aprentix.es` / `${ADMIN_PASS}`) verificado.
    - Catálogos de roles, permisos, retos y logros.
-   - `config.app_url = "http://localhost"` — actualízalo:
+   - La URL de los enlaces de confirmación se toma de
+     `DOMINIO_LANDING` en el stack core. Para una instalación anterior con
+     volumen persistente, ejecuta primero
+     `db/migrations/03_configurar_url_publica.sql` y redespliega core.
+   - `config.app_url = "http://localhost"` queda como respaldo. Si necesitas
+     modificarlo manualmente:
      ```sql
      UPDATE config SET valor = '"https://desa.aprentix.es"'::jsonb
       WHERE clave = 'app_url';
      ```
-     (los links del correo de verificación se construyen con
-     `app_url()`).
+     (los enlaces del correo se construyen con `app_url()`, que prioriza el
+     dominio configurado en PostgreSQL sobre este valor de respaldo).
 
    En prod: `COMPOSE_PROFILES=pgadmin` levanta también pgAdmin.
 
