@@ -237,6 +237,14 @@ orden de los argumentos. PostgREST resuelve los argumentos por nombre; el
 mensaje enumera los nombres que recibió y puede mostrarlos en un orden distinto
 al de la declaración SQL.
 
+Cuando producción y desa comparten `dokploy-network`, no debe usarse el hostname
+genérico `db`: los dos proyectos publican ese alias y Docker puede resolverlo al
+contenedor del otro entorno. El Compose de core construye `PGRST_DB_URI` con el
+alias inequívoco: `db` cuando `DB_ALIAS` está vacío, `db-desa` con
+`DB_ALIAS=desa` y `db-prod` con `DB_ALIAS=prod`. Después de actualizar esta
+configuración hay que redesplegar el stack **core** de ambos entornos, empezando
+por desa.
+
 En una instalación con datos existentes, `db/init/01_esquema.sql` **no vuelve a
 ejecutarse** al redesplegar: la imagen oficial de PostgreSQL sólo procesa
 `/docker-entrypoint-initdb.d` cuando inicializa un directorio de datos vacío.
@@ -256,8 +264,11 @@ curl -i -X POST "https://${DOMINIO_API}/rpc/login_web" \
 
 Una respuesta de la función como `credenciales_invalidas` confirma que
 PostgREST ya la encontró. Si todavía aparece `PGRST202`, reinicia únicamente el
-servicio `postgrest` y comprueba que `PGRST_DB_URI`/`POSTGRES_DB` apuntan a la
-misma base que se abrió en pgAdmin.
+servicio `postgrest` y comprueba dentro del contenedor que `PGRST_DB_URI` sea
+`postgres://autenticador@db-desa:5432/aprentix_desa` en desa y
+`postgres://autenticador@db-prod:5432/aprentix` en producción si se ha definido
+`DB_ALIAS=prod` (o que use `@db:` si el alias está vacío). La base debe coincidir
+con la que se abrió en pgAdmin.
 
 ## Notificaciones Web Push
 
