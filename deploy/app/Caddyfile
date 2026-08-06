@@ -7,7 +7,7 @@
     # ── API pública ──
     handle /api/* {
         uri strip_prefix /api
-        reverse_proxy aprentix-postgrest:3000
+        reverse_proxy postgrest:3000
     }
 
     # ── SPA (raíz) ──

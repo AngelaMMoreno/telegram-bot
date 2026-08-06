@@ -1,0 +1,29 @@
+# =============================================================================
+# Stack APP ─ frontend Caddy + SPA.
+#
+# Redespliega este stack cuando cambies web/ (index.html, style.css,
+# app.js, tokens.css, session.js).  La imagen se construye con la SPA
+# copiada dentro y Caddy sirve estáticos + proxy /api → PostgREST del
+# stack core.
+# =============================================================================
+
+services:
+
+  app:
+    build:
+      context: ../..
+      dockerfile: deploy/app/Dockerfile
+    restart: unless-stopped
+    networks: [dokploy-network]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=dokploy-network"
+      - "traefik.http.routers.aprentix-web.rule=Host(`${DOMINIO_WEB}`)"
+      - "traefik.http.routers.aprentix-web.entrypoints=websecure"
+      - "traefik.http.routers.aprentix-web.tls=true"
+      - "traefik.http.routers.aprentix-web.tls.certresolver=letsencrypt"
+      - "traefik.http.services.aprentix-web.loadbalancer.server.port=80"
+
+networks:
+  dokploy-network:
+    external: true

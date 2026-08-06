@@ -1,0 +1,31 @@
+# =============================================================================
+# Stack MAILER ─ worker SMTP.
+#
+# Consume la tabla `cola_emails` de la BBDD (habla con `db` por la
+# red compartida con el stack core) y envía cada fila por SMTP.
+# =============================================================================
+
+services:
+
+  mailer:
+    build:
+      context: ../../mailer
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgres://aprentix@db:5432/${DB_NAME}
+      PGPASSWORD:   ${DB_PASS}
+      SMTP_HOST:    ${SMTP_HOST}
+      SMTP_PORT:    ${SMTP_PORT:-587}
+      SMTP_USER:    ${SMTP_USER:-}
+      SMTP_PASS:    ${SMTP_PASS:-}
+      SMTP_FROM:    ${SMTP_FROM:-No Contestar <no-reply@aprentix.es>}
+      SMTP_TLS:     ${SMTP_TLS:-starttls}
+      TICK_SECONDS: ${MAILER_TICK:-30}
+      BATCH:        ${MAILER_BATCH:-25}
+      LOG_LEVEL:    ${MAILER_LOG:-INFO}
+    restart: unless-stopped
+    networks: [dokploy-network]
+
+networks:
+  dokploy-network:
+    external: true
