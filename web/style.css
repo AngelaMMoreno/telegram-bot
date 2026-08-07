@@ -21,7 +21,35 @@
   --content-max: 480px;
   --nav-height: 72px;
 }
-@media (min-width: 720px) { :root { --content-max: 640px; } }
+@media (min-width: 720px) { :root { --content-max: 560px; } }
+
+/* En pantallas grandes (escritorio) la app se ve gigante si mantiene
+   los tamaños móviles: los clamp(...) escalan con vw y el layout de
+   una sola columna se ve enorme. Comprimimos tokens y anchos para
+   que en desktop el zorrito lea como una app cómoda, no como un
+   móvil ampliado. */
+@media (min-width: 1024px) {
+  :root {
+    --content-max: 600px;
+    --fs-xs:  0.80rem;
+    --fs-sm:  0.90rem;
+    --fs-md:  1.00rem;
+    --fs-lg:  1.10rem;
+    --fs-xl:  1.30rem;
+    --fs-2xl: 1.60rem;
+    --fs-3xl: 2.00rem;
+    --sp-1: 6px;
+    --sp-2: 10px;
+    --sp-3: 14px;
+    --sp-4: 20px;
+    --sp-5: 28px;
+    --sp-6: 36px;
+    --nav-height: 64px;
+  }
+}
+@media (min-width: 1440px) {
+  :root { --content-max: 660px; }
+}
 
 html, body {
   height: 100%; margin: 0;
@@ -520,6 +548,17 @@ p  { margin: 0; }
   padding: 4px 0 var(--sp-2);
 }
 .wizard-head .brand-mini { justify-self: start; }
+/* Fila con "Cerrar sesión" siempre disponible en el wizard para que
+   el usuario no se sienta encerrado si algo va mal. */
+.wizard-escape {
+  display: flex; justify-content: flex-end;
+  margin: calc(-1 * var(--sp-2)) 0 var(--sp-2);
+}
+
+/* Onboarding: CTA "Continuar" en flujo normal (no sticky), evitando
+   que se solape con el botón "Importar oposición" cuando la lista
+   está vacía en móviles pequeños. */
+.onboarding-cta { margin-top: var(--sp-4); }
 .wizard-steps { display: flex; justify-content: center; gap: 6px; }
 .wizard-steps .dot {
   width: 8px; height: 8px; border-radius: 50%;
@@ -758,7 +797,7 @@ p  { margin: 0; }
 
 /* ─── Botón grande "Estudiar" ─────────────────────────────────────── */
 .btn-estudiar {
-  min-height: 72px;
+  min-height: 68px;
   padding: var(--sp-3) var(--sp-4);
   border-radius: var(--radius-lg);
   background: linear-gradient(135deg, var(--pri) 0%, var(--pri-d) 60%, var(--pri-hover) 100%);
@@ -770,6 +809,14 @@ p  { margin: 0; }
   align-items: center;
   text-align: left;
   font-weight: 700;
+}
+@media (min-width: 1024px) {
+  .btn-estudiar { min-height: 60px; grid-template-columns: 38px 1fr; }
+  .btn-estudiar-ico { width: 38px; height: 38px; font-size: 1rem; }
+  .brand-mini      { width: 36px; height: 36px; }
+  .avatar          { width: 36px; height: 36px; font-size: 0.95rem; }
+  .book-avatar     { width: 56px; height: 56px; font-size: 1.5rem; }
+  .cronometro      { width: min(240px, 32vw); height: min(240px, 32vw); }
 }
 .btn-estudiar em { display: block; font-style: normal; color: rgba(255,255,255,.85); margin-top: 2px; }
 .btn-estudiar strong { font-size: var(--fs-lg); }
@@ -902,6 +949,55 @@ p  { margin: 0; }
 }
 .estudio-final .emoji { font-size: 4rem; display: block; margin-bottom: var(--sp-2); }
 .estudio-cta { display: flex; flex-direction: column; gap: 8px; }
+
+/* Mi oposición (temas + unidades + fecha examen) */
+.card-examen {
+  display: grid; grid-template-columns: 56px 1fr; gap: var(--sp-3); align-items: center;
+}
+.card-examen h2 { margin: 4px 0 0; color: var(--txt); font-size: var(--fs-lg); }
+.card-examen .obj-txt .muted { margin: 2px 0 0; font-size: var(--fs-sm); }
+.card-hito[role="button"] { cursor: pointer; transition: transform .1s, box-shadow .12s; }
+.card-hito[role="button"]:hover { box-shadow: var(--shadow-md); }
+.card-hito[role="button"]:active { transform: scale(.995); }
+
+.opos-temas { list-style: none; margin: 0; padding: 0; }
+.opos-tema {
+  border-bottom: 1px solid var(--border);
+  padding: var(--sp-2) 0;
+}
+.opos-tema:last-child { border-bottom: 0; }
+.opos-tema-head {
+  display: grid; grid-template-columns: 40px 1fr auto;
+  align-items: center; gap: var(--sp-2);
+  cursor: pointer;
+}
+.opos-tema-head .t-ico {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--pri-soft); color: var(--pri-d);
+  display: grid; place-items: center; font-size: 1.15rem;
+}
+.opos-tema-head strong { display: block; }
+.opos-tema-head .muted { font-size: var(--fs-xs); }
+.opos-tema-toggle {
+  color: var(--txt-soft); font-size: 1.3rem; transition: transform .18s;
+}
+.opos-tema.open .opos-tema-toggle { transform: rotate(90deg); }
+.opos-unidades {
+  list-style: none; margin: var(--sp-2) 0 0 52px; padding: 0;
+  display: none;
+}
+.opos-tema.open .opos-unidades { display: flex; flex-direction: column; gap: 6px; }
+.opos-unidades li {
+  display: grid; grid-template-columns: 1fr auto;
+  gap: 8px; align-items: center;
+  padding: 8px 10px; border-radius: 10px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  cursor: pointer; transition: border-color .12s;
+}
+.opos-unidades li:hover { border-color: var(--pri); }
+.opos-unidades .u-nombre { font-weight: 600; font-size: var(--fs-sm); }
+.opos-unidades .u-min { font-size: var(--fs-xs); color: var(--txt-soft); }
 
 /* Admin: listado de oposiciones con fecha del examen */
 .admin-opos { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--sp-2); }

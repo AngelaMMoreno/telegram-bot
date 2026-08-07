@@ -40,6 +40,7 @@ const routes = {
   plan:           renderPlan,
   stats:          renderStats,
   perfil:         renderPerfil,
+  oposicion:      renderOposicion,
   unidad:         renderUnidad,
   admin:          renderAdmin,
   administracion: renderAdministracion,
@@ -102,7 +103,20 @@ async function router() {
   }
 
   if (state.session && !state.oposiciones.length
-      && !['onboarding', 'administracion', 'auth', 'wizard'].includes(r.name)) {
+      && !['onboarding', 'auth', 'wizard',
+           // Rutas de administración: si es admin, tiene sentido que
+           // pueda importar y editar oposiciones AUNQUE aún no esté
+           // matriculado en ninguna (que es lo normal la primera vez).
+           'administracion', 'admin', 'editar', 'perfil']
+          .includes(r.name)) {
+    location.hash = '#/onboarding';
+    return;
+  }
+  // Doble guardia: si NO es admin y no hay oposiciones, tampoco le
+  // dejamos pasar a las rutas admin.
+  if (state.session && !state.oposiciones.length
+      && !state.session.es_admin
+      && ['administracion', 'admin', 'editar'].includes(r.name)) {
     location.hash = '#/onboarding';
     return;
   }
@@ -122,8 +136,11 @@ async function router() {
     state.planCargado = true;
   }
   if (state.session && state.oposiciones.length && !state.tienePlan
-      && !['wizard', 'perfil', 'auth', 'verify', 'reset', 'onboarding']
-           .includes(r.name)) {
+      && !['wizard', 'perfil', 'auth', 'verify', 'reset', 'onboarding',
+           // También dejamos pasar rutas admin: si el admin aún no
+           // tiene plan, no es motivo para bloquearle la gestión.
+           'administracion', 'admin', 'editar']
+          .includes(r.name)) {
     location.hash = '#/wizard';
     return;
   }
@@ -162,7 +179,12 @@ function updateNav(name) {
   const map = { home:'home', plan:'plan', stats:'stats', perfil:'perfil' };
   const target = map[name];
   const nav = $('.bottom-nav');
-  if (!nav || ['auth','verify','reset','onboarding','wizard','unidad','admin','administracion','editar','estudio'].includes(name)) {
+  // Vistas que NO llevan bottom-nav: flujos modales o inmersivos, y
+  // subpantallas donde queremos que el foco sea la propia vista y no
+  // la navegación general (unidad, editor, modo estudio…).
+  if (!nav || ['auth','verify','reset','onboarding','wizard','unidad',
+               'admin','administracion','editar','estudio','oposicion']
+              .includes(name)) {
     if (nav) nav.remove();
     return;
   }
@@ -414,6 +436,12 @@ async function renderOnboarding() {
   try { opos = await S.rpc('listar_oposiciones', {}, { api: '/api' }); }
   catch (e) { toast('Error cargando oposiciones: ' + e.message); }
 
+  // Cabecera: pintar chip con el email/nombre del usuario para dar
+  // contexto — así se ve claramente en qué cuenta estás si abriste
+  // una pestaña vieja o cambiaste de cuenta por error.
+  const userLbl = $('[data-user-lbl]', root);
+  if (userLbl) userLbl.textContent = state.session?.email || state.session?.nombre || '—';
+
   // Shortcuts globales del onboarding (visibles siempre)
   const shortAdm = $('[data-ir-administracion]', root);
   if (shortAdm) {
@@ -421,7 +449,9 @@ async function renderOnboarding() {
     shortAdm.addEventListener('click', () => location.hash = '#/administracion');
   }
   const btnLogout = $('[data-logout]', root);
-  if (btnLogout) btnLogout.addEventListener('click', cerrarSesion);
+  if (btnLogout) btnLogout.addEventListener('click', () => {
+    if (confirm('¿Cerrar sesión?')) cerrarSesion();
+  });
 
   if (!opos.length) {
     ul.innerHTML = `<li class="onboarding-vacio">
@@ -535,9 +565,18 @@ async function renderWizard() {
   $('[data-wizard-back]', root).addEventListener('click', () => {
     if (paso > 1) return showStep(paso - 1);
     // Al salir del paso 1: si el usuario aún no tiene plan (flujo
-    // inicial u onboarding), vuelve a Home; si ya lo tenía y estaba
-    // editando su disponibilidad, vuelve a Perfil.
-    location.hash = state.tienePlan ? '#/perfil' : '#/home';
+    // inicial u onboarding), vuelve al onboarding para elegir
+    // oposición; si ya lo tenía y estaba editando su disponibilidad,
+    // vuelve a Perfil.  Nunca a Home cuando no hay plan (evita bucle).
+    location.hash = state.tienePlan
+      ? '#/perfil'
+      : (state.oposiciones.length ? '#/home' : '#/onboarding');
+  });
+
+  // Escape de emergencia: cerrar sesión desde el propio wizard.
+  const btnLogout = $('[data-wizard-logout]', root);
+  if (btnLogout) btnLogout.addEventListener('click', () => {
+    if (confirm('¿Cerrar sesión?')) cerrarSesion();
   });
 
   $('[data-wizard-finish]', root).addEventListener('click', async () => {
@@ -630,24 +669,12 @@ async function renderHome() {
   $('[data-minutos]', root).textContent = fmtMin(data.minutos_semana || 0);
   $('[data-pct]', root).textContent = (data.porcentaje || 0) + '%';
 
+  // La card-continua se ha eliminado: el gran botón "Estudiar" ya
+  // cubre exactamente la misma acción (continuar donde lo dejaste) y
+  // duplicar la CTA confundía. Guardamos `data.continua` en local
+  // por si la lista de "Tu día de hoy" queda vacía y queremos
+  // ofrecer un fallback hacia la unidad en curso.
   const c = data.continua;
-  const cardC = $('.card-continua', root);
-  if (c) {
-    $('[data-continua-tema]', cardC).textContent = c.tema_nombre;
-    $('[data-continua-unidad]', cardC).textContent = c.nombre;
-    $('[data-continua-ico]', cardC).textContent = c.tema_icono || '📘';
-    $('[data-continua-min]', cardC).textContent = (c.minutos_est || 20) + ' min';
-    $('[data-continua-fill]', cardC).style.width = (c.progreso_pct || 0) + '%';
-    $('[data-continua-pct]', cardC).textContent = c.progreso_pct || 0;
-    $('[data-continua-btn]', cardC).addEventListener('click',
-      () => location.hash = '#/unidad/' + c.id);
-  } else {
-    cardC.innerHTML = `<div class="card-body">
-      <div class="book-avatar">✅</div>
-      <div class="card-body-txt"><h3>¡Todo al día!</h3>
-      <p class="muted">Elige una unidad desde el Plan para seguir avanzando.</p></div>
-    </div>`;
-  }
 
   // Plan de hoy real
   let hoy = [];
@@ -1004,6 +1031,133 @@ async function renderPerfil() {
 
   $('[data-logout]', root).addEventListener('click', cerrarSesion);
 }
+
+// ══════════════════════════════════════════════════════════════════════
+// OPOSICIÓN — vista de temas, unidades y fecha del examen
+// ══════════════════════════════════════════════════════════════════════
+
+async function renderOposicion() {
+  mount('tpl-oposicion');
+  const root = $('.view-oposicion');
+  bindCommon(root);
+  setAvatarChips(root);
+
+  // La oposición principal del usuario (la que se está estudiando).
+  // Si no hay principal pero sí hay matriculadas, usamos la primera.
+  const oposId = state.principalId || (state.oposiciones[0] || {}).id;
+  if (!oposId) {
+    location.hash = '#/onboarding';
+    return;
+  }
+
+  // Nivel/racha para la cabecera consistente.
+  try {
+    const di = (await S.rpc('dashboard_inicio', {}, { api: '/api' })) || {};
+    $('[data-nivel]', root).textContent = 'Nivel ' + (di.nivel || 1);
+    $('[data-racha]', root).textContent = di.racha_dias || 0;
+  } catch (_) {}
+
+  // Detalle de la oposición (nombre, organismo, fecha_examen, temas...)
+  let opos = null;
+  try { opos = await S.rpc('obtener_oposicion',
+        { p_oposicion_id: oposId }, { api: '/api' }); }
+  catch (e) { toast('Error cargando la oposición: ' + e.message); return; }
+  opos = opos || {};
+
+  $('[data-opos-nombre]', root).textContent    = opos.nombre || '—';
+  $('[data-opos-organismo]', root).textContent = opos.organismo || 'Oposición';
+
+  // Fecha del examen (o estimación por el propio plan del usuario).
+  const fEl    = $('[data-opos-fecha]', root);
+  const fDet   = $('[data-opos-fecha-detalle]', root);
+  if (opos.fecha_examen) {
+    const d    = new Date(opos.fecha_examen);
+    const dias = Math.max(0, Math.round((d - new Date()) / 86400000));
+    fEl.textContent = d.toLocaleDateString('es-ES', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    });
+    fDet.textContent = opos.fecha_examen_orientativa
+      ? `Fecha orientativa · en ~${dias} días`
+      : `En ${dias} días`;
+  } else {
+    // Sin fecha oficial: intentamos una estimación por el propio
+    // plan del usuario (fecha en la que acabaría el temario al
+    // ritmo actual).  Si no hay plan, dejamos el "Sin confirmar".
+    fEl.textContent = 'Sin confirmar';
+    try {
+      const pd = (await S.rpc('dashboard_perfil', {}, { api: '/api' })) || {};
+      const p  = pd.plan;
+      if (p && (p.horas_semana > 0 || Object.values(p.horas_por_dia || {})
+                                            .some(v => (+v) > 0))) {
+        const totalUnidades = (opos.temas || [])
+          .reduce((s, t) => s + (t.unidades?.length || 0), 0);
+        const minPorUnidad  = 25;                   // estimación media
+        const totalHoras    = (totalUnidades * minPorUnidad) / 60;
+        const hSemana = p.modo_disponibilidad === 'semanal'
+          ? (p.horas_semana || 0)
+          : Object.values(p.horas_por_dia || {}).reduce((s, v) => s + (+v || 0), 0);
+        if (hSemana > 0) {
+          const semanas = Math.ceil(totalHoras / hSemana);
+          const est = new Date();
+          est.setDate(est.getDate() + semanas * 7);
+          fDet.textContent = `Estimación al ritmo actual: ${est.toLocaleDateString(
+            'es-ES', { month: 'long', year: 'numeric' })}`;
+        } else {
+          fDet.textContent = 'Configura tu disponibilidad para ver una estimación.';
+        }
+      } else {
+        fDet.textContent = 'Configura tu disponibilidad para ver una estimación.';
+      }
+    } catch (_) {
+      fDet.textContent = 'La fija el administrador al crear o editar la oposición.';
+    }
+  }
+
+  // Temas y unidades (colapsables)
+  const temas = opos.temas || [];
+  $('[data-opos-count]', root).textContent = temas.length + ' tema' + (temas.length === 1 ? '' : 's');
+  const ul = $('[data-opos-temas]', root);
+  if (!temas.length) {
+    ul.innerHTML = `<li class="empty">
+      <div class="empty-state">
+        <span class="emoji" aria-hidden="true">📖</span>
+        <p>La oposición aún no tiene temas cargados.</p>
+      </div>
+    </li>`;
+    return;
+  }
+  ul.innerHTML = temas.map(t => {
+    const unids = (t.unidades || []).map(u => `
+      <li data-uid="${u.id}">
+        <span class="u-nombre">${escapeHtml(u.nombre)}</span>
+        <span class="u-min">${u.minutos_est || 20} min</span>
+      </li>`).join('');
+    return `<li class="opos-tema" data-tid="${t.id}">
+      <div class="opos-tema-head">
+        <span class="t-ico">${t.icono || '📘'}</span>
+        <div>
+          <strong>${escapeHtml(t.nombre)}</strong>
+          <span class="muted">${(t.unidades || []).length} unidades</span>
+        </div>
+        <span class="opos-tema-toggle">›</span>
+      </div>
+      <ul class="opos-unidades">${unids || '<li class="muted">Sin unidades aún</li>'}</ul>
+    </li>`;
+  }).join('');
+
+  // Toggle de expansión por tema.
+  $$('.opos-tema-head', ul).forEach(h => {
+    h.addEventListener('click', () => h.parentElement.classList.toggle('open'));
+  });
+  // Click en unidad → abrir su vista.
+  $$('.opos-unidades li[data-uid]', ul).forEach(li => {
+    li.addEventListener('click', ev => {
+      ev.stopPropagation();
+      location.hash = '#/unidad/' + li.dataset.uid;
+    });
+  });
+}
+
 
 // ══════════════════════════════════════════════════════════════════════
 // UNIDAD (unificada teoría+test) con AUTO-TRACKING

@@ -166,27 +166,6 @@
         </div>
       </article>
 
-      <article class="card card-continua" data-continua>
-        <div class="card-head">
-          <span class="chip chip-soft">🌱 Continúa estudiando</span>
-          <span class="chip chip-ghost"><span class="chip-ico">🕒</span> <span data-continua-min>-- min</span></span>
-        </div>
-        <div class="card-body">
-          <div class="book-avatar" data-continua-ico>📗</div>
-          <div class="card-body-txt">
-            <h3 data-continua-tema>—</h3>
-            <p class="muted" data-continua-unidad>—</p>
-            <div class="progress">
-              <div class="progress-bar"><span data-continua-fill style="width:0%"></span></div>
-              <span class="progress-label"><span data-continua-pct>0</span>%</span>
-            </div>
-          </div>
-        </div>
-        <button class="btn btn-primary btn-cta" data-continua-btn>
-          <span class="play-ico" aria-hidden="true">▶</span> Continuar
-        </button>
-      </article>
-
       <section class="section">
         <div class="section-head">
           <h2><span class="section-sun" aria-hidden="true">🌤</span> Tu día de hoy</h2>
@@ -259,12 +238,12 @@
         </div>
       </article>
 
-      <article class="card card-hito">
+      <article class="card card-hito" data-goto="oposicion" role="button" tabindex="0">
         <div class="hito-ico">🎯</div>
         <div class="hito-txt">
           <span class="chip chip-soft">Próximo hito</span>
           <h3 data-hito-nombre>Examen</h3>
-          <p class="muted" data-hito-desc>Configura la fecha en tu plan</p>
+          <p class="muted" data-hito-desc>Consulta la fecha y los temas</p>
         </div>
         <span class="chevron" aria-hidden="true">›</span>
       </article>
@@ -340,6 +319,47 @@
     </section>
   </template>
 
+  <!-- ─────────────────────── OPOSICIÓN (temas + unidades + examen) ─────────────────────── -->
+  <template id="tpl-oposicion">
+    <section class="view view-oposicion">
+      <header class="top-bar">
+        <img class="brand-mini" src="/logo.svg" alt="Aprentix">
+        <button class="chip chip-level" data-open-perfil>
+          <span class="chip-ico">🌿</span><span data-nivel>Nivel 1</span>
+        </button>
+        <button class="chip chip-racha" data-goto="stats">
+          <span class="chip-ico">🔥</span><strong data-racha>0</strong> días
+        </button>
+        <button class="avatar-btn" data-open-perfil aria-label="Perfil">
+          <span class="avatar" data-avatar>?</span>
+        </button>
+      </header>
+
+      <div class="hero">
+        <span class="pill">Mi oposición</span>
+        <h1 data-opos-nombre>—</h1>
+        <p class="muted" data-opos-organismo>—</p>
+      </div>
+
+      <article class="card card-examen">
+        <div class="obj-ico" style="background:var(--pri-soft);color:var(--pri-d)">📅</div>
+        <div class="obj-txt">
+          <span class="chip chip-soft">Fecha del examen</span>
+          <h2 data-opos-fecha>Sin confirmar</h2>
+          <p class="muted small" data-opos-fecha-detalle></p>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-head">
+          <h2>📚 Temas y unidades</h2>
+          <span class="chip chip-soft" data-opos-count>0 temas</span>
+        </div>
+        <ul class="opos-temas" data-opos-temas></ul>
+      </article>
+    </section>
+  </template>
+
   <!-- ─────────────────────── PERFIL ─────────────────────── -->
   <template id="tpl-perfil">
     <section class="view view-perfil">
@@ -386,6 +406,11 @@
       <article class="card">
         <h2>Preferencias</h2>
         <ul class="list list-plain">
+          <li data-goto="oposicion">
+            <span class="ico-round">📚</span>
+            <div><strong>Mi oposición</strong><span class="muted" data-perf-opos>Ver temas y examen</span></div>
+            <span class="chevron">›</span>
+          </li>
           <li data-goto-wizard>
             <span class="ico-round">📅</span>
             <div><strong>Disponibilidad</strong><span class="muted" data-perf-disp>—</span></div>
@@ -465,8 +490,15 @@
   <!-- ─────────────────────── ONBOARDING oposición ─────────────────────── -->
   <template id="tpl-onboarding">
     <section class="view view-onboarding">
-      <div class="hero hero-center">
-        <img class="brand-hero" src="/logo.svg" alt="">
+      <header class="top-bar">
+        <img class="brand-mini" src="/logo.svg" alt="Aprentix">
+        <span class="chip chip-soft" data-user-lbl>—</span>
+        <button class="btn-back" data-logout aria-label="Cerrar sesión">
+          <span class="btn-back-ico">⏻</span> Salir
+        </button>
+      </header>
+
+      <div class="hero">
         <h1>Elige tu oposición</h1>
         <p class="muted">Podrás cambiarla más tarde desde tu perfil.</p>
       </div>
@@ -474,12 +506,9 @@
       <button class="btn btn-outline btn-block" data-ir-administracion hidden style="margin-top:var(--sp-2)">
         📚 Importar oposición (admin)
       </button>
-      <div class="sticky-cta">
+      <div class="onboarding-cta">
         <button class="btn btn-primary btn-block" data-onboarding-guardar disabled>
           Continuar
-        </button>
-        <button class="btn btn-ghost btn-block" data-logout style="margin-top:6px;">
-          🚪 Cerrar sesión
         </button>
       </div>
     </section>
@@ -499,6 +528,15 @@
           <span class="btn-back-ico">‹</span> Atrás
         </button>
       </header>
+
+      <!-- Botón "Salir" siempre visible para que el usuario no se sienta
+           atrapado si algo va mal.  El botón "Atrás" mueve entre pasos
+           del wizard, éste cierra sesión directamente. -->
+      <div class="wizard-escape">
+        <button class="btn btn-ghost btn-mini" data-wizard-logout>
+          ⏻ Cerrar sesión
+        </button>
+      </div>
 
       <!-- Paso 1: modo -->
       <div class="wizard-step" data-wstep="1">
@@ -581,7 +619,7 @@
         </div>
       </div>
 
-      <!-- Paso 3: método (la fecha de examen la gestiona el admin) -->
+      <!-- Paso 3: método de estudio -->
       <div class="wizard-step" data-wstep="3" hidden>
         <div class="hero">
           <h1>Últimos detalles</h1>
@@ -604,10 +642,6 @@
             <button type="button" data-val="intensivo">Intensivo</button>
           </div>
         </div>
-
-        <p class="muted small">
-          La fecha del examen la fija el administrador cuando crea o edita la oposición.
-        </p>
 
         <div class="sticky-cta">
           <button class="btn btn-primary btn-block" data-wizard-finish>Crear mi plan</button>
