@@ -73,7 +73,19 @@ async function router() {
   if (S.getToken() && !state.session) {
     try {
       const s = await S.rpc('mi_sesion', {}, { api: '/api' });
-      state.session = Array.isArray(s) ? s[0] : s;
+      const parsed = Array.isArray(s) ? s[0] : s;
+      // mi_sesion devuelve NULL cuando el jwt_usuario_id() no
+      // corresponde a ningún usuario en la BBDD (JWT huérfano: la
+      // BBDD se recreó, el usuario se borró, etc). La request no
+      // es un error, pero la sesión ya no vale — hay que forzar
+      // logout para que no revienten renders posteriores.
+      if (!parsed || !parsed.user_id) {
+        S.clearToken();
+        state.session = null;
+        location.hash = '#/auth';
+        return;
+      }
+      state.session = parsed;
     } catch (e) {
       S.clearToken();
       location.hash = '#/auth';
@@ -100,8 +112,8 @@ async function router() {
   // Les llevamos al wizard para que rellenen disponibilidad/ritmo.
   if (state.session && state.oposiciones.length && !state.planCargado) {
     try {
-      const pd = await S.rpc('dashboard_perfil', {}, { api: '/api' });
-      const p = pd?.plan || null;
+      const pd = (await S.rpc('dashboard_perfil', {}, { api: '/api' })) || {};
+      const p = pd.plan || null;
       const hpd = p?.horas_por_dia || {};
       const totalDia = ['lun','mar','mie','jue','vie','sab','dom']
         .reduce((s, d) => s + (parseFloat(hpd[d]) || 0), 0);
@@ -608,6 +620,9 @@ async function renderHome() {
   let data = null;
   try { data = await S.rpc('dashboard_inicio', {}, { api: '/api' }); }
   catch (e) { toast('Error cargando datos: ' + e.message); return; }
+  // PostgREST puede responder `null` sin lanzar excepción (jwt huérfano,
+  // dashboard sin usuario). Normalizamos para no reventar más abajo.
+  data = data || {};
 
   $('[data-nivel]', root).textContent = 'Nivel ' + (data.nivel || 1);
   $('[data-racha]', root).textContent = data.racha_dias || 0;
@@ -687,10 +702,11 @@ async function renderPlan() {
   bindCommon(root);
   setAvatarChips(root);
 
-  const [dashData, perfilData] = await Promise.all([
+  let [dashData, perfilData] = await Promise.all([
     S.rpc('dashboard_inicio', {}, { api: '/api' }).catch(() => ({})),
     S.rpc('dashboard_perfil', {}, { api: '/api' }).catch(() => ({})),
   ]);
+  dashData = dashData || {}; perfilData = perfilData || {};
 
   $('[data-nivel]', root).textContent = 'Nivel ' + (dashData.nivel || 1);
   $('[data-racha]', root).textContent = dashData.racha_dias || 0;
@@ -864,6 +880,7 @@ async function renderStats() {
   let d = null;
   try { d = await S.rpc('dashboard_estadisticas', {}, { api: '/api' }); }
   catch (e) { toast('Error cargando estadísticas'); return; }
+  d = d || {};
 
   $('[data-racha]', root).textContent = d.racha_dias || 0;
   $('[data-racha2]', root).textContent = (d.racha_dias || 0) + ' días';
@@ -915,13 +932,18 @@ async function renderPerfil() {
   const root = $('.view-perfil');
   bindCommon(root);
 
-  const [pd, di] = await Promise.all([
+  // Las RPCs pueden devolver `null` (no un error) si el JWT apunta a
+  // un usuario que no existe en la BBDD (jwt huérfano). El catch nos
+  // protege del error de red, pero un body `null` legítimo pasa como
+  // resultado. Normalizamos a {} para no reventar al leer campos.
+  let [pd, di] = await Promise.all([
     S.rpc('dashboard_perfil', {}, { api: '/api' }).catch(() => ({})),
     S.rpc('dashboard_inicio', {}, { api: '/api' }).catch(() => ({})),
   ]);
+  pd = pd || {}; di = di || {};
 
   $('[data-nombre]', root).textContent = pd.nombre || '—';
-  $('[data-email]', root).textContent = pd.email + (pd.email_verificado ? '' : ' (sin verificar)');
+  $('[data-email]', root).textContent = (pd.email || '—') + (pd.email && !pd.email_verificado ? ' (sin verificar)' : '');
   $('[data-nivel]', root).textContent = 'Nivel ' + (pd.nivel || 1);
   $('[data-racha]', root).textContent = (pd.racha || 0) + ' días';
   $('[data-xp]', root).textContent = pd.xp || 0;
