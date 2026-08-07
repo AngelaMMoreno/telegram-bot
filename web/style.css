@@ -795,6 +795,61 @@ p  { margin: 0; }
 .bottom-nav button.active { color: var(--pri-d); background: var(--pri-light); }
 .bottom-nav svg { width: 22px; height: 22px; }
 
+/* ─── Chip "Oposición activa" del Home ─────────────────────────────── */
+.opos-activa {
+  width: 100%;
+  display: grid; grid-template-columns: 44px 1fr auto;
+  gap: var(--sp-3); align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+  transition: border-color .12s, transform .1s, box-shadow .12s;
+}
+.opos-activa:hover  { border-color: var(--pri); box-shadow: var(--shadow); }
+.opos-activa:active { transform: scale(.99); }
+.opos-activa-ico {
+  width: 44px; height: 44px; border-radius: 14px;
+  background: var(--pri-soft); color: var(--pri-d);
+  display: grid; place-items: center; font-size: 1.3rem;
+}
+.opos-activa-txt { display: flex; flex-direction: column; min-width: 0; }
+.opos-activa-txt strong {
+  font-size: var(--fs-md); color: var(--txt); line-height: 1.15;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.opos-activa-caret { color: var(--txt-soft); font-size: 1rem; }
+
+.home-hero { min-height: unset; padding: var(--sp-1) 0; }
+
+.progress-hoy { flex-direction: column; align-items: stretch; margin-bottom: var(--sp-2); }
+.progress-hoy .progress-bar { height: 10px; margin: 4px 0; }
+.progress-hoy .progress-title { font-weight: 600; font-size: var(--fs-sm); }
+
+/* Modal de oposiciones (listado + activa + añadir otra) */
+.opos-lista { list-style: none; padding: 0; margin: var(--sp-2) 0 0; display: flex; flex-direction: column; gap: 8px; }
+.opos-lista li {
+  display: grid; grid-template-columns: 40px 1fr auto; gap: var(--sp-2);
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer; transition: border-color .12s;
+}
+.opos-lista li:hover { border-color: var(--pri); }
+.opos-lista li.activa { border-color: var(--pri); background: var(--pri-soft); }
+.opos-lista .ico-round {
+  width: 40px; height: 40px; border-radius: 12px;
+  background: var(--pri-soft); color: var(--pri-d);
+  display: grid; place-items: center; font-size: 1.15rem;
+}
+.opos-lista strong { display: block; font-size: var(--fs-sm); }
+.opos-lista .muted { display: block; font-size: var(--fs-xs); }
+.opos-lista .op-check { color: var(--pri-d); font-weight: 700; }
+
 /* ─── Botón grande "Estudiar" ─────────────────────────────────────── */
 .btn-estudiar {
   min-height: 68px;

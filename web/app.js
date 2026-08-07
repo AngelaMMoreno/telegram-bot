@@ -214,6 +214,19 @@ function fmtMin(min) {
   return h + 'h' + (m ? ' ' + m + 'm' : '');
 }
 
+// Nombre legible para el tipo de un bloque del plan (usado como fallback
+// cuando el bloque no tiene tema/unidad — ej. bloques de repaso o descanso).
+function tipoLabel(tipo) {
+  return ({
+    estudio:        'Estudio',
+    repaso:         'Repaso',
+    test:           'Test rápido',
+    descanso:       'Descanso',
+    descanso_largo: 'Descanso largo',
+    simulacro:      'Simulacro',
+  })[tipo] || 'Sesión';
+}
+
 function bindCommon(root) {
   $$('[data-open-perfil]', root).forEach(el => {
     el.addEventListener('click', () => location.hash = '#/perfil');
@@ -489,9 +502,16 @@ async function renderOnboarding() {
       await S.rpc('matricular_oposicion',
         { p_oposicion_id: seleccionada, p_principal: true },
         { api: '/api' });
+      // Vaciamos las cachés locales para que el router y renderHome
+      // relean con la nueva oposición activa.
       state.oposiciones = [];
-      // Tras elegir oposición → wizard de disponibilidad
-      location.hash = '#/wizard';
+      state.principalId = null;
+      state.planCargado = false;
+      state.tienePlan = false;
+      // Vamos a Home; el router redirigirá al wizard sólo si el usuario
+      // aún no tiene ningún plan_estudio activo (usuario nuevo).  Si ya
+      // tenía plan de otra oposición, no le re-preguntamos disponibilidad.
+      location.hash = '#/home';
     } catch (e) { toast('Error: ' + e.message); }
   });
 }
@@ -665,58 +685,146 @@ async function renderHome() {
 
   $('[data-nivel]', root).textContent = 'Nivel ' + (data.nivel || 1);
   $('[data-racha]', root).textContent = data.racha_dias || 0;
-  $('[data-racha2]', root).textContent = data.racha_dias || 0;
-  $('[data-minutos]', root).textContent = fmtMin(data.minutos_semana || 0);
-  $('[data-pct]', root).textContent = (data.porcentaje || 0) + '%';
 
-  // La card-continua se ha eliminado: el gran botón "Estudiar" ya
-  // cubre exactamente la misma acción (continuar donde lo dejaste) y
-  // duplicar la CTA confundía. Guardamos `data.continua` en local
-  // por si la lista de "Tu día de hoy" queda vacía y queremos
-  // ofrecer un fallback hacia la unidad en curso.
-  const c = data.continua;
+  // Saludo personalizado — reemplaza el genérico "Sigue con tu oposición".
+  const nombre = (state.session?.nombre || '').split(/\s+/)[0] || 'Hola';
+  $('[data-home-saludo]', root).textContent = 'Hola, ' + nombre;
+
+  // Oposición activa: chip clickable con el nombre.  Al pulsar abre
+  // modal con todas las matriculadas + botón para añadir otra.
+  const oposActivaBtn = $('[data-opos-activa]', root);
+  const oposNombreEl  = $('[data-opos-nombre]', root);
+  const opActiva      = state.oposiciones.find(o => o.principal)
+                     || state.oposiciones[0]
+                     || null;
+  oposNombreEl.textContent = opActiva ? opActiva.nombre : 'Elige tu oposición';
+  oposActivaBtn.addEventListener('click', abrirModalOposiciones);
 
   // Plan de hoy real
   let hoy = [];
   try { hoy = await S.rpc('plan_del_dia', {}, { api: '/api' }); } catch (_) {}
+
+  // Barra de avance del día
+  const total = hoy.length;
+  const done  = hoy.filter(b => b.completada).length;
+  const pct   = total ? Math.round((done / total) * 100) : 0;
+  $('[data-hoy-done]', root).textContent = done;
+  $('[data-hoy-tot]', root).textContent  = total;
+  $('[data-hoy-pct]', root).textContent  = pct;
+  $('[data-hoy-fill]', root).style.width = pct + '%';
+
+  // Subtítulo del botón "Estudiar" — más útil que el genérico:
+  // dice a qué toca si hay plan de hoy.
+  const subBtn = $('[data-estudiar-sub]', root);
+  if (subBtn) {
+    const pend = hoy.filter(b => !b.completada);
+    if (!hoy.length)      subBtn.textContent = 'Modo estudio guiado con cronómetro';
+    else if (!pend.length) subBtn.textContent = '¡Plan de hoy completo! Sesión libre.';
+    else                   subBtn.textContent = pend.length + ' bloque' + (pend.length === 1 ? '' : 's') + ' pendiente' + (pend.length === 1 ? '' : 's');
+  }
+
   const hoyUl = $('[data-hoy]', root);
   if (hoy.length) {
-    hoyUl.innerHTML = hoy.map((b, i) => {
+    hoyUl.innerHTML = hoy.slice(0, 4).map((b, i) => {
       const ico = b.tipo === 'repaso'   ? { c:'ico-repaso',   e:'📖' }
                 : b.tipo === 'descanso' ? { c:'ico-descanso', e:'☕' }
                 : b.tipo === 'test'     ? { c:'ico-repaso',   e:'📋' }
                 : b.tipo === 'simulacro'? { c:'ico-repaso',   e:'🎯' }
                                         : { c:'ico-verde',    e:'📚' };
-      const hora = b.hora_inicio ? b.hora_inicio.slice(0,5) + ' · ' : '';
-      const nombre = b.unidad || (b.tema ? b.tema : 'Sesión');
-      return `<li data-i="${i}">
+      const titulo = b.unidad || b.tema || tipoLabel(b.tipo);
+      const subt   = (b.tema && b.unidad && b.tema !== b.unidad)
+                       ? escapeHtml(b.tema) + ' · ' + b.minutos + ' min'
+                       : tipoLabel(b.tipo) + ' · ' + b.minutos + ' min';
+      return `<li data-i="${i}" class="${b.completada ? 'completada' : ''}">
         <span class="ico-round ${ico.c}">${ico.e}</span>
         <div>
-          <strong>${hora}${escapeHtml(nombre)}</strong>
-          <span class="muted">${b.tipo === 'estudio' ? 'Estudia' : b.tipo} · ${b.minutos} min</span>
+          <strong>${escapeHtml(titulo)}</strong>
+          <span class="muted">${subt}</span>
         </div>
-        <span class="chevron">›</span></li>`;
+        <span class="chevron">${b.completada ? '✅' : '›'}</span></li>`;
     }).join('');
+    if (hoy.length > 4) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.innerHTML = `<button class="btn btn-ghost btn-block" data-goto="plan"
+                              style="margin-top:6px">Ver los ${hoy.length - 4} bloques restantes</button>`;
+      hoyUl.appendChild(li);
+      li.querySelector('button').addEventListener('click',
+        () => location.hash = '#/plan');
+    }
     $$('[data-i]', hoyUl).forEach(li => {
       li.addEventListener('click', () => {
         const b = hoy[+li.dataset.i];
         if (b.unidad_id) location.hash = '#/unidad/' + b.unidad_id;
       });
     });
-  } else if (c) {
-    hoyUl.innerHTML = `<li>
-      <span class="ico-round ico-verde">📚</span>
-      <div><strong>Continúa donde lo dejaste</strong>
-      <span class="muted">${escapeHtml(c.nombre)} · ${c.minutos_est || 20} min</span></div>
-      <span class="chevron">›</span></li>`;
-    $('li', hoyUl).addEventListener('click', () => location.hash = '#/unidad/' + c.id);
   } else {
-    hoyUl.innerHTML = `<li style="border:0">
-      <span class="ico-round">🌱</span>
-      <div><strong>Aún no tienes plan</strong>
-      <span class="muted">Configura tu disponibilidad desde el Perfil</span></div>
-      <span class="chevron">›</span></li>`;
+    hoyUl.innerHTML = `<li class="empty">
+      <div class="empty-state">
+        <span class="emoji" aria-hidden="true">🌱</span>
+        <p>Aún no tienes plan para hoy.</p>
+        <button class="btn btn-outline btn-mini" data-plan-editar-empty>Configurar disponibilidad</button>
+      </div>
+    </li>`;
+    const bEdit = hoyUl.querySelector('[data-plan-editar-empty]');
+    if (bEdit) bEdit.addEventListener('click', () => location.hash = '#/wizard');
   }
+}
+
+
+// ══════════════════════════════════════════════════════════════════════
+// MODAL — oposiciones matriculadas (cambio activa + añadir otra)
+// ══════════════════════════════════════════════════════════════════════
+
+function abrirModalOposiciones() {
+  const tpl = document.getElementById('tpl-modal-oposiciones');
+  document.body.appendChild(tpl.content.cloneNode(true));
+  const back = $('.modal-backdrop:last-of-type');
+  const ul   = $('[data-opos-lista]', back);
+  const cerrar = () => back.remove();
+  $('[data-modal-close]', back).addEventListener('click', cerrar);
+  back.addEventListener('click', ev => { if (ev.target === back) cerrar(); });
+
+  const ops = state.oposiciones || [];
+  if (!ops.length) {
+    ul.innerHTML = `<li class="muted" style="text-align:center;border:0">
+      Aún no estás matriculado en ninguna oposición.
+    </li>`;
+  } else {
+    ul.innerHTML = ops.map(o => `
+      <li data-id="${o.id}" class="${o.principal ? 'activa' : ''}">
+        <span class="ico-round">📘</span>
+        <div>
+          <strong>${escapeHtml(o.nombre)}</strong>
+          <span class="muted">${escapeHtml(o.organismo || '')}</span>
+        </div>
+        <span class="op-check">${o.principal ? '✓ activa' : ''}</span>
+      </li>`).join('');
+
+    $$('li[data-id]', ul).forEach(li => {
+      li.addEventListener('click', async () => {
+        const id = li.dataset.id;
+        if (id === state.principalId) { cerrar(); return; }
+        try {
+          await S.rpc('matricular_oposicion',
+            { p_oposicion_id: id, p_principal: true }, { api: '/api' });
+          // Vaciamos la caché para que el router releea al volver.
+          state.oposiciones = [];
+          state.principalId = null;
+          state.planCargado = false;
+          state.tienePlan = false;
+          cerrar();
+          toast('Oposición activa actualizada');
+          renderHome();
+        } catch (e) { toast('Error: ' + e.message); }
+      });
+    });
+  }
+
+  $('[data-opos-add]', back).addEventListener('click', () => {
+    cerrar();
+    location.hash = '#/onboarding';
+  });
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -772,12 +880,24 @@ async function renderPlan() {
                   : b.tipo === 'test'     ? '📋'
                   : b.tipo === 'simulacro'? '🎯'
                                           : (b.tema_icono || '📚');
-        const hora = b.hora_inicio ? b.hora_inicio.slice(0,5) : '—';
+        // La hora es opcional en el planificador: si no la tenemos,
+        // omitimos ese renglón entero (nada de "—") para que el bloque
+        // quede limpio.
+        const hora   = b.hora_inicio ? b.hora_inicio.slice(0,5) : null;
+        // El "encabezado" del bloque: hora + tema si hay hora, si no
+        // solo el tema (o el tipo cuando el bloque es genérico).
+        const tituloTop = escapeHtml(b.tema || tipoLabel(b.tipo));
+        const encabezado = hora ? `${hora} · ${tituloTop}` : tituloTop;
+        // El nombre secundario (unidad concreta) — sólo si difiere del
+        // encabezado, para no repetir "Constitución Española / Constitución Española".
+        const sub = b.unidad && b.unidad !== (b.tema || '')
+              ? escapeHtml(b.unidad)
+              : '';
         return `<li class="${b.completada ? 'completada' : ''}">
           <span class="t-ico">${ico}</span>
           <div>
-            <span class="t-hora">${hora} · ${escapeHtml(b.tema || b.tipo)}</span>
-            <span class="t-nombre">${escapeHtml(b.unidad || b.tipo)}</span>
+            <span class="t-hora">${encabezado}</span>
+            ${sub ? `<span class="t-nombre">${sub}</span>` : ''}
             <span class="t-sub">${b.minutos} min</span>
           </div>
           <span class="t-status">${b.completada ? '✅' : '⏱'}</span></li>`;
@@ -1720,13 +1840,25 @@ async function renderEstudio() {
     }
   }
 
+  // Flag para evitar que un click residual en "Siguiente" (ya reconvertido
+  // a "Volver al Inicio") vuelva a disparar la RPC de avance cuando la
+  // sesión ya se cerró en `terminar()`.
+  let terminada = false;
+
   async function avanzar() {
+    if (terminada) return;
     try {
       const sig = await S.rpc('siguiente_bloque_estudio', {}, { api: '/api' });
       idx += 1;
       if (!sig || sig.tipo === 'final') return terminar();
       pintarBloque();
-    } catch (e) { toast(e.message); }
+    } catch (e) {
+      // Si el servidor dice que ya no hay sesión activa, es que
+      // ya terminamos (por avance automático concurrente o cierre
+      // previo). Tratamos el error como "final" sin mostrar toast.
+      if (String(e.message).includes('sin_sesion_activa')) return terminar();
+      toast(e.message);
+    }
   }
 
   $('[data-estudio-siguiente]', root).addEventListener('click', avanzar);
@@ -1739,6 +1871,8 @@ async function renderEstudio() {
   });
 
   async function terminar() {
+    if (terminada) return;
+    terminada = true;
     clearInterval(_estudioTimer);
     let res = null;
     try { res = await S.rpc('cerrar_estudio', {}, { api: '/api' }); } catch (_) {}
@@ -1749,8 +1883,15 @@ async function renderEstudio() {
       <p>Has estudiado durante <strong>${res?.minutos_totales || 0}</strong> min.</p>
       <p class="muted">+${res?.minutos_totales || 0} XP</p>
     </div>`;
-    $('[data-estudio-siguiente]', root).textContent = 'Volver al Inicio';
-    $('[data-estudio-siguiente]', root).onclick = () => location.hash = '#/home';
+    // Reemplazamos el nodo del botón para tirar TODOS los listeners
+    // previos (`addEventListener('click', avanzar)`).  Sin esto, aunque
+    // reasignásemos onclick, el listener antiguo seguiría disparando
+    // avanzar() y provocaría "sin_sesion_activa".
+    const btnSig = $('[data-estudio-siguiente]', root);
+    const nuevo = btnSig.cloneNode(true);
+    nuevo.textContent = 'Volver al Inicio';
+    nuevo.addEventListener('click', () => { location.hash = '#/home'; });
+    btnSig.replaceWith(nuevo);
     $('[data-estudio-saltar]', root).hidden = true;
   }
 

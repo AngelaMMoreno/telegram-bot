@@ -126,33 +126,31 @@
         </button>
       </header>
 
-      <div class="hero">
-        <span class="pill">Hoy</span>
-        <h1>Sigue con tu oposición</h1>
-        <p class="muted">Avanza con sesiones breves, enfoque claro y descansos bien medidos.</p>
-        <svg class="hero-decor" viewBox="0 0 200 120" aria-hidden="true">
-          <defs>
-            <linearGradient id="hd-sky" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="var(--accent-soft)"/>
-              <stop offset="100%" stop-color="transparent"/>
-            </linearGradient>
-          </defs>
-          <circle cx="170" cy="30" r="18" fill="var(--accent)" opacity=".55"/>
-          <circle cx="170" cy="30" r="30" fill="url(#hd-sky)"/>
-          <path d="M0,100 Q40,60 90,90 T200,90 L200,120 L0,120 Z" fill="var(--pri-soft)"/>
-          <path d="M20,100 q10,-25 20,-5 M60,100 q12,-30 24,-8 M110,100 q10,-25 20,-5 M155,100 q12,-30 24,-8"
-                stroke="var(--pri-d)" stroke-width="2" fill="none" opacity=".55" stroke-linecap="round"/>
-        </svg>
+      <!-- Oposición activa (clickable → modal con listado + añadir otra). -->
+      <button class="opos-activa" data-opos-activa>
+        <span class="opos-activa-ico">📚</span>
+        <span class="opos-activa-txt">
+          <span class="muted small">Estudiando</span>
+          <strong data-opos-nombre>—</strong>
+        </span>
+        <span class="opos-activa-caret" aria-hidden="true">▾</span>
+      </button>
+
+      <div class="hero home-hero">
+        <h1 data-home-saludo>Hola</h1>
+        <p class="muted" data-home-sub>Un pequeño avance hoy suma mucho a la larga.</p>
       </div>
 
       <button class="btn btn-primary btn-block btn-estudiar" data-abrir-estudiar>
         <span class="btn-estudiar-ico">▶</span>
         <span>
           <strong>Estudiar</strong>
-          <em class="muted small">Modo estudio guiado con cronómetro</em>
+          <em class="muted small" data-estudiar-sub>Modo estudio guiado con cronómetro</em>
         </span>
       </button>
 
+      <!-- Resumen semanal (aparece solo cuando hay datos: primera Home
+           tras el domingo con cierre semanal). -->
       <article class="card card-resumen-semanal" data-resumen-semanal hidden>
         <div class="rs-ico">📊</div>
         <div class="rs-txt">
@@ -166,31 +164,39 @@
         </div>
       </article>
 
-      <section class="section">
-        <div class="section-head">
-          <h2><span class="section-sun" aria-hidden="true">🌤</span> Tu día de hoy</h2>
+      <!-- Plan de hoy compacto — SIN duplicar los stats del perfil/estadísticas. -->
+      <article class="card card-hoy">
+        <div class="card-head">
+          <h2><span class="section-sun" aria-hidden="true">🌤</span> Plan de hoy</h2>
           <button class="chip chip-outline" data-goto="plan">
-            <span class="chip-ico">📅</span> Ver plan
+            <span class="chip-ico">📅</span> Ver semana
           </button>
         </div>
+        <div class="progress progress-lg progress-hoy">
+          <span class="progress-title">
+            <span data-hoy-done>0</span> de <span data-hoy-tot>0</span> bloques hechos
+          </span>
+          <div class="progress-bar"><span data-hoy-fill style="width:0%"></span></div>
+          <span class="progress-label"><span data-hoy-pct>0</span>%</span>
+        </div>
         <ul class="list list-hoy" data-hoy></ul>
-      </section>
-
-      <section class="stats-row">
-        <div class="stat">
-          <span class="stat-ico">☀️</span>
-          <div><strong data-racha2>0</strong><span>días<br>Racha</span></div>
-        </div>
-        <div class="stat">
-          <span class="stat-ico">⏱️</span>
-          <div><strong data-minutos>0m</strong><span>esta semana</span></div>
-        </div>
-        <div class="stat">
-          <span class="stat-ico">🎯</span>
-          <div><strong data-pct>0%</strong><span>completado</span></div>
-        </div>
-      </section>
+      </article>
     </section>
+  </template>
+
+  <!-- ─────────────────────── MODAL: oposiciones matriculadas ─────────────────────── -->
+  <template id="tpl-modal-oposiciones">
+    <div class="modal-backdrop" data-modal>
+      <div class="modal">
+        <button class="modal-close" data-modal-close aria-label="Cerrar">×</button>
+        <h2>Tus oposiciones</h2>
+        <p class="muted small">La marcada es la activa. Toca otra para cambiar.</p>
+        <ul class="opos-lista" data-opos-lista></ul>
+        <button class="btn btn-outline btn-block" data-opos-add style="margin-top:var(--sp-3)">
+          ➕ Añadir otra oposición
+        </button>
+      </div>
+    </div>
   </template>
 
   <!-- ─────────────────────── PLAN ─────────────────────── -->
