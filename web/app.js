@@ -42,6 +42,7 @@ const routes = {
   unidad:         renderUnidad,
   admin:          renderAdmin,
   administracion: renderAdministracion,
+  editar:         renderEditar,
   estudio:        renderEstudio,
   reset:          renderReset,
 };
@@ -127,7 +128,7 @@ function updateNav(name) {
   const map = { home:'home', plan:'plan', stats:'stats', perfil:'perfil' };
   const target = map[name];
   const nav = $('.bottom-nav');
-  if (!nav || ['auth','verify','reset','onboarding','wizard','unidad','admin','administracion','estudio'].includes(name)) {
+  if (!nav || ['auth','verify','reset','onboarding','wizard','unidad','admin','administracion','editar','estudio'].includes(name)) {
     if (nav) nav.remove();
     return;
   }
@@ -1182,7 +1183,7 @@ async function renderAdmin() {
     ul.innerHTML = opos.map(o => `
       <li data-id="${o.id}">
         <div>
-          <span class="op-titulo">${escapeHtml(o.nombre)}</span>
+          <a class="op-titulo" href="#/editar/${o.id}">${escapeHtml(o.nombre)}</a>
           <span class="op-org">${escapeHtml(o.organismo || '—')}</span>
         </div>
         <div class="op-form">
@@ -1600,6 +1601,377 @@ async function renderPreguntasRepaso(cuerpo, ids) {
     $('[data-next]', cont).addEventListener('click', () => { idx++; pintar(); });
   }
   pintar();
+}
+
+
+// ══════════════════════════════════════════════════════════════════════
+// EDITOR VISUAL DE OPOSICIONES
+// ══════════════════════════════════════════════════════════════════════
+// Ruta: #/editar/<oposicion_id>
+// Navegación jerárquica (temas → unidades → preguntas) usando paneles
+// que se muestran/ocultan. Cada mutación va vía RPCs admin_*.
+
+const _ed = {
+  oposicionId: null,
+  oposicionNombre: '',
+  temaId: null,
+  temaNombre: '',
+  unidadId: null,
+};
+
+async function renderEditar(r) {
+  if (!state.session?.es_admin) {
+    toast('Sólo admin'); location.hash = '#/perfil'; return;
+  }
+  const oposicionId = r.params?.id;
+  if (!oposicionId) { location.hash = '#/administracion'; return; }
+  _ed.oposicionId = oposicionId;
+  _ed.temaId = _ed.unidadId = null;
+
+  mount('tpl-editar');
+  const root = $('.view-editar');
+  $('[data-back]', root).addEventListener('click', () => {
+    if (_ed.unidadId)     { _ed.unidadId = null; edMostrar('unidades'); return; }
+    if (_ed.temaId)       { _ed.temaId = null;   edMostrar('temas'); return; }
+    location.hash = '#/administracion';
+  });
+
+  // Cargar nombre de la oposición.
+  try {
+    const rop = await fetch('/api/oposiciones?id=eq.' + oposicionId + '&select=nombre',
+                             { headers: authHeaders() });
+    const arr = rop.ok ? await rop.json() : [];
+    _ed.oposicionNombre = arr[0]?.nombre || 'Oposición';
+    $('[data-op-nombre]', root).textContent = _ed.oposicionNombre;
+  } catch (_) {}
+
+  edMostrar('temas');
+  cargarTemas();
+}
+
+function edCrumbs() {
+  const c = $('[data-crumbs]');
+  if (!c) return;
+  const bits = [
+    `<a href="#/administracion">Admin</a>`,
+    `<span class="sep">›</span>`,
+    `<a href="#/editar/${_ed.oposicionId}">${escapeHtml(_ed.oposicionNombre)}</a>`,
+  ];
+  if (_ed.temaId) {
+    bits.push('<span class="sep">›</span>',
+              `<span>${escapeHtml(_ed.temaNombre)}</span>`);
+  }
+  if (_ed.unidadId) {
+    bits.push('<span class="sep">›</span>', '<span>Unidad</span>');
+  }
+  c.innerHTML = bits.join(' ');
+}
+
+function edMostrar(panel) {
+  ['temas','unidades','unidad','pregunta'].forEach(p => {
+    const el = $('[data-panel-' + p + ']');
+    if (el) el.hidden = (p !== panel);
+  });
+  edCrumbs();
+}
+
+async function cargarTemas() {
+  const ul = $('[data-lista-temas]');
+  let temas = [];
+  try {
+    temas = await S.rpc('admin_temas_de_oposicion',
+      { p_oposicion_id: _ed.oposicionId }, { api: '/api' });
+  } catch (_) {}
+  ul.innerHTML = (temas || []).map(t => `
+    <li class="editable-item" data-tid="${t.tema_id}" data-tnom="${escapeHtml(t.nombre)}">
+      <div>
+        <strong>${t.icono || '📘'} ${escapeHtml(t.nombre)}
+          <span class="muted small">· orden ${t.orden}</span></strong>
+        <span class="muted">${t.num_unidades} unidades · ${t.num_preguntas} preguntas</span>
+      </div>
+      <div class="ed-actions">
+        <button class="btn btn-mini btn-outline" data-quitar>Quitar</button>
+      </div>
+    </li>`).join('') ||
+    '<li class="muted">Aún no hay temas. Añade uno con el botón "+ Tema".</li>';
+
+  $$('li[data-tid]', ul).forEach(li => {
+    li.addEventListener('click', ev => {
+      if (ev.target.closest('[data-quitar]')) return;
+      _ed.temaId = li.dataset.tid;
+      _ed.temaNombre = li.dataset.tnom;
+      edMostrar('unidades');
+      $('[data-tema-titulo]').textContent = 'Unidades — ' + _ed.temaNombre;
+      cargarUnidades();
+    });
+    $('[data-quitar]', li).addEventListener('click', async () => {
+      if (!confirm('¿Quitar este tema de la oposición? (Los datos del tema no se borran.)')) return;
+      try {
+        await S.rpc('admin_desvincular_tema',
+          { p_oposicion_id: _ed.oposicionId, p_tema_id: li.dataset.tid },
+          { api: '/api' });
+        cargarTemas();
+      } catch (e) { toast(e.message); }
+    });
+  });
+
+  $('[data-nuevo-tema]').onclick = () => modalNuevoTema();
+}
+
+function modalNuevoTema() {
+  const tpl = document.getElementById('tpl-modal-tema');
+  document.body.appendChild(tpl.content.cloneNode(true));
+  const back = $('.modal-backdrop:last-of-type');
+  const form = $('[data-form]', back);
+  const cerrar = () => back.remove();
+  $('[data-modal-close]', back).addEventListener('click', cerrar);
+  back.addEventListener('click', ev => { if (ev.target === back) cerrar(); });
+
+  form.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    try {
+      await S.rpc('admin_upsert_tema', {
+        p_tema_id:      null,
+        p_slug:         form.slug.value.trim(),
+        p_nombre:       form.nombre.value.trim(),
+        p_icono:        form.icono.value.trim() || '📘',
+        p_oposicion_id: _ed.oposicionId,
+      }, { api: '/api' });
+      cerrar();
+      cargarTemas();
+    } catch (e) { toast('Error: ' + e.message); }
+  });
+}
+
+async function cargarUnidades() {
+  const ul = $('[data-lista-unidades]');
+  let unids = [];
+  try {
+    unids = await S.rpc('admin_unidades_de_tema',
+      { p_tema_id: _ed.temaId }, { api: '/api' });
+  } catch (_) {}
+  ul.innerHTML = (unids || []).map(u => `
+    <li class="editable-item" data-uid="${u.id}">
+      <div>
+        <strong>#${u.orden} · ${escapeHtml(u.nombre)}</strong>
+        <span class="muted">${u.num_preguntas} preguntas · ${u.minutos_est} min</span>
+      </div>
+      <div class="ed-actions">
+        <button class="btn btn-mini btn-outline" data-borrar>Borrar</button>
+      </div>
+    </li>`).join('') ||
+    '<li class="muted">Sin unidades todavía. Añade una con "+ Unidad".</li>';
+
+  $$('li[data-uid]', ul).forEach(li => {
+    li.addEventListener('click', ev => {
+      if (ev.target.closest('[data-borrar]')) return;
+      _ed.unidadId = li.dataset.uid;
+      edMostrar('unidad');
+      abrirEditorUnidad(li.dataset.uid);
+    });
+    $('[data-borrar]', li).addEventListener('click', async () => {
+      if (!confirm('¿Borrar esta unidad y todas sus preguntas?')) return;
+      try {
+        await S.rpc('admin_borrar_unidad',
+          { p_unidad_id: li.dataset.uid }, { api: '/api' });
+        cargarUnidades();
+      } catch (e) { toast(e.message); }
+    });
+  });
+
+  $('[data-nueva-unidad]').onclick = async () => {
+    _ed.unidadId = null;
+    edMostrar('unidad');
+    abrirEditorUnidad(null);
+  };
+}
+
+async function abrirEditorUnidad(unidadId) {
+  const form = $('[data-form-unidad]');
+  const titulo = $('[data-unidad-titulo-edit]');
+  // Estado por defecto: crear nueva.
+  form.nombre.value = ''; form.slug.value = '';
+  form.orden.value = 1; form.minutos_est.value = 20;
+  form.resumen.value = ''; form.teoria_md.value = '';
+
+  if (unidadId) {
+    try {
+      const arr = await S.rpc('admin_unidades_de_tema',
+        { p_tema_id: _ed.temaId }, { api: '/api' });
+      const u = (arr || []).find(x => x.id === unidadId);
+      if (u) {
+        form.nombre.value = u.nombre || '';
+        form.slug.value = u.slug || '';
+        form.orden.value = u.orden || 1;
+        form.minutos_est.value = u.minutos_est || 20;
+        form.resumen.value = u.resumen || '';
+        form.teoria_md.value = u.teoria_md || '';
+        titulo.textContent = 'Editar — ' + u.nombre;
+      }
+    } catch (_) {}
+    cargarPreguntas(unidadId);
+  } else {
+    titulo.textContent = 'Nueva unidad';
+    $('[data-lista-preguntas]').innerHTML =
+      '<li class="muted">Guarda la unidad primero para añadir preguntas.</li>';
+  }
+
+  $('[data-guardar-unidad]').onclick = async () => {
+    try {
+      const r = await S.rpc('admin_upsert_unidad', {
+        p_unidad_id:   unidadId,
+        p_tema_id:     _ed.temaId,
+        p_slug:        form.slug.value.trim(),
+        p_nombre:      form.nombre.value.trim(),
+        p_orden:       parseInt(form.orden.value, 10) || 1,
+        p_teoria_md:   form.teoria_md.value,
+        p_resumen:     form.resumen.value.trim() || null,
+        p_minutos_est: parseInt(form.minutos_est.value, 10) || 20,
+      }, { api: '/api' });
+      toast('Unidad guardada');
+      if (!unidadId && r?.unidad_id) {
+        _ed.unidadId = r.unidad_id;
+        abrirEditorUnidad(r.unidad_id);
+      }
+    } catch (e) { toast('Error: ' + e.message); }
+  };
+
+  $('[data-nueva-pregunta]').onclick = () => {
+    if (!_ed.unidadId) return toast('Guarda la unidad primero');
+    edMostrar('pregunta');
+    abrirEditorPregunta(null);
+  };
+}
+
+async function cargarPreguntas(unidadId) {
+  const ul = $('[data-lista-preguntas]');
+  let pregs = [];
+  try {
+    pregs = await S.rpc('admin_preguntas_de_unidad',
+      { p_unidad_id: unidadId }, { api: '/api' });
+  } catch (_) {}
+  ul.innerHTML = (pregs || []).map(p => `
+    <li class="editable-item" data-pid="${p.id}">
+      <div>
+        <strong>${escapeHtml((p.enunciado || '').slice(0, 100))}${(p.enunciado || '').length > 100 ? '…' : ''}</strong>
+        <span class="muted">${(p.opciones || []).length} opciones · dif ${p.dificultad || 2}</span>
+      </div>
+      <div class="ed-actions">
+        <button class="btn btn-mini btn-outline" data-borrar-preg>Borrar</button>
+      </div>
+    </li>`).join('') ||
+    '<li class="muted">Sin preguntas todavía. Añade una con "+ Pregunta".</li>';
+
+  $$('li[data-pid]', ul).forEach(li => {
+    li.addEventListener('click', ev => {
+      if (ev.target.closest('[data-borrar-preg]')) return;
+      edMostrar('pregunta');
+      abrirEditorPregunta(li.dataset.pid);
+    });
+    $('[data-borrar-preg]', li).addEventListener('click', async () => {
+      if (!confirm('¿Borrar pregunta?')) return;
+      try {
+        await S.rpc('admin_borrar_pregunta',
+          { p_pregunta_id: li.dataset.pid }, { api: '/api' });
+        cargarPreguntas(unidadId);
+      } catch (e) { toast(e.message); }
+    });
+  });
+}
+
+async function abrirEditorPregunta(preguntaId) {
+  const form = $('[data-form-pregunta]');
+  const titulo = $('[data-preg-titulo]');
+  const opsUl  = $('[data-opciones]');
+  form.enunciado.value = ''; form.explicacion.value = '';
+  form.dificultad.value = 2;
+  opsUl.innerHTML = '';
+
+  const pintarOpciones = (arr) => {
+    opsUl.innerHTML = arr.map((o, i) => `
+      <li data-i="${i}">
+        <input type="radio" name="correcta" ${o.correcta ? 'checked' : ''}>
+        <input type="text" value="${escapeHtml(o.texto || '')}" placeholder="Texto de la opción">
+        <button type="button" class="op-borrar" aria-label="Borrar">×</button>
+      </li>`).join('');
+    $$('li', opsUl).forEach((li, i) => {
+      const inputText = li.querySelector('input[type=text]');
+      const radio = li.querySelector('input[type=radio]');
+      const upd = () => {
+        radio.addEventListener('change', () => {
+          $$('input[type=text]', opsUl).forEach(x => x.classList.remove('correcta'));
+          inputText.classList.add('correcta');
+        });
+        if (radio.checked) inputText.classList.add('correcta');
+      };
+      upd();
+      li.querySelector('.op-borrar').addEventListener('click', () => {
+        arr.splice(i, 1);
+        pintarOpciones(arr.length ? arr : [{ texto: '', correcta: true }]);
+      });
+    });
+  };
+
+  let opciones = [
+    { texto: '', correcta: true },
+    { texto: '', correcta: false },
+    { texto: '', correcta: false },
+    { texto: '', correcta: false },
+  ];
+
+  if (preguntaId) {
+    try {
+      const arr = await S.rpc('admin_preguntas_de_unidad',
+        { p_unidad_id: _ed.unidadId }, { api: '/api' });
+      const p = (arr || []).find(x => x.id === preguntaId);
+      if (p) {
+        form.enunciado.value = p.enunciado || '';
+        form.explicacion.value = p.explicacion || '';
+        form.dificultad.value = p.dificultad || 2;
+        opciones = (p.opciones || []).map(o => ({
+          texto: o.texto || '', correcta: !!o.correcta
+        }));
+        if (!opciones.length) opciones.push({ texto: '', correcta: true });
+        titulo.textContent = 'Editar pregunta';
+      }
+    } catch (_) {}
+  } else {
+    titulo.textContent = 'Nueva pregunta';
+  }
+  pintarOpciones(opciones);
+
+  $('[data-add-opcion]').onclick = () => {
+    // Lee valores actuales del DOM y añade una nueva vacía.
+    const arr = leerOpcionesDom();
+    arr.push({ texto: '', correcta: false });
+    pintarOpciones(arr);
+  };
+
+  function leerOpcionesDom() {
+    return $$('li', opsUl).map(li => ({
+      texto: li.querySelector('input[type=text]').value.trim(),
+      correcta: li.querySelector('input[type=radio]').checked,
+    })).filter(o => o.texto);
+  }
+
+  $('[data-guardar-pregunta]').onclick = async () => {
+    const arr = leerOpcionesDom();
+    if (arr.length < 2) return toast('Al menos 2 opciones con texto');
+    if (!arr.some(o => o.correcta)) return toast('Marca la opción correcta');
+    try {
+      const r = await S.rpc('admin_upsert_pregunta', {
+        p_pregunta_id: preguntaId,
+        p_unidad_id:   _ed.unidadId,
+        p_enunciado:   form.enunciado.value.trim(),
+        p_opciones:    arr,
+        p_explicacion: form.explicacion.value.trim() || null,
+        p_dificultad:  parseInt(form.dificultad.value, 10) || 2,
+      }, { api: '/api' });
+      toast('Pregunta guardada');
+      _ed.unidadId && cargarPreguntas(_ed.unidadId);
+      edMostrar('unidad');
+    } catch (e) { toast('Error: ' + e.message); }
+  };
 }
 
 

@@ -15,14 +15,23 @@ Ciclo por tick (TICK_SECONDS, por defecto 60 s):
      - 404/410 desactiva la suscripción (el navegador la tiró).
   3. Marca la fila como enviada o incrementa `intentos` con `ultimo_error`.
 
+Además del envío, actúa como CRON INTERNO llamando a las RPCs
+programadas de la BBDD:
+  - Cada `ENCOLAR_MINUTOS` (default 15 min) → `encolar_notificaciones_diarias()`
+    (avisos a inactivos + resumen dominical).
+  - Los lunes a las 3:00 UTC → `cron_semanal()` (calcula métricas
+    semanales de todos y aplica ajuste de carga).
+
 Variables de entorno:
-  DATABASE_URL       postgres://aprentix@db-<alias>:5432/<db_name>
-  PGPASSWORD         contraseña del rol de conexión
-  VAPID_PRIVATE_KEY  clave privada VAPID (PEM con saltos reales o "\\n")
-  VAPID_PUBLIC_KEY   solo para log (opcional)
-  VAPID_SUBJECT      mailto:soporte@aprentix.es
-  TICK_SECONDS       intervalo entre ciclos (default 300)
-  BATCH_LIMIT        máximo de mensajes por tick (default 500)
+  DATABASE_URL         postgres://aprentix@db-<alias>:5432/<db_name>
+  PGPASSWORD           contraseña del rol de conexión
+  VAPID_PRIVATE_KEY    clave privada VAPID (PEM con saltos reales o "\\n")
+  VAPID_PUBLIC_KEY     solo para log (opcional)
+  VAPID_SUBJECT        mailto:soporte@aprentix.es
+  TICK_SECONDS         intervalo del envío de push (default 300)
+  BATCH_LIMIT          máximo de mensajes por tick (default 500)
+  ENCOLAR_MINUTOS      cada cuánto encolar avisos (default 15)
+  CRON_SEMANAL_HORA    hora UTC del cron semanal (default 3)
 """
 
 from __future__ import annotations
@@ -68,6 +77,8 @@ VAPID_PRIVATE_KEY = _normalizar_vapid_key(os.environ["VAPID_PRIVATE_KEY"])
 VAPID_SUBJECT     = os.environ.get("VAPID_SUBJECT", "mailto:soporte@aprentix.es")
 TICK_SECONDS      = int(os.environ.get("TICK_SECONDS", "300"))
 BATCH_LIMIT       = int(os.environ.get("BATCH_LIMIT", "500"))
+ENCOLAR_MINUTOS   = int(os.environ.get("ENCOLAR_MINUTOS", "15"))
+CRON_SEMANAL_HORA = int(os.environ.get("CRON_SEMANAL_HORA", "3"))
 
 
 logging.basicConfig(
@@ -167,9 +178,42 @@ def _tick(cn: psycopg.Connection) -> int:
     return entregados
 
 
+def _encolar_avisos(cn: psycopg.Connection) -> int:
+    """Llama a la RPC que genera las filas de cola_push para
+    inactivos + resumen dominical. Devuelve nº encolado."""
+    try:
+        with cn.cursor() as cur:
+            cur.execute("SELECT encolar_notificaciones_diarias()")
+            n = cur.fetchone()[0]
+        cn.commit()
+        if n:
+            log.info("encolar_notificaciones_diarias → %s avisos", n)
+        return int(n or 0)
+    except Exception as e:  # noqa: BLE001
+        cn.rollback()
+        log.warning("fallo encolar_notificaciones_diarias: %s", e)
+        return 0
+
+
+def _cron_semanal(cn: psycopg.Connection) -> None:
+    """Ejecuta métricas + ajuste de carga los lunes a la hora
+    configurada. Silencioso si ya se hizo hoy."""
+    try:
+        with cn.cursor() as cur:
+            cur.execute("SELECT cron_semanal()")
+            row = cur.fetchone()
+        cn.commit()
+        log.info("cron_semanal → %s", row[0] if row else "-")
+    except Exception as e:  # noqa: BLE001
+        cn.rollback()
+        log.warning("fallo cron_semanal: %s", e)
+
+
 def main() -> int:
-    log.info("arranca notificador subject=%s batch_limit=%s tick=%ss",
-             VAPID_SUBJECT, BATCH_LIMIT, TICK_SECONDS)
+    log.info(
+        "arranca notificador subject=%s batch_limit=%s tick=%ss encolar_cada=%smin cron_semanal=lunes-%sh",
+        VAPID_SUBJECT, BATCH_LIMIT, TICK_SECONDS, ENCOLAR_MINUTOS, CRON_SEMANAL_HORA,
+    )
 
     stop = {"flag": False}
     def _handler(signum, _frame):  # noqa: ARG001
@@ -178,11 +222,32 @@ def main() -> int:
     signal.signal(signal.SIGTERM, _handler)
     signal.signal(signal.SIGINT,  _handler)
 
+    encolar_seg = ENCOLAR_MINUTOS * 60
+    last_encolar = 0.0
+    ultimo_dia_cron = None            # (year, isoweek) evita repetir
+
     while not stop["flag"]:
         try:
             with psycopg.connect(DATABASE_URL, autocommit=False) as cn:
                 while not stop["flag"]:
+                    ahora = time.time()
+
+                    # 1) Envío de push pendientes.
                     _tick(cn)
+
+                    # 2) Encolar avisos cada ENCOLAR_MINUTOS.
+                    if ahora - last_encolar >= encolar_seg:
+                        _encolar_avisos(cn)
+                        last_encolar = ahora
+
+                    # 3) Cron semanal (lunes a las CRON_SEMANAL_HORA UTC).
+                    tm = time.gmtime(ahora)
+                    if tm.tm_wday == 0 and tm.tm_hour == CRON_SEMANAL_HORA:
+                        clave = (tm.tm_year, tm.tm_yday)
+                        if clave != ultimo_dia_cron:
+                            _cron_semanal(cn)
+                            ultimo_dia_cron = clave
+
                     time.sleep(TICK_SECONDS)
         except psycopg.OperationalError as e:
             log.error("BBDD inalcanzable (%s); reintento en 10 s", e)

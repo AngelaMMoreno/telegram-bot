@@ -764,6 +764,112 @@
     </div>
   </template>
 
+  <!-- ─────────────────────── EDITOR DE OPOSICIÓN (temas > unidades > preguntas) ─────────────────────── -->
+  <template id="tpl-editar">
+    <section class="view view-editar">
+      <header class="top-bar">
+        <button class="btn btn-ghost btn-mini" data-back>‹</button>
+        <h1 class="admin-title" data-op-nombre>Editor</h1>
+        <span></span>
+      </header>
+
+      <!-- Migas de pan (Oposición > Tema > Unidad) -->
+      <nav class="crumbs" data-crumbs></nav>
+
+      <div class="editor-panel" data-panel-temas>
+        <div class="card-head">
+          <h2>Temas</h2>
+          <button class="btn btn-mini btn-primary" data-nuevo-tema>+ Tema</button>
+        </div>
+        <ul class="editor-list" data-lista-temas></ul>
+      </div>
+
+      <div class="editor-panel" data-panel-unidades hidden>
+        <div class="card-head">
+          <h2 data-tema-titulo>Unidades</h2>
+          <button class="btn btn-mini btn-primary" data-nueva-unidad>+ Unidad</button>
+        </div>
+        <ul class="editor-list" data-lista-unidades></ul>
+      </div>
+
+      <div class="editor-panel" data-panel-unidad hidden>
+        <div class="card-head">
+          <h2 data-unidad-titulo-edit>Editar unidad</h2>
+          <button class="btn btn-mini" data-guardar-unidad>Guardar</button>
+        </div>
+        <form data-form-unidad>
+          <div class="field-row">
+            <label class="field"><span class="field-lbl">Nombre</span>
+              <input class="input" name="nombre" required></label>
+            <label class="field"><span class="field-lbl">Slug</span>
+              <input class="input" name="slug" required></label>
+          </div>
+          <div class="field-row">
+            <label class="field"><span class="field-lbl">Orden</span>
+              <input class="input" name="orden" type="number" min="1" value="1"></label>
+            <label class="field"><span class="field-lbl">Min estimado</span>
+              <input class="input" name="minutos_est" type="number" min="1" value="20"></label>
+          </div>
+          <label class="field"><span class="field-lbl">Resumen (opcional)</span>
+            <input class="input" name="resumen"></label>
+          <label class="field"><span class="field-lbl">Teoría (Markdown)</span>
+            <textarea class="input" name="teoria_md" rows="10" spellcheck="false"
+                       style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:var(--fs-sm)"></textarea>
+          </label>
+        </form>
+
+        <div class="card-head" style="margin-top:var(--sp-3)">
+          <h2>Preguntas</h2>
+          <button class="btn btn-mini btn-primary" data-nueva-pregunta>+ Pregunta</button>
+        </div>
+        <ul class="editor-list" data-lista-preguntas></ul>
+      </div>
+
+      <div class="editor-panel" data-panel-pregunta hidden>
+        <div class="card-head">
+          <h2 data-preg-titulo>Editar pregunta</h2>
+          <button class="btn btn-mini" data-guardar-pregunta>Guardar</button>
+        </div>
+        <form data-form-pregunta>
+          <label class="field"><span class="field-lbl">Enunciado</span>
+            <textarea class="input" name="enunciado" rows="3" required></textarea></label>
+          <label class="field"><span class="field-lbl">Explicación (opcional)</span>
+            <textarea class="input" name="explicacion" rows="2"></textarea></label>
+          <div class="field-row">
+            <label class="field"><span class="field-lbl">Dificultad (1-5)</span>
+              <input class="input" name="dificultad" type="number" min="1" max="5" value="2"></label>
+          </div>
+          <div class="field">
+            <span class="field-lbl">Opciones (marca la correcta)</span>
+            <ul class="opciones-lista" data-opciones></ul>
+            <button class="btn btn-mini btn-outline" type="button" data-add-opcion>+ Añadir opción</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </template>
+
+  <!-- ─────────────────────── MODAL: añadir tema ─────────────────────── -->
+  <template id="tpl-modal-tema">
+    <div class="modal-backdrop" data-modal>
+      <div class="modal">
+        <button class="modal-close" data-modal-close aria-label="Cerrar">×</button>
+        <h2>Nuevo tema</h2>
+        <p class="muted small">Si el slug ya existe, se enlazará el tema existente.</p>
+        <form data-form>
+          <label class="field"><span class="field-lbl">Nombre</span>
+            <input class="input" name="nombre" required></label>
+          <label class="field"><span class="field-lbl">Slug</span>
+            <input class="input" name="slug" required
+                   pattern="[a-z0-9-]+" title="minúsculas, números y guiones"></label>
+          <label class="field"><span class="field-lbl">Icono (emoji)</span>
+            <input class="input" name="icono" value="📘" maxlength="4"></label>
+          <button class="btn btn-primary btn-block" type="submit">Añadir</button>
+        </form>
+      </div>
+    </div>
+  </template>
+
   <!-- ─────────────────────── ADMINISTRACIÓN (importar oposiciones) ─────────────────────── -->
   <template id="tpl-administracion">
     <section class="view view-administracion">

@@ -22,6 +22,8 @@ services:
       TICK_SECONDS:      ${TICK_SECONDS:-300}
       BATCH_LIMIT:       ${BATCH_LIMIT:-500}
       LOG_LEVEL:         ${LOG_LEVEL:-INFO}
+      ENCOLAR_MINUTOS:   ${ENCOLAR_MINUTOS:-15}
+      CRON_SEMANAL_HORA: ${CRON_SEMANAL_HORA:-3}
     restart: unless-stopped
     networks:
       dokploy-network:

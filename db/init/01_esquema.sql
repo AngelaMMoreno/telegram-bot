@@ -2603,43 +2603,80 @@ LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
     v_n int := 0;
     r   record;
+    v_msg text;
+    v_repasos int;
+    v_horas_inact int;
 BEGIN
     -- Recordatorio de estudio: activos, verificados, con plan, sin
-    -- sesión en las últimas 24 h.
+    -- sesión en las últimas 24 h. El mensaje se personaliza según:
+    --   - horas de inactividad (24h vs 3 días)
+    --   - preguntas vencidas de repaso (SM-2)
+    -- No se encola si ya hay una push sin enviar en las últimas 20 h
+    -- (evita ruido para el mismo usuario).
     FOR r IN
-        SELECT u.id, u.nombre
+        SELECT u.id, u.nombre,
+               COALESCE(EXTRACT(EPOCH FROM (now() - MAX(s.abierta_en))) / 3600, 999)::int
+                 AS horas_inact,
+               (SELECT count(*) FROM repasos_pregunta rp
+                 WHERE rp.usuario_id = u.id
+                   AND rp.siguiente_repaso <= now()) AS repasos_pend
           FROM usuarios u
           JOIN plan_estudio p ON p.usuario_id = u.id AND p.activo
+     LEFT JOIN sesiones_estudio s ON s.usuario_id = u.id
          WHERE u.activo AND u.email_verificado
            AND NOT EXISTS (
-                SELECT 1 FROM sesiones_estudio s
-                 WHERE s.usuario_id = u.id
-                   AND s.abierta_en > now() - interval '24 hours')
+                SELECT 1 FROM sesiones_estudio s2
+                 WHERE s2.usuario_id = u.id
+                   AND s2.abierta_en > now() - interval '24 hours')
            AND NOT EXISTS (
                 SELECT 1 FROM cola_push cp
                  WHERE cp.usuario_id = u.id
                    AND cp.encolado_en > now() - interval '20 hours'
                    AND cp.enviado_en IS NULL)
+         GROUP BY u.id, u.nombre
     LOOP
+        v_repasos := COALESCE(r.repasos_pend, 0);
+        v_horas_inact := r.horas_inact;
+
+        v_msg := CASE
+            WHEN v_repasos > 0 AND v_horas_inact >= 72 THEN
+                'Tienes ' || v_repasos || ' pregunta' ||
+                CASE WHEN v_repasos = 1 THEN '' ELSE 's' END ||
+                ' pendiente de repaso. Te echamos de menos.'
+            WHEN v_repasos > 0 THEN
+                'Tienes ' || v_repasos || ' pregunta' ||
+                CASE WHEN v_repasos = 1 THEN '' ELSE 's' END ||
+                ' esperando el repaso de hoy.'
+            WHEN v_horas_inact >= 72 THEN
+                'Han pasado varios días. Un bloque corto y no perdemos ritmo.'
+            ELSE
+                'Un bloque corto de estudio hoy suma mucho. ¿Le damos?'
+        END;
+
         INSERT INTO cola_push(usuario_id, titulo, cuerpo, url)
         VALUES (r.id,
-                'Te esperamos, ' || r.nombre,
-                'Un bloque corto de estudio hoy suma mucho. ¿Le damos?',
+                'Te esperamos, ' || COALESCE(r.nombre, ''),
+                v_msg,
                 app_url());
         v_n := v_n + 1;
     END LOOP;
 
-    -- Domingos: resumen + objetivos.
+    -- Domingos: resumen + objetivos siguiente semana.
     IF EXTRACT(ISODOW FROM current_date)::int = 7 THEN
         FOR r IN
             SELECT u.id, u.nombre
               FROM usuarios u
               JOIN plan_estudio p ON p.usuario_id = u.id AND p.activo
              WHERE u.activo AND u.email_verificado
+               AND NOT EXISTS (
+                    SELECT 1 FROM cola_push cp
+                     WHERE cp.usuario_id = u.id
+                       AND cp.encolado_en > now() - interval '20 hours'
+                       AND cp.enviado_en IS NULL)
         LOOP
             INSERT INTO cola_push(usuario_id, titulo, cuerpo, url)
             VALUES (r.id,
-                    'Nueva semana, ' || r.nombre,
+                    'Nueva semana, ' || COALESCE(r.nombre, ''),
                     'Vamos a revisar cómo fue la semana y qué toca ahora.',
                     app_url());
             v_n := v_n + 1;
@@ -2647,6 +2684,42 @@ BEGIN
     END IF;
 
     RETURN v_n;
+END $$;
+
+-- Aplica el recálculo semanal para TODOS los usuarios activos.
+-- Se llama desde el notificador los lunes de madrugada.
+CREATE OR REPLACE FUNCTION cron_semanal() RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+    r record;
+    v_metrica int := 0;
+    v_ajuste  int := 0;
+BEGIN
+    FOR r IN
+        SELECT u.id FROM usuarios u
+          JOIN plan_estudio p ON p.usuario_id = u.id AND p.activo
+         WHERE u.activo
+    LOOP
+        -- Simula el contexto JWT del usuario para llamar a las RPCs
+        -- basadas en jwt_usuario_id().  Al ser SECURITY DEFINER puede
+        -- hacerlo con set_config.
+        PERFORM set_config('request.jwt.claims',
+                            jsonb_build_object('sub', r.id, 'roles', ARRAY[]::text[])::text,
+                            true);
+        BEGIN
+            PERFORM calcular_metricas_semanales();
+            v_metrica := v_metrica + 1;
+            PERFORM ajustar_carga_semanal();
+            v_ajuste  := v_ajuste + 1;
+        EXCEPTION WHEN OTHERS THEN
+            -- ignora fallos individuales para no abortar el batch
+            NULL;
+        END;
+    END LOOP;
+    -- Limpia claim para no afectar a llamadas posteriores.
+    PERFORM set_config('request.jwt.claims', '', true);
+    RETURN jsonb_build_object('metricas_calculadas', v_metrica,
+                              'planes_ajustados',    v_ajuste);
 END $$;
 
 
@@ -2738,6 +2811,221 @@ BEGIN
            activa                   = COALESCE(p_activa, activa)
      WHERE id = p_oposicion_id;
     RETURN jsonb_build_object('ok', true);
+END $$;
+
+
+-- =============================================================================
+--              EDITOR VISUAL DE OPOSICIONES — RPCs admin
+-- =============================================================================
+-- Estas RPCs son azúcar sintáctico sobre INSERT/UPDATE/DELETE que ya
+-- están cubiertos por RLS.  La ventaja es que devuelven el objeto
+-- completo tras cada mutación y validan `es_admin()` en un solo
+-- lugar (evita depender de los policies para 40 llamadas del editor).
+
+-- ── TEMAS ─────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION admin_temas_de_oposicion(p_oposicion_id uuid)
+RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'tema_id',       t.id,
+        'slug',          t.slug,
+        'nombre',        t.nombre,
+        'icono',         t.icono,
+        'descripcion',   t.descripcion,
+        'orden',         ot.orden,
+        'num_unidades',  (SELECT count(*) FROM unidades u WHERE u.tema_id = t.id),
+        'num_preguntas', (SELECT count(*) FROM preguntas p
+                            JOIN unidades u ON u.id = p.unidad_id
+                           WHERE u.tema_id = t.id)
+    ) ORDER BY ot.orden), '[]'::jsonb)
+      FROM oposicion_temas ot
+      JOIN temas t ON t.id = ot.tema_id
+     WHERE ot.oposicion_id = p_oposicion_id;
+$$;
+
+-- Crea o actualiza un tema y opcionalmente lo vincula a la oposición
+-- (si `p_oposicion_id` es NULL, sólo crea/actualiza).
+CREATE OR REPLACE FUNCTION admin_upsert_tema(
+    p_tema_id      uuid    DEFAULT NULL,   -- NULL = crear
+    p_slug         text    DEFAULT NULL,
+    p_nombre       text    DEFAULT NULL,
+    p_descripcion  text    DEFAULT NULL,
+    p_icono        text    DEFAULT '📘',
+    p_oposicion_id uuid    DEFAULT NULL,
+    p_orden        int     DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE v_id uuid;
+BEGIN
+    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
+
+    IF p_tema_id IS NULL THEN
+        IF p_slug IS NULL OR p_nombre IS NULL THEN
+            RAISE EXCEPTION 'slug_y_nombre_requeridos';
+        END IF;
+        INSERT INTO temas(slug, nombre, descripcion, icono)
+        VALUES (p_slug, p_nombre, p_descripcion, COALESCE(p_icono, '📘'))
+        RETURNING id INTO v_id;
+    ELSE
+        v_id := p_tema_id;
+        UPDATE temas
+           SET slug        = COALESCE(p_slug, slug),
+               nombre      = COALESCE(p_nombre, nombre),
+               descripcion = COALESCE(p_descripcion, descripcion),
+               icono       = COALESCE(p_icono, icono)
+         WHERE id = v_id;
+    END IF;
+
+    IF p_oposicion_id IS NOT NULL THEN
+        INSERT INTO oposicion_temas(oposicion_id, tema_id, orden)
+        VALUES (p_oposicion_id, v_id,
+                COALESCE(p_orden,
+                    (SELECT COALESCE(max(orden), 0) + 1
+                       FROM oposicion_temas WHERE oposicion_id = p_oposicion_id)))
+        ON CONFLICT (oposicion_id, tema_id) DO UPDATE
+           SET orden = COALESCE(p_orden, oposicion_temas.orden);
+    END IF;
+
+    RETURN jsonb_build_object('tema_id', v_id);
+END $$;
+
+CREATE OR REPLACE FUNCTION admin_desvincular_tema(p_oposicion_id uuid, p_tema_id uuid)
+RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
+    DELETE FROM oposicion_temas
+     WHERE oposicion_id = p_oposicion_id AND tema_id = p_tema_id;
+END $$;
+
+CREATE OR REPLACE FUNCTION admin_reordenar_temas(
+    p_oposicion_id uuid, p_tema_ids uuid[]
+) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE i int;
+BEGIN
+    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
+    FOR i IN 1..cardinality(p_tema_ids) LOOP
+        UPDATE oposicion_temas
+           SET orden = i
+         WHERE oposicion_id = p_oposicion_id AND tema_id = p_tema_ids[i];
+    END LOOP;
+END $$;
+
+-- ── UNIDADES ─────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION admin_unidades_de_tema(p_tema_id uuid) RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'id',            u.id,
+        'slug',          u.slug,
+        'nombre',        u.nombre,
+        'orden',         u.orden,
+        'resumen',       u.resumen,
+        'minutos_est',   u.minutos_est,
+        'teoria_md',     u.teoria_md,
+        'num_preguntas', (SELECT count(*) FROM preguntas p WHERE p.unidad_id = u.id)
+    ) ORDER BY u.orden), '[]'::jsonb)
+      FROM unidades u WHERE u.tema_id = p_tema_id;
+$$;
+
+CREATE OR REPLACE FUNCTION admin_upsert_unidad(
+    p_unidad_id   uuid   DEFAULT NULL,
+    p_tema_id     uuid   DEFAULT NULL,
+    p_slug        text   DEFAULT NULL,
+    p_nombre      text   DEFAULT NULL,
+    p_orden       int    DEFAULT NULL,
+    p_teoria_md   text   DEFAULT NULL,
+    p_resumen     text   DEFAULT NULL,
+    p_minutos_est int    DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE v_id uuid;
+BEGIN
+    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
+    IF p_unidad_id IS NULL THEN
+        IF p_tema_id IS NULL OR p_slug IS NULL OR p_nombre IS NULL THEN
+            RAISE EXCEPTION 'tema_slug_nombre_requeridos';
+        END IF;
+        INSERT INTO unidades(tema_id, slug, nombre, orden,
+                             teoria_md, resumen, minutos_est)
+        VALUES (p_tema_id, p_slug, p_nombre,
+                COALESCE(p_orden,
+                    (SELECT COALESCE(max(orden), 0) + 1
+                       FROM unidades WHERE tema_id = p_tema_id)),
+                COALESCE(p_teoria_md, ''),
+                p_resumen,
+                COALESCE(p_minutos_est, 20))
+        RETURNING id INTO v_id;
+    ELSE
+        v_id := p_unidad_id;
+        UPDATE unidades
+           SET slug        = COALESCE(p_slug, slug),
+               nombre      = COALESCE(p_nombre, nombre),
+               orden       = COALESCE(p_orden, orden),
+               teoria_md   = COALESCE(p_teoria_md, teoria_md),
+               resumen     = COALESCE(p_resumen, resumen),
+               minutos_est = COALESCE(p_minutos_est, minutos_est)
+         WHERE id = v_id;
+    END IF;
+    RETURN jsonb_build_object('unidad_id', v_id);
+END $$;
+
+CREATE OR REPLACE FUNCTION admin_borrar_unidad(p_unidad_id uuid) RETURNS void
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
+    DELETE FROM unidades WHERE id = p_unidad_id;
+END $$;
+
+-- ── PREGUNTAS ────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION admin_preguntas_de_unidad(p_unidad_id uuid) RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'id',          p.id,
+        'enunciado',   p.enunciado,
+        'opciones',    p.opciones,
+        'explicacion', p.explicacion,
+        'dificultad',  p.dificultad
+    ) ORDER BY p.creada_en), '[]'::jsonb)
+      FROM preguntas p WHERE p.unidad_id = p_unidad_id;
+$$;
+
+CREATE OR REPLACE FUNCTION admin_upsert_pregunta(
+    p_pregunta_id uuid  DEFAULT NULL,
+    p_unidad_id   uuid  DEFAULT NULL,
+    p_enunciado   text  DEFAULT NULL,
+    p_opciones    jsonb DEFAULT NULL,
+    p_explicacion text  DEFAULT NULL,
+    p_dificultad  int   DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE v_id uuid;
+BEGIN
+    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
+    IF p_pregunta_id IS NULL THEN
+        IF p_unidad_id IS NULL OR p_enunciado IS NULL OR p_opciones IS NULL THEN
+            RAISE EXCEPTION 'unidad_enunciado_opciones_requeridos';
+        END IF;
+        INSERT INTO preguntas(unidad_id, enunciado, opciones,
+                              explicacion, dificultad)
+        VALUES (p_unidad_id, p_enunciado, p_opciones,
+                p_explicacion, COALESCE(p_dificultad, 2))
+        RETURNING id INTO v_id;
+    ELSE
+        v_id := p_pregunta_id;
+        UPDATE preguntas
+           SET enunciado   = COALESCE(p_enunciado, enunciado),
+               opciones    = COALESCE(p_opciones, opciones),
+               explicacion = COALESCE(p_explicacion, explicacion),
+               dificultad  = COALESCE(p_dificultad, dificultad)
+         WHERE id = v_id;
+    END IF;
+    RETURN jsonb_build_object('pregunta_id', v_id);
+END $$;
+
+CREATE OR REPLACE FUNCTION admin_borrar_pregunta(p_pregunta_id uuid) RETURNS void
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
+    DELETE FROM preguntas WHERE id = p_pregunta_id;
 END $$;
 
 

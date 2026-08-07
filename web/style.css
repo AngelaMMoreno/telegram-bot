@@ -801,3 +801,63 @@ p  { margin: 0; }
 .admin-opos .op-form   { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; }
 .admin-opos .op-form label { font-size: var(--fs-xs); display: flex; gap: 4px; align-items: center; color: var(--txt-soft); }
 .admin-opos input[type=date] { padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); }
+
+/* ─── Editor visual de oposiciones ────────────────────────────────── */
+.crumbs {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  font-size: var(--fs-sm);
+}
+.crumbs a, .crumbs span {
+  color: var(--pri-d);
+  text-decoration: none;
+  padding: 4px 10px;
+  background: var(--pri-soft);
+  border-radius: 999px;
+  font-weight: 600;
+}
+.crumbs span.sep { background: transparent; color: var(--txt-soft); padding: 4px 2px; }
+.crumbs a:hover { background: var(--pri-light); }
+
+.editor-panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-3);
+  box-shadow: var(--shadow-sm);
+}
+.editor-list {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.editor-list li {
+  display: grid; grid-template-columns: 1fr auto; gap: 8px;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-alt);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  align-items: center;
+}
+.editor-list li strong { display: block; font-size: var(--fs-sm); }
+.editor-list li .muted { font-size: var(--fs-xs); }
+.editor-list .ed-actions { display: flex; gap: 4px; }
+.editor-list .ed-actions button { font-size: var(--fs-xs); padding: 4px 8px; }
+.editor-list li.editable-item { cursor: pointer; transition: border-color .12s; }
+.editor-list li.editable-item:hover { border-color: var(--pri); }
+
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
+.field-row .field { min-width: 0; }
+.opciones-lista { list-style: none; padding: 0; margin: 6px 0 8px; display: flex; flex-direction: column; gap: 6px; }
+.opciones-lista li {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 8px;
+  align-items: center;
+}
+.opciones-lista input[type=text] {
+  padding: 8px 10px; border-radius: 8px;
+  border: 1.5px solid var(--border); background: var(--bg);
+}
+.opciones-lista input[type=text].correcta {
+  border-color: var(--success); background: var(--success-light);
+}
+.opciones-lista button.op-borrar {
+  color: var(--danger); font-size: 1.2rem; padding: 4px 8px;
+}

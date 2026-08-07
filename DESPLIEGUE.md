@@ -320,6 +320,36 @@ No hay que cambiar YAMLs, ni Dockerfiles, ni SQL — sólo el `.env`.
 
 ## Estado de las funcionalidades
 
+### Editor visual + cron automático (nuevo) ✅
+
+- **Editor visual de oposiciones** en `#/editar/<uuid>`:
+  - Navegación jerárquica **Oposición → Temas → Unidades → Preguntas**
+    con migas de pan.
+  - Añadir/quitar/reordenar temas de la oposición (los datos del tema
+    no se borran, sólo la vinculación).
+  - CRUD de unidades con editor de teoría en Markdown, orden,
+    minutos estimados, resumen, slug.
+  - CRUD de preguntas con opciones (radio para marcar la correcta,
+    borrar por opción, +2 mínimo), explicación y dificultad 1-5.
+  - Acceso desde `#/admin` → listado de oposiciones (el nombre es
+    enlace al editor).
+  - RPCs nuevas: `admin_temas_de_oposicion`, `admin_upsert_tema`,
+    `admin_desvincular_tema`, `admin_reordenar_temas`,
+    `admin_unidades_de_tema`, `admin_upsert_unidad`,
+    `admin_borrar_unidad`, `admin_preguntas_de_unidad`,
+    `admin_upsert_pregunta`, `admin_borrar_pregunta`.
+
+- **Cron interno en el notificador**: extiende `notificador.py` para
+  no depender de un cron externo:
+  - Cada `ENCOLAR_MINUTOS` (default 15) llama a
+    `encolar_notificaciones_diarias()`.
+  - Los lunes a `CRON_SEMANAL_HORA` UTC (default 3) llama a
+    `cron_semanal()` (calcula métricas + ajusta carga para TODOS los
+    usuarios activos).
+  - `encolar_notificaciones_diarias` ahora personaliza el mensaje:
+    incluye el **número de preguntas de repaso pendientes** por
+    usuario y adapta el tono si lleva 3+ días sin conectarse.
+
 ### Planificador v2 (nuevo) ✅
 
 - **Fecha del examen** por oposición (día exacto o mes/año
@@ -472,17 +502,9 @@ Estrategia recomendada cuando se aborde:
 Coste técnico estimado: 1-2 días bien hechos.
 
 ### Sin implementar aún 🚧
-- **Preguntas en el bloque de repaso del modo estudio**: por ahora
-  se muestra el número de preguntas vencidas pero no se renderizan
-  las opciones para responder inline (la RPC
-  `registrar_respuesta_espaciada` existe y funciona; solo falta el
-  render como los tests actuales).
 - **Simulacro mensual automático**: RPCs de intento con
   `tipo='simulacro'` ya existen; falta un generador que coja N
   preguntas al azar de toda la oposición con cronómetro y baremo.
-- **Editor visual** de oposiciones desde el admin.  Hoy los
-  contenidos se cargan por RPC `importar_oposicion(payload)` con
-  JSON.
 - **Recuperación de contraseña** (`reset_password` como tipo de
   `email_tokens` ya existe, pero la RPC y la UI no).
 - **Sesiones multi-dispositivo / revocación de tokens.**
