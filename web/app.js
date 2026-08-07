@@ -102,7 +102,7 @@ async function router() {
   }
 
   if (state.session && !state.oposiciones.length
-      && !['onboarding', 'auth', 'wizard'].includes(r.name)) {
+      && !['onboarding', 'administracion', 'auth', 'wizard'].includes(r.name)) {
     location.hash = '#/onboarding';
     return;
   }
@@ -424,10 +424,10 @@ async function renderOnboarding() {
   if (btnLogout) btnLogout.addEventListener('click', cerrarSesion);
 
   if (!opos.length) {
-    ul.innerHTML = `<li style="text-align:center;padding:24px;border:0">
+    ul.innerHTML = `<li class="onboarding-vacio">
       <p class="muted">No hay oposiciones disponibles. ${
         state.session?.es_admin
-          ? 'Impórtalas desde la sección "Importar oposición" de arriba.'
+          ? 'Usa el botón «Importar oposición» para cargar una.'
           : 'Un administrador debe importar una primero (vía <code>importar_oposicion</code>).'
       }</p></li>`;
     return;

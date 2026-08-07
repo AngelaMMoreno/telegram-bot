@@ -458,6 +458,20 @@ p  { margin: 0; }
 .onboarding-list li .ico-round { background: var(--pri-soft); color: var(--pri-d); }
 .onboarding-list li strong { display: block; }
 .onboarding-list li .muted { font-size: var(--fs-xs); }
+.onboarding-list .onboarding-vacio {
+  display: block;
+  width: 100%;
+  padding: var(--sp-4);
+  border-style: dashed;
+  text-align: center;
+  cursor: default;
+}
+.onboarding-list .onboarding-vacio:hover { border-color: var(--border); }
+.onboarding-list .onboarding-vacio p {
+  max-width: 42ch;
+  margin-inline: auto;
+  overflow-wrap: break-word;
+}
 
 .sticky-cta {
   position: sticky;
@@ -479,6 +493,15 @@ p  { margin: 0; }
 .view-stats .sticky-cta,
 .view-perfil .sticky-cta {
   bottom: calc(var(--nav-height) + env(safe-area-inset-bottom) + 12px);
+}
+/* El onboarding no muestra navegación inferior. Sus acciones deben seguir
+   el flujo para no tapar el acceso de importación ni quedar flotando. */
+.view-onboarding .sticky-cta {
+  position: static;
+  bottom: auto;
+  padding: var(--sp-2) 0 0;
+  background: transparent;
+  margin-top: var(--sp-2);
 }
 /* En el wizard preferimos NO sticky: el botón fluye al final del paso
    y así nunca se solapa con el contenido en pantallas grandes ni queda
