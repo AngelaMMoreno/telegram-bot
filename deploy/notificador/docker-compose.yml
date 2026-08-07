@@ -2,8 +2,13 @@
 # Stack NOTIFICADOR ─ worker Web Push.
 #
 # Consume `cola_push` de la BBDD del stack core del mismo entorno.
-# Alcanza `db` (prod) o `db-desa` (desa) por el alias en
-# dokploy-network, según DB_ALIAS.
+# Se une a la red PRIVADA del stack (`db-net-${DB_ALIAS:-prod}`) para
+# hablar con `db` o `db-desa` — la red pública `dokploy-network` NO
+# ve la BBDD (ver comentario en deploy/core/docker-compose.yml).
+#
+# Prerrequisito: la red `db-net-<alias>` debe existir (la crea el
+# core al arrancar).  Si por lo que sea despliegas primero el
+# notificador, créala a mano:  `docker network create db-net-desa`.
 # =============================================================================
 
 services:
@@ -26,10 +31,10 @@ services:
       CRON_SEMANAL_HORA: ${CRON_SEMANAL_HORA:-3}
     restart: unless-stopped
     networks:
-      dokploy-network:
-        aliases:
-          - notificador${DB_ALIAS:+-${DB_ALIAS}}
+      # Solo red privada — no expone HTTP.
+      db-net:
 
 networks:
-  dokploy-network:
+  db-net:
     external: true
+    name: db-net-${DB_ALIAS:-prod}

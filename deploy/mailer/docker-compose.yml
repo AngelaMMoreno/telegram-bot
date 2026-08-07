@@ -2,8 +2,13 @@
 # Stack MAILER ─ worker SMTP.
 #
 # Consume `cola_emails` de la BBDD del stack core del mismo entorno.
-# Alcanza `db` (prod) o `db-desa` (desa) por el alias en
-# dokploy-network, según DB_ALIAS.
+# Se une a la red PRIVADA del stack (`db-net-${DB_ALIAS:-prod}`) para
+# hablar con `db` o `db-desa` — la red pública `dokploy-network` NO
+# ve la BBDD (ver comentario en deploy/core/docker-compose.yml).
+#
+# Prerrequisito: la red `db-net-<alias>` debe existir (la crea el
+# core al arrancar).  Si por lo que sea despliegas primero el mailer,
+# créala a mano:  `docker network create db-net-desa`.
 # =============================================================================
 
 services:
@@ -28,10 +33,11 @@ services:
       LOG_LEVEL:           ${LOG_LEVEL:-INFO}
     restart: unless-stopped
     networks:
-      dokploy-network:
-        aliases:
-          - mailer${DB_ALIAS:+-${DB_ALIAS}}
+      # Se une SOLO a la red privada de la BBDD.  No necesita
+      # dokploy-network: no expone HTTP, sólo lee/escribe en Postgres.
+      db-net:
 
 networks:
-  dokploy-network:
+  db-net:
     external: true
+    name: db-net-${DB_ALIAS:-prod}

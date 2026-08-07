@@ -141,6 +141,19 @@ El detalle de `rclone config` y la restauración están en
 - Dokploy (o Docker Compose 2.20+) sobre un host con Traefik +
   Let's Encrypt configurados.
 - La red externa `dokploy-network` ya existe (la crea Dokploy).
+- **Redes privadas por entorno** (`db-net-prod` y `db-net-desa`) creadas
+  UNA vez en el host:
+
+  ```bash
+  bash deploy/init-networks.sh
+  ```
+
+  (Idempotente: si ya existen, no hace nada.)  La BBDD vive **solo**
+  en `db-net-<alias>`, aislada de `dokploy-network`.  Esto evita el
+  fallo típico cuando coexisten prod y desa: ambos `db` publicarían el
+  alias genérico `db` en la red compartida y cualquier cliente que
+  pidiera `dbname=aprentix` caería en round-robin en el `db` del otro
+  entorno provocando `FATAL: database "aprentix" does not exist`.
 
 ## Orden de despliegue (primera vez)
 
@@ -186,15 +199,19 @@ levantar pgAdmin en local.
 
 ## Compartir el pgAdmin de producción para ver desa
 
-Ya está.  `pgadmin/servers.json` trae dos entradas:
+`pgadmin/servers.json` trae dos entradas:
 
 - `aprentix`      → `Host: db`,      `MaintenanceDB: aprentix`
 - `aprentix-desa` → `Host: db-desa`, `MaintenanceDB: aprentix_desa`
 
-Como pgAdmin y ambos `db` están en `dokploy-network`, la resolución
-funciona directa.  Cuando desa aún no esté desplegado, la entrada
-de desa aparecerá pero fallará al conectar hasta que el `db-desa`
-exista — no bloquea nada.
+pgAdmin se une a las tres redes: `dokploy-network` (para Traefik),
+`db-net-prod` (para hablar con `db`) y `db-net-desa` (para hablar con
+`db-desa`).  Como cada `db` vive **solo** en su propia red privada,
+no hay colisión de aliases.
+
+Requisito: la red `db-net-desa` debe existir antes de arrancar pgAdmin
+(la crea `deploy/init-networks.sh`).  Si no vas a desplegar entorno
+desa, comenta la línea `db-net-desa-remote:` en `deploy/core/docker-compose.yml`.
 
 ## Importar la primera oposición
 
@@ -248,13 +265,15 @@ orden de los argumentos. PostgREST resuelve los argumentos por nombre; el
 mensaje enumera los nombres que recibió y puede mostrarlos en un orden distinto
 al de la declaración SQL.
 
-Cuando producción y desa comparten `dokploy-network`, no debe usarse el hostname
-genérico `db`: los dos proyectos publican ese alias y Docker puede resolverlo al
-contenedor del otro entorno. El Compose de core construye `PGRST_DB_URI` con el
-alias inequívoco: `db` cuando `DB_ALIAS` está vacío, `db-desa` con
-`DB_ALIAS=desa` y `db-prod` con `DB_ALIAS=prod`. Después de actualizar esta
-configuración hay que redesplegar el stack **core** de ambos entornos, empezando
-por desa.
+Desde este cambio, la BBDD vive en `db-net-<alias>` (red privada por
+entorno) y NO en `dokploy-network`, así que el alias `db` sólo resuelve
+dentro de esa red y no puede caer en el `db` del otro entorno. Si aun
+así se ve algún `FATAL: database "aprentix" does not exist` en los
+logs, comprueba que ningún cliente heredado (backup manual, script
+externo, cron viejo) siga usando `dokploy-network` para llegar a la
+BBDD — ya no la verá desde ahí; muévelo a la red privada del entorno
+que le corresponda o dale acceso al hostname público (`api.aprentix.es`)
+vía PostgREST en lugar de conexión directa.
 
 En una instalación con datos existentes, `db/init/01_esquema.sql` **no vuelve a
 ejecutarse** al redesplegar: la imagen oficial de PostgreSQL sólo procesa

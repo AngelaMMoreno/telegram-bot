@@ -61,11 +61,15 @@ services:
       - restic_cache:/root/.cache/restic
 
     restart: unless-stopped
-    networks: [dokploy-network]
+    networks:
+      # Solo red privada — el backup solo necesita hablar con
+      # Postgres (pg_dump).  Nada que exponer por HTTP.
+      db-net:
 
 volumes:
   restic_cache:
 
 networks:
-  dokploy-network:
+  db-net:
     external: true
+    name: db-net-${DB_ALIAS:-prod}

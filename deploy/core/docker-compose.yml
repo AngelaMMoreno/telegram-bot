@@ -15,6 +15,26 @@
 # pgAdmin se despliega SOLO cuando `COMPOSE_PROFILES=pgadmin`.  Así el
 # stack de producción arranca pgAdmin y desa NO — la misma instancia
 # gestiona ambas BBDD (con dos entradas en `pgadmin/servers.json`).
+#
+# ─── Aislamiento de la BBDD ─────────────────────────────────────────
+# La BBDD vive en `db-net-${DB_ALIAS:-prod}` (red privada del stack)
+# y NO en `dokploy-network`.  Esto es imprescindible cuando coexisten
+# prod y desa: si ambos db se registraran en dokploy-network como
+# alias `db` (Compose añade siempre el service name como alias, sin
+# poder desactivarlo), el hostname `db` resolvería en round-robin a
+# las dos IPs, y la mitad de conexiones de cualquier cliente que
+# pidiera `dbname=aprentix` caerían en `db-desa` produciendo el
+# error "FATAL: database 'aprentix' does not exist".
+#
+# PostgREST y pgAdmin sí están en `dokploy-network` (para Traefik) Y
+# en la red privada de su BBDD (para hablar con ella).  pgAdmin puede
+# unirse a las dos redes privadas (prod + desa) para servir ambos
+# entornos con una única instancia.
+#
+# Antes del primer despliegue: crea las redes privadas a mano.
+#   docker network create db-net-prod
+#   docker network create db-net-desa
+# (Idempotente: si ya existen, `docker network create` avisa y sigue.)
 # =============================================================================
 
 services:
@@ -43,10 +63,10 @@ services:
       - ../../db/init:/docker-entrypoint-initdb.d:ro
     restart: unless-stopped
     networks:
-      dokploy-network:
-        # Alias explícito: reemplaza al default (service name = `db`)
-        # y evita que dos deploys (prod + desa) compitan por el mismo
-        # hostname DNS en la red compartida.
+      db-net:
+        # Alias explícito: cada BBDD escucha bajo `db` o `db-desa`
+        # dentro de SU propia red privada.  Como la red es distinta
+        # entre entornos, no hay colisión de nombres posible.
         aliases:
           - db${DB_ALIAS:+-${DB_ALIAS}}
     healthcheck:
@@ -62,10 +82,8 @@ services:
       db:
         condition: service_healthy
     environment:
-      # La red de Dokploy es compartida por prod y desa. Usar `db` aquí
-      # resulta ambiguo porque Compose publica ese alias de servicio para
-      # ambos proyectos; el alias explícito garantiza que cada PostgREST se
-      # conecte a la base de datos de su propio entorno.
+      # En la red privada `db-net` el hostname `db-<alias>` es único
+      # por entorno, así que no hay ambigüedad de resolución.
       PGRST_DB_URI:                    postgres://autenticador@db${DB_ALIAS:+-${DB_ALIAS}}:5432/${POSTGRES_DB}
       PGPASSWORD:                      ${AUTH_PASS}
       PGRST_DB_ANON_ROLE:              web_anon
@@ -74,6 +92,10 @@ services:
       PGRST_OPENAPI_SERVER_PROXY_URI:  https://${DOMINIO_API}
     restart: unless-stopped
     networks:
+      # PostgREST vive en las dos redes: la privada de la BBDD (para
+      # hablar con `db`) y `dokploy-network` (para que Traefik le
+      # llegue por el router HTTPS).
+      db-net:
       dokploy-network:
         aliases:
           - postgrest${DB_ALIAS:+-${DB_ALIAS}}
@@ -91,6 +113,10 @@ services:
   # en el .env de producción).  El servers.json del repo trae ya las
   # entradas de `db` (prod) y `db-desa`, así que la misma instancia
   # sirve para las dos BBDD sin duplicar pgAdmin.
+  #
+  # Para que pueda ver ambas BBDD, pgAdmin se une a las DOS redes
+  # privadas (db-net-prod y db-net-desa).  Ambas se declaran external:
+  # true, así que deben existir antes de arrancar (ver cabecera).
   pgadmin:
     image: dpage/pgadmin4:9
     container_name: pgadmin
@@ -111,7 +137,16 @@ services:
       - pgadmin_data:/var/lib/pgadmin
       - ../../pgadmin/servers.json:/pgadmin4/servers.json:ro
     restart: unless-stopped
-    networks: [dokploy-network]
+    networks:
+      # Traefik (público)
+      dokploy-network:
+      # BBDD de prod (siempre esperada cuando el profile pgadmin
+      # está activo, porque va en el mismo stack).
+      db-net:
+      # BBDD de desa (opcional en runtime: si el stack desa no está
+      # desplegado la red no existe y este servicio no arrancará).
+      # Si NO usas entorno desa, comenta esta línea.
+      db-net-desa-remote:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=dokploy-network"
@@ -126,5 +161,22 @@ volumes:
   pgadmin_data:
 
 networks:
+  # Red pública compartida donde vive Traefik y las apps HTTP.
   dokploy-network:
     external: true
+
+  # Red PRIVADA del stack — solo db, postgrest, mailer, notificador
+  # y backups del mismo entorno la ven.  Nombre estable por entorno
+  # (db-net-prod, db-net-desa) para poder referenciarla desde los
+  # otros stacks del mismo entorno.
+  db-net:
+    external: true
+    name: db-net-${DB_ALIAS:-prod}
+
+  # Referencia a la red privada del OTRO entorno (solo la usa
+  # pgAdmin para poder consultar ambas BBDD desde una única
+  # instancia).  Nombre fijo `db-net-desa` porque prod es quien
+  # aloja pgAdmin.
+  db-net-desa-remote:
+    external: true
+    name: db-net-desa
