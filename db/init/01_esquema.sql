@@ -2603,60 +2603,29 @@ LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
     v_n int := 0;
     r   record;
-    v_msg text;
-    v_repasos int;
-    v_horas_inact int;
 BEGIN
     -- Recordatorio de estudio: activos, verificados, con plan, sin
-    -- sesión en las últimas 24 h. El mensaje se personaliza según:
-    --   - horas de inactividad (24h vs 3 días)
-    --   - preguntas vencidas de repaso (SM-2)
-    -- No se encola si ya hay una push sin enviar en las últimas 20 h
-    -- (evita ruido para el mismo usuario).
+    -- sesión en las últimas 24 h.  No se encola si ya hay una push
+    -- pendiente de envío en las últimas 20 h (evita ruido).
     FOR r IN
-        SELECT u.id, u.nombre,
-               COALESCE(EXTRACT(EPOCH FROM (now() - MAX(s.abierta_en))) / 3600, 999)::int
-                 AS horas_inact,
-               (SELECT count(*) FROM repasos_pregunta rp
-                 WHERE rp.usuario_id = u.id
-                   AND rp.siguiente_repaso <= now()) AS repasos_pend
+        SELECT u.id, u.nombre
           FROM usuarios u
           JOIN plan_estudio p ON p.usuario_id = u.id AND p.activo
-     LEFT JOIN sesiones_estudio s ON s.usuario_id = u.id
          WHERE u.activo AND u.email_verificado
            AND NOT EXISTS (
-                SELECT 1 FROM sesiones_estudio s2
-                 WHERE s2.usuario_id = u.id
-                   AND s2.abierta_en > now() - interval '24 hours')
+                SELECT 1 FROM sesiones_estudio s
+                 WHERE s.usuario_id = u.id
+                   AND s.abierta_en > now() - interval '24 hours')
            AND NOT EXISTS (
                 SELECT 1 FROM cola_push cp
                  WHERE cp.usuario_id = u.id
                    AND cp.encolado_en > now() - interval '20 hours'
                    AND cp.enviado_en IS NULL)
-         GROUP BY u.id, u.nombre
     LOOP
-        v_repasos := COALESCE(r.repasos_pend, 0);
-        v_horas_inact := r.horas_inact;
-
-        v_msg := CASE
-            WHEN v_repasos > 0 AND v_horas_inact >= 72 THEN
-                'Tienes ' || v_repasos || ' pregunta' ||
-                CASE WHEN v_repasos = 1 THEN '' ELSE 's' END ||
-                ' pendiente de repaso. Te echamos de menos.'
-            WHEN v_repasos > 0 THEN
-                'Tienes ' || v_repasos || ' pregunta' ||
-                CASE WHEN v_repasos = 1 THEN '' ELSE 's' END ||
-                ' esperando el repaso de hoy.'
-            WHEN v_horas_inact >= 72 THEN
-                'Han pasado varios días. Un bloque corto y no perdemos ritmo.'
-            ELSE
-                'Un bloque corto de estudio hoy suma mucho. ¿Le damos?'
-        END;
-
         INSERT INTO cola_push(usuario_id, titulo, cuerpo, url)
         VALUES (r.id,
                 'Te esperamos, ' || COALESCE(r.nombre, ''),
-                v_msg,
+                'Un bloque corto de estudio hoy suma mucho. ¿Le damos?',
                 app_url());
         v_n := v_n + 1;
     END LOOP;

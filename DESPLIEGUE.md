@@ -346,9 +346,10 @@ No hay que cambiar YAMLs, ni Dockerfiles, ni SQL — sólo el `.env`.
   - Los lunes a `CRON_SEMANAL_HORA` UTC (default 3) llama a
     `cron_semanal()` (calcula métricas + ajusta carga para TODOS los
     usuarios activos).
-  - `encolar_notificaciones_diarias` ahora personaliza el mensaje:
-    incluye el **número de preguntas de repaso pendientes** por
-    usuario y adapta el tono si lleva 3+ días sin conectarse.
+  - `encolar_notificaciones_diarias` mantiene mensajes genéricos
+    (recordatorio si lleva >24 h sin sesión + resumen dominical),
+    con el filtro anti-ruido de no encolar si ya hay push pendiente
+    en las últimas 20 h.
 
 ### Planificador v2 (nuevo) ✅
 
