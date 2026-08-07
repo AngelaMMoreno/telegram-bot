@@ -64,6 +64,8 @@
           <p class="auth-err" data-err hidden></p>
           <p class="auth-forgot">
             <button type="button" data-reenviar>¿No has recibido el correo?</button>
+            <br>
+            <button type="button" data-olvidada>¿Olvidaste la contraseña?</button>
           </p>
         </form>
 
@@ -269,8 +271,8 @@
       </article>
 
       <div class="plan-actions">
-        <button class="btn btn-primary btn-block" data-plan-editar>✏️ Editar disponibilidad</button>
-        <button class="btn btn-outline btn-block" data-plan-reprog>📅 Reprogramar plan</button>
+        <button class="btn btn-primary btn-block" data-plan-editar>✏️ Editar mi disponibilidad</button>
+        <button class="btn btn-outline btn-block" data-plan-reprog>⏱ Hoy tengo otro tiempo</button>
       </div>
     </section>
   </template>
@@ -638,6 +640,12 @@
         </div>
         <ul class="admin-users" data-ad-users></ul>
       </article>
+
+      <article class="card">
+        <h2>Oposiciones — fecha de examen</h2>
+        <p class="muted small">Ajusta la fecha del examen. Marca "orientativa" si sólo sabes el mes/año.</p>
+        <ul class="admin-opos" data-ad-opos-lista></ul>
+      </article>
     </section>
   </template>
 
@@ -710,6 +718,50 @@
         </button>
       </div>
     </section>
+  </template>
+
+  <!-- ─────────────────────── RESET PASSWORD ─────────────────────── -->
+  <template id="tpl-reset">
+    <section class="auth-view">
+      <img class="brand-hero" src="/logo.svg" alt="Aprentix">
+      <div class="auth-card" data-panel>
+        <h2 style="color:var(--pri-d);margin-top:0">Nueva contraseña</h2>
+        <p class="muted small">Elige una contraseña nueva. Se te iniciará sesión con ella.</p>
+        <form data-form-reset autocomplete="off">
+          <label>
+            <span>Contraseña</span>
+            <input name="password" type="password" autocomplete="new-password" minlength="8" required>
+          </label>
+          <div class="pw-strength" data-pw-strength>
+            <div class="pw-strength-bar"><span data-pw-fill></span></div>
+            <span class="pw-strength-label" data-pw-label>Introduce una contraseña</span>
+          </div>
+          <label>
+            <span>Repite la contraseña</span>
+            <input name="password2" type="password" autocomplete="new-password" minlength="8" required>
+          </label>
+          <p class="mini-hint" data-pw-match hidden></p>
+          <button class="btn btn-primary btn-block" type="submit" style="margin-top:var(--sp-2)">Guardar</button>
+          <p class="auth-err" data-err hidden></p>
+        </form>
+      </div>
+    </section>
+  </template>
+
+  <!-- ─────────────────────── SEMANA (aceptar/modificar) ─────────────────────── -->
+  <template id="tpl-semana">
+    <div class="modal-backdrop" data-modal>
+      <div class="modal">
+        <button class="modal-close" data-modal-close aria-label="Cerrar">×</button>
+        <h2>Nueva semana</h2>
+        <p class="muted small">Ésta es la disponibilidad que hemos detectado. Puedes ajustarla.</p>
+        <ul class="days-grid" data-semana-days></ul>
+        <p class="muted small" style="margin-top:6px">Total: <strong data-semana-total>—</strong> h</p>
+        <button class="btn btn-primary btn-block" data-semana-aceptar style="margin-top:var(--sp-3)">
+          Aceptar y planificar
+        </button>
+      </div>
+    </div>
   </template>
 
   <!-- ─────────────────────── ADMINISTRACIÓN (importar oposiciones) ─────────────────────── -->

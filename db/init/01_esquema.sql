@@ -135,15 +135,24 @@ CREATE INDEX IF NOT EXISTS cola_push_usuario_idx  ON cola_push (usuario_id);
 -- =============================================================================
 
 CREATE TABLE IF NOT EXISTS oposiciones (
-    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    slug         text UNIQUE NOT NULL,
-    nombre       text NOT NULL,
-    descripcion  text,
-    organismo    text,
-    activa       boolean NOT NULL DEFAULT true,
-    creada_en    timestamptz NOT NULL DEFAULT now(),
-    autor_id     uuid REFERENCES usuarios(id) ON DELETE SET NULL
+    id                        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug                      text UNIQUE NOT NULL,
+    nombre                    text NOT NULL,
+    descripcion               text,
+    organismo                 text,
+    -- Fecha del examen (la fija admin). Si es sólo orientativa (mes/año)
+    -- se guarda el día 1 del mes y se marca fecha_examen_orientativa=true.
+    -- El motor del planificador la usa para dimensionar el ritmo semanal.
+    fecha_examen              date,
+    fecha_examen_orientativa  boolean NOT NULL DEFAULT false,
+    activa                    boolean NOT NULL DEFAULT true,
+    creada_en                 timestamptz NOT NULL DEFAULT now(),
+    autor_id                  uuid REFERENCES usuarios(id) ON DELETE SET NULL
 );
+-- Migración incremental para instalaciones previas.
+ALTER TABLE oposiciones
+    ADD COLUMN IF NOT EXISTS fecha_examen             date,
+    ADD COLUMN IF NOT EXISTS fecha_examen_orientativa boolean NOT NULL DEFAULT false;
 
 -- Un tema es reutilizable: la misma "Constitución Española" puede
 -- formar parte de varias oposiciones.  Vive en su propia tabla y se
@@ -2638,6 +2647,419 @@ BEGIN
     END IF;
 
     RETURN v_n;
+END $$;
+
+
+-- =============================================================================
+--                    RECUPERACIÓN DE CONTRASEÑA
+-- =============================================================================
+-- Flujo: solicitar_reset(email) genera token de 3 días y encola el
+-- correo; aplicar_reset(token, nueva) verifica y cambia la contraseña.
+-- Respuesta silenciosa aunque el email no exista (no filtramos cuentas).
+
+CREATE OR REPLACE FUNCTION solicitar_reset(p_email text) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+    v_email text := lower(btrim(p_email));
+    v_usr   usuarios;
+    v_token text;
+BEGIN
+    SELECT * INTO v_usr FROM usuarios WHERE email = v_email AND activo;
+    IF v_usr.id IS NULL THEN
+        RETURN jsonb_build_object('ok', true);   -- silencioso
+    END IF;
+
+    UPDATE email_tokens SET usado_en = now()
+     WHERE usuario_id = v_usr.id AND tipo = 'reset_password' AND usado_en IS NULL;
+
+    v_token := encode(gen_random_bytes(32), 'hex');
+    INSERT INTO email_tokens(usuario_id, tipo, token, expira_en)
+    VALUES (v_usr.id, 'reset_password', v_token, now() + interval '3 days');
+
+    INSERT INTO cola_emails(destinatario, asunto, cuerpo_txt, cuerpo_html)
+    VALUES (
+        v_email,
+        'Restablece tu contraseña en Aprentix',
+        format(E'Hola %s,\n\nHas solicitado restablecer tu contraseña. Abre este enlace:\n%s/#/reset?token=%s\n\nSi no has sido tú, ignora este mensaje.\n\nEl enlace caduca en 3 días.\n\n— Aprentix',
+               v_usr.nombre, app_url(), v_token),
+        format($html$<p>Hola <strong>%s</strong>,</p>
+<p>Has solicitado restablecer tu contraseña. Pulsa el botón para elegir una nueva:</p>
+<p><a href="%s/#/reset?token=%s" style="background:#6B8E23;color:#fff;padding:12px 22px;border-radius:22px;text-decoration:none;display:inline-block">Elegir nueva contraseña</a></p>
+<p style="color:#62705A">Si no has sido tú, ignora este mensaje.<br>El enlace caduca en 3 días.</p>$html$,
+               v_usr.nombre, app_url(), v_token)
+    );
+    RETURN jsonb_build_object('ok', true);
+END $$;
+
+CREATE OR REPLACE FUNCTION aplicar_reset(p_token text, p_password text) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE v_tok email_tokens;
+BEGIN
+    IF length(p_password) < 8 THEN RAISE EXCEPTION 'password_debil'; END IF;
+
+    SELECT * INTO v_tok FROM email_tokens
+     WHERE token = p_token AND tipo = 'reset_password';
+    IF v_tok.id IS NULL OR v_tok.usado_en IS NOT NULL OR v_tok.expira_en < now() THEN
+        RAISE EXCEPTION 'token_invalido';
+    END IF;
+
+    UPDATE usuarios
+       SET password_hash    = crypt(p_password, gen_salt('bf', 12)),
+           email_verificado = true
+     WHERE id = v_tok.usuario_id;
+    UPDATE email_tokens SET usado_en = now() WHERE id = v_tok.id;
+    RETURN jsonb_build_object('ok', true);
+END $$;
+
+
+-- =============================================================================
+--             EDICIÓN DE OPOSICIONES (admin) — nombre, fecha, activa
+-- =============================================================================
+
+CREATE OR REPLACE FUNCTION admin_editar_oposicion(
+    p_oposicion_id           uuid,
+    p_nombre                 text    DEFAULT NULL,
+    p_descripcion            text    DEFAULT NULL,
+    p_organismo              text    DEFAULT NULL,
+    p_fecha_examen           date    DEFAULT NULL,
+    p_fecha_examen_orientativa boolean DEFAULT NULL,
+    p_activa                 boolean DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
+    UPDATE oposiciones
+       SET nombre                   = COALESCE(p_nombre, nombre),
+           descripcion              = COALESCE(p_descripcion, descripcion),
+           organismo                = COALESCE(p_organismo, organismo),
+           fecha_examen             = COALESCE(p_fecha_examen, fecha_examen),
+           fecha_examen_orientativa = COALESCE(p_fecha_examen_orientativa,
+                                                fecha_examen_orientativa),
+           activa                   = COALESCE(p_activa, activa)
+     WHERE id = p_oposicion_id;
+    RETURN jsonb_build_object('ok', true);
+END $$;
+
+
+-- =============================================================================
+--                    PLANIFICADOR V2 — motor autónomo
+-- =============================================================================
+-- Objetivo: el usuario configura UNA VEZ por semana su disponibilidad y
+-- después sólo pulsa "Estudiar".  La app decide qué, cuánto y cuándo.
+--
+-- Piezas:
+--   * recalcular_plan_hasta_examen(plan_id)  — recalcula desde HOY hasta
+--     `fecha_examen` (o 90 días si no la hay), distribuyendo:
+--       - unidades pendientes de teoría (por orden de tema.orden, unidad.orden)
+--       - repasos vencidos (SM-2)
+--       - repasos programados (cuando toque)
+--     respetando `horas_por_dia`.  Nunca crea bloques después del examen.
+--
+--   * siguiente_bloque_pendiente()          — devuelve el primer bloque
+--     no completado (prioridad: bloque en curso → hoy → adelantar día siguiente).
+--
+--   * registrar_bloque_completado(id)        — marca completado y sugiere
+--     el siguiente.
+--
+--   * cambiar_disponibilidad_hoy(minutos)    — sustituye la carga de hoy y
+--     recalcula el resto de la semana sin superar la horas_por_dia máx.
+--
+--   * reprogramar_dia_perdido()              — llama al abrir la app: si
+--     ayer quedaron bloques no completados los desplaza a los próximos
+--     días sin superar la disponibilidad configurada.
+--
+--   * sugerir_plan_semanal()                 — analiza las últimas 4
+--     semanas de comportamiento y devuelve horas_por_dia sugeridas.
+
+-- Añade `orden_global` a plan_sesiones para saber cuál es el "siguiente".
+ALTER TABLE plan_sesiones
+    ADD COLUMN IF NOT EXISTS orden_global int NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS plan_sesiones_orden_idx
+    ON plan_sesiones (plan_id, fecha, orden_global);
+
+CREATE OR REPLACE FUNCTION recalcular_plan_hasta_examen(p_plan_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_plan   plan_estudio;
+    v_uid    uuid;
+    v_hoy    date := current_date;
+    v_fin    date;
+    v_dia    date;
+    v_dow    text;
+    v_hd     numeric;
+    v_min    int;
+    v_bloque int;
+    v_creadas int := 0;
+    v_orden   int := 0;
+    v_unids   uuid[];
+    v_idx     int := 1;
+    v_repasos uuid[];
+    v_rep_idx int := 1;
+    v_metodo  text;
+    v_op      uuid;
+BEGIN
+    SELECT * INTO v_plan FROM plan_estudio WHERE id = p_plan_id;
+    IF v_plan.id IS NULL THEN RAISE EXCEPTION 'plan_no_existe'; END IF;
+    v_uid := v_plan.usuario_id;
+    v_metodo := COALESCE(v_plan.metodo, 'cortas');
+
+    -- Fecha límite: fecha_examen de la oposición > fecha_examen del plan
+    -- > +90 días desde hoy.  Se ignora la parte "orientativa" del mes/año
+    -- porque como fecha se guardó día 1 (buena estimación por lo bajo).
+    SELECT o.fecha_examen INTO v_fin
+      FROM oposiciones o WHERE o.id = v_plan.oposicion_id;
+    v_fin := COALESCE(v_fin, v_plan.fecha_examen, v_hoy + 90);
+
+    -- Sólo consideramos los bloques FUTUROS no completados como
+    -- reemplazables.  Los pasados (hechos o no) los preservamos como
+    -- registro histórico.
+    DELETE FROM plan_sesiones
+     WHERE plan_id = p_plan_id
+       AND fecha >= v_hoy
+       AND NOT completada;
+
+    -- Unidades pendientes (teoría no completada).
+    SELECT COALESCE(array_agg(u.id ORDER BY ot.orden, u.orden), ARRAY[]::uuid[])
+      INTO v_unids
+      FROM oposicion_temas ot
+      JOIN unidades u ON u.tema_id = ot.tema_id
+ LEFT JOIN progreso_unidad pu
+        ON pu.unidad_id = u.id AND pu.usuario_id = v_uid
+     WHERE ot.oposicion_id = v_plan.oposicion_id
+       AND COALESCE(pu.teoria_completada, false) = false;
+
+    v_repasos := siguientes_repasos(200);
+
+    v_bloque := CASE WHEN v_metodo = 'profundas' THEN 45 ELSE 25 END;
+
+    -- Distribuye día a día hasta la fecha del examen o hasta agotar
+    -- unidades y repasos.
+    WHILE v_dia IS NULL OR v_dia < v_fin LOOP
+        v_dia := COALESCE(v_dia + 1, v_hoy);
+        IF v_dia > v_fin THEN EXIT; END IF;
+
+        v_dow := CASE EXTRACT(ISODOW FROM v_dia)::int
+                     WHEN 1 THEN 'lun' WHEN 2 THEN 'mar' WHEN 3 THEN 'mie'
+                     WHEN 4 THEN 'jue' WHEN 5 THEN 'vie' WHEN 6 THEN 'sab'
+                     WHEN 7 THEN 'dom' END;
+        v_hd  := COALESCE((v_plan.horas_por_dia->>v_dow)::numeric, 0);
+        v_min := (v_hd * 60)::int;
+        IF v_min <= 0 THEN CONTINUE; END IF;
+
+        -- Prioridad: primero repasos vencidos (memoria fresca), luego
+        -- teoría, luego repasos futuros (más lejanos), luego test corto
+        -- de refuerzo si queda tiempo.
+        WHILE v_min >= v_bloque AND (v_idx <= cardinality(v_unids)
+                                     OR v_rep_idx <= cardinality(v_repasos)) LOOP
+            IF v_rep_idx <= cardinality(v_repasos)
+               AND (v_idx > cardinality(v_unids) OR (v_rep_idx % 3) = 1) THEN
+                -- Bloque de repaso cada 3 bloques o si no hay más teoría.
+                v_orden := v_orden + 1;
+                INSERT INTO plan_sesiones(plan_id, fecha, minutos, tipo, orden_global)
+                VALUES (p_plan_id, v_dia, v_bloque, 'repaso', v_orden);
+                v_rep_idx := v_rep_idx + 3;
+            ELSE
+                v_orden := v_orden + 1;
+                INSERT INTO plan_sesiones(plan_id, fecha, minutos, unidad_id,
+                                           tipo, orden_global)
+                VALUES (p_plan_id, v_dia, v_bloque, v_unids[v_idx],
+                        'estudio', v_orden);
+                v_idx := v_idx + 1;
+            END IF;
+            v_creadas := v_creadas + 1;
+            v_min := v_min - v_bloque - 5;
+        END LOOP;
+
+        -- Si sobran minutos y ya no hay unidades → bloque de test
+        -- corto (repaso general) si queda margen.
+        IF v_min >= 15
+           AND v_idx > cardinality(v_unids)
+           AND v_rep_idx > cardinality(v_repasos) THEN
+            v_orden := v_orden + 1;
+            INSERT INTO plan_sesiones(plan_id, fecha, minutos, tipo, orden_global)
+            VALUES (p_plan_id, v_dia, LEAST(v_min, 20), 'repaso', v_orden);
+            v_creadas := v_creadas + 1;
+        END IF;
+    END LOOP;
+
+    RETURN jsonb_build_object(
+        'creadas', v_creadas,
+        'hasta', v_fin,
+        'unidades_pendientes_al_final',
+            GREATEST(0, cardinality(v_unids) - (v_idx - 1))
+    );
+END $$;
+
+-- Alias amigable del nombre viejo `generar_plan(plan_id, dias)` — ahora
+-- invoca el motor nuevo ignorando `p_dias`.
+CREATE OR REPLACE FUNCTION generar_plan(p_plan_id uuid, p_dias int DEFAULT 14)
+RETURNS jsonb
+LANGUAGE sql AS $$
+    SELECT recalcular_plan_hasta_examen(p_plan_id);
+$$;
+
+-- Prioridad al elegir el siguiente bloque para "Estudiar":
+--   1. Bloque de HOY no completado (por orden_global).
+--   2. Primer bloque futuro no completado (adelantar).
+CREATE OR REPLACE FUNCTION siguiente_bloque_pendiente() RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT jsonb_build_object(
+        'id',          ps.id,
+        'plan_id',     ps.plan_id,
+        'fecha',       ps.fecha,
+        'minutos',     ps.minutos,
+        'tipo',        ps.tipo,
+        'unidad_id',   ps.unidad_id,
+        'unidad',      u.nombre,
+        'tema',        t.nombre,
+        'tema_icono',  t.icono,
+        'orden',       ps.orden_global,
+        'es_hoy',      ps.fecha = current_date
+    )
+      FROM plan_estudio p
+      JOIN plan_sesiones ps ON ps.plan_id = p.id
+ LEFT JOIN unidades u ON u.id = ps.unidad_id
+ LEFT JOIN temas t ON t.id = u.tema_id
+     WHERE p.usuario_id = jwt_usuario_id() AND p.activo
+       AND NOT ps.completada
+       AND ps.fecha >= current_date
+     ORDER BY (ps.fecha = current_date) DESC, ps.fecha, ps.orden_global
+     LIMIT 1;
+$$;
+
+-- Marca un bloque completado + registra minutos reales.  Devuelve el
+-- SIGUIENTE bloque pendiente (para que el frontend encadene sin ida
+-- y vuelta al servidor).
+CREATE OR REPLACE FUNCTION registrar_bloque_completado(
+    p_bloque_id     uuid,
+    p_minutos_real  int DEFAULT NULL
+) RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_uid uuid := jwt_usuario_id();
+    v_ok  boolean;
+BEGIN
+    UPDATE plan_sesiones ps
+       SET completada    = true,
+           completada_en = now(),
+           minutos       = COALESCE(p_minutos_real, ps.minutos)
+     WHERE id = p_bloque_id
+       AND EXISTS (SELECT 1 FROM plan_estudio p
+                    WHERE p.id = ps.plan_id AND p.usuario_id = v_uid)
+     RETURNING true INTO v_ok;
+
+    IF NOT v_ok THEN RAISE EXCEPTION 'bloque_no_encontrado'; END IF;
+    RETURN siguiente_bloque_pendiente();
+END $$;
+
+-- Cambio puntual de disponibilidad para HOY: sustituye el plan del día
+-- por bloques que quepan en `p_minutos` y recalcula desde mañana hasta
+-- el examen.  Los bloques ya completados de hoy se preservan.
+CREATE OR REPLACE FUNCTION cambiar_disponibilidad_hoy(p_minutos int)
+RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_uid  uuid := jwt_usuario_id();
+    v_plan plan_estudio;
+    v_min  int := GREATEST(0, p_minutos);
+    v_hd   jsonb;
+    v_dow  text;
+BEGIN
+    SELECT * INTO v_plan FROM plan_estudio
+     WHERE usuario_id = v_uid AND activo LIMIT 1;
+    IF v_plan.id IS NULL THEN RAISE EXCEPTION 'sin_plan'; END IF;
+
+    -- Ajusta horas_por_dia para HOY como excepción temporal.
+    v_dow := CASE EXTRACT(ISODOW FROM current_date)::int
+                 WHEN 1 THEN 'lun' WHEN 2 THEN 'mar' WHEN 3 THEN 'mie'
+                 WHEN 4 THEN 'jue' WHEN 5 THEN 'vie' WHEN 6 THEN 'sab'
+                 WHEN 7 THEN 'dom' END;
+    v_hd := jsonb_set(v_plan.horas_por_dia,
+                       ARRAY[v_dow],
+                       to_jsonb(round(v_min::numeric / 60, 2)));
+    UPDATE plan_estudio SET horas_por_dia = v_hd,
+                              actualizado_en = now()
+     WHERE id = v_plan.id;
+
+    -- Borra bloques de HOY no completados y regenera todo desde hoy.
+    DELETE FROM plan_sesiones
+     WHERE plan_id = v_plan.id AND fecha = current_date AND NOT completada;
+
+    RETURN recalcular_plan_hasta_examen(v_plan.id);
+END $$;
+
+-- Reprograma bloques perdidos: coge los NO completados de fechas
+-- anteriores a hoy y los mete de nuevo en la cola.  Se limita a mover
+-- los últimos 7 días de bloques perdidos para no invadir el plan.
+CREATE OR REPLACE FUNCTION reprogramar_dia_perdido() RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_plan plan_estudio;
+    v_perdidos int;
+BEGIN
+    SELECT * INTO v_plan FROM plan_estudio
+     WHERE usuario_id = jwt_usuario_id() AND activo LIMIT 1;
+    IF v_plan.id IS NULL THEN RETURN jsonb_build_object('ok', false); END IF;
+
+    -- Cuenta cuántos bloques quedaron por hacer en el pasado reciente.
+    SELECT count(*) INTO v_perdidos FROM plan_sesiones
+     WHERE plan_id = v_plan.id
+       AND fecha BETWEEN current_date - 7 AND current_date - 1
+       AND NOT completada;
+
+    -- Al recalcular, esos bloques se regeneran junto a la teoría
+    -- pendiente actual (sólo miramos progreso_unidad, no la fecha),
+    -- así que simplemente reprogramamos todo el horizonte.
+    PERFORM recalcular_plan_hasta_examen(v_plan.id);
+
+    RETURN jsonb_build_object('ok', true, 'perdidos', v_perdidos);
+END $$;
+
+-- Analiza las últimas 4 semanas de sesiones_estudio y sugiere una
+-- distribución `horas_por_dia` basada en cuándo estudia el usuario
+-- REALMENTE (no lo que dijo cuando se dio de alta).
+CREATE OR REPLACE FUNCTION sugerir_plan_semanal() RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    WITH tot AS (
+        SELECT
+            CASE EXTRACT(ISODOW FROM abierta_en)::int
+                 WHEN 1 THEN 'lun' WHEN 2 THEN 'mar' WHEN 3 THEN 'mie'
+                 WHEN 4 THEN 'jue' WHEN 5 THEN 'vie' WHEN 6 THEN 'sab'
+                 WHEN 7 THEN 'dom' END AS dow,
+            sum(minutos_activos) AS min
+          FROM sesiones_estudio
+         WHERE usuario_id = jwt_usuario_id()
+           AND abierta_en > now() - interval '28 days'
+         GROUP BY 1
+    ),
+    -- Media semanal por día (min / 4 semanas → horas por día).
+    prom AS (
+        SELECT dow, ROUND((COALESCE(min, 0) / 4.0 / 60)::numeric, 1) AS horas
+          FROM (SELECT unnest(ARRAY['lun','mar','mie','jue','vie','sab','dom']) AS dow) d
+     LEFT JOIN tot USING (dow)
+    )
+    SELECT jsonb_object_agg(dow, horas) FROM prom;
+$$;
+
+-- Un pack para el flujo "Inicio de semana":
+--   { sugerida: {lun:.., ...}, actual: {...}, semana_inicio, ... }
+CREATE OR REPLACE FUNCTION resumen_inicio_semana() RETURNS jsonb
+LANGUAGE plpgsql STABLE AS $$
+DECLARE
+    v_plan     plan_estudio;
+    v_lunes    date := date_trunc('week', current_date)::date;
+    v_sugerida jsonb;
+BEGIN
+    SELECT * INTO v_plan FROM plan_estudio
+     WHERE usuario_id = jwt_usuario_id() AND activo LIMIT 1;
+    v_sugerida := sugerir_plan_semanal();
+    RETURN jsonb_build_object(
+        'semana_inicio', v_lunes,
+        'actual',        v_plan.horas_por_dia,
+        'sugerida',      v_sugerida,
+        'plan_id',       v_plan.id
+    );
 END $$;
 
 

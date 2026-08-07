@@ -43,6 +43,7 @@ const routes = {
   admin:          renderAdmin,
   administracion: renderAdministracion,
   estudio:        renderEstudio,
+  reset:          renderReset,
 };
 
 function parseHash() {
@@ -60,6 +61,7 @@ async function router() {
   const r = parseHash();
 
   if (r.name === 'verify') return renderVerify(r);
+  if (r.name === 'reset')  return renderReset(r);
 
   if (!S.getToken() && r.name !== 'auth') {
     location.hash = '#/auth';
@@ -125,7 +127,7 @@ function updateNav(name) {
   const map = { home:'home', plan:'plan', stats:'stats', perfil:'perfil' };
   const target = map[name];
   const nav = $('.bottom-nav');
-  if (!nav || ['auth','verify','onboarding','wizard','unidad','admin','administracion','estudio'].includes(name)) {
+  if (!nav || ['auth','verify','reset','onboarding','wizard','unidad','admin','administracion','estudio'].includes(name)) {
     if (nav) nav.remove();
     return;
   }
@@ -216,6 +218,16 @@ function renderAuth() {
     try {
       await S.rpc('reenviar_verificacion', { p_email: email }, { api: '/api' });
       toast('Si la cuenta existe y estaba sin verificar, te llegará un nuevo enlace.');
+    } catch (e) { toast(e.message); }
+  });
+
+  const btnOlvidada = $('[data-olvidada]', root);
+  if (btnOlvidada) btnOlvidada.addEventListener('click', async () => {
+    const email = $('input[name="email"]', $('[data-panel="login"]', root)).value.trim();
+    if (!email) return toast('Introduce tu correo primero');
+    try {
+      await S.rpc('solicitar_reset', { p_email: email }, { api: '/api', token: null });
+      toast('Si el correo existe, te enviamos un enlace para restablecerla.');
     } catch (e) { toast(e.message); }
   });
 
@@ -515,8 +527,31 @@ async function renderHome() {
   bindCommon(root);
   setAvatarChips(root);
 
-  // Botón Estudiar
-  $('[data-abrir-estudiar]', root).addEventListener('click', abrirModalEstudio);
+  // Botón Estudiar: flujo automático si hay plan de hoy pendiente,
+  // fallback al modal "cuánto tiempo tienes" si no hay nada plan-eado.
+  $('[data-abrir-estudiar]', root).addEventListener('click', async () => {
+    try {
+      const sig = await S.rpc('siguiente_bloque_pendiente', {}, { api: '/api' });
+      if (sig && sig.id && sig.es_hoy !== false) {
+        // Arranca directamente el modo estudio guiado del plan.
+        await iniciarEstudioAuto();
+        return;
+      }
+    } catch (_) {}
+    // Sin plan de hoy → deja elegir minutos manualmente.
+    abrirModalEstudio();
+  });
+
+  // Sugerencia de disponibilidad al primer login del lunes.
+  if (new Date().getDay() === 1 && !sessionStorage.getItem('sem-check-' + new Date().toDateString())) {
+    sessionStorage.setItem('sem-check-' + new Date().toDateString(), '1');
+    S.rpc('resumen_inicio_semana', {}, { api: '/api' })
+      .then(d => { if (d && d.sugerida) mostrarModalSemana(d); })
+      .catch(() => {});
+  }
+
+  // Reprograma automáticamente los días perdidos (silencioso).
+  S.rpc('reprogramar_dia_perdido', {}, { api: '/api' }).catch(() => {});
 
   // Resumen semanal
   try {
@@ -682,14 +717,91 @@ async function renderPlan() {
   }
 
   $('[data-plan-editar]', root).addEventListener('click', () => location.hash = '#/wizard');
-  $('[data-plan-reprog]', root).addEventListener('click', async () => {
-    if (!plan?.id) return toast('No hay plan aún');
+  $('[data-plan-reprog]', root).addEventListener('click', () => abrirCambioDisponibilidadHoy());
+}
+
+// Modal "Nueva semana" con la sugerencia (aprendizaje) y opción de
+// modificar antes de aceptar.  Al aceptar guarda y recalcula plan.
+function mostrarModalSemana(data) {
+  const dows = [['lun','Lun'],['mar','Mar'],['mie','Mié'],['jue','Jue'],
+                ['vie','Vie'],['sab','Sáb'],['dom','Dom']];
+  const suger = data.sugerida || {};
+  const actual = data.actual || {};
+  const tpl = document.getElementById('tpl-semana');
+  document.body.appendChild(tpl.content.cloneNode(true));
+  const back = $('.modal-backdrop:last-of-type') || $('[data-modal]');
+  const ul = $('[data-semana-days]', back);
+  ul.innerHTML = dows.map(([k, l]) => {
+    // Prioriza sugerida si tiene datos, si no lo actual del plan.
+    const val = (suger[k] ?? actual[k] ?? 0);
+    return `<li>
+      <span class="day-lbl">${l}</span>
+      <input type="number" min="0" max="12" step="0.5" value="${val}" data-day="${k}" inputmode="decimal">
+      <span class="day-unit">h</span></li>`;
+  }).join('');
+  const totalEl = $('[data-semana-total]', back);
+  const recalc = () => {
+    const t = dows.reduce((s, [k]) => s + (parseFloat($(`[data-day="${k}"]`, back)?.value) || 0), 0);
+    totalEl.textContent = t;
+  };
+  $$('[data-day]', back).forEach(i => i.addEventListener('input', recalc));
+  recalc();
+
+  const cerrar = () => back.remove();
+  $('[data-modal-close]', back).addEventListener('click', cerrar);
+  back.addEventListener('click', ev => { if (ev.target === back) cerrar(); });
+
+  $('[data-semana-aceptar]', back).addEventListener('click', async () => {
+    const hpd = {};
+    dows.forEach(([k]) => { hpd[k] = parseFloat($(`[data-day="${k}"]`, back)?.value) || 0; });
+    const oposId = state.principalId ||
+                   (state.oposiciones[0] || {}).id;
     try {
-      const r = await S.rpc('reprogramar_plan', { p_plan_id: plan.id }, { api: '/api' });
-      toast('Plan reprogramado: ' + (r.creadas || 0) + ' bloques');
-      renderPlan();
+      await S.rpc('guardar_disponibilidad', {
+        p_oposicion_id:  oposId,
+        p_modo:          'diario',
+        p_horas_por_dia: hpd,
+      }, { api: '/api' });
+      toast('Semana planificada 🌱');
+      cerrar();
+      renderHome();
     } catch (e) { toast(e.message); }
   });
+}
+
+// Cambio puntual de disponibilidad para HOY.
+function abrirCambioDisponibilidadHoy() {
+  const opciones = [
+    { min: 0,   lbl: 'No puedo estudiar' },
+    { min: 15,  lbl: '15 minutos' },
+    { min: 30,  lbl: '30 minutos' },
+    { min: 60,  lbl: '1 hora' },
+    { min: 120, lbl: '2 horas' },
+    { min: 180, lbl: '3 horas o más' },
+  ];
+  const back = document.createElement('div');
+  back.className = 'modal-backdrop';
+  back.innerHTML = `<div class="modal">
+    <button class="modal-close" data-cerrar aria-label="Cerrar">×</button>
+    <h2>Hoy tengo otro tiempo</h2>
+    <p class="muted small">Elige lo que puedes dedicar hoy. Recalcularemos el resto de la semana.</p>
+    <div class="tiempo-chips" style="margin-top:var(--sp-2)">
+      ${opciones.map(o => `<button type="button" data-m="${o.min}">${o.lbl}</button>`).join('')}
+    </div>
+  </div>`;
+  document.body.appendChild(back);
+  const cerrar = () => back.remove();
+  $('[data-cerrar]', back).addEventListener('click', cerrar);
+  back.addEventListener('click', ev => { if (ev.target === back) cerrar(); });
+  $$('button[data-m]', back).forEach(b => b.addEventListener('click', async () => {
+    const min = +b.dataset.m;
+    try {
+      await S.rpc('cambiar_disponibilidad_hoy', { p_minutos: min }, { api: '/api' });
+      toast('Plan de hoy recalculado');
+      cerrar();
+      renderPlan();
+    } catch (e) { toast(e.message); }
+  }));
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -1056,6 +1168,47 @@ async function renderAdmin() {
     clearTimeout(tId);
     tId = setTimeout(() => cargar(buscar.value.trim() || null), 220);
   });
+
+  // Listado editable de oposiciones (fecha del examen).
+  async function cargarOpos() {
+    let opos = [];
+    try {
+      const r = await fetch(
+        '/api/oposiciones?select=id,nombre,organismo,fecha_examen,fecha_examen_orientativa,activa&order=nombre',
+        { headers: authHeaders() });
+      if (r.ok) opos = await r.json();
+    } catch (_) {}
+    const ul = $('[data-ad-opos-lista]', root);
+    ul.innerHTML = opos.map(o => `
+      <li data-id="${o.id}">
+        <div>
+          <span class="op-titulo">${escapeHtml(o.nombre)}</span>
+          <span class="op-org">${escapeHtml(o.organismo || '—')}</span>
+        </div>
+        <div class="op-form">
+          <input type="date" value="${o.fecha_examen || ''}" data-fecha>
+          <label>
+            <input type="checkbox" ${o.fecha_examen_orientativa ? 'checked' : ''} data-orient>
+            orientativa
+          </label>
+          <button class="btn btn-mini btn-outline" data-guardar>Guardar</button>
+        </div>
+      </li>`).join('') || '<li class="muted">No hay oposiciones aún</li>';
+
+    $$('li[data-id]', ul).forEach(li => {
+      $('[data-guardar]', li)?.addEventListener('click', async () => {
+        try {
+          await S.rpc('admin_editar_oposicion', {
+            p_oposicion_id: li.dataset.id,
+            p_fecha_examen: $('[data-fecha]', li).value || null,
+            p_fecha_examen_orientativa: $('[data-orient]', li).checked,
+          }, { api: '/api' });
+          toast('Fecha actualizada');
+        } catch (e) { toast(e.message); }
+      });
+    });
+  }
+  cargarOpos();
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -1110,11 +1263,86 @@ async function renderAdministracion() {
 }
 
 // ══════════════════════════════════════════════════════════════════════
+// RESET PASSWORD
+// ══════════════════════════════════════════════════════════════════════
+
+async function renderReset(r) {
+  mount('tpl-reset');
+  const root = $('.auth-view');
+  const token = r.query?.token;
+  const panel = $('[data-panel]', root);
+  if (!token) {
+    panel.innerHTML = `<h2 style="color:var(--danger)">Enlace inválido</h2>
+      <p>Falta el token en la URL.</p>
+      <button class="btn btn-outline btn-block" onclick="location.hash='#/auth'">Ir al inicio</button>`;
+    return;
+  }
+  const form = $('[data-form-reset]', panel);
+  const pw   = form.password;
+  const pw2  = form.password2;
+  const err  = $('[data-err]', form);
+  const hint = $('[data-pw-strength]', form);
+  const fill = $('[data-pw-fill]', form);
+  const lbl  = $('[data-pw-label]', form);
+  const match= $('[data-pw-match]', form);
+
+  function updatePw() {
+    const { nivel, etiqueta } = calcPwLevel(pw.value);
+    hint.classList.remove('lvl-1','lvl-2','lvl-3','lvl-4');
+    if (nivel) hint.classList.add('lvl-' + nivel);
+    lbl.textContent = etiqueta;
+    if (!pw.value) fill.style.width = '0%';
+  }
+  function updateMatch() {
+    if (!pw2.value) { match.hidden = true; return; }
+    match.hidden = false;
+    const ok = pw.value === pw2.value;
+    match.textContent = ok ? '✓ Coinciden' : '✗ No coinciden';
+    match.classList.toggle('ok', ok);
+    match.classList.toggle('err', !ok);
+  }
+  pw.addEventListener('input', () => { updatePw(); updateMatch(); });
+  pw2.addEventListener('input', updateMatch);
+
+  form.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    err.hidden = true;
+    if (pw.value !== pw2.value) { err.textContent = 'No coinciden.'; err.hidden = false; return; }
+    if (calcPwLevel(pw.value).nivel < 2) { err.textContent = 'Contraseña muy débil.'; err.hidden = false; return; }
+    try {
+      await S.rpc('aplicar_reset', { p_token: token, p_password: pw.value },
+                   { api: '/api', token: null });
+      toast('Contraseña actualizada. Ya puedes entrar.');
+      location.hash = '#/auth';
+    } catch (e) {
+      err.textContent = String(e.message).includes('token_invalido')
+        ? 'Enlace caducado o ya usado.' : e.message;
+      err.hidden = false;
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════
 // MODO ESTUDIO — modal + vista fullscreen + cronómetro
 // ══════════════════════════════════════════════════════════════════════
 
 let _estudioTimer = null;
 let _sistemas = null;
+
+// Arranca modo estudio directamente con los bloques pendientes del
+// plan de HOY (flujo del botón "Estudiar" cuando ya hay plan).
+async function iniciarEstudioAuto() {
+  try {
+    // Lee minutos pendientes de hoy para dimensionar la sesión.
+    const hoy = await S.rpc('plan_del_dia', {}, { api: '/api' });
+    const pend = (hoy || []).filter(b => !b.completada);
+    const total = pend.reduce((s, b) => s + (b.minutos || 25), 0) || 30;
+    await S.rpc('iniciar_estudio',
+      { p_minutos_total: Math.max(15, total), p_sistema_id: null },
+      { api: '/api' });
+    location.hash = '#/estudio';
+  } catch (e) { toast('No se pudo iniciar: ' + e.message); }
+}
 
 async function abrirModalEstudio() {
   // Carga sistemas de estudio (una vez)
@@ -1233,9 +1461,10 @@ async function renderEstudio() {
         cuerpo.innerHTML = `<p class="muted">No se ha podido cargar la unidad.</p>`;
       }
     } else if (bloqueActual.tipo === 'repaso' && bloqueActual.preguntas_ids?.length) {
+      await renderPreguntasRepaso(cuerpo, bloqueActual.preguntas_ids);
+    } else if (bloqueActual.tipo === 'repaso') {
       cuerpo.innerHTML = `<div class="prose"><h2>Repaso rápido</h2>
-        <p>${bloqueActual.preguntas_ids.length} preguntas vencidas. Piénsalas y comprueba.</p>
-        <p class="muted small">Próximamente aquí verás las preguntas y podrás responder para actualizar tu repaso.</p></div>`;
+        <p>Hoy no tienes repasos vencidos. Aprovecha el bloque para releer un tema.</p></div>`;
     } else {
       cuerpo.innerHTML = `<p class="muted">Bloque listo.</p>`;
     }
@@ -1298,6 +1527,79 @@ async function renderEstudio() {
   }
 
   pintarBloque();
+}
+
+
+// Renderiza N preguntas con sus opciones dentro del bloque de repaso.
+// Al responder cada una, llama a registrar_respuesta_espaciada.
+async function renderPreguntasRepaso(cuerpo, ids) {
+  cuerpo.innerHTML = `<div class="prose"><h2>Repaso rápido</h2>
+    <p class="muted">${ids.length} preguntas vencidas.</p></div>
+    <div data-repaso-container></div>`;
+  const cont = $('[data-repaso-container]', cuerpo);
+
+  // PostgREST REST plano (más fiable que RPC para "in list").
+  let preguntas = [];
+  try {
+    const r = await fetch(
+      '/api/preguntas?select=id,enunciado,opciones,explicacion&id=in.(' +
+      ids.map(encodeURIComponent).join(',') + ')',
+      { headers: authHeaders() });
+    if (r.ok) preguntas = await r.json();
+  } catch (_) {}
+  if (!preguntas.length) {
+    cont.innerHTML = '<p class="muted">No se pudieron cargar las preguntas.</p>';
+    return;
+  }
+
+  let idx = 0, ok = 0;
+  function pintar() {
+    if (idx >= preguntas.length) {
+      cont.innerHTML = `<div class="test-resultado">
+        Repaso hecho: <strong>${ok}</strong> de ${preguntas.length}
+      </div>`;
+      return;
+    }
+    const p = preguntas[idx];
+    // Nota: `opciones` es jsonb con [{texto, correcta}]. Filtramos
+    // `correcta` para no descubrirla en el DOM.
+    const opciones = [...(p.opciones || [])].sort(() => Math.random() - 0.5);
+    cont.innerHTML = `
+      <div class="test-progress">Pregunta ${idx + 1} de ${preguntas.length}</div>
+      <div class="test-q">${escapeHtml(p.enunciado)}</div>
+      <div class="test-options" data-opts></div>
+      <div class="test-explicacion" data-exp hidden></div>
+      <button class="btn btn-primary btn-block" data-next hidden style="margin-top:8px">Siguiente</button>`;
+    const opts = $('[data-opts]', cont);
+    opciones.forEach(o => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = o.texto;
+      b.addEventListener('click', async () => {
+        $$('button', opts).forEach(x => x.disabled = true);
+        const acierto = !!o.correcta;
+        if (acierto) { b.classList.add('correcta'); ok++; }
+        else {
+          b.classList.add('incorrecta');
+          const buenoBtn = $$('button', opts).find(x =>
+            x.textContent === (opciones.find(oo => oo.correcta) || {}).texto);
+          if (buenoBtn) buenoBtn.classList.add('correcta');
+        }
+        if (p.explicacion) {
+          $('[data-exp]', cont).textContent = p.explicacion;
+          $('[data-exp]', cont).hidden = false;
+        }
+        $('[data-next]', cont).hidden = false;
+        try {
+          await S.rpc('registrar_respuesta_espaciada',
+            { p_pregunta_id: p.id, p_correcta: acierto }, { api: '/api' });
+        } catch (_) {}
+      });
+      opts.appendChild(b);
+    });
+    $('[data-next]', cont).addEventListener('click', () => { idx++; pintar(); });
+  }
+  pintar();
 }
 
 

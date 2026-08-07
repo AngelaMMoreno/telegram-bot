@@ -320,6 +320,38 @@ No hay que cambiar YAMLs, ni Dockerfiles, ni SQL — sólo el `.env`.
 
 ## Estado de las funcionalidades
 
+### Planificador v2 (nuevo) ✅
+
+- **Fecha del examen** por oposición (día exacto o mes/año
+  orientativo). Editable desde admin (`admin_editar_oposicion`).
+  El motor la usa para dimensionar el horizonte del plan.
+- **Motor autónomo** `recalcular_plan_hasta_examen`: distribuye
+  todas las unidades pendientes + repasos vencidos desde HOY hasta
+  la fecha del examen respetando `horas_por_dia`. Cada bloque
+  recibe `orden_global` para saber cuál toca a continuación.
+- **Flujo diario**: botón "Estudiar" en Home
+  - Si hay plan de hoy → entra directamente en el siguiente bloque
+    pendiente (sin preguntarle nada al usuario).
+  - Si no hay plan → abre el modal "¿Cuánto tiempo tienes?" clásico.
+- **Auto-avance**: al terminar un bloque, `registrar_bloque_completado`
+  devuelve el siguiente y el modo estudio encadena.
+- **"Hoy tengo otro tiempo"** en la vista Plan → modal con opciones
+  rápidas (0, 15, 30, 60, 120, 180+ min) → `cambiar_disponibilidad_hoy`
+  ajusta hoy y **recalcula toda la semana** sin superar los
+  límites configurados.
+- **Reprogramación silenciosa de días perdidos** al abrir la app:
+  `reprogramar_dia_perdido` mete lo no completado en la cola de los
+  próximos días sin superar la disponibilidad máxima.
+- **Aprendizaje automático**: los lunes al primer login del día,
+  la SPA muestra la sugerencia semanal en horas por día
+  (`sugerir_plan_semanal`) basada en las últimas 4 semanas de
+  `sesiones_estudio`. El usuario acepta o ajusta y se guarda.
+- **Recuperación de contraseña**: enlace "¿Olvidaste?" en el
+  login → `solicitar_reset` envía correo → `/#/reset?token=…` la
+  cambia con `aplicar_reset`.
+- **Preguntas en el bloque de repaso** del modo estudio
+  (renderizado inline + `registrar_respuesta_espaciada`).
+
 ### Sistema adaptativo (nuevo) ✅
 
 - **Modo Estudio**: botón "Estudiar" en Home → modal "¿Cuánto tiempo tienes?"
@@ -405,6 +437,39 @@ SELECT ajustar_carga_semanal();
 
 Puedes lanzarlas con `pg_cron`, o desde el propio worker
 `notificador` extendiéndolo, o desde un job de Dokploy.
+
+### PWA offline — alcance previsto (sin implementar)
+
+Con el modo planificador nuevo, el service worker que **podría**
+añadirse aportaría un valor real limitado y bien definido. Lo que
+tendría sentido offline:
+
+| Función | Offline razonable | Por qué |
+|---|---|---|
+| Abrir la app instalada | ✅ | Cache básica del shell (HTML/CSS/JS/logo). |
+| Ver **teoría** ya visitada | ✅ | Cachear las respuestas JSON de `obtener_unidad`. Poco peso, mucha utilidad si el usuario estudia en el metro. |
+| Continuar un **bloque de teoría** iniciado online | ✅ | La lectura es local; el auto-tracking se encola y se envía al recuperar red (Background Sync). |
+| Terminar un bloque y avanzar al siguiente | ⚠️ Parcial | `registrar_bloque_completado` requiere red para reordenar. Se encolaría con Background Sync y al reconectar se aplica. |
+| Test rápido de una unidad cacheada | ⚠️ Parcial | Preguntas cacheables; `responder_pregunta` se encola. |
+| Repaso SM-2 | ❌ | Necesita ver `siguiente_repaso`, que puede haber cambiado. Correcto sólo online. |
+| Login / registro / verificación | ❌ | Requieren red obligatoriamente. |
+| Importar oposición JSON | ❌ | Admin online. |
+| Recalcular plan / cambio de disponibilidad | ❌ | Motor SQL — online. |
+| Estadísticas / dashboard | ❌ | Cálculos en BBDD — online. |
+
+Estrategia recomendada cuando se aborde:
+
+- **Precache** del shell: `index.html`, `tokens.css`, `style.css`,
+  `app.js`, `session.js`, `logo.svg`, iconos PWA.
+- **Runtime cache** stale-while-revalidate para `/api/rpc/obtener_unidad`,
+  `/api/rpc/obtener_tema`, `/api/oposiciones`, `/api/preguntas`.
+- **Background Sync** para POSTs pendientes (`sesion_tick`,
+  `sesion_cerrar`, `registrar_bloque_completado`,
+  `responder_pregunta`, `registrar_respuesta_espaciada`).
+- Fallback offline con la última página cacheada + toast
+  "trabajando sin conexión, sincronizaremos cuando vuelvas".
+
+Coste técnico estimado: 1-2 días bien hechos.
 
 ### Sin implementar aún 🚧
 - **Preguntas en el bloque de repaso del modo estudio**: por ahora
