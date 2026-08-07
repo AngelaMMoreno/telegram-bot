@@ -102,10 +102,21 @@ p  { margin: 0; }
 }
 @keyframes fade { from { opacity: 0; transform: translateY(4px); } }
 
-/* Top bar (consistente en home / plan / stats) */
+/* Top bar (consistente en home / plan / stats / perfil / oposicion).
+   Sticky al top para que el logo/nivel/racha/avatar sigan siempre
+   visibles aunque el contenido de la vista scrollee.  El bottom-nav
+   ya está fixed abajo, así que el usuario tiene sus "raíles" fijos
+   arriba y abajo y el contenido del medio va scrolleando de forma
+   natural sin que se pierda contexto. */
 .top-bar {
   display: flex; align-items: center; gap: var(--sp-2);
   padding: 4px 0 var(--sp-1);
+  position: sticky; top: 0; z-index: 5;
+  background: linear-gradient(180deg, var(--bg) 0%, var(--bg) 78%, transparent 100%);
+  padding-top: max(4px, env(safe-area-inset-top));
+  margin-top: calc(-1 * max(var(--sp-3), env(safe-area-inset-top)));
+  margin-inline: calc(-1 * var(--sp-3));
+  padding-inline: var(--sp-3);
 }
 .top-bar .brand-mini { margin-right: auto; }
 .brand-mini {
@@ -945,65 +956,84 @@ p  { margin: 0; }
 }
 .tiempo-chips button:hover { border-color: var(--pri); }
 
-/* ─── Modo estudio (fullscreen) ───────────────────────────────────── */
+/* ─── Modo estudio (fullscreen sin scroll de página) ───────────────── */
+/* La vista ocupa exactamente el alto del viewport, en columna:
+      [ head ]    ← siempre visible, ~64px
+      [ cuerpo ]  ← flex:1, hace scroll SOLO dentro de sí mismo
+      [ cta   ]   ← siempre visible al pie
+   Nunca se hace scroll a la pantalla completa: la cabecera y los
+   botones quedan fijos y el texto/preguntas del bloque scrollean
+   dentro del cuerpo si son muy largos. */
 .view-estudio {
-  min-height: 100dvh;
-  padding: max(var(--sp-3), env(safe-area-inset-top)) var(--sp-3)
-           max(var(--sp-4), env(safe-area-inset-bottom));
-  display: flex; flex-direction: column; gap: var(--sp-3);
+  height: 100dvh; min-height: unset;
+  padding: max(var(--sp-2), env(safe-area-inset-top)) var(--sp-3)
+           max(var(--sp-3), env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  overflow: hidden;
 }
 .estudio-head {
   display: grid; grid-template-columns: auto 1fr auto;
   align-items: center; gap: var(--sp-2);
+  flex-shrink: 0;
 }
-.estudio-meta { text-align: center; }
-.estudio-meta strong { display: block; font-size: var(--fs-lg); color: var(--pri-d); }
+.estudio-salir {
+  padding: 6px 10px; min-width: 40px;
+  justify-content: center;
+}
+.estudio-salir .btn-back-ico { font-size: 1.4rem; transform: none; }
+.estudio-meta { text-align: center; min-width: 0; }
+.estudio-meta strong { display: block; font-size: var(--fs-md); color: var(--pri-d); line-height: 1.1; }
+.estudio-meta .muted { font-size: var(--fs-xs); }
 
-.cronometro {
-  position: relative;
-  width: min(280px, 70vw); height: min(280px, 70vw);
-  margin: var(--sp-2) auto;
+/* Cronómetro pequeño en la cabecera (anillo 40px + mm:ss al lado). */
+.crono-mini {
+  display: grid; grid-template-columns: 44px auto;
+  gap: 8px; align-items: center;
+  padding: 4px 10px 4px 4px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
 }
-.crono-ring { width: 100%; height: 100%; transform: rotate(-90deg); transform-origin: center; }
-.crono-bg { fill: none; stroke: var(--bg-alt); stroke-width: 12; }
+.crono-mini .crono-ring { width: 44px; height: 44px; display: block; }
+.crono-bg { fill: none; stroke: var(--bg-alt); stroke-width: 4; }
 .crono-fg {
-  fill: none;
-  stroke: var(--pri);
-  stroke-width: 12;
-  stroke-linecap: round;
-  stroke-dasharray: 0 100;
+  fill: none; stroke: var(--pri); stroke-width: 4;
+  stroke-linecap: round; stroke-dasharray: 0 100;
   transition: stroke-dasharray 1s linear;
 }
-.crono-txt {
-  position: absolute; inset: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
+.crono-mini-txt { display: flex; flex-direction: column; line-height: 1.05; }
+.crono-mini-txt strong {
+  font-size: var(--fs-md); font-weight: 800;
+  color: var(--txt); font-variant-numeric: tabular-nums;
 }
-.crono-txt strong {
-  font-size: clamp(2.6rem, 12vw, 4rem);
-  font-weight: 800; letter-spacing: -0.03em; color: var(--txt);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
+.crono-mini-txt .muted { font-size: var(--fs-xs); }
+
 .estudio-cuerpo {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;              /* clave para que overflow-y funcione */
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: var(--sp-3);
 }
 .estudio-descanso {
-  text-align: center; padding: var(--sp-5) var(--sp-3);
+  text-align: center; padding: var(--sp-4) var(--sp-3);
 }
-.estudio-descanso .emoji { font-size: 4rem; display: block; margin-bottom: var(--sp-2); }
+.estudio-descanso .emoji { font-size: 3rem; display: block; margin-bottom: var(--sp-1); }
 .estudio-descanso h3 { color: var(--pri-d); margin: 0 0 var(--sp-1); }
 .estudio-final {
-  text-align: center; padding: var(--sp-5) var(--sp-3);
+  text-align: center; padding: var(--sp-4) var(--sp-3);
   background: linear-gradient(160deg, var(--pri-soft), var(--accent-soft));
   border-radius: var(--radius-lg);
 }
-.estudio-final .emoji { font-size: 4rem; display: block; margin-bottom: var(--sp-2); }
-.estudio-cta { display: flex; flex-direction: column; gap: 8px; }
+.estudio-final .emoji { font-size: 3rem; display: block; margin-bottom: var(--sp-1); }
+.estudio-cta {
+  display: flex; flex-direction: column; gap: 8px;
+  flex-shrink: 0;
+}
 
 /* Mi oposición (temas + unidades + fecha examen) */
 .card-examen {

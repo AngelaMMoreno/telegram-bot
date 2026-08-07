@@ -664,18 +664,6 @@ async function renderHome() {
   // Reprograma automáticamente los días perdidos (silencioso).
   S.rpc('reprogramar_dia_perdido', {}, { api: '/api' }).catch(() => {});
 
-  // Resumen semanal
-  try {
-    const rs = await S.rpc('resumen_semanal', {}, { api: '/api' });
-    if (rs && rs.minutos_estudiados !== undefined) {
-      $('[data-resumen-semanal]', root).hidden = false;
-      $('[data-rs-mensaje]', root).textContent = rs.mensaje || '';
-      $('[data-rs-min]', root).textContent = fmtMin(rs.minutos_estudiados);
-      $('[data-rs-obj]', root).textContent = (rs.objetivos_cumplidos || 0) + '%';
-      $('[data-rs-prec]', root).textContent = (rs.precision_media || 0) + '%';
-    }
-  } catch (_) {}
-
   let data = null;
   try { data = await S.rpc('dashboard_inicio', {}, { api: '/api' }); }
   catch (e) { toast('Error cargando datos: ' + e.message); return; }

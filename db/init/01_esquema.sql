@@ -2376,18 +2376,78 @@ BEGIN
 END $$;
 
 -- Cierra la sesión, calcula minutos activos totales y devuelve
--- resumen (aciertos, fatiga aproximada).
+-- resumen (aciertos, fatiga aproximada).  Marca también los bloques
+-- del plan (plan_sesiones) del día como completados y las unidades
+-- procesadas como teoría vista en progreso_unidad — así el plan
+-- refleja el avance real del modo estudio.
 CREATE OR REPLACE FUNCTION cerrar_estudio() RETURNS jsonb
 LANGUAGE plpgsql AS $$
 DECLARE
     v_uid    uuid := jwt_usuario_id();
     v_s      sesion_activa;
     v_min    int;
+    v_b      jsonb;
+    v_i      int;
+    v_uid_u  uuid;
+    v_tipo   text;
+    v_actual int := 0;
+    v_ps_id  uuid;
 BEGIN
     SELECT * INTO v_s FROM sesion_activa WHERE usuario_id = v_uid;
     IF v_s.usuario_id IS NULL THEN RETURN jsonb_build_object('ok', true); END IF;
 
     v_min := EXTRACT(EPOCH FROM (now() - v_s.iniciada_en))::int / 60;
+
+    -- Marca como completados los bloques procesados (indices <= actual).
+    FOR v_i IN 0..LEAST(v_s.bloque_idx,
+                         jsonb_array_length(v_s.plan_bloques) - 1) LOOP
+        v_b    := v_s.plan_bloques -> v_i;
+        v_tipo := v_b->>'tipo';
+        IF v_tipo = 'final' THEN CONTINUE; END IF;
+
+        IF v_tipo = 'estudio' AND v_b ? 'unidad_id' THEN
+            v_uid_u := (v_b->>'unidad_id')::uuid;
+
+            INSERT INTO progreso_unidad(usuario_id, unidad_id,
+                                        teoria_completada, teoria_vista_en)
+            VALUES (v_uid, v_uid_u, true, now())
+            ON CONFLICT (usuario_id, unidad_id) DO UPDATE
+               SET teoria_completada = true,
+                   teoria_vista_en   = COALESCE(progreso_unidad.teoria_vista_en, now());
+
+            UPDATE plan_sesiones ps
+               SET completada    = true,
+                   completada_en = now()
+              FROM plan_estudio p
+             WHERE ps.plan_id = p.id
+               AND p.usuario_id = v_uid
+               AND ps.fecha     = current_date
+               AND ps.unidad_id = v_uid_u
+               AND NOT ps.completada;
+
+            v_actual := v_actual + 1;
+
+        ELSIF v_tipo IN ('repaso', 'test') THEN
+            SELECT ps.id INTO v_ps_id
+              FROM plan_sesiones ps
+              JOIN plan_estudio p ON p.id = ps.plan_id
+             WHERE p.usuario_id = v_uid
+               AND ps.fecha     = current_date
+               AND ps.tipo      = v_tipo
+               AND NOT ps.completada
+             ORDER BY ps.hora_inicio NULLS LAST
+             LIMIT 1;
+
+            IF v_ps_id IS NOT NULL THEN
+                UPDATE plan_sesiones
+                   SET completada    = true,
+                       completada_en = now()
+                 WHERE id = v_ps_id;
+                v_actual := v_actual + 1;
+            END IF;
+        END IF;
+    END LOOP;
+
     DELETE FROM sesion_activa WHERE usuario_id = v_uid;
 
     -- Suma XP proporcional a los minutos activos reales.
@@ -2399,8 +2459,9 @@ BEGIN
 
     RETURN jsonb_build_object(
         'ok', true,
-        'minutos_totales', v_min,
-        'bloques_completados', v_s.bloque_idx
+        'minutos_totales',     v_min,
+        'bloques_completados', v_s.bloque_idx,
+        'plan_actualizados',   v_actual
     );
 END $$;
 

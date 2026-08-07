@@ -149,21 +149,6 @@
         </span>
       </button>
 
-      <!-- Resumen semanal (aparece solo cuando hay datos: primera Home
-           tras el domingo con cierre semanal). -->
-      <article class="card card-resumen-semanal" data-resumen-semanal hidden>
-        <div class="rs-ico">📊</div>
-        <div class="rs-txt">
-          <span class="chip chip-soft">Resumen de la semana</span>
-          <p data-rs-mensaje class="rs-mensaje">—</p>
-          <div class="rs-stats">
-            <span><strong data-rs-min>0m</strong><span class="muted small">estudiadas</span></span>
-            <span><strong data-rs-obj>0%</strong><span class="muted small">objetivos</span></span>
-            <span><strong data-rs-prec>0%</strong><span class="muted small">precisión</span></span>
-          </div>
-        </div>
-      </article>
-
       <!-- Plan de hoy compacto — SIN duplicar los stats del perfil/estadísticas. -->
       <article class="card card-hoy">
         <div class="card-head">
@@ -723,31 +708,36 @@
 
   <template id="tpl-estudio">
     <section class="view view-estudio">
+      <!-- Cabecera compacta: salir + meta + cronómetro en una sola fila.
+           No ocupa más de ~64px de alto para dejar sitio al cuerpo. -->
       <header class="estudio-head">
-        <button class="btn btn-ghost btn-mini" data-estudio-salir aria-label="Salir">×</button>
+        <button class="btn-back estudio-salir" data-estudio-salir aria-label="Salir">
+          <span class="btn-back-ico">×</span>
+        </button>
         <div class="estudio-meta">
           <span class="muted small" data-estudio-idx>Bloque 1/1</span>
           <strong data-estudio-tipo>Estudio</strong>
         </div>
-        <span></span>
+        <div class="crono-mini" data-crono aria-live="polite">
+          <svg viewBox="0 0 40 40" class="crono-ring">
+            <circle cx="20" cy="20" r="17" class="crono-bg"/>
+            <circle cx="20" cy="20" r="17" class="crono-fg" data-crono-ring
+                    pathLength="100" transform="rotate(-90 20 20)"/>
+          </svg>
+          <div class="crono-mini-txt">
+            <strong data-crono-mmss>00:00</strong>
+            <span class="muted small" data-crono-total>25 min</span>
+          </div>
+        </div>
       </header>
 
-      <div class="cronometro" data-crono>
-        <svg viewBox="0 0 200 200" class="crono-ring">
-          <circle cx="100" cy="100" r="86" class="crono-bg"/>
-          <circle cx="100" cy="100" r="86" class="crono-fg" data-crono-ring
-                  pathLength="100" transform="rotate(-90 100 100)"/>
-        </svg>
-        <div class="crono-txt">
-          <strong data-crono-mmss>00:00</strong>
-          <span class="muted small" data-crono-total>de 25 min</span>
-        </div>
-      </div>
-
+      <!-- Cuerpo: ocupa todo el espacio disponible y scrollea SOLO
+           dentro de sí mismo (nunca la pantalla completa). -->
       <div class="estudio-cuerpo" data-estudio-cuerpo>
         <!-- Se rellena dinámicamente según el tipo de bloque -->
       </div>
 
+      <!-- CTA fija al pie: los botones siempre visibles. -->
       <div class="estudio-cta">
         <button class="btn btn-outline btn-block" data-estudio-saltar hidden>
           ⏭ Saltar descanso
