@@ -74,19 +74,31 @@ p  { margin: 0; }
 }
 @keyframes fade { from { opacity: 0; transform: translateY(4px); } }
 
-/* Top bar */
-.top-bar { display: flex; align-items: center; gap: var(--sp-2); padding: 4px 0; }
-.top-bar > .chip:first-of-type { margin-right: auto; }
-.brand-mini { width: 40px; height: 40px; border-radius: 50%; background: var(--pri-light); padding: 4px; }
+/* Top bar (consistente en home / plan / stats) */
+.top-bar {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: 4px 0 var(--sp-1);
+}
+.top-bar .brand-mini { margin-right: auto; }
+.brand-mini {
+  width: 44px; height: 44px;
+  object-fit: contain; object-position: center;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.08));
+}
 .brand-hero {
   width: clamp(96px, 24vw, 140px); height: auto;
   margin-bottom: var(--sp-2); filter: drop-shadow(var(--shadow));
+  object-fit: contain;
 }
 .brand-logo {
   width: clamp(88px, 22vw, 120px); height: auto;
-  margin: 0 auto var(--sp-2); display: block;
+  margin: 0 auto var(--sp-2); display: block; object-fit: contain;
 }
-.fox-mini { width: 22px; height: 22px; border-radius: 50%; }
+.fox-mini {
+  width: 20px; height: 20px; object-fit: contain;
+  flex-shrink: 0;
+}
 
 .chip {
   display: inline-flex; align-items: center; gap: 6px;
@@ -190,6 +202,10 @@ p  { margin: 0; }
 }
 .list li:last-child { border-bottom: 0; }
 .list li strong { display: block; }
+.list li.empty {
+  display: block; grid-template-columns: none;
+  padding: 0; border-bottom: 0;
+}
 .list li .muted { display: block; font-size: var(--fs-sm); }
 .ico-round {
   width: 42px; height: 42px; border-radius: 50%;
@@ -253,6 +269,28 @@ p  { margin: 0; }
   align-items: center; padding: 10px 0; border-bottom: 1px dashed var(--border);
 }
 .timeline li:last-child { border-bottom: 0; }
+
+/* Empty state para el timeline (plan de hoy sin bloques).
+   Es un panel horizontal a ancho completo, no un grid de 3 columnas. */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center;
+  gap: var(--sp-1); text-align: center;
+  padding: var(--sp-4) var(--sp-3);
+  color: var(--txt-soft);
+  background: var(--bg-alt);
+  border-radius: var(--radius);
+  border: 1px dashed var(--border);
+  grid-column: 1 / -1;
+}
+.empty-state .emoji { font-size: 2rem; display: block; }
+.empty-state p { margin: 0; font-size: var(--fs-sm); line-height: 1.4; max-width: 32ch; }
+.empty-state .btn { margin-top: var(--sp-1); }
+/* Cuando aparece dentro de un <ul.list>/<ul.timeline>, ignora el grid del li */
+.list .empty-state,
+.timeline .empty-state,
+.list-materias .empty-state {
+  border-bottom: 0;
+}
 .timeline .t-ico {
   width: 42px; height: 42px; border-radius: 50%;
   background: var(--pri-soft); color: var(--pri-d);
@@ -308,6 +346,10 @@ p  { margin: 0; }
 .progreso-txt h2 { margin: 0 0 4px; }
 .progreso-txt p  { margin: 2px 0; font-size: var(--fs-sm); }
 .list-materias li { grid-template-columns: 34px 1fr auto; gap: 10px; }
+.list-materias li.empty {
+  grid-template-columns: none; display: block;
+  padding: 0; border-bottom: 0;
+}
 .list-materias .m-nombre { display: flex; flex-direction: column; min-width: 0; }
 .list-materias .m-nombre strong { color: var(--txt); }
 .list-materias .m-nombre .progress { margin-top: 6px; }
@@ -419,17 +461,42 @@ p  { margin: 0; }
 
 .sticky-cta {
   position: sticky;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  padding: var(--sp-3) 0 var(--sp-1);
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    var(--bg) 45%,
+    var(--bg) 100%
+  );
+  margin-top: var(--sp-4);
+  z-index: 10;
+}
+/* Cuando la vista tiene bottom-nav visible, el sticky sube por encima */
+.view-onboarding .sticky-cta,
+.view-home .sticky-cta,
+.view-plan .sticky-cta,
+.view-stats .sticky-cta,
+.view-perfil .sticky-cta {
   bottom: calc(var(--nav-height) + env(safe-area-inset-bottom) + 12px);
+}
+/* En el wizard preferimos NO sticky: el botón fluye al final del paso
+   y así nunca se solapa con el contenido en pantallas grandes ni queda
+   flotando en medio del listado de días en móviles pequeños. */
+.view-wizard .sticky-cta {
+  position: static;
+  background: transparent;
   padding: var(--sp-2) 0 0;
-  background: linear-gradient(180deg, transparent 0%, var(--bg) 40%);
-  margin-top: var(--sp-2);
+  margin-top: var(--sp-4);
 }
 
 /* Wizard */
 .wizard-head {
   display: grid; grid-template-columns: auto 1fr auto;
-  align-items: center; gap: 8px; padding: var(--sp-1) 0 var(--sp-2);
+  align-items: center; gap: var(--sp-2);
+  padding: 4px 0 var(--sp-2);
 }
+.wizard-head .brand-mini { justify-self: start; }
 .wizard-steps { display: flex; justify-content: center; gap: 6px; }
 .wizard-steps .dot {
   width: 8px; height: 8px; border-radius: 50%;
@@ -437,6 +504,25 @@ p  { margin: 0; }
 }
 .wizard-steps .dot.active { background: var(--pri); transform: scale(1.4); }
 .wizard-step { display: flex; flex-direction: column; gap: var(--sp-3); }
+.wizard-step .hero { min-height: unset; padding-top: 0; }
+
+/* Botón "atrás" grande y visible para wizards / modales sin bottom-nav.
+   Usa un chip pill claramente perceptible, no un caracter perdido. */
+.btn-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px 8px 10px; border-radius: 999px;
+  background: var(--bg-panel); border: 1.5px solid var(--border);
+  color: var(--pri-d); font-weight: 700; font-size: var(--fs-sm);
+  min-height: 40px; min-width: 40px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color .12s, transform .1s;
+}
+.btn-back:hover  { border-color: var(--pri); }
+.btn-back:active { transform: scale(.96); }
+.btn-back .btn-back-ico {
+  font-size: 1.2em; line-height: 1;
+  display: inline-block; transform: translateY(-1px);
+}
 
 .option-grid { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--sp-2); }
 .option-grid label { display: block; cursor: pointer; }
@@ -444,17 +530,25 @@ p  { margin: 0; }
 .option-card {
   padding: var(--sp-3); border-radius: var(--radius);
   background: var(--bg-panel); border: 2px solid var(--border);
-  display: grid; grid-template-columns: 44px 1fr; gap: var(--sp-2);
-  align-items: center; transition: border-color .12s;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  column-gap: var(--sp-3); row-gap: 4px;
+  align-items: start;
+  transition: border-color .12s;
 }
 .option-grid input:checked + .option-card { border-color: var(--pri); background: var(--pri-soft); }
 .option-ico {
   width: 44px; height: 44px; border-radius: 50%;
   background: var(--pri-soft); color: var(--pri-d);
   display: grid; place-items: center; font-size: 1.4rem;
+  grid-row: 1 / span 2;
 }
-.option-card h3 { margin: 0; }
-.option-card p { margin: 2px 0 0; font-size: var(--fs-xs); }
+.option-card h3 { margin: 0; line-height: 1.25; }
+.option-card p {
+  margin: 0; font-size: var(--fs-sm); line-height: 1.4;
+  color: var(--txt-soft);
+  overflow-wrap: break-word;
+}
 
 .range-label { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: var(--sp-1); }
 .range-label strong { color: var(--pri-d); font-size: var(--fs-lg); }

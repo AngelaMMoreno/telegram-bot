@@ -114,13 +114,12 @@
   <template id="tpl-home">
     <section class="view view-home">
       <header class="top-bar">
+        <img class="brand-mini" src="/logo.svg" alt="Aprentix">
         <button class="chip chip-level" data-open-perfil>
-          <img class="fox-mini" src="/logo.svg" alt="">
-          <span data-nivel>Nivel 1</span>
+          <span class="chip-ico">🌿</span><span data-nivel>Nivel 1</span>
         </button>
         <button class="chip chip-racha" data-goto="stats">
-          <span class="chip-ico">☀️</span>
-          <strong data-racha>0</strong> días
+          <span class="chip-ico">🔥</span><strong data-racha>0</strong> días
         </button>
         <button class="avatar-btn" data-open-perfil aria-label="Perfil">
           <span class="avatar" data-avatar>?</span>
@@ -219,12 +218,12 @@
   <template id="tpl-plan">
     <section class="view view-plan">
       <header class="top-bar">
-        <img class="brand-mini" src="/logo.svg" alt="">
+        <img class="brand-mini" src="/logo.svg" alt="Aprentix">
         <button class="chip chip-level" data-open-perfil>
           <span class="chip-ico">🌿</span><span data-nivel>Nivel 1</span>
         </button>
-        <button class="chip chip-racha">
-          <span class="chip-ico">☀️</span><strong data-racha>0</strong> días
+        <button class="chip chip-racha" data-goto="stats">
+          <span class="chip-ico">🔥</span><strong data-racha>0</strong> días
         </button>
         <button class="avatar-btn" data-open-perfil aria-label="Perfil">
           <span class="avatar" data-avatar>?</span>
@@ -281,11 +280,11 @@
   <template id="tpl-stats">
     <section class="view view-stats">
       <header class="top-bar">
-        <img class="brand-mini" src="/logo.svg" alt="">
+        <img class="brand-mini" src="/logo.svg" alt="Aprentix">
         <button class="chip chip-level" data-open-perfil>
           <span class="chip-ico">🌿</span><span data-nivel>Nivel 1</span>
         </button>
-        <button class="chip chip-racha">
+        <button class="chip chip-racha" data-goto="stats">
           <span class="chip-ico">🔥</span><strong data-racha>0</strong> días
         </button>
         <button class="avatar-btn" data-open-perfil aria-label="Perfil">
@@ -490,19 +489,20 @@
   <template id="tpl-wizard">
     <section class="view view-wizard">
       <header class="wizard-head">
-        <button class="btn btn-ghost btn-mini" data-wizard-back>‹</button>
+        <img class="brand-mini" src="/logo.svg" alt="Aprentix">
         <div class="wizard-steps">
           <span class="dot active" data-step="1"></span>
           <span class="dot" data-step="2"></span>
           <span class="dot" data-step="3"></span>
         </div>
-        <span></span>
+        <button class="btn-back" data-wizard-back aria-label="Atrás">
+          <span class="btn-back-ico">‹</span> Atrás
+        </button>
       </header>
 
       <!-- Paso 1: modo -->
       <div class="wizard-step" data-wstep="1">
-        <div class="hero hero-center">
-          <img class="brand-hero" src="/logo.svg" alt="">
+        <div class="hero">
           <h1>¿Cómo quieres organizarte?</h1>
           <p class="muted">Puedes indicar un total semanal o afinar día por día.</p>
         </div>
@@ -513,7 +513,7 @@
               <div class="option-card">
                 <span class="option-ico">📆</span>
                 <h3>Horas semanales</h3>
-                <p class="muted">"Puedo dedicarle 12 h a la semana"</p>
+                <p>Total de horas a la semana. Nosotros repartimos entre los días.</p>
               </div>
             </label>
           </li>
@@ -523,7 +523,7 @@
               <div class="option-card">
                 <span class="option-ico">🗓️</span>
                 <h3>Detalle por día</h3>
-                <p class="muted">"Los jueves y sábados más, domingos descanso"</p>
+                <p>Indicas cuánto puedes cada día: más el fin de semana, menos entre semana.</p>
               </div>
             </label>
           </li>
@@ -581,16 +581,11 @@
         </div>
       </div>
 
-      <!-- Paso 3: método + examen -->
+      <!-- Paso 3: método (la fecha de examen la gestiona el admin) -->
       <div class="wizard-step" data-wstep="3" hidden>
         <div class="hero">
           <h1>Últimos detalles</h1>
-          <p class="muted">Cómo prefieres estudiar y cuándo es el examen.</p>
-        </div>
-
-        <div class="field">
-          <label class="field-lbl">Fecha del examen (opcional)</label>
-          <input type="date" data-fecha class="input">
+          <p class="muted">Cómo prefieres estudiar.</p>
         </div>
 
         <div class="field">
@@ -609,6 +604,10 @@
             <button type="button" data-val="intensivo">Intensivo</button>
           </div>
         </div>
+
+        <p class="muted small">
+          La fecha del examen la fija el administrador cuando crea o edita la oposición.
+        </p>
 
         <div class="sticky-cta">
           <button class="btn btn-primary btn-block" data-wizard-finish>Crear mi plan</button>
@@ -924,7 +923,11 @@
         <span>Plan</span>
       </button>
       <button data-nav="stats" aria-label="Estadísticas">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <rect x="3"  y="13" width="4.5" height="8"  rx="1.2"/>
+          <rect x="9.75" y="8" width="4.5" height="13" rx="1.2"/>
+          <rect x="16.5" y="4" width="4.5" height="17" rx="1.2"/>
+        </svg>
         <span>Estadísticas</span>
       </button>
       <button data-nav="perfil" aria-label="Perfil">

@@ -16,11 +16,12 @@ const state = {
   session: null,
   oposiciones: [],
   principalId: null,
+  planCargado: false,   // true una vez comprobado si tiene plan_estudio
+  tienePlan: false,     // true si tiene plan_estudio activo con disponibilidad
   wizardData: {
     modo: 'diario',
     horas_semana: 10,
     horas_por_dia: { lun:2, mar:2, mie:2, jue:3, vie:2, sab:3, dom:0 },
-    fecha: null,
     metodo: 'cortas',
     ritmo: 'normal',
   },
@@ -91,6 +92,27 @@ async function router() {
   if (state.session && !state.oposiciones.length
       && !['onboarding', 'auth', 'wizard'].includes(r.name)) {
     location.hash = '#/onboarding';
+    return;
+  }
+
+  // Usuarios legacy (creados antes del wizard de disponibilidad):
+  // tienen oposición matriculada pero no plan de estudio configurado.
+  // Les llevamos al wizard para que rellenen disponibilidad/ritmo.
+  if (state.session && state.oposiciones.length && !state.planCargado) {
+    try {
+      const pd = await S.rpc('dashboard_perfil', {}, { api: '/api' });
+      const p = pd?.plan || null;
+      const hpd = p?.horas_por_dia || {};
+      const totalDia = ['lun','mar','mie','jue','vie','sab','dom']
+        .reduce((s, d) => s + (parseFloat(hpd[d]) || 0), 0);
+      state.tienePlan = !!(p && (p.horas_semana > 0 || totalDia > 0));
+    } catch (_) { state.tienePlan = false; }
+    state.planCargado = true;
+  }
+  if (state.session && state.oposiciones.length && !state.tienePlan
+      && !['wizard', 'perfil', 'auth', 'verify', 'reset', 'onboarding']
+           .includes(r.name)) {
+    location.hash = '#/wizard';
     return;
   }
 
@@ -179,6 +201,8 @@ function cerrarSesion() {
   state.session = null;
   state.oposiciones = [];
   state.principalId = null;
+  state.planCargado = false;
+  state.tienePlan = false;
   location.hash = '#/auth';
 }
 
@@ -439,12 +463,18 @@ async function renderWizard() {
   const root = $('.view-wizard');
   let paso = 1;
 
+  // Al abrir el wizard, arrancamos siempre desde arriba (evita que la
+  // ventana cargue con el scroll heredado de la pantalla anterior).
+  window.scrollTo(0, 0);
+
   function showStep(n) {
     paso = n;
     $$('.wizard-step', root).forEach(s => { s.hidden = s.dataset.wstep !== String(n); });
     $$('.wizard-steps .dot', root).forEach(d =>
       d.classList.toggle('active', +d.dataset.step === n));
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // Scroll inmediato al top (sin smooth) para que el hero y el botón
+    // "Atrás" queden siempre visibles, sea cual sea el tamaño de móvil.
+    window.scrollTo(0, 0);
   }
 
   // Paso 1 → siguiente
@@ -489,13 +519,13 @@ async function renderWizard() {
     b.classList.add('active');
     state.wizardData.ritmo = b.dataset.val;
   }));
-  $('[data-fecha]', root).addEventListener('change', ev => {
-    state.wizardData.fecha = ev.target.value || null;
-  });
 
   $('[data-wizard-back]', root).addEventListener('click', () => {
     if (paso > 1) return showStep(paso - 1);
-    location.hash = '#/perfil';
+    // Al salir del paso 1: si el usuario aún no tiene plan (flujo
+    // inicial u onboarding), vuelve a Home; si ya lo tenía y estaba
+    // editando su disponibilidad, vuelve a Perfil.
+    location.hash = state.tienePlan ? '#/perfil' : '#/home';
   });
 
   $('[data-wizard-finish]', root).addEventListener('click', async () => {
@@ -503,15 +533,21 @@ async function renderWizard() {
     if (!opos) { toast('Elige primero una oposición'); return location.hash = '#/onboarding'; }
     const w = state.wizardData;
     try {
+      // Nota: la fecha de examen NO se envía desde el wizard; la fija
+      // el admin al crear/editar la oposición.
       await S.rpc('guardar_disponibilidad', {
         p_oposicion_id:  opos,
         p_modo:          w.modo,
         p_horas_semana:  w.modo === 'semanal' ? w.horas_semana : null,
         p_horas_por_dia: w.modo === 'diario'  ? w.horas_por_dia : null,
-        p_fecha_examen:  w.fecha,
+        p_fecha_examen:  null,
         p_ritmo:         w.ritmo,
         p_metodo:        w.metodo,
       }, { api: '/api' });
+      // El plan ya existe: quitamos el flag de "sin plan" para que el
+      // router no vuelva a redirigirnos aquí.
+      state.tienePlan = true;
+      state.planCargado = true;
       toast('¡Plan creado! Vamos allá.');
       location.hash = '#/home';
     } catch (e) { toast('Error: ' + e.message); }
@@ -674,8 +710,15 @@ async function renderPlan() {
     $('[data-bloques]', root).textContent = sesiones.length + ' bloques';
     const timeline = $('[data-timeline]', root);
     if (!sesiones.length) {
-      timeline.innerHTML = `<li style="text-align:center;padding:20px 0;border:0">
-        <p class="muted">No hay bloques planificados para este día.</p></li>`;
+      timeline.innerHTML = `<li class="empty">
+        <div class="empty-state">
+          <span class="emoji" aria-hidden="true">🌤️</span>
+          <p>No hay bloques planificados para este día.</p>
+          <button class="btn btn-outline btn-mini" data-plan-editar-empty>Ajustar disponibilidad</button>
+        </div>
+      </li>`;
+      const bEdit = timeline.querySelector('[data-plan-editar-empty]');
+      if (bEdit) bEdit.addEventListener('click', () => location.hash = '#/wizard');
     } else {
       timeline.innerHTML = sesiones.map(b => {
         const ico = b.tipo === 'repaso'   ? '📖'
@@ -852,7 +895,12 @@ async function renderStats() {
         <div class="progress"><div class="progress-bar"><span style="width:${r.porcentaje}%"></span></div></div>
       </div>
       <span class="m-pct">${r.porcentaje}%</span></li>`).join('') ||
-    '<li class="muted">Aún no hay resultados. Completa algunos tests para ver este ranking.</li>';
+    `<li class="empty">
+       <div class="empty-state">
+         <span class="emoji" aria-hidden="true">📊</span>
+         <p>Aún no hay resultados. Completa algunos tests para ver este ranking.</p>
+       </div>
+     </li>`;
 }
 
 // ══════════════════════════════════════════════════════════════════════
