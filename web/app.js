@@ -2004,14 +2004,47 @@ async function renderEditar(r) {
     location.hash = '#/administracion';
   });
 
-  // Cargar nombre de la oposición.
+  // Cargar datos completos de la oposición (nombre, organismo,
+  // descripción, fecha del examen) para rellenar el panel superior
+  // "Datos de la oposición" que ahora se edita desde el propio editor.
   try {
-    const rop = await fetch('/api/oposiciones?id=eq.' + oposicionId + '&select=nombre',
-                             { headers: authHeaders() });
+    const rop = await fetch(
+      '/api/oposiciones?id=eq.' + oposicionId +
+      '&select=nombre,organismo,descripcion,fecha_examen,fecha_examen_orientativa',
+      { headers: authHeaders() });
     const arr = rop.ok ? await rop.json() : [];
-    _ed.oposicionNombre = arr[0]?.nombre || 'Oposición';
+    const op  = arr[0] || {};
+    _ed.oposicionNombre = op.nombre || 'Oposición';
     $('[data-op-nombre]', root).textContent = _ed.oposicionNombre;
+    const f = $('[data-form-oposicion]', root);
+    if (f) {
+      f.nombre.value                    = op.nombre || '';
+      f.organismo.value                 = op.organismo || '';
+      f.descripcion.value               = op.descripcion || '';
+      f.fecha_examen.value              = op.fecha_examen || '';
+      f.fecha_examen_orientativa.checked = !!op.fecha_examen_orientativa;
+    }
   } catch (_) {}
+
+  // Guardar cambios de "Datos de la oposición" (nombre, organismo,
+  // descripción, fecha del examen, orientativa). Usa admin_editar_oposicion,
+  // que aplica COALESCE — sólo actualiza lo que enviamos.
+  $('[data-guardar-oposicion]', root).addEventListener('click', async () => {
+    const f = $('[data-form-oposicion]', root);
+    try {
+      await S.rpc('admin_editar_oposicion', {
+        p_oposicion_id:              oposicionId,
+        p_nombre:                    f.nombre.value.trim() || null,
+        p_organismo:                 f.organismo.value.trim() || null,
+        p_descripcion:               f.descripcion.value.trim() || null,
+        p_fecha_examen:              f.fecha_examen.value || null,
+        p_fecha_examen_orientativa:  !!f.fecha_examen_orientativa.checked,
+      }, { api: '/api' });
+      _ed.oposicionNombre = f.nombre.value.trim() || _ed.oposicionNombre;
+      $('[data-op-nombre]', root).textContent = _ed.oposicionNombre;
+      toast('Datos guardados');
+    } catch (e) { toast('Error: ' + e.message); }
+  });
 
   edMostrar('temas');
   cargarTemas();
@@ -2036,6 +2069,10 @@ function edCrumbs() {
 }
 
 function edMostrar(panel) {
+  // El panel "oposicion" (datos generales) se ve SIEMPRE en la raíz
+  // (nivel temas). Se oculta cuando entramos a unidades/preguntas.
+  const pOpos = $('[data-panel-oposicion]');
+  if (pOpos) pOpos.hidden = (panel !== 'temas');
   ['temas','unidades','unidad','pregunta'].forEach(p => {
     const el = $('[data-panel-' + p + ']');
     if (el) el.hidden = (p !== panel);
@@ -2089,11 +2126,69 @@ async function cargarTemas() {
 function modalNuevoTema() {
   const tpl = document.getElementById('tpl-modal-tema');
   document.body.appendChild(tpl.content.cloneNode(true));
-  const back = $('.modal-backdrop:last-of-type');
-  const form = $('[data-form]', back);
-  const cerrar = () => back.remove();
+  const back    = $('.modal-backdrop:last-of-type');
+  const form    = $('[data-form]', back);
+  const paneEx  = $('[data-tema-existente]', back);
+  const sel     = $('[data-tema-select]', back);
+  const btnVinc = $('[data-vincular-tema]', back);
+  const info    = $('[data-tema-info]', back);
+  const cerrar  = () => back.remove();
   $('[data-modal-close]', back).addEventListener('click', cerrar);
   back.addEventListener('click', ev => { if (ev.target === back) cerrar(); });
+
+  // Segmentado "Elegir existente" ↔ "Crear nuevo"
+  $$('[data-modo-tema] button', back).forEach(b => {
+    b.addEventListener('click', () => {
+      $$('[data-modo-tema] button', back).forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      const modo = b.dataset.modo;
+      paneEx.hidden = (modo !== 'existente');
+      form.hidden   = (modo !== 'nuevo');
+    });
+  });
+
+  // Cargar catálogo de temas NO vinculados a esta oposición.
+  (async () => {
+    try {
+      const disponibles = await S.rpc('admin_temas_disponibles',
+        { p_oposicion_id: _ed.oposicionId }, { api: '/api' });
+      const arr = Array.isArray(disponibles) ? disponibles : [];
+      if (!arr.length) {
+        info.textContent = 'No hay más temas en el catálogo. Crea uno nuevo.';
+        sel.innerHTML = '<option value="">— sin temas disponibles —</option>';
+        sel.disabled = true;
+      } else {
+        sel.innerHTML = '<option value="">— Selecciona un tema —</option>'
+          + arr.map(t => `<option value="${t.id}"
+                  data-nu="${t.num_unidades}"
+                  data-en="${t.usado_en}">
+              ${t.icono || '📘'} ${escapeHtml(t.nombre)}
+            </option>`).join('');
+      }
+    } catch (e) { info.textContent = 'Error cargando temas: ' + e.message; }
+  })();
+
+  sel.addEventListener('change', () => {
+    const opt = sel.options[sel.selectedIndex];
+    btnVinc.disabled = !sel.value;
+    if (sel.value) {
+      const nu = opt.dataset.nu || 0, en = opt.dataset.en || 0;
+      info.textContent = `${nu} unidad${nu === '1' ? '' : 'es'} · en ${en} oposicion${en === '1' ? '' : 'es'}`;
+    } else info.textContent = '';
+  });
+
+  btnVinc.addEventListener('click', async () => {
+    if (!sel.value) return;
+    try {
+      await S.rpc('admin_vincular_tema', {
+        p_oposicion_id: _ed.oposicionId,
+        p_tema_id:      sel.value,
+      }, { api: '/api' });
+      cerrar();
+      cargarTemas();
+      toast('Tema añadido');
+    } catch (e) { toast('Error: ' + e.message); }
+  });
 
   form.addEventListener('submit', async ev => {
     ev.preventDefault();
@@ -2107,6 +2202,7 @@ function modalNuevoTema() {
       }, { api: '/api' });
       cerrar();
       cargarTemas();
+      toast('Tema creado y vinculado');
     } catch (e) { toast('Error: ' + e.message); }
   });
 }

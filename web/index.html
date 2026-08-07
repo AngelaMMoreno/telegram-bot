@@ -807,13 +807,41 @@
   <template id="tpl-editar">
     <section class="view view-editar">
       <header class="top-bar">
-        <button class="btn btn-ghost btn-mini" data-back>‹</button>
+        <button class="btn-back" data-back aria-label="Atrás">
+          <span class="btn-back-ico">‹</span> Atrás
+        </button>
         <h1 class="admin-title" data-op-nombre>Editor</h1>
         <span></span>
       </header>
 
       <!-- Migas de pan (Oposición > Tema > Unidad) -->
       <nav class="crumbs" data-crumbs></nav>
+
+      <!-- Panel de datos generales de la oposición (nombre, examen). -->
+      <div class="editor-panel" data-panel-oposicion>
+        <div class="card-head">
+          <h2>Datos de la oposición</h2>
+          <button class="btn btn-mini" data-guardar-oposicion>Guardar</button>
+        </div>
+        <form data-form-oposicion>
+          <div class="field-row">
+            <label class="field"><span class="field-lbl">Nombre</span>
+              <input class="input" name="nombre" required></label>
+            <label class="field"><span class="field-lbl">Organismo</span>
+              <input class="input" name="organismo"></label>
+          </div>
+          <label class="field"><span class="field-lbl">Descripción</span>
+            <textarea class="input" name="descripcion" rows="2"></textarea></label>
+          <div class="field-row">
+            <label class="field"><span class="field-lbl">Fecha del examen</span>
+              <input class="input" name="fecha_examen" type="date"></label>
+            <label class="field field-check">
+              <input type="checkbox" name="fecha_examen_orientativa">
+              <span>Sólo orientativa (mes/año)</span>
+            </label>
+          </div>
+        </form>
+      </div>
 
       <div class="editor-panel" data-panel-temas>
         <div class="card-head">
@@ -893,17 +921,44 @@
     <div class="modal-backdrop" data-modal>
       <div class="modal">
         <button class="modal-close" data-modal-close aria-label="Cerrar">×</button>
-        <h2>Nuevo tema</h2>
-        <p class="muted small">Si el slug ya existe, se enlazará el tema existente.</p>
-        <form data-form>
+        <h2>Añadir tema</h2>
+        <p class="muted small">Los temas se reutilizan entre oposiciones — usa uno existente si ya lo has creado.</p>
+
+        <div class="segmented" role="radiogroup" data-modo-tema
+             style="margin-bottom:var(--sp-3)">
+          <button type="button" data-modo="existente" class="active">Elegir existente</button>
+          <button type="button" data-modo="nuevo">Crear nuevo</button>
+        </div>
+
+        <!-- Elegir tema existente del catálogo ────────────────────── -->
+        <div data-tema-existente>
+          <label class="field">
+            <span class="field-lbl">Tema</span>
+            <select class="input" data-tema-select>
+              <option value="">— Selecciona un tema —</option>
+            </select>
+          </label>
+          <p class="muted small" data-tema-info></p>
+          <button class="btn btn-primary btn-block" data-vincular-tema
+                  style="margin-top:var(--sp-2)" disabled>
+            Vincular a la oposición
+          </button>
+        </div>
+
+        <!-- Crear tema nuevo ──────────────────────────────────────── -->
+        <form data-form hidden>
           <label class="field"><span class="field-lbl">Nombre</span>
             <input class="input" name="nombre" required></label>
           <label class="field"><span class="field-lbl">Slug</span>
             <input class="input" name="slug" required
-                   pattern="[a-z0-9-]+" title="minúsculas, números y guiones"></label>
+                   pattern="[a-z0-9-]+" title="minúsculas, números y guiones"
+                   placeholder="ej. constitucion-espanola"></label>
           <label class="field"><span class="field-lbl">Icono (emoji)</span>
             <input class="input" name="icono" value="📘" maxlength="4"></label>
-          <button class="btn btn-primary btn-block" type="submit">Añadir</button>
+          <p class="muted small">Si el slug ya existe se reutilizará el tema.</p>
+          <button class="btn btn-primary btn-block" type="submit" style="margin-top:var(--sp-2)">
+            Crear y vincular
+          </button>
         </form>
       </div>
     </div>

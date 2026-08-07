@@ -1884,29 +1884,30 @@ $$;
 -- =============================================================================
 
 CREATE OR REPLACE FUNCTION admin_listar_usuarios(p_query text DEFAULT NULL,
-                                                 p_limit int DEFAULT 50)
+                                                 p_limit int  DEFAULT 50)
 RETURNS jsonb
 LANGUAGE sql STABLE AS $$
-    SELECT COALESCE(jsonb_agg(jsonb_build_object(
-        'id',                u.id,
-        'email',             u.email,
-        'nombre',            u.nombre,
-        'email_verificado',  u.email_verificado,
-        'activo',            u.activo,
-        'creado_en',         u.creado_en,
-        'roles',             (SELECT array_agg(rol_id ORDER BY rol_id)
-                                FROM usuario_roles WHERE usuario_id = u.id),
-        'oposiciones',       (SELECT array_agg(o.nombre)
-                                FROM usuario_oposiciones uo
-                                JOIN oposiciones o ON o.id = uo.oposicion_id
-                               WHERE uo.usuario_id = u.id)
-    ) ORDER BY u.creado_en DESC), '[]'::jsonb)
-      FROM usuarios u
-     WHERE es_admin()
-       AND (p_query IS NULL OR
-            u.email ILIKE '%' || p_query || '%' OR
-            u.nombre ILIKE '%' || p_query || '%')
-     LIMIT p_limit;
+    -- El LIMIT tiene que ir DENTRO del CTE (antes de jsonb_agg); si se
+    -- deja fuera se aplica sobre la única fila resultante del agregado
+    -- y en algunos planners devolvía [] silenciosamente.
+    WITH filtrados AS (
+        SELECT u.id, u.email, u.nombre, u.email_verificado, u.activo,
+               u.creado_en,
+               (SELECT array_agg(rol_id ORDER BY rol_id)
+                  FROM usuario_roles WHERE usuario_id = u.id) AS roles,
+               (SELECT array_agg(o.nombre)
+                  FROM usuario_oposiciones uo
+                  JOIN oposiciones o ON o.id = uo.oposicion_id
+                 WHERE uo.usuario_id = u.id) AS oposiciones
+          FROM usuarios u
+         WHERE es_admin()
+           AND (p_query IS NULL OR p_query = '' OR
+                u.email  ILIKE '%' || p_query || '%' OR
+                u.nombre ILIKE '%' || p_query || '%')
+         ORDER BY u.creado_en DESC
+         LIMIT COALESCE(p_limit, 50)
+    )
+    SELECT COALESCE(jsonb_agg(row_to_json(f)::jsonb), '[]'::jsonb) FROM filtrados f;
 $$;
 
 CREATE OR REPLACE FUNCTION admin_set_activo(p_usuario_id uuid, p_activo boolean)
@@ -2892,6 +2893,48 @@ BEGIN
     IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
     DELETE FROM oposicion_temas
      WHERE oposicion_id = p_oposicion_id AND tema_id = p_tema_id;
+END $$;
+
+-- Temas del catálogo NO vinculados a la oposición p_oposicion_id.
+-- Sirve para "Elegir tema existente" en el editor visual — así se
+-- reutilizan temas del catálogo global entre oposiciones sin duplicar.
+CREATE OR REPLACE FUNCTION admin_temas_disponibles(p_oposicion_id uuid)
+RETURNS jsonb
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'id',            t.id,
+        'slug',          t.slug,
+        'nombre',        t.nombre,
+        'icono',         t.icono,
+        'descripcion',   t.descripcion,
+        'num_unidades',  (SELECT count(*) FROM unidades u WHERE u.tema_id = t.id),
+        'usado_en',      (SELECT count(*) FROM oposicion_temas ot2 WHERE ot2.tema_id = t.id)
+    ) ORDER BY t.nombre), '[]'::jsonb)
+      FROM temas t
+     WHERE es_admin()
+       AND NOT EXISTS (
+           SELECT 1 FROM oposicion_temas ot
+            WHERE ot.oposicion_id = p_oposicion_id
+              AND ot.tema_id      = t.id
+       );
+$$;
+
+-- Vincula un tema existente a una oposición sin tocar sus datos.
+CREATE OR REPLACE FUNCTION admin_vincular_tema(p_oposicion_id uuid,
+                                               p_tema_id      uuid,
+                                               p_orden        int DEFAULT NULL)
+RETURNS jsonb
+LANGUAGE plpgsql AS $$
+DECLARE v_orden int;
+BEGIN
+    IF NOT es_admin() THEN RAISE EXCEPTION 'no_autorizado'; END IF;
+    v_orden := COALESCE(p_orden,
+        (SELECT COALESCE(max(orden), 0) + 1
+           FROM oposicion_temas WHERE oposicion_id = p_oposicion_id));
+    INSERT INTO oposicion_temas(oposicion_id, tema_id, orden)
+    VALUES (p_oposicion_id, p_tema_id, v_orden)
+    ON CONFLICT (oposicion_id, tema_id) DO NOTHING;
+    RETURN jsonb_build_object('ok', true, 'orden', v_orden);
 END $$;
 
 CREATE OR REPLACE FUNCTION admin_reordenar_temas(

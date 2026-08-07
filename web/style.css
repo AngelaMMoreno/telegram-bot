@@ -1114,6 +1114,11 @@ p  { margin: 0; }
 
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
 .field-row .field { min-width: 0; }
+.field-check {
+  flex-direction: row; align-items: center; gap: 8px;
+  padding-top: 22px; font-size: var(--fs-sm); color: var(--txt-soft);
+}
+.field-check input[type=checkbox] { min-height: unset; width: 18px; height: 18px; }
 .opciones-lista { list-style: none; padding: 0; margin: 6px 0 8px; display: flex; flex-direction: column; gap: 6px; }
 .opciones-lista li {
   display: grid; grid-template-columns: auto 1fr auto; gap: 8px;
