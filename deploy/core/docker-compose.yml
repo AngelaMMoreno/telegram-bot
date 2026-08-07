@@ -39,7 +39,17 @@
 
 services:
 
-  db:
+  # Service key `postgres` (NO `db`) a propósito: Compose añade el
+  # service name como alias implícito en cada red donde el servicio
+  # está.  Si lo llamáramos `db`, el `db-desa` de desa publicaría el
+  # alias `db` en `db-net-desa`, y como pgAdmin (que vive en `db-net-desa`
+  # además de `dokploy-network`) ve el alias `db` en ambas redes, el
+  # DNS de Docker devuelve las dos IPs en round-robin — la mitad de
+  # conexiones a "Host: db" (entrada prod del servers.json) caerían
+  # en `db-desa` provocando  FATAL: database "aprentix" does not exist.
+  # Con service key `postgres` el alias implícito por red es `postgres`
+  # y el alias explícito `db`/`db-desa` es único por entorno.
+  postgres:
     image: postgres:16
     container_name: db${DB_ALIAS:+-${DB_ALIAS}}
     environment:
@@ -79,7 +89,7 @@ services:
     image: postgrest/postgrest:v12.2.3
     container_name: postgrest${DB_ALIAS:+-${DB_ALIAS}}
     depends_on:
-      db:
+      postgres:
         condition: service_healthy
     environment:
       # En la red privada `db-net` el hostname `db-<alias>` es único
@@ -122,7 +132,7 @@ services:
     container_name: pgadmin
     profiles: [pgadmin]
     depends_on:
-      db:
+      postgres:
         condition: service_healthy
     environment:
       PGADMIN_DEFAULT_EMAIL:    ${PGADMIN_EMAIL:-admin@aprentix.es}
