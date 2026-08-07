@@ -534,13 +534,16 @@ async function renderWizard() {
     const w = state.wizardData;
     try {
       // Nota: la fecha de examen NO se envía desde el wizard; la fija
-      // el admin al crear/editar la oposición.
+      // el admin al crear/editar la oposición.  Omitimos por completo
+      // p_fecha_examen del payload (no lo mandamos ni como null) para
+      // que PostgREST resuelva la función usando el DEFAULT del schema
+      // y funcione incluso si la BD conserva una versión previa de la
+      // firma sin ese parámetro.
       await S.rpc('guardar_disponibilidad', {
         p_oposicion_id:  opos,
         p_modo:          w.modo,
         p_horas_semana:  w.modo === 'semanal' ? w.horas_semana : null,
         p_horas_por_dia: w.modo === 'diario'  ? w.horas_por_dia : null,
-        p_fecha_examen:  null,
         p_ritmo:         w.ritmo,
         p_metodo:        w.metodo,
       }, { api: '/api' });
