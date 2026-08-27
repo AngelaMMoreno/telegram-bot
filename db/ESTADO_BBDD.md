@@ -357,6 +357,51 @@ toggle para marcarlo como no visto de nuevo.
 Índice: `(usuario_id)` además de la PK.
 RLS: cada usuario ve/edita las suyas; admin ve todas.
 
+### 3.8 Píldoras — bot de Discord
+
+#### `discord.pildoras`
+
+Fragmentos cortos de temario (consejo, dato clave, truco memorístico)
+que el bot de Discord publica en un canal. Los genera
+`pildoras/ingesta.py` a partir de los PDFs de `/mnt/data/ficheros` y los
+consume `pildoras/bot.py`.
+
+Vive en el esquema **`discord`**, no en `public`, y eso es deliberado:
+PostgREST arranca con `PGRST_DB_SCHEMAS=public`, así que nada de este
+esquema queda expuesto en `api.aprentix.es`. Por el mismo motivo no
+lleva RLS ni GRANTs — el rol `aprentix` (owner) es el único que se
+conecta aquí.
+
+| Columna | Tipo | Notas |
+|---|---|---|
+| `id` | `bigserial` PK | |
+| `texto` | `text` | La píldora tal cual se publica. |
+| `fuente` | `text` | Ruta del PDF dentro de `/ficheros`, estilo URL. |
+| `pagina` | `int` | Página de la que salió; ayuda a revisar. |
+| `estado` | `text` CHECK | `pendiente` \| `aprobada` \| `descartada`. |
+| `publicada_en` | `timestamptz` | `NULL` mientras no se haya publicado. |
+| `creada_en` | `timestamptz` DEFAULT now() | |
+
+Índices:
+
+- `pildoras_texto_uniq` — UNIQUE sobre `md5(texto)`. Reingestar un PDF no
+  duplica píldoras ya generadas (la ingesta inserta con `ON CONFLICT DO
+  NOTHING`). Sobre el hash porque un B-tree no admite textos largos.
+- `pildoras_cola_idx` — parcial sobre `(publicada_en NULLS FIRST) WHERE
+  estado = 'aprobada'`. Es la cola de publicación del bot.
+- `pildoras_revision_idx` — `(estado, fuente, pagina)`, para revisar las
+  pendientes agrupadas por PDF desde pgAdmin.
+
+**Ciclo de vida.** La ingesta inserta siempre en `pendiente`; el bot solo
+mira las `aprobada`. Aprobar es un `UPDATE` manual desde pgAdmin — es el
+control de calidad que evita publicar índices, tablas o ruido del PDF.
+El bot selecciona con `ORDER BY publicada_en NULLS FIRST, random()` y
+marca `publicada_en` en la misma sentencia (`FOR UPDATE SKIP LOCKED`):
+primero agota las nunca publicadas y después recicla las más antiguas,
+así que nunca se queda sin contenido.
+
+---
+
 ---
 
 ## 4. Funciones (RPCs expuestas por PostgREST)

@@ -67,6 +67,7 @@ Crea las Compose Applications en Dokploy en este orden:
 
 1. **core** — imprescindible; el resto depende de que la BBDD esté viva.
 2. **app** — necesita compartir el `JWT_SECRET` con `core`.
+3. **pildoras** *(opcional)* — bot de Discord; necesita `core` vivo.
 
 En Dokploy, para cada una:
 
@@ -80,6 +81,7 @@ En Dokploy, para cada una:
 |-----------|---------------------------------------|-------------------------------|
 | `core`    | `deploy/core/docker-compose.yml`      | `deploy/core/.env.example`    |
 | `app`     | `deploy/app/docker-compose.yml`       | (usa `JWT_SECRET` de `core`)  |
+| `pildoras`| `deploy/pildoras/docker-compose.yml`  | `deploy/pildoras/.env.example`|
 
 ## 2. Variables de entorno por stack
 
@@ -107,6 +109,18 @@ En Dokploy, para cada una:
 | `DOMINIO_WEB_ALT`     | Host legacy alternativo (por defecto `www.test.aprentix.es`).                   |
 | `DOMINIO_TEORIA`      | Host legacy redirigido a `aprentix.es/teoria/` (por defecto `teoria.aprentix.es`). |
 | `DOMINIO_TEORIA_ALT`  | Host legacy alternativo (por defecto `www.teoria.aprentix.es`).                 |
+
+### `pildoras` (bot de Discord — opcional)
+
+| Clave               | Uso                                                                              |
+|---------------------|----------------------------------------------------------------------------------|
+| `DB_PASS`           | El mismo del stack `core`; el bot escribe en el esquema `discord`.               |
+| `DISCORD_TOKEN`     | Token del bot (portal de desarrolladores → Bot → Reset Token). **Secreto.**      |
+| `DISCORD_CANAL_ID`  | Canal donde se publica la píldora diaria.                                        |
+| `DISCORD_GUILD_ID`  | Opcional. Con él los slash commands aparecen al instante; sin él, hasta 1 hora.  |
+| `HORA_PILDORA`      | Hora de publicación, Europe/Madrid (por defecto `9`).                            |
+| `ANTHROPIC_API_KEY` | Solo la usa la ingesta, no el bot.                                               |
+| `LIMITE`            | Tope de fragmentos por pasada de ingesta. `20` para probar, `0` sin límite.      |
 
 > **Importante:** `JWT_SECRET` aparece en `core` y `app`; los dos deben
 > tener EXACTAMENTE el mismo valor, si no, las cookies emitidas por
@@ -149,6 +163,8 @@ En el navegador:
 - **Cambio en cualquier SPA (landing, tests, teoría) o en el backend de
   teoría** → redeploy solo `app`.
 - **Cambio en el notificador de push** → redeploy solo `notificador`.
+- **Cambio en el bot de Discord** → redeploy solo `pildoras`. Regenerar
+  píldoras NO es un redeploy: es lanzar la ingesta a mano (sección 11).
 
 Los stacks son independientes: reiniciar `app` no toca a `db`.
 
@@ -300,3 +316,79 @@ recoge.
 | `push_inactividad_cooldown_horas` |   `48`  | Cooldown entre avisos de inactividad              |
 | `push_min_vencidas`               |    `5`  | Mínimo de preguntas vencidas para lanzar aviso    |
 | `push_tz`                         | `Europe/Madrid` | Zona horaria de la ventana                 |
+
+## 11. Bot de Discord (píldoras del temario)
+
+El stack `pildoras` publica fragmentos cortos de temario en un canal de
+Discord: uno automático cada mañana y otro bajo demanda con `/consejo`.
+Reutiliza **los mismos PDFs** que la SPA de teoría, sin copiarlos.
+
+Son dos piezas con la misma imagen:
+
+| Servicio  | Qué hace | Cuándo corre |
+|-----------|----------|--------------|
+| `bot`     | Publica en Discord. Solo lee de Postgres. | Residente |
+| `ingesta` | PDFs → píldoras vía Batch API de Claude. | A mano |
+
+El contenedor `bot` **no monta `/ficheros`**: no tiene forma de leer los
+PDFs. Solo `ingesta` los ve, y en modo `:ro`.
+
+### 11.1 Primer despliegue
+
+1. **Crea la aplicación en Discord** (https://discord.com/developers):
+   pestaña *Bot* → *Reset Token*. No actives ningún *Privileged Gateway
+   Intent*: con slash commands no hace falta `MESSAGE CONTENT`.
+2. **Invítalo**: *OAuth2 → URL Generator*, scopes `bot` +
+   `applications.commands`, permisos `Send Messages` + `Embed Links`.
+   Sin `applications.commands` el bot entra pero `/consejo` nunca
+   aparece — es el fallo más típico, porque el bot sale "en línea" y
+   parece que todo va bien.
+3. **Aplica el esquema** en la BBDD viva desde pgAdmin (el bloque
+   `PÍLDORAS` del final de `01_esquema.sql`). Recuerda la sección 8: el
+   `initdb` no se reejecuta sobre una base que ya tiene datos.
+4. **Crea la Compose Application** `pildoras` en Dokploy con las
+   variables de `deploy/pildoras/.env.example`.
+5. **Genera las primeras píldoras** (ver 11.2).
+
+### 11.2 Generar y aprobar píldoras
+
+La ingesta no es un servicio: se lanza cuando cambian los PDFs.
+
+```bash
+# La primera vez, con LIMITE=20 para ver la calidad antes de pagar
+# por el corpus entero.
+LIMITE=20 docker compose -f deploy/pildoras/docker-compose.yml \
+    run --rm ingesta
+```
+
+Todo entra en estado `pendiente`. Revisa y aprueba desde pgAdmin:
+
+```sql
+SELECT id, fuente, pagina, texto
+  FROM discord.pildoras WHERE estado = 'pendiente'
+ ORDER BY fuente, pagina;
+
+UPDATE discord.pildoras SET estado = 'aprobada' WHERE id IN (1, 2, 5);
+UPDATE discord.pildoras SET estado = 'descartada' WHERE estado = 'pendiente';
+```
+
+Ese paso manual es el control de calidad: sin él acabarías publicando
+índices, tablas y pies de página. Reingestar es idempotente — el índice
+`pildoras_texto_uniq` evita duplicados.
+
+### 11.3 Coste
+
+La ingesta usa la **Batch API** (mitad de precio) con `effort: low`,
+porque es una tarea repetitiva y sencilla. Se paga **una vez por
+fragmento**, no en cada mensaje: publicar es un `SELECT`. Un corpus de
+unos cientos de páginas cuesta céntimos; aun así, la primera pasada
+hazla con `LIMITE`.
+
+### 11.4 Problemas típicos
+
+| Síntoma | Causa |
+|---|---|
+| El bot sale "en línea" pero no existe `/consejo` | Faltó el scope `applications.commands`, o el sync global aún no ha propagado (usa `DISCORD_GUILD_ID`). |
+| "Todavía no hay píldoras aprobadas" | Están todas en `pendiente`: falta el `UPDATE ... SET estado = 'aprobada'`. |
+| La píldora diaria no sale | El bot arranca el loop en `setup_hook`; si el contenedor se reinició después de la hora fijada, esperará al día siguiente. |
+| `relation "discord.pildoras" does not exist` | Se editó `01_esquema.sql` pero no se aplicó a la BBDD viva (sección 8). |

@@ -4265,3 +4265,48 @@ GRANT EXECUTE ON FUNCTION set_carpeta_oposicion(text, uuid)              TO web_
 GRANT EXECUTE ON FUNCTION listar_carpeta_oposiciones()                   TO web_user;
 GRANT EXECUTE ON FUNCTION oposiciones_de_carpeta(text)                   TO web_user;
 GRANT EXECUTE ON FUNCTION mis_oposiciones_ids()                          TO web_user;
+
+-- ═════════════════════════════════════════════════════════════════════════════
+--                    PÍLDORAS — BOT DE DISCORD
+-- ═════════════════════════════════════════════════════════════════════════════
+-- Fragmentos cortos de temario (consejos, datos clave, trucos) generados a
+-- partir de los PDFs de teoría por pildoras/ingesta.py y publicados en Discord
+-- por pildoras/bot.py.
+--
+-- Van en su propio esquema a propósito: PostgREST arranca con
+-- PGRST_DB_SCHEMAS=public, así que nada de lo que cuelgue de 'discord' queda
+-- expuesto en api.aprentix.es. No hace falta RLS ni GRANTs: el rol 'aprentix'
+-- es el owner de la BBDD y es el único que se conecta a este esquema.
+--
+-- Flujo de estados:
+--   pendiente  → recién generada, nunca se publica
+--   aprobada   → revisada a mano; es la cola de publicación del bot
+--   descartada → mala (índice, tabla, ruido del PDF); se queda archivada
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE SCHEMA IF NOT EXISTS discord;
+
+CREATE TABLE discord.pildoras (
+    id           bigserial   PRIMARY KEY,
+    texto        text        NOT NULL,
+    fuente       text        NOT NULL,   -- ruta del PDF dentro de /ficheros
+    pagina       int,
+    estado       text        NOT NULL DEFAULT 'pendiente'
+                 CHECK (estado IN ('pendiente', 'aprobada', 'descartada')),
+    publicada_en timestamptz,
+    creada_en    timestamptz NOT NULL DEFAULT now()
+);
+
+-- Reingestar un PDF no debe duplicar píldoras ya generadas. Sobre md5 y no
+-- sobre el texto entero porque un índice B-tree no admite valores largos.
+CREATE UNIQUE INDEX pildoras_texto_uniq ON discord.pildoras (md5(texto));
+
+-- Cola de publicación: primero las que nunca se han publicado, luego las
+-- más antiguas. Parcial porque el bot solo mira las aprobadas.
+CREATE INDEX pildoras_cola_idx
+    ON discord.pildoras (publicada_en NULLS FIRST)
+    WHERE estado = 'aprobada';
+
+-- Revisión desde pgAdmin: las pendientes agrupadas por PDF de origen.
+CREATE INDEX pildoras_revision_idx
+    ON discord.pildoras (estado, fuente, pagina);

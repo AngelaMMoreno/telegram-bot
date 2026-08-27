@@ -1,0 +1,62 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Stack PILDORAS — bot de Discord que publica píldoras del temario.
+#
+# Dos piezas con el mismo Dockerfile:
+#
+#   bot      Proceso residente. Publica una píldora al día en el canal y
+#            responde a /consejo. Solo habla con Postgres; NO monta los
+#            PDFs, así que no tiene forma de leerlos.
+#
+#   ingesta  Trabajo puntual (profile 'manual', no arranca con 'up'). Lee
+#            /mnt/data/ficheros en SOLO LECTURA, extrae fragmentos y genera
+#            las píldoras con la Batch API de Claude. Se lanza a mano:
+#
+#              docker compose -f deploy/pildoras/docker-compose.yml \
+#                  run --rm ingesta
+#
+# Las píldoras viven en el esquema 'discord' de la BBDD del stack core.
+# Ese esquema NO está en PGRST_DB_SCHEMAS (que solo expone 'public'), así
+# que api.aprentix.es no lo ve.
+#
+# Sin labels de Traefik a propósito: el bot no recibe tráfico HTTP, solo
+# abre una conexión saliente hacia Discord.
+#
+# Requiere db (stack core) accesible por nombre 'db' en dokploy-network.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  bot:
+    build: ../../pildoras
+    environment:
+      DATABASE_URL:      postgres://aprentix@db:5432/aprentix
+      PGPASSWORD:        ${DB_PASS:?DB_PASS requerida}
+      DISCORD_TOKEN:     ${DISCORD_TOKEN:?DISCORD_TOKEN requerido}
+      DISCORD_CANAL_ID:  ${DISCORD_CANAL_ID:?DISCORD_CANAL_ID requerido}
+      DISCORD_GUILD_ID:  ${DISCORD_GUILD_ID:-}
+      HORA_PILDORA:      ${HORA_PILDORA:-9}
+      MINUTO_PILDORA:    ${MINUTO_PILDORA:-0}
+      LOG_LEVEL:         ${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    networks: [dokploy-network]
+
+  ingesta:
+    build: ../../pildoras
+    profiles: [manual]
+    command: ["python", "-u", "ingesta.py"]
+    environment:
+      DATABASE_URL:      postgres://aprentix@db:5432/aprentix
+      PGPASSWORD:        ${DB_PASS:?DB_PASS requerida}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY requerida}
+      BASE_DIR:          /ficheros
+      MIN_CHARS:         ${MIN_CHARS:-400}
+      LIMITE:            ${LIMITE:-0}
+      LOG_LEVEL:         ${LOG_LEVEL:-INFO}
+    volumes:
+      # Los mismos PDFs que sirve el stack app, en solo lectura.
+      - /mnt/data/ficheros:/ficheros:ro
+    networks: [dokploy-network]
+
+networks:
+  dokploy-network:
+    external: true
