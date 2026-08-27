@@ -67,7 +67,8 @@ Crea las Compose Applications en Dokploy en este orden:
 
 1. **core** — imprescindible; el resto depende de que la BBDD esté viva.
 2. **app** — necesita compartir el `JWT_SECRET` con `core`.
-3. **pildoras** *(opcional)* — bot de Discord; necesita `core` vivo.
+3. **pildoras** *(opcional)* — bot de Discord. Es autónomo: no depende
+   de `core` ni de ningún otro stack, así que puede ir en cualquier orden.
 
 En Dokploy, para cada una:
 
@@ -114,7 +115,6 @@ En Dokploy, para cada una:
 
 | Clave               | Uso                                                                              |
 |---------------------|----------------------------------------------------------------------------------|
-| `DB_PASS`           | El mismo del stack `core`; el bot escribe en el esquema `discord`.               |
 | `DISCORD_TOKEN`     | Token del bot (portal de desarrolladores → Bot → Reset Token). **Secreto.**      |
 | `DISCORD_CANAL_ID`  | Canal donde se publica la píldora diaria.                                        |
 | `DISCORD_GUILD_ID`  | Opcional. Con él los slash commands aparecen al instante; sin él, hasta 1 hora.  |
@@ -323,34 +323,54 @@ El stack `pildoras` publica fragmentos cortos de temario en un canal de
 Discord: uno automático cada mañana y otro bajo demanda con `/consejo`.
 Reutiliza **los mismos PDFs** que la SPA de teoría, sin copiarlos.
 
+Es **autónomo**: no toca Postgres ni depende del stack `core`. Guarda las
+píldoras en un SQLite bajo `/mnt/data/pildoras`, y no se une a
+`dokploy-network` porque no habla con ningún otro contenedor — solo abre
+conexiones salientes hacia Discord y la API de Claude.
+
 Son dos piezas con la misma imagen:
 
 | Servicio  | Qué hace | Cuándo corre |
 |-----------|----------|--------------|
-| `bot`     | Publica en Discord. Solo lee de Postgres. | Residente |
-| `ingesta` | PDFs → píldoras vía Batch API de Claude. | A mano |
+| `bot`     | Publica en Discord y atiende los comandos. | Residente |
+| `ingesta` | PDFs → píldoras vía Batch API de Claude.   | A mano |
 
 El contenedor `bot` **no monta `/ficheros`**: no tiene forma de leer los
 PDFs. Solo `ingesta` los ve, y en modo `:ro`.
 
-### 11.1 Primer despliegue
+### 11.1 Comandos
 
-1. **Crea la aplicación en Discord** (https://discord.com/developers):
+| Comando | Quién | Qué hace |
+|---|---|---|
+| `/consejo` | Todos | Devuelve una píldora aprobada. |
+| `/revisar` | Gestores del servidor | Aprueba o descarta pendientes con botones. |
+| `/pildoras` | Gestores del servidor | Recuento por estado. |
+
+`/revisar` y `/pildoras` llevan `default_permissions(manage_guild=True)`:
+Discord los oculta a quien no gestione el servidor. Las respuestas son
+efímeras — solo las ve quien lanza el comando.
+
+### 11.2 Primer despliegue
+
+1. **Crea el directorio de datos** en el host:
+   ```bash
+   sudo mkdir -p /mnt/data/pildoras
+   ```
+2. **Crea la aplicación en Discord** (https://discord.com/developers):
    pestaña *Bot* → *Reset Token*. No actives ningún *Privileged Gateway
    Intent*: con slash commands no hace falta `MESSAGE CONTENT`.
-2. **Invítalo**: *OAuth2 → URL Generator*, scopes `bot` +
+3. **Invítalo**: *OAuth2 → URL Generator*, scopes `bot` +
    `applications.commands`, permisos `Send Messages` + `Embed Links`.
-   Sin `applications.commands` el bot entra pero `/consejo` nunca
-   aparece — es el fallo más típico, porque el bot sale "en línea" y
+   Sin `applications.commands` el bot entra pero los comandos nunca
+   aparecen — es el fallo más típico, porque el bot sale "en línea" y
    parece que todo va bien.
-3. **Aplica el esquema** en la BBDD viva desde pgAdmin (el bloque
-   `PÍLDORAS` del final de `01_esquema.sql`). Recuerda la sección 8: el
-   `initdb` no se reejecuta sobre una base que ya tiene datos.
 4. **Crea la Compose Application** `pildoras` en Dokploy con las
    variables de `deploy/pildoras/.env.example`.
-5. **Genera las primeras píldoras** (ver 11.2).
+5. **Genera las primeras píldoras** (ver 11.3).
 
-### 11.2 Generar y aprobar píldoras
+No hay paso de esquema: `almacen.py` crea las tablas al primer uso.
+
+### 11.3 Generar y aprobar píldoras
 
 La ingesta no es un servicio: se lanza cuando cambian los PDFs.
 
@@ -361,22 +381,17 @@ LIMITE=20 docker compose -f deploy/pildoras/docker-compose.yml \
     run --rm ingesta
 ```
 
-Todo entra en estado `pendiente`. Revisa y aprueba desde pgAdmin:
+Todo entra en estado `pendiente`. Se aprueba **desde el propio Discord**
+con `/revisar`: muestra una píldora con su PDF y página de origen y tres
+botones (aprobar / descartar / saltar), y encadena la siguiente. Ese paso
+manual es el control de calidad: sin él acabarías publicando índices,
+tablas y pies de página.
 
-```sql
-SELECT id, fuente, pagina, texto
-  FROM discord.pildoras WHERE estado = 'pendiente'
- ORDER BY fuente, pagina;
+Reingestar es idempotente — el índice `pildoras_texto_uniq` evita
+duplicados, así que puedes relanzar la ingesta cuando añadas PDFs sin
+revisar dos veces lo mismo.
 
-UPDATE discord.pildoras SET estado = 'aprobada' WHERE id IN (1, 2, 5);
-UPDATE discord.pildoras SET estado = 'descartada' WHERE estado = 'pendiente';
-```
-
-Ese paso manual es el control de calidad: sin él acabarías publicando
-índices, tablas y pies de página. Reingestar es idempotente — el índice
-`pildoras_texto_uniq` evita duplicados.
-
-### 11.3 Coste
+### 11.4 Coste
 
 La ingesta usa la **Batch API** (mitad de precio) con `effort: low`,
 porque es una tarea repetitiva y sencilla. Se paga **una vez por
@@ -384,11 +399,19 @@ fragmento**, no en cada mensaje: publicar es un `SELECT`. Un corpus de
 unos cientos de páginas cuesta céntimos; aun así, la primera pasada
 hazla con `LIMITE`.
 
-### 11.4 Problemas típicos
+### 11.5 Copia de seguridad
+
+El SQLite vive en `/mnt/data/pildoras/pildoras.db`. El stack `backups`
+solo cubre Postgres, así que si te importa conservar el trabajo de
+revisión, añade ese fichero a tus copias o vuelve a lanzar la ingesta y
+`/revisar` cuando haga falta.
+
+### 11.6 Problemas típicos
 
 | Síntoma | Causa |
 |---|---|
-| El bot sale "en línea" pero no existe `/consejo` | Faltó el scope `applications.commands`, o el sync global aún no ha propagado (usa `DISCORD_GUILD_ID`). |
-| "Todavía no hay píldoras aprobadas" | Están todas en `pendiente`: falta el `UPDATE ... SET estado = 'aprobada'`. |
+| El bot sale "en línea" pero no existen los comandos | Faltó el scope `applications.commands`, o el sync global aún no ha propagado (usa `DISCORD_GUILD_ID`). |
+| No veo `/revisar` pero sí `/consejo` | Correcto si no eres gestor del servidor: Discord lo oculta. |
+| "Todavía no hay píldoras aprobadas" | Están todas en `pendiente`: falta pasar por `/revisar`. |
 | La píldora diaria no sale | El bot arranca el loop en `setup_hook`; si el contenedor se reinició después de la hora fijada, esperará al día siguiente. |
-| `relation "discord.pildoras" does not exist` | Se editó `01_esquema.sql` pero no se aplicó a la BBDD viva (sección 8). |
+| Las píldoras desaparecieron tras un redeploy | Falta el volumen `/mnt/data/pildoras:/datos`, o el directorio no existe en el host. |

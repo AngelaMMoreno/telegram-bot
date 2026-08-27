@@ -3,18 +3,9 @@ Ingesta: PDFs de teoría → píldoras cortas en la BBDD.
 
 Recorre /ficheros (el mismo volumen que sirve la SPA de teoría, montado
 aquí en solo lectura), trocea cada PDF por páginas y le pide a Claude una
-píldora por página. Las píldoras entran en estado 'pendiente': se revisan
-y se aprueban a mano antes de que el bot las publique.
-
-    -- revisar
-    SELECT id, fuente, pagina, texto
-      FROM discord.pildoras WHERE estado = 'pendiente' ORDER BY fuente, pagina;
-
-    -- aprobar
-    UPDATE discord.pildoras SET estado = 'aprobada' WHERE id IN (1, 2, 5);
-
-    -- descartar el resto de una tacada
-    UPDATE discord.pildoras SET estado = 'descartada' WHERE estado = 'pendiente';
+píldora por página. Las píldoras entran en estado 'pendiente': se aprueban
+desde el propio Discord con /revisar (botones aprobar / descartar / saltar)
+antes de que el bot las publique.
 
 Se ejecuta a mano cuando cambian los PDFs, no como servicio residente:
 
@@ -35,13 +26,13 @@ import time
 from pathlib import Path
 
 import anthropic
-import psycopg
 from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
 from anthropic.types.messages.batch_create_params import Request
 from pypdf import PdfReader
 
+import almacen
+
 BASE_DIR  = Path(os.getenv("BASE_DIR", "/ficheros"))
-DSN       = os.environ["DATABASE_URL"]
 MIN_CHARS = int(os.getenv("MIN_CHARS", "400"))   # descarta portadas y separadores
 MAX_CHARS = int(os.getenv("MAX_CHARS", "6000"))  # recorta páginas gigantes
 LIMITE    = int(os.getenv("LIMITE", "0"))        # 0 = sin límite
@@ -85,7 +76,6 @@ def extraer_fragmentos() -> list[tuple[str, int, str]]:
 
 def procesar_lote(
     client: anthropic.Anthropic,
-    conn: psycopg.Connection,
     fragmentos: list[tuple[str, int, str]],
 ) -> int:
     lote = client.messages.batches.create(requests=[
@@ -127,13 +117,8 @@ def procesar_lote(
         if not texto or texto == "DESCARTAR":
             continue
         ruta, pagina, _ = fragmentos[int(res.custom_id[1:])]
-        cur = conn.execute(
-            "INSERT INTO discord.pildoras (texto, fuente, pagina)"
-            " VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
-            (texto, ruta, pagina),
-        )
-        insertadas += cur.rowcount
-    conn.commit()
+        if almacen.guardar(texto, ruta, pagina):
+            insertadas += 1
     return insertadas
 
 
@@ -150,12 +135,12 @@ def main() -> None:
 
     client = anthropic.Anthropic()
     total = 0
-    with psycopg.connect(DSN) as conn:
-        for i in range(0, len(fragmentos), POR_LOTE):
-            total += procesar_lote(client, conn, fragmentos[i:i + POR_LOTE])
+    for i in range(0, len(fragmentos), POR_LOTE):
+        total += procesar_lote(client, fragmentos[i:i + POR_LOTE])
 
     log.info("%d píldoras nuevas en estado 'pendiente'", total)
-    log.info("revísalas y apruébalas antes de que el bot las publique")
+    log.info("apruébalas desde Discord con /revisar antes de que se publiquen")
+    log.info("recuento actual: %s", almacen.recuento())
 
 
 if __name__ == "__main__":

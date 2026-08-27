@@ -1,11 +1,15 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Stack PILDORAS — bot de Discord que publica píldoras del temario.
 #
-# Dos piezas con el mismo Dockerfile:
+# Es autónomo: no depende del stack core ni de ningún Postgres. Guarda las
+# píldoras en un SQLite propio bajo /mnt/data/pildoras, que sobrevive a los
+# redespliegues igual que /mnt/data/ficheros.
 #
-#   bot      Proceso residente. Publica una píldora al día en el canal y
-#            responde a /consejo. Solo habla con Postgres; NO monta los
-#            PDFs, así que no tiene forma de leerlos.
+# Dos piezas con la misma imagen:
+#
+#   bot      Proceso residente. Publica la píldora diaria y atiende
+#            /consejo, /revisar y /pildoras. NO monta los PDFs: no tiene
+#            forma de leerlos.
 #
 #   ingesta  Trabajo puntual (profile 'manual', no arranca con 'up'). Lee
 #            /mnt/data/ficheros en SOLO LECTURA, extrae fragmentos y genera
@@ -14,14 +18,12 @@
 #              docker compose -f deploy/pildoras/docker-compose.yml \
 #                  run --rm ingesta
 #
-# Las píldoras viven en el esquema 'discord' de la BBDD del stack core.
-# Ese esquema NO está en PGRST_DB_SCHEMAS (que solo expone 'public'), así
-# que api.aprentix.es no lo ve.
+# Sin labels de Traefik y sin dokploy-network a propósito: no recibe tráfico
+# HTTP ni habla con ningún otro contenedor, solo abre conexiones salientes
+# hacia Discord y la API de Claude.
 #
-# Sin labels de Traefik a propósito: el bot no recibe tráfico HTTP, solo
-# abre una conexión saliente hacia Discord.
-#
-# Requiere db (stack core) accesible por nombre 'db' en dokploy-network.
+# Antes del primer despliegue, en el host:
+#     sudo mkdir -p /mnt/data/pildoras
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -29,34 +31,30 @@ services:
   bot:
     build: ../../pildoras
     environment:
-      DATABASE_URL:      postgres://aprentix@db:5432/aprentix
-      PGPASSWORD:        ${DB_PASS:?DB_PASS requerida}
       DISCORD_TOKEN:     ${DISCORD_TOKEN:?DISCORD_TOKEN requerido}
       DISCORD_CANAL_ID:  ${DISCORD_CANAL_ID:?DISCORD_CANAL_ID requerido}
       DISCORD_GUILD_ID:  ${DISCORD_GUILD_ID:-}
+      RUTA_DB:           /datos/pildoras.db
       HORA_PILDORA:      ${HORA_PILDORA:-9}
       MINUTO_PILDORA:    ${MINUTO_PILDORA:-0}
       LOG_LEVEL:         ${LOG_LEVEL:-INFO}
+    volumes:
+      - /mnt/data/pildoras:/datos
     restart: unless-stopped
-    networks: [dokploy-network]
 
   ingesta:
     build: ../../pildoras
     profiles: [manual]
     command: ["python", "-u", "ingesta.py"]
     environment:
-      DATABASE_URL:      postgres://aprentix@db:5432/aprentix
-      PGPASSWORD:        ${DB_PASS:?DB_PASS requerida}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY requerida}
+      RUTA_DB:           /datos/pildoras.db
       BASE_DIR:          /ficheros
       MIN_CHARS:         ${MIN_CHARS:-400}
       LIMITE:            ${LIMITE:-0}
       LOG_LEVEL:         ${LOG_LEVEL:-INFO}
     volumes:
+      # El mismo SQLite que lee el bot.
+      - /mnt/data/pildoras:/datos
       # Los mismos PDFs que sirve el stack app, en solo lectura.
       - /mnt/data/ficheros:/ficheros:ro
-    networks: [dokploy-network]
-
-networks:
-  dokploy-network:
-    external: true
