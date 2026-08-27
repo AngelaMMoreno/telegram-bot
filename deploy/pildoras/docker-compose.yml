@@ -11,6 +11,10 @@
 #            /consejo, /revisar y /pildoras. NO monta los PDFs: no tiene
 #            forma de leerlos.
 #
+#   diagnostico  Trabajo puntual. Informa de qué PDFs llevan texto y
+#            cuánto costaría la ingesta. No llama a la API: es gratis.
+#            Lánzalo ANTES de la primera ingesta.
+#
 #   ingesta  Trabajo puntual (profile 'manual', no arranca con 'up'). Lee
 #            /mnt/data/ficheros en SOLO LECTURA, extrae fragmentos y genera
 #            las píldoras con la Batch API de Claude. Se lanza a mano:
@@ -41,6 +45,16 @@ services:
     volumes:
       - /mnt/data/pildoras:/datos
     restart: unless-stopped
+
+  diagnostico:
+    build: ../../pildoras
+    profiles: [manual]
+    command: ["python", "-u", "diagnostico.py"]
+    environment:
+      BASE_DIR:  /ficheros
+      MIN_CHARS: ${MIN_CHARS:-400}
+    volumes:
+      - /mnt/data/ficheros:/ficheros:ro
 
   ingesta:
     build: ../../pildoras

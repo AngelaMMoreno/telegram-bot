@@ -8,7 +8,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY almacen.py bot.py ingesta.py ./
+COPY almacen.py bot.py diagnostico.py ingesta.py ./
 
-# El servicio 'ingesta' del compose sobreescribe esto con 'python ingesta.py'.
+# Los servicios 'ingesta' y 'diagnostico' del compose sobreescriben el CMD.
 CMD ["python", "-u", "bot.py"]

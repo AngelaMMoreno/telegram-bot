@@ -4,6 +4,7 @@
 # 03:30 (BACKUP_CRON) lanza backup.sh:
 #   - pg_dump  → snapshot 'db'
 #   - /data/ficheros → snapshot 'teoria'
+#   - sqlite .backup → snapshot 'pildoras' (si el stack existe)
 #   - restic forget --keep-last N --prune para no llenar Drive.
 #
 # El repositorio restic vive en Google Drive vía rclone (backend
@@ -62,6 +63,12 @@ services:
       # que el fichero resultante se persista en el host (sobrevive a
       # reinicios y redespliegues). Ver deploy/backups/README.md.
       - /mnt/data/backup-config:/root/.config/rclone
+      # SQLite del bot de Discord (stack pildoras). En lectura-ESCRITURA
+      # a propósito, al contrario que los ficheros de teoría: `sqlite3
+      # .backup` necesita abrir la base en modo escritura para reproducir
+      # el WAL antes de copiarla. Si el stack pildoras no está desplegado
+      # el directorio estará vacío y backup.sh se lo salta.
+      - /mnt/data/pildoras:/data/pildoras
       # Cache local de restic (metadata de snapshots): acelera mucho
       # los `forget --prune` y los backup diarios.
       - restic_cache:/root/.cache/restic

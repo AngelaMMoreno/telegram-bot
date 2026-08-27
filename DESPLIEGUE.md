@@ -330,10 +330,11 @@ conexiones salientes hacia Discord y la API de Claude.
 
 Son dos piezas con la misma imagen:
 
-| Servicio  | Qué hace | Cuándo corre |
-|-----------|----------|--------------|
-| `bot`     | Publica en Discord y atiende los comandos. | Residente |
-| `ingesta` | PDFs → píldoras vía Batch API de Claude.   | A mano |
+| Servicio      | Qué hace | Cuándo corre |
+|---------------|----------|--------------|
+| `bot`         | Publica en Discord y atiende los comandos. | Residente |
+| `diagnostico` | Informa de qué PDFs llevan texto y del coste. Gratis. | A mano |
+| `ingesta`     | PDFs → píldoras vía Batch API de Claude. | A mano |
 
 El contenedor `bot` **no monta `/ficheros`**: no tiene forma de leer los
 PDFs. Solo `ingesta` los ve, y en modo `:ro`.
@@ -366,11 +367,34 @@ efímeras — solo las ve quien lanza el comando.
    parece que todo va bien.
 4. **Crea la Compose Application** `pildoras` en Dokploy con las
    variables de `deploy/pildoras/.env.example`.
-5. **Genera las primeras píldoras** (ver 11.3).
+5. **Diagnostica los PDFs** antes de gastar nada (ver 11.3).
+6. **Genera las primeras píldoras** (ver 11.4).
 
 No hay paso de esquema: `almacen.py` crea las tablas al primer uso.
 
-### 11.3 Generar y aprobar píldoras
+### 11.3 Diagnóstico previo (gratis)
+
+```bash
+docker compose -f deploy/pildoras/docker-compose.yml run --rm diagnostico
+```
+
+No llama a la API, así que no cuesta nada. Lista PDF a PDF cuántas
+páginas tienen texto aprovechable, estima el coste de la pasada completa
+y enseña un fragmento de ejemplo tal y como lo recibiría el modelo.
+
+**Lo importante que detecta**: si el temario está *escaneado* (páginas
+que son imágenes), `pypdf` no extrae nada y la ingesta generaría cero
+píldoras habiendo pagado igual. Esos PDFs hay que pasarlos antes por
+OCR:
+
+```bash
+ocrmypdf --language spa entrada.pdf salida.pdf
+```
+
+Si el fragmento de ejemplo son cabeceras sueltas o números de página en
+vez de texto corrido, sube `MIN_CHARS`.
+
+### 11.4 Generar y aprobar píldoras
 
 La ingesta no es un servicio: se lanza cuando cambian los PDFs.
 
@@ -391,7 +415,7 @@ Reingestar es idempotente — el índice `pildoras_texto_uniq` evita
 duplicados, así que puedes relanzar la ingesta cuando añadas PDFs sin
 revisar dos veces lo mismo.
 
-### 11.4 Coste
+### 11.5 Coste
 
 La ingesta usa la **Batch API** (mitad de precio) con `effort: low`,
 porque es una tarea repetitiva y sencilla. Se paga **una vez por
@@ -399,14 +423,29 @@ fragmento**, no en cada mensaje: publicar es un `SELECT`. Un corpus de
 unos cientos de páginas cuesta céntimos; aun así, la primera pasada
 hazla con `LIMITE`.
 
-### 11.5 Copia de seguridad
+### 11.6 Copia de seguridad
 
-El SQLite vive en `/mnt/data/pildoras/pildoras.db`. El stack `backups`
-solo cubre Postgres, así que si te importa conservar el trabajo de
-revisión, añade ese fichero a tus copias o vuelve a lanzar la ingesta y
-`/revisar` cuando haga falta.
+El SQLite vive en `/mnt/data/pildoras/pildoras.db` y **el stack
+`backups` ya lo cubre**: cada noche genera un tercer snapshot con tag
+`pildoras`, junto a los de `db` y `teoria`.
 
-### 11.6 Problemas típicos
+No se copia el fichero a pelo, sino con `sqlite3 .backup`. SQLite en
+modo WAL reparte el estado entre el `.db` y el `-wal`: copiar solo el
+primero da una base que abre sin errores pero a la que le faltan las
+escrituras recientes — medido sobre una base con escrituras en curso,
+1979 filas frente a 2889 reales. Se perderían las últimas aprobaciones
+sin ningún aviso. Por eso ese volumen va montado en lectura-escritura
+en el stack `backups`: `.backup` necesita abrir la base en modo
+escritura para reproducir el WAL.
+
+Restaurar:
+
+```bash
+restic restore latest --tag pildoras --host aprentix --target /tmp/restore
+sudo cp /tmp/restore/**/pildoras.db /mnt/data/pildoras/pildoras.db
+```
+
+### 11.7 Problemas típicos
 
 | Síntoma | Causa |
 |---|---|

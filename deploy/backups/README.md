@@ -13,6 +13,8 @@ script:
 1. `pg_dump -Fp` de la BBDD (formato plano — mucho mejor dedup en restic
    que el custom binario) y lo mete como snapshot con tag `db`.
 2. `restic backup /data/ficheros` con tag `teoria`.
+3. `sqlite3 .backup` del SQLite del bot de Discord y lo sube con tag
+   `pildoras`. Si el stack `pildoras` no está desplegado, se salta.
 3. `restic forget --keep-last N --prune` para dejar solo los N más
    recientes (por defecto 2) y liberar los chunks huérfanos.
 
@@ -130,6 +132,7 @@ Deberías ver algo como:
 [backup] ... Inicializando repositorio restic en rclone:gdrive:aprentix-backups
 [backup] ... Volcando la BBDD y subiendo snapshot 'db'
 [backup] ... Subiendo snapshot 'teoria'
+[backup] ... Copiando el SQLite del bot y subiendo snapshot 'pildoras'
 [backup] ... Rotando snapshots (keep-last=2)
 [backup] ... OK. Snapshots vivos:
 ID        Time                 Host       Tags     Paths
@@ -155,6 +158,11 @@ psql -h HOST -U aprentix -d aprentix < /tmp/restore/stdin
 # Restaurar los ficheros de teoría
 restic restore latest --tag teoria --host aprentix --target /tmp/restore
 sudo rsync -a --delete /tmp/restore/data/ficheros/ /mnt/data/ficheros/
+
+# Restaurar el SQLite del bot de Discord (para el stack pildoras antes)
+restic restore latest --tag pildoras --host aprentix --target /tmp/restore-bot
+sudo find /tmp/restore-bot -name pildoras.db \
+     -exec cp {} /mnt/data/pildoras/pildoras.db \;
 ```
 
 Para restaurar un snapshot ANTERIOR al último, sustituye `latest` por

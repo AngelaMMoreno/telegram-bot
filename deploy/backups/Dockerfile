@@ -5,6 +5,8 @@
 #   - rclone        → transporta el repositorio de restic a Google Drive
 #                     (OAuth), Backblaze, S3, etc.
 #   - postgresql16-client → pg_dump para volcar la BBDD del stack core.
+#   - sqlite        → '.backup' del SQLite del bot de Discord (copia
+#                     consistente de una base viva; ver backup.sh).
 #   - dcron         → cron de BusyBox, corre el script en el horario elegido.
 #
 # El contenedor NO publica puertos ni tiene endpoints web: es un
@@ -16,6 +18,7 @@ RUN apk add --no-cache \
         restic \
         rclone \
         postgresql16-client \
+        sqlite \
         dcron \
         bash \
         tzdata \
