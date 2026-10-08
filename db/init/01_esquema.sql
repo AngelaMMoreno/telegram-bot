@@ -4177,6 +4177,152 @@ LANGUAGE sql STABLE SECURITY DEFINER AS $$
     WHERE tox.test_id = p_test_id;
 $$;
 
+-- API de subida/listado de tests por oposición (ver db/API_TESTS_OPOSICION.md).
+CREATE OR REPLACE FUNCTION subir_test_a_oposicion(
+    p_oposicion_id uuid,
+    p_titulo       text,
+    p_descripcion  text,
+    p_preguntas    jsonb
+) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE
+    v_titulo    text  := btrim(COALESCE(p_titulo, ''));
+    v_preguntas jsonb := p_preguntas;
+    v_preg      jsonb;
+    v_opc       jsonb;
+    v_idx       int   := 0;
+    v_test      uuid;
+BEGIN
+    IF NOT (es_admin() OR tiene_permiso('test.crear')) THEN
+        RAISE EXCEPTION 'no_autorizado';
+    END IF;
+
+    IF v_titulo = '' THEN
+        RAISE EXCEPTION 'titulo_obligatorio'
+            USING HINT = 'Indica el nombre del test.';
+    END IF;
+
+    IF p_oposicion_id IS NULL
+       OR NOT EXISTS (SELECT 1 FROM oposiciones WHERE id = p_oposicion_id) THEN
+        RAISE EXCEPTION 'oposicion_no_encontrada'
+            USING HINT = 'Lista las oposiciones con /rpc/listar_oposiciones_admin.';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM   tests t
+        JOIN   test_oposiciones tox ON tox.test_id = t.id
+        WHERE  tox.oposicion_id = p_oposicion_id
+          AND  lower(btrim(t.titulo)) = lower(v_titulo)
+    ) THEN
+        RAISE EXCEPTION 'test_duplicado'
+            USING HINT = 'Ya existe un test con ese nombre en la oposición.';
+    END IF;
+
+    -- Se acepta tanto el array de preguntas como el objeto exportado por
+    -- `descargar_test` ({titulo, descripcion, preguntas: [...]}).
+    IF jsonb_typeof(v_preguntas) = 'object' THEN
+        v_preguntas := v_preguntas->'preguntas';
+    END IF;
+    IF jsonb_typeof(v_preguntas) IS DISTINCT FROM 'array'
+       OR jsonb_array_length(v_preguntas) = 0 THEN
+        RAISE EXCEPTION 'preguntas_invalidas'
+            USING HINT = 'Se espera un array JSON no vacío de preguntas.';
+    END IF;
+
+    -- Validación pregunta a pregunta. Dos formatos de opciones:
+    --   ["correcta", "otra", ...]                      (la primera es la correcta)
+    --   [{"texto": "...", "correcta": true|false}, ...] (al menos una correcta)
+    FOR v_preg IN SELECT * FROM jsonb_array_elements(v_preguntas) LOOP
+        v_idx := v_idx + 1;
+
+        IF jsonb_typeof(v_preg) <> 'object'
+           OR btrim(COALESCE(v_preg->>'pregunta', '')) = '' THEN
+            RAISE EXCEPTION 'pregunta_invalida'
+                USING DETAIL = format('Pregunta %s: falta el campo "pregunta".', v_idx);
+        END IF;
+
+        v_opc := v_preg->'opciones';
+        IF jsonb_typeof(v_opc) IS DISTINCT FROM 'array'
+           OR jsonb_array_length(v_opc) < 2 THEN
+            RAISE EXCEPTION 'pregunta_invalida'
+                USING DETAIL = format('Pregunta %s: "opciones" debe ser un array de al menos 2 elementos.', v_idx);
+        END IF;
+
+        IF jsonb_typeof(v_opc->0) = 'string' THEN
+            IF EXISTS (
+                SELECT 1 FROM jsonb_array_elements(v_opc) e
+                WHERE jsonb_typeof(e) <> 'string' OR btrim(e #>> '{}') = ''
+            ) THEN
+                RAISE EXCEPTION 'pregunta_invalida'
+                    USING DETAIL = format('Pregunta %s: todas las opciones deben ser textos no vacíos.', v_idx);
+            END IF;
+        ELSE
+            IF EXISTS (
+                SELECT 1 FROM jsonb_array_elements(v_opc) e
+                WHERE jsonb_typeof(e) <> 'object'
+                   OR btrim(COALESCE(e->>'texto', '')) = ''
+                   OR jsonb_typeof(e->'correcta') IS DISTINCT FROM 'boolean'
+            ) THEN
+                RAISE EXCEPTION 'pregunta_invalida'
+                    USING DETAIL = format('Pregunta %s: cada opción debe ser {"texto": "...", "correcta": true|false}.', v_idx);
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM jsonb_array_elements(v_opc) e
+                WHERE (e->>'correcta')::boolean
+            ) THEN
+                RAISE EXCEPTION 'pregunta_invalida'
+                    USING DETAIL = format('Pregunta %s: ninguna opción está marcada como correcta.', v_idx);
+            END IF;
+        END IF;
+    END LOOP;
+
+    v_test := importar_test_normalizado(
+        v_titulo, NULLIF(btrim(COALESCE(p_descripcion, '')), ''), v_preguntas
+    );
+
+    UPDATE tests SET autor_id = jwt_usuario_id() WHERE id = v_test;
+
+    INSERT INTO test_oposiciones(test_id, oposicion_id)
+    VALUES (v_test, p_oposicion_id)
+    ON CONFLICT DO NOTHING;
+
+    RETURN jsonb_build_object(
+        'id',            v_test,
+        'titulo',        v_titulo,
+        'descripcion',   NULLIF(btrim(COALESCE(p_descripcion, '')), ''),
+        'oposicion_id',  p_oposicion_id,
+        'num_preguntas', jsonb_array_length(v_preguntas)
+    );
+END $$;
+
+
+CREATE OR REPLACE FUNCTION listar_tests_de_oposicion(p_oposicion_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM oposiciones WHERE id = p_oposicion_id) THEN
+        RAISE EXCEPTION 'oposicion_no_encontrada'
+            USING HINT = 'Lista las oposiciones con /rpc/listar_oposiciones_admin.';
+    END IF;
+    IF NOT puedo_ver_oposicion(p_oposicion_id) THEN
+        RAISE EXCEPTION 'no_autorizado';
+    END IF;
+
+    RETURN COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+            'id',            t.id,
+            'titulo',        t.titulo,
+            'descripcion',   t.descripcion,
+            'num_preguntas', (SELECT count(*) FROM test_preguntas tp WHERE tp.test_id = t.id),
+            'creado_en',     t.creado_en
+        ) ORDER BY t.creado_en DESC, t.titulo)
+        FROM   test_oposiciones tox
+        JOIN   tests t ON t.id = tox.test_id
+        WHERE  tox.oposicion_id = p_oposicion_id
+    ), '[]'::jsonb);
+END $$;
+
 -- Reemplaza el conjunto completo de oposiciones asignadas a una ruta.
 -- Un array vacío o NULL borra todas las asignaciones (carpeta global).
 CREATE OR REPLACE FUNCTION set_carpeta_oposiciones(
@@ -4260,6 +4406,8 @@ GRANT EXECUTE ON FUNCTION tests_de_oposicion(uuid)                       TO web_
 GRANT EXECUTE ON FUNCTION listar_tests_min()                             TO web_user;
 GRANT EXECUTE ON FUNCTION listar_oposiciones_admin()                     TO web_user;
 GRANT EXECUTE ON FUNCTION oposiciones_de_test(uuid)                      TO web_user;
+GRANT EXECUTE ON FUNCTION subir_test_a_oposicion(uuid, text, text, jsonb) TO web_user;
+GRANT EXECUTE ON FUNCTION listar_tests_de_oposicion(uuid)                 TO web_user;
 GRANT EXECUTE ON FUNCTION set_carpeta_oposiciones(text, uuid[])          TO web_user;
 GRANT EXECUTE ON FUNCTION set_carpeta_oposicion(text, uuid)              TO web_user;
 GRANT EXECUTE ON FUNCTION listar_carpeta_oposiciones()                   TO web_user;
