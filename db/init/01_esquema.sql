@@ -2638,31 +2638,47 @@ BEGIN
     RETURN jsonb_build_object('ritmo', p_ritmo);
 END $$;
 
--- Vacía por completo el estado del motor de cajas del usuario actual.
--- No toca respuestas ni intentos (histórico intacto); solo borra
--- 'repasos'. En la siguiente respuesta correcta, la pregunta volverá a
--- entrar en caja 2 (comportamiento por defecto de registrar_respuesta).
--- Opcionalmente restringe el reset a un test concreto.
+-- Vacía por completo el estado del motor de cajas del usuario actual y
+-- sus fallos ('marcadores' tipo='fallo', que alimentan el "Test de fallos").
+-- No toca respuestas ni intentos (histórico intacto) ni favoritas. En la
+-- siguiente respuesta correcta, la pregunta volverá a entrar en caja 2
+-- (comportamiento por defecto de registrar_respuesta). Opcionalmente
+-- restringe el reset a un test concreto.
 CREATE OR REPLACE FUNCTION resetear_mis_repasos(p_test_id uuid DEFAULT NULL)
 RETURNS jsonb
 LANGUAGE plpgsql AS $$
 DECLARE
-    v_uid uuid := jwt_usuario_id();
-    v_n   int;
+    v_uid    uuid := jwt_usuario_id();
+    v_n      int;
+    v_fallos int;
 BEGIN
     IF v_uid IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
 
     IF p_test_id IS NULL THEN
         DELETE FROM repasos WHERE usuario_id = v_uid;
+        GET DIAGNOSTICS v_n = ROW_COUNT;
+
+        DELETE FROM marcadores
+         WHERE usuario_id = v_uid AND tipo = 'fallo';
+        GET DIAGNOSTICS v_fallos = ROW_COUNT;
     ELSE
         DELETE FROM repasos
          WHERE usuario_id = v_uid
            AND pregunta_id IN (
                SELECT pregunta_id FROM test_preguntas WHERE test_id = p_test_id
            );
+        GET DIAGNOSTICS v_n = ROW_COUNT;
+
+        DELETE FROM marcadores
+         WHERE usuario_id = v_uid
+           AND tipo = 'fallo'
+           AND pregunta_id IN (
+               SELECT pregunta_id FROM test_preguntas WHERE test_id = p_test_id
+           );
+        GET DIAGNOSTICS v_fallos = ROW_COUNT;
     END IF;
-    GET DIAGNOSTICS v_n = ROW_COUNT;
-    RETURN jsonb_build_object('borradas', v_n);
+
+    RETURN jsonb_build_object('borradas', v_n, 'fallos_borrados', v_fallos);
 END $$;
 
 CREATE OR REPLACE FUNCTION resumen_repaso_test(p_test_id uuid) RETURNS jsonb
@@ -4184,7 +4200,7 @@ CREATE OR REPLACE FUNCTION subir_test_a_oposicion(
     p_descripcion  text,
     p_preguntas    jsonb
 ) RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER AS $$
+LANGUAGE plpgsql SECURITY DEFINER AS $fn$
 DECLARE
     v_titulo    text  := btrim(COALESCE(p_titulo, ''));
     v_preguntas jsonb := p_preguntas;
@@ -4239,14 +4255,14 @@ BEGIN
         IF jsonb_typeof(v_preg) <> 'object'
            OR btrim(COALESCE(v_preg->>'pregunta', '')) = '' THEN
             RAISE EXCEPTION 'pregunta_invalida'
-                USING DETAIL = format('Pregunta %s: falta el campo "pregunta".', v_idx);
+                USING DETAIL = 'Pregunta ' || v_idx || ': falta el campo "pregunta".';
         END IF;
 
         v_opc := v_preg->'opciones';
         IF jsonb_typeof(v_opc) IS DISTINCT FROM 'array'
            OR jsonb_array_length(v_opc) < 2 THEN
             RAISE EXCEPTION 'pregunta_invalida'
-                USING DETAIL = format('Pregunta %s: "opciones" debe ser un array de al menos 2 elementos.', v_idx);
+                USING DETAIL = 'Pregunta ' || v_idx || ': "opciones" debe ser un array de al menos 2 elementos.';
         END IF;
 
         IF jsonb_typeof(v_opc->0) = 'string' THEN
@@ -4255,7 +4271,7 @@ BEGIN
                 WHERE jsonb_typeof(e) <> 'string' OR btrim(e #>> '{}') = ''
             ) THEN
                 RAISE EXCEPTION 'pregunta_invalida'
-                    USING DETAIL = format('Pregunta %s: todas las opciones deben ser textos no vacíos.', v_idx);
+                    USING DETAIL = 'Pregunta ' || v_idx || ': todas las opciones deben ser textos no vacíos.';
             END IF;
         ELSE
             IF EXISTS (
@@ -4265,14 +4281,14 @@ BEGIN
                    OR jsonb_typeof(e->'correcta') IS DISTINCT FROM 'boolean'
             ) THEN
                 RAISE EXCEPTION 'pregunta_invalida'
-                    USING DETAIL = format('Pregunta %s: cada opción debe ser {"texto": "...", "correcta": true|false}.', v_idx);
+                    USING DETAIL = 'Pregunta ' || v_idx || ': cada opción debe ser {"texto": "...", "correcta": true|false}.';
             END IF;
             IF NOT EXISTS (
                 SELECT 1 FROM jsonb_array_elements(v_opc) e
                 WHERE (e->>'correcta')::boolean
             ) THEN
                 RAISE EXCEPTION 'pregunta_invalida'
-                    USING DETAIL = format('Pregunta %s: ninguna opción está marcada como correcta.', v_idx);
+                    USING DETAIL = 'Pregunta ' || v_idx || ': ninguna opción está marcada como correcta.';
             END IF;
         END IF;
     END LOOP;
@@ -4294,12 +4310,12 @@ BEGIN
         'oposicion_id',  p_oposicion_id,
         'num_preguntas', jsonb_array_length(v_preguntas)
     );
-END $$;
+END $fn$;
 
 
 CREATE OR REPLACE FUNCTION listar_tests_de_oposicion(p_oposicion_id uuid)
 RETURNS jsonb
-LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
+LANGUAGE plpgsql STABLE SECURITY DEFINER AS $fn$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM oposiciones WHERE id = p_oposicion_id) THEN
         RAISE EXCEPTION 'oposicion_no_encontrada'
@@ -4321,7 +4337,7 @@ BEGIN
         JOIN   tests t ON t.id = tox.test_id
         WHERE  tox.oposicion_id = p_oposicion_id
     ), '[]'::jsonb);
-END $$;
+END $fn$;
 
 -- Reemplaza el conjunto completo de oposiciones asignadas a una ruta.
 -- Un array vacío o NULL borra todas las asignaciones (carpeta global).
