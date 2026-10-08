@@ -4184,7 +4184,7 @@ CREATE OR REPLACE FUNCTION subir_test_a_oposicion(
     p_descripcion  text,
     p_preguntas    jsonb
 ) RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER AS $$
+LANGUAGE plpgsql SECURITY DEFINER AS $fn$
 DECLARE
     v_titulo    text  := btrim(COALESCE(p_titulo, ''));
     v_preguntas jsonb := p_preguntas;
@@ -4239,14 +4239,14 @@ BEGIN
         IF jsonb_typeof(v_preg) <> 'object'
            OR btrim(COALESCE(v_preg->>'pregunta', '')) = '' THEN
             RAISE EXCEPTION 'pregunta_invalida'
-                USING DETAIL = format('Pregunta %s: falta el campo "pregunta".', v_idx);
+                USING DETAIL = 'Pregunta ' || v_idx || ': falta el campo "pregunta".';
         END IF;
 
         v_opc := v_preg->'opciones';
         IF jsonb_typeof(v_opc) IS DISTINCT FROM 'array'
            OR jsonb_array_length(v_opc) < 2 THEN
             RAISE EXCEPTION 'pregunta_invalida'
-                USING DETAIL = format('Pregunta %s: "opciones" debe ser un array de al menos 2 elementos.', v_idx);
+                USING DETAIL = 'Pregunta ' || v_idx || ': "opciones" debe ser un array de al menos 2 elementos.';
         END IF;
 
         IF jsonb_typeof(v_opc->0) = 'string' THEN
@@ -4255,7 +4255,7 @@ BEGIN
                 WHERE jsonb_typeof(e) <> 'string' OR btrim(e #>> '{}') = ''
             ) THEN
                 RAISE EXCEPTION 'pregunta_invalida'
-                    USING DETAIL = format('Pregunta %s: todas las opciones deben ser textos no vacíos.', v_idx);
+                    USING DETAIL = 'Pregunta ' || v_idx || ': todas las opciones deben ser textos no vacíos.';
             END IF;
         ELSE
             IF EXISTS (
@@ -4265,14 +4265,14 @@ BEGIN
                    OR jsonb_typeof(e->'correcta') IS DISTINCT FROM 'boolean'
             ) THEN
                 RAISE EXCEPTION 'pregunta_invalida'
-                    USING DETAIL = format('Pregunta %s: cada opción debe ser {"texto": "...", "correcta": true|false}.', v_idx);
+                    USING DETAIL = 'Pregunta ' || v_idx || ': cada opción debe ser {"texto": "...", "correcta": true|false}.';
             END IF;
             IF NOT EXISTS (
                 SELECT 1 FROM jsonb_array_elements(v_opc) e
                 WHERE (e->>'correcta')::boolean
             ) THEN
                 RAISE EXCEPTION 'pregunta_invalida'
-                    USING DETAIL = format('Pregunta %s: ninguna opción está marcada como correcta.', v_idx);
+                    USING DETAIL = 'Pregunta ' || v_idx || ': ninguna opción está marcada como correcta.';
             END IF;
         END IF;
     END LOOP;
@@ -4294,12 +4294,12 @@ BEGIN
         'oposicion_id',  p_oposicion_id,
         'num_preguntas', jsonb_array_length(v_preguntas)
     );
-END $$;
+END $fn$;
 
 
 CREATE OR REPLACE FUNCTION listar_tests_de_oposicion(p_oposicion_id uuid)
 RETURNS jsonb
-LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
+LANGUAGE plpgsql STABLE SECURITY DEFINER AS $fn$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM oposiciones WHERE id = p_oposicion_id) THEN
         RAISE EXCEPTION 'oposicion_no_encontrada'
@@ -4321,7 +4321,7 @@ BEGIN
         JOIN   tests t ON t.id = tox.test_id
         WHERE  tox.oposicion_id = p_oposicion_id
     ), '[]'::jsonb);
-END $$;
+END $fn$;
 
 -- Reemplaza el conjunto completo de oposiciones asignadas a una ruta.
 -- Un array vacío o NULL borra todas las asignaciones (carpeta global).
