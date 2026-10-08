@@ -24,7 +24,7 @@
 
 // Reorganización: el SW se ha movido de /tests/ a /. Bumpeamos versión para
 // invalidar cachés antiguas que apuntaban a /tests/*.
-const CACHE_VERSION = "aprentix-v17";
+const CACHE_VERSION = "aprentix-v18";
 const SHELL_CACHE   = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

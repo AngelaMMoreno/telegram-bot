@@ -195,9 +195,10 @@
               <div class="reset-repasos-copy">
                 <strong>Empezar el repaso de cero</strong>
                 <span class="muted small">
-                  Reinicia el progreso de repaso de todas tus preguntas. No toca tus
-                  respuestas ni tus intentos: solo se olvida en qué fase de repaso
-                  está cada pregunta.
+                  Reinicia el progreso de repaso de todas tus preguntas y vacía tu
+                  lista de fallos. No toca tus respuestas ni tus intentos: solo se
+                  olvida en qué fase de repaso está cada pregunta y cuáles tenías
+                  falladas.
                 </span>
               </div>
               <button class="btn btn-danger-outline" id="ap-cfg-reset">Resetear mi repaso</button>
@@ -218,8 +219,9 @@
   <div class="modal-card">
     <header class="modal-header"><h3>¿Resetear tu repaso?</h3></header>
     <div class="modal-body">
-      <p>Se borrará todo tu progreso de repaso (aciertos, fallos y programación).
-         Volverás a empezar como si nunca hubieras repasado nada.</p>
+      <p>Se borrará todo tu progreso de repaso (aciertos, fallos y programación)
+         y tu lista de fallos quedará vacía. Volverás a empezar como si nunca
+         hubieras repasado nada.</p>
       <p class="muted small">
         Tus respuestas históricas, intentos y estadísticas se conservan intactos.
       </p>
@@ -313,8 +315,10 @@
       try {
         const r = await rpc('resetear_mis_repasos', { p_test_id: null });
         const n = r && typeof r.borradas === 'number' ? r.borradas : 0;
-        toast(n === 0 ? 'No había repasos que borrar'
-                      : `Repaso reseteado (${n} pregunta${n === 1 ? '' : 's'})`);
+        const f = r && typeof r.fallos_borrados === 'number' ? r.fallos_borrados : 0;
+        toast(n === 0 && f === 0
+          ? 'No había repasos ni fallos que borrar'
+          : `Repaso reseteado (${n} pregunta${n === 1 ? '' : 's'}, ${f} fallo${f === 1 ? '' : 's'})`);
         resetModal.classList.add('hidden');
         close();
       } catch (err) { toast(err.message); }

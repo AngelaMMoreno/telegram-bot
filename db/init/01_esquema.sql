@@ -2638,31 +2638,47 @@ BEGIN
     RETURN jsonb_build_object('ritmo', p_ritmo);
 END $$;
 
--- Vacía por completo el estado del motor de cajas del usuario actual.
--- No toca respuestas ni intentos (histórico intacto); solo borra
--- 'repasos'. En la siguiente respuesta correcta, la pregunta volverá a
--- entrar en caja 2 (comportamiento por defecto de registrar_respuesta).
--- Opcionalmente restringe el reset a un test concreto.
+-- Vacía por completo el estado del motor de cajas del usuario actual y
+-- sus fallos ('marcadores' tipo='fallo', que alimentan el "Test de fallos").
+-- No toca respuestas ni intentos (histórico intacto) ni favoritas. En la
+-- siguiente respuesta correcta, la pregunta volverá a entrar en caja 2
+-- (comportamiento por defecto de registrar_respuesta). Opcionalmente
+-- restringe el reset a un test concreto.
 CREATE OR REPLACE FUNCTION resetear_mis_repasos(p_test_id uuid DEFAULT NULL)
 RETURNS jsonb
 LANGUAGE plpgsql AS $$
 DECLARE
-    v_uid uuid := jwt_usuario_id();
-    v_n   int;
+    v_uid    uuid := jwt_usuario_id();
+    v_n      int;
+    v_fallos int;
 BEGIN
     IF v_uid IS NULL THEN RAISE EXCEPTION 'no_autenticado'; END IF;
 
     IF p_test_id IS NULL THEN
         DELETE FROM repasos WHERE usuario_id = v_uid;
+        GET DIAGNOSTICS v_n = ROW_COUNT;
+
+        DELETE FROM marcadores
+         WHERE usuario_id = v_uid AND tipo = 'fallo';
+        GET DIAGNOSTICS v_fallos = ROW_COUNT;
     ELSE
         DELETE FROM repasos
          WHERE usuario_id = v_uid
            AND pregunta_id IN (
                SELECT pregunta_id FROM test_preguntas WHERE test_id = p_test_id
            );
+        GET DIAGNOSTICS v_n = ROW_COUNT;
+
+        DELETE FROM marcadores
+         WHERE usuario_id = v_uid
+           AND tipo = 'fallo'
+           AND pregunta_id IN (
+               SELECT pregunta_id FROM test_preguntas WHERE test_id = p_test_id
+           );
+        GET DIAGNOSTICS v_fallos = ROW_COUNT;
     END IF;
-    GET DIAGNOSTICS v_n = ROW_COUNT;
-    RETURN jsonb_build_object('borradas', v_n);
+
+    RETURN jsonb_build_object('borradas', v_n, 'fallos_borrados', v_fallos);
 END $$;
 
 CREATE OR REPLACE FUNCTION resumen_repaso_test(p_test_id uuid) RETURNS jsonb
