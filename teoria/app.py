@@ -17,6 +17,8 @@ from __future__ import annotations
 import mimetypes
 import os
 import shutil
+import tempfile
+import zipfile
 from pathlib import Path
 
 import httpx
@@ -26,6 +28,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 
 
 # ── Configuración ───────────────────────────────────────────────────────────
@@ -338,6 +341,58 @@ def api_ver(request: Request, ruta: str):
         filename=fs.name,
         # inline en el navegador cuando el mime sea previsualizable.
         headers={"Content-Disposition": f'inline; filename="{fs.name}"'},
+    )
+
+
+@app.get("/api/descargar_zip")
+def api_descargar_zip(request: Request, ruta: str):
+    """Descarga una carpeta (con todas sus subcarpetas y ficheros) como ZIP.
+
+    Se omiten los ficheros/carpetas ocultos (igual que en /api/listar) y
+    los enlaces simbólicos que apunten fuera de BASE_DIR. El ZIP se genera
+    en un fichero temporal que se borra al terminar de enviarse.
+    """
+    require_teoria(request)
+    url_path = normalize_url_path(ruta)
+    if url_path == "/":
+        raise HTTPException(status_code=400, detail="no_se_puede_descargar_la_raiz")
+    fs = resolve_fs(url_path)
+    if not fs.exists() or not fs.is_dir():
+        raise HTTPException(status_code=404, detail="carpeta_no_encontrada")
+
+    tmp = tempfile.NamedTemporaryFile(prefix="teoria-", suffix=".zip", delete=False)
+    tmp.close()
+    try:
+        with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_DEFLATED) as zf:
+            raiz = Path(fs.name)
+            zf.write(fs, arcname=str(raiz) + "/")
+            for dirpath, dirnames, filenames in os.walk(fs):
+                dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+                actual = Path(dirpath)
+                rel = raiz / actual.relative_to(fs)
+                for d in dirnames:
+                    zf.write(actual / d, arcname=str(rel / d) + "/")
+                for nombre in sorted(filenames):
+                    if nombre.startswith("."):
+                        continue
+                    fichero = actual / nombre
+                    try:
+                        fichero.resolve().relative_to(BASE_DIR)
+                    except ValueError:
+                        continue
+                    if not fichero.is_file():
+                        continue
+                    zf.write(fichero, arcname=str(rel / nombre))
+    except Exception:
+        os.unlink(tmp.name)
+        raise
+
+    return FileResponse(
+        tmp.name,
+        media_type="application/zip",
+        filename=f"{fs.name}.zip",
+        content_disposition_type="attachment",
+        background=BackgroundTask(os.unlink, tmp.name),
     )
 
 
