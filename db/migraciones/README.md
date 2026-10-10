@@ -29,6 +29,7 @@ sin efectos duplicados.
 | 2026-07-10c | `2026-07-10c_asignar_tests_bulk.sql`      | Nueva RPC `asignar_tests_a_oposiciones(uuid[], uuid[])`: enlaza N tests con M oposiciones en una llamada sin borrar los pares existentes (`INSERT ON CONFLICT DO NOTHING`). Devuelve cuántas asignaciones eran nuevas. Habilita el modal de asignación masiva del panel de Oposiciones y el atajo "Todas / Ninguna" en "Oposiciones del test", útil sobre todo para tests recién subidos que aún no están enlazados a ninguna oposición. |
 | 2026-10-08  | `2026-10-08_api_tests_oposicion.sql`      | Nuevas RPCs `subir_test_a_oposicion(uuid, text, text, jsonb)` (valida el JSON, crea el test y lo enlaza a una oposición existente en una sola transacción) y `listar_tests_de_oposicion(uuid)`. Ver `db/API_TESTS_OPOSICION.md`. |
 | 2026-10-08b | `2026-10-08b_reset_borra_fallos.sql`      | `resetear_mis_repasos` (botón «Resetear mi repaso» de Configuración) borra también los fallos del usuario (`marcadores` tipo `fallo`). Devuelve `{borradas, fallos_borrados}`. |
+| 2026-10-10  | `2026-10-10_api_editar_tests.sql`         | `preguntas.hash_contenido` pasa a cubrir enunciado + opciones (una pregunta corregida con el mismo enunciado ya no hereda las opciones viejas). RPCs nuevas para consultar y editar: `obtener_test`, `obtener_test_por_titulo`, `editar_test`, `reemplazar_preguntas_test`, `sincronizar_test_en_oposicion`, `quitar_test_de_oposicion`, `editar_pregunta` y `tests_repetidos_de_oposicion`. Ver `db/API_TESTS_OPOSICION.md`. |
 
 ## Al aplicar cada delta
 
