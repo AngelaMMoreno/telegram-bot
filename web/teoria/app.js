@@ -278,16 +278,15 @@ function tarjetaCarpeta(c) {
   card.dataset.oposicionNombres = opNombres.join('|');
 
   // Kebab arriba a la derecha: mismo menú que click-derecho / long-press,
-  // pero accesible con un solo tap tanto en móvil como en escritorio. En
-  // carpetas el menú solo trae acciones de gestión, así que lo mostramos
-  // únicamente si el usuario puede gestionar. Los usuarios normales abren
-  // la carpeta con el click normal.
-  const kebabHtml = ESTADO.puede_gestionar ? `
+  // pero accesible con un solo tap tanto en móvil como en escritorio. Lo
+  // ven todos los usuarios (descargar como ZIP); las acciones de gestión
+  // solo aparecen dentro del menú si el usuario puede gestionar.
+  const kebabHtml = `
     <button class="card-kebab" data-accion="kebab"
             aria-label="Más opciones" title="Más opciones"
             aria-haspopup="menu" aria-expanded="false">
       ${KEBAB_SVG}
-    </button>` : '';
+    </button>`;
 
   card.innerHTML = `
     <div class="card-check" hidden><input type="checkbox" data-accion="toggle-select" aria-label="Seleccionar carpeta"></div>
@@ -303,12 +302,10 @@ function tarjetaCarpeta(c) {
   });
   const itemCarpeta = { ruta: c.ruta, nombre: c.nombre, es_carpeta: true };
   card.addEventListener('contextmenu', (e) => {
-    if (!ESTADO.puede_gestionar) return;
     e.preventDefault();
     menuContextualCarpeta(e, itemCarpeta, card);
   });
   attachLongPress(card, (ev) => {
-    if (!ESTADO.puede_gestionar) return;
     menuContextualCarpeta(ev, itemCarpeta, card);
   });
   return card;
@@ -437,25 +434,28 @@ function menuContextualFichero(evt, f, card) {
 
 function menuContextualCarpeta(evt, c, card) {
   cerrarMenu();
-  if (!ESTADO.puede_gestionar) return;
   const m = document.createElement('div');
   m.className = 'ctx-menu';
   m.dataset.owner = card?.dataset?.ruta || c.ruta || '';
   posicionarMenu(m, evt);
   m.innerHTML = `
     <div class="ctx-item" data-a="abrir">📁 Abrir</div>
-    <div class="ctx-sep"></div>
-    <div class="ctx-item" data-a="seleccionar">☑️ Seleccionar</div>
-    <div class="ctx-item" data-a="renombrar">✏️ Cambiar nombre</div>
-    <div class="ctx-item" data-a="mover">📂 Mover</div>
-    <div class="ctx-item" data-a="oposicion">🎓 Asignar a oposición</div>
-    <div class="ctx-item danger" data-a="borrar">🗑️ Eliminar</div>
+    <div class="ctx-item" data-a="zip">⬇️ Descargar como ZIP</div>
+    ${ESTADO.puede_gestionar ? `
+      <div class="ctx-sep"></div>
+      <div class="ctx-item" data-a="seleccionar">☑️ Seleccionar</div>
+      <div class="ctx-item" data-a="renombrar">✏️ Cambiar nombre</div>
+      <div class="ctx-item" data-a="mover">📂 Mover</div>
+      <div class="ctx-item" data-a="oposicion">🎓 Asignar a oposición</div>
+      <div class="ctx-item danger" data-a="borrar">🗑️ Eliminar</div>
+    ` : ''}
   `;
   document.body.appendChild(m);
   m.addEventListener('click', async (e) => {
     const a = e.target.closest('.ctx-item')?.dataset.a;
     cerrarMenu();
     if (a === 'abrir') navegar(c.ruta);
+    else if (a === 'zip') descargarCarpetaZip(c);
     else if (a === 'seleccionar') activarSeleccionDesdeMenu(c.ruta, card);
     else if (a === 'renombrar') pedirRenombrar(c);
     else if (a === 'mover') abrirMoverDialogo([c.ruta]);
@@ -463,6 +463,20 @@ function menuContextualCarpeta(evt, c, card) {
     else if (a === 'borrar') pedirBorrar(c);
   });
   registrarCierreClickFuera();
+}
+
+/* Descarga la carpeta (con subcarpetas) como ZIP. El servidor genera el
+ * fichero y lo manda como attachment; la autenticación viaja en la cookie
+ * compartida, igual que al abrir un PDF con /api/ver. */
+function descargarCarpetaZip(c) {
+  toast(`Preparando «${c.nombre}.zip»…`, 3500);
+  const a = document.createElement('a');
+  a.href = API_BASE + 'api/descargar_zip?ruta=' + encodeURIComponent(c.ruta);
+  a.download = `${c.nombre}.zip`;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 /* Coloca el menú evitando salir del viewport. Se llama antes de append. */
