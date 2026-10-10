@@ -152,7 +152,7 @@ preguntas.
 | `embedding` | `vector(1024)` | Generado por el worker de embeddings sobre `enunciado + opción correcta`. |
 | `autor_id` | `uuid` FK → usuarios | ON DELETE SET NULL. DEFAULT: `jwt_usuario_id()`. |
 | `creado_en` / `actualizado_en` | `timestamptz` | `actualizado_en` se compara con `respuestas.respondida_en` para invalidar respuestas cuando la pregunta cambia. |
-| `hash_contenido` | `text` GENERATED STORED UNIQUE | `md5(lower(btrim(enunciado)))`. Evita duplicar la misma pregunta al importar tests de distintas fuentes. |
+| `hash_contenido` | `text` GENERATED STORED UNIQUE | `md5(lower(btrim(enunciado)) \|\| '\|' \|\| lower(opciones::text))`. Evita duplicar la misma pregunta al importar tests de distintas fuentes; el mismo enunciado con otras opciones es otra pregunta. |
 
 Índices: HNSW cosine sobre `embedding`, GIN sobre `enunciado` (trigram) y
 GIN sobre `etiquetas`.
@@ -455,6 +455,13 @@ Auxiliares invisibles al cliente pero clave para el resto del sistema.
   autocontenido.
 - **`descargar_todos_los_tests() → jsonb`** — array de dumps para
   todos los tests que el usuario puede ver.
+- **API de tests por oposición** (`db/API_TESTS_OPOSICION.md`):
+  `subir_test_a_oposicion`, `listar_tests_de_oposicion`, `obtener_test`,
+  `obtener_test_por_titulo`, `editar_test`, `reemplazar_preguntas_test`
+  (deja el test con esas preguntas conservando el historial),
+  `sincronizar_test_en_oposicion` (crea o actualiza por título),
+  `quitar_test_de_oposicion`, `editar_pregunta` y
+  `tests_repetidos_de_oposicion`.
 
 ### 4.7 Mega, simulacro y temáticos
 
