@@ -2216,7 +2216,14 @@ async function mount() {
     pintarUsuario(s && s.username);
   } catch { pintarUsuario(''); }
   try {
-    await cargar(ESTADO.ruta);
+    const archivo = new URLSearchParams(location.search).get('archivo');
+    if (archivo && archivo.startsWith('/') && /\.(md|markdown|txt)$/i.test(archivo)) {
+      const padre = archivo.slice(0, archivo.lastIndexOf('/')) || '/';
+      await cargar(padre);
+      await abrirMarkdown(archivo, archivo.split('/').pop());
+    } else {
+      await cargar(ESTADO.ruta);
+    }
   } catch (err) {
     const g = document.getElementById('grid');
     if (g) g.innerHTML =

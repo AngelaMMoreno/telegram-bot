@@ -1204,7 +1204,7 @@ on("#btn-edit-q", "click", () => {
       $("#quiz-question").textContent = q.text;
       if (q.explicacion) {
         const e = $("#quiz-explanation");
-        e.textContent = q.explicacion;
+        renderExplanation(e, q.explicacion);
         e.classList.remove("hidden");
       }
     }
@@ -1505,7 +1505,7 @@ async function responder(idx, saltada = false) {
 
   if (q.explicacion) {
     const e = $("#quiz-explanation");
-    e.textContent = q.explicacion;
+    renderExplanation(e, q.explicacion);
     e.classList.remove("hidden");
   }
   $("#btn-next").classList.remove("hidden");
@@ -2005,6 +2005,30 @@ on("#btn-reclasificar", "click", async () => {
  * con un PATCH a /preguntas y la pregunta editada queda como "ejemplo" para
  * el k-NN: la próxima pregunta parecida que llegue al worker heredará estas
  * etiquetas vía reclasificar_pregunta. */
+// Referencias a teoría sin interpretar HTML de las explicaciones.
+function renderExplanation(element, text) {
+  element.replaceChildren();
+  const pattern = /https?:\/\/[^\s]+/g;
+  let start = 0;
+  for (const match of String(text || '').matchAll(pattern)) {
+    element.append(document.createTextNode(text.slice(start, match.index)));
+    let url;
+    try { url = new URL(match[0]); } catch { url = null; }
+    if (url && url.origin === location.origin && url.pathname === '/teoria/' && url.searchParams.has('archivo')) {
+      const link = document.createElement('a');
+      link.href = url.href;
+      link.textContent = 'Consultar teoría';
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      element.append(link);
+    } else {
+      element.append(document.createTextNode(match[0]));
+    }
+    start = match.index + match[0].length;
+  }
+  element.append(document.createTextNode(String(text || '').slice(start)));
+}
+
 async function renderQuizTagsInline(q) {
   const cont = $("#quiz-tags-inline");
   cont.classList.remove("hidden");
