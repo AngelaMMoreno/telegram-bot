@@ -2008,15 +2008,22 @@ on("#btn-reclasificar", "click", async () => {
 // Referencias a teoría sin interpretar HTML de las explicaciones.
 function renderExplanation(element, text) {
   element.replaceChildren();
-  const pattern = /https?:\/\/[^\s]+/g;
+  text = String(text || '');
+  // Acepta URL absoluta (cualquier dominio) o relativa a /teoria/?archivo=…
+  // (con o sin barra final). El archivo puede llevar espacios sin codificar,
+  // así que se corta en la extensión; si no la hay, en el primer espacio.
+  const pattern = /(?:https?:\/\/[^\s/]+)?\/teoria\/?\?archivo=(?:[^\n]*?\.(?:md|markdown|txt)\b|[^\s)\]>"']+)/gi;
   let start = 0;
-  for (const match of String(text || '').matchAll(pattern)) {
+  for (const match of text.matchAll(pattern)) {
     element.append(document.createTextNode(text.slice(start, match.index)));
     let url;
-    try { url = new URL(match[0]); } catch { url = null; }
-    if (url && url.origin === location.origin && url.pathname === '/teoria/' && url.searchParams.has('archivo')) {
+    try {
+      const raw = match[0].replace(/^https?:\/\/[^\s/]+/i, '');
+      url = new URL(raw, location.origin);
+    } catch { url = null; }
+    if (url && url.searchParams.has('archivo')) {
       const link = document.createElement('a');
-      link.href = url.href;
+      link.href = url.pathname.replace(/\/?$/, '/') + url.search;
       link.textContent = 'Consultar teoría';
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
@@ -2026,7 +2033,7 @@ function renderExplanation(element, text) {
     }
     start = match.index + match[0].length;
   }
-  element.append(document.createTextNode(String(text || '').slice(start)));
+  element.append(document.createTextNode(text.slice(start)));
 }
 
 async function renderQuizTagsInline(q) {
