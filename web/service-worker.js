@@ -22,9 +22,9 @@
  *   en el siguiente refresh.
  * ==========================================================================*/
 
-// Reorganización: el SW se ha movido de /tests/ a /. Bumpeamos versión para
-// invalidar cachés antiguas que apuntaban a /tests/*.
-const CACHE_VERSION = "aprentix-v18";
+// Invalida los assets anteriores para cargar los enlaces de preguntas a teoría
+// y la apertura directa del documento en el visor.
+const CACHE_VERSION = "aprentix-v19";
 const SHELL_CACHE   = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
