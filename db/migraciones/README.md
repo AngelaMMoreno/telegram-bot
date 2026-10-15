@@ -31,6 +31,8 @@ sin efectos duplicados.
 | 2026-10-08b | `2026-10-08b_reset_borra_fallos.sql`      | `resetear_mis_repasos` (botón «Resetear mi repaso» de Configuración) borra también los fallos del usuario (`marcadores` tipo `fallo`). Devuelve `{borradas, fallos_borrados}`. |
 | 2026-10-10  | `2026-10-10_api_editar_tests.sql`         | `preguntas.hash_contenido` pasa a cubrir enunciado + opciones (una pregunta corregida con el mismo enunciado ya no hereda las opciones viejas). RPCs nuevas para consultar y editar: `obtener_test`, `obtener_test_por_titulo`, `editar_test`, `reemplazar_preguntas_test`, `sincronizar_test_en_oposicion`, `quitar_test_de_oposicion`, `editar_pregunta` y `tests_repetidos_de_oposicion`. Ver `db/API_TESTS_OPOSICION.md`. |
 
+| 2026-10-15 | `2026-10-15_busqueda_tests.sql` | Añade `p_busqueda` a `listar_tests`: filtra por título antes de contar y paginar, respetando oposición y permisos. Aplicar antes de desplegar la web; las llamadas existentes siguen funcionando sin el parámetro. |
+
 ## Al aplicar cada delta
 
 1. Backup previo (por si algo sale mal):

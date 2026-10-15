@@ -906,7 +906,8 @@ CREATE OR REPLACE FUNCTION listar_tests(
     p_etiqueta        text    DEFAULT NULL,
     p_solo_pendientes boolean DEFAULT false,
     p_orden           text    DEFAULT 'reciente',
-    p_oposicion_id    uuid    DEFAULT NULL
+    p_oposicion_id    uuid    DEFAULT NULL,
+    p_busqueda        text    DEFAULT NULL
 ) RETURNS jsonb
 LANGUAGE plpgsql STABLE AS $$
 DECLARE
@@ -944,6 +945,7 @@ BEGIN
                           WHERE tox.test_id   = t.id
                             AND uo.usuario_id = jwt_usuario_id())
           )
+          AND (p_busqueda IS NULL OR strpos(lower(t.titulo), lower(btrim(p_busqueda))) > 0)
           AND (p_etiqueta IS NULL OR p_etiqueta = ANY(t.etiquetas))
           AND (
               p_oposicion_id IS NULL
@@ -988,6 +990,7 @@ BEGIN
                           WHERE tox.test_id   = t.id
                             AND uo.usuario_id = jwt_usuario_id())
           )
+          AND (p_busqueda IS NULL OR strpos(lower(t.titulo), lower(btrim(p_busqueda))) > 0)
           AND (p_etiqueta IS NULL OR p_etiqueta = ANY(t.etiquetas))
           AND (
               p_oposicion_id IS NULL
@@ -3705,7 +3708,7 @@ GRANT EXECUTE ON FUNCTION mi_sesion()                                 TO web_use
 GRANT EXECUTE ON FUNCTION mi_progreso()                               TO web_user;
 GRANT EXECUTE ON FUNCTION mi_progreso_detallado()                     TO web_user;
 
-GRANT EXECUTE ON FUNCTION listar_tests(boolean,int,int,text,boolean,text,uuid) TO web_user;
+GRANT EXECUTE ON FUNCTION listar_tests(boolean,int,int,text,boolean,text,uuid,text) TO web_user;
 GRANT EXECUTE ON FUNCTION obtener_preguntas_test(uuid)                TO web_user;
 GRANT EXECUTE ON FUNCTION iniciar_intento(uuid,text,text,uuid[])      TO web_user;
 GRANT EXECUTE ON FUNCTION registrar_respuesta(uuid,uuid,text,boolean,boolean) TO web_user;

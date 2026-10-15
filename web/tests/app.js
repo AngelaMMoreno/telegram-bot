@@ -617,6 +617,7 @@ function necesitaOposicion() {
 
 /* ── Tests ── */
 async function loadTests() {
+  const requestId = state._testsRequestId = (state._testsRequestId || 0) + 1;
   const listWrap = $("#tests-list");
 
   // Usuarios sin gestión: si aún no han elegido oposición, no tiene
@@ -660,6 +661,10 @@ async function loadTests() {
   const etsTests = await rpc("listar_etiquetas", {
     p_oposicion_id: state.currentOposicion || null,
   });
+  if (requestId !== state._testsRequestId) {
+    clearTimeout(placeholderTimer);
+    return;
+  }
   const etsList = Array.isArray(etsTests) ? etsTests : [];
   if (state.filtroEtiquetaTests && !etsList.some(e => e.nombre === state.filtroEtiquetaTests)) {
     state.filtroEtiquetaTests = null;
@@ -674,20 +679,21 @@ async function loadTests() {
     p_solo_pendientes: state.filtroVisTests === "pendientes",
     p_page:            state.testsPage,
     p_size:            12,
+    p_busqueda:        state.filtroTests.trim() || null,
     p_etiqueta:        state.filtroEtiquetaTests || null,
     p_orden:           state.ordenTests,
     p_oposicion_id:    state.currentOposicion || null,
   });
-  state.testsCache = r.tests;
   clearTimeout(placeholderTimer);
+  if (requestId !== state._testsRequestId) return;
+  state.testsCache = r.tests;
   renderTests();
   renderPagination(r);
   if (listWrap) listWrap.classList.remove("cargando");
 }
 
 function renderTests() {
-  const f = state.filtroTests.toLowerCase();
-  const lista = state.testsCache.filter(t => !f || t.title.toLowerCase().includes(f));
+  const lista = state.testsCache;
   $("#tests-list").innerHTML = lista.map(t => `
     <div class="test-row" data-id="${t.id}">
       <span class="star" data-fav="${t.id}">${t.favorito ? "⭐" : "☆"}</span>
@@ -883,7 +889,10 @@ function renderPagination(r) {
 
 on("#tests-filter", "input", e => {
   state.filtroTests = e.target.value;
-  renderTests();
+  state.testsPage = 1;
+  clearTimeout(state._testsFilterDebounce);
+  state._testsFilterDebounce = setTimeout(() =>
+    loadTests().catch(err => toast(err.message)), 250);
 });
 
 on("#tests-pagination", "click", e => {
