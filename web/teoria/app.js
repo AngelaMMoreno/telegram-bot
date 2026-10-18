@@ -317,6 +317,8 @@ function tarjetaFichero(f) {
   card.dataset.ruta = f.ruta;
   card.dataset.nombre = f.nombre;
   card.dataset.tipo = 'fichero';
+  card.dataset.oposicionIds = (f.oposicion_ids || []).join(',');
+  card.dataset.oposicionNombres = (f.oposicion_nombres || []).join('|');
   const emoji = emojiParaFichero(f.nombre, f.mime);
   const tickTitle = f.visto ? 'Marcar como no visto' : 'Marcar como visto';
   card.innerHTML = `
@@ -408,6 +410,7 @@ function menuContextualFichero(evt, f, card) {
       <div class="ctx-item" data-a="renombrar">✏️ Cambiar nombre</div>
       ${puedeEditar ? `<div class="ctx-item" data-a="editar">📝 Editar</div>` : ''}
       <div class="ctx-item" data-a="mover">📂 Mover</div>
+      <div class="ctx-item" data-a="oposicion">🎓 Asignar a oposición</div>
       <div class="ctx-item danger" data-a="borrar">🗑️ Eliminar</div>
     ` : ''}
   `;
@@ -427,6 +430,7 @@ function menuContextualFichero(evt, f, card) {
     else if (a === 'seleccionar') { activarSeleccionDesdeMenu(f.ruta, card); }
     else if (a === 'renombrar') pedirRenombrar(item);
     else if (a === 'mover') abrirMoverDialogo([f.ruta]);
+    else if (a === 'oposicion') abrirCarpetaOposicionPicker(item, card);
     else if (a === 'borrar') pedirBorrar(item);
   });
   registrarCierreClickFuera();
