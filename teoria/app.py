@@ -170,6 +170,21 @@ def _asignaciones_carpetas(token: str) -> dict[str, dict]:
         return {}
 
 
+def _asignacion_efectiva(ruta: str, asignaciones: dict[str, dict]) -> dict:
+    """Oposiciones de una ruta: las propias o, si no tiene, las del ancestro
+    asignado más cercano (el árbol interno hereda la asignación). Así lo que
+    se sube por API dentro de una carpeta asignada aparece con su oposición
+    marcada también en subcarpetas y ficheros.
+    """
+    partes = [p for p in ruta.split("/") if p]
+    while partes:
+        asig = asignaciones.get("/" + "/".join(partes))
+        if asig:
+            return asig
+        partes.pop()
+    return {"oposicion_ids": [], "oposicion_nombres": []}
+
+
 def _mis_oposiciones_ids(token: str) -> set[str]:
     r = _pg(token, "mis_oposiciones_ids", {})
     if r is None or r.status_code != 200:
@@ -239,10 +254,9 @@ def api_listar(request: Request, ruta: str = "/", oposicion_id: str | None = Non
     roles = claims.get("roles") or []
     es_admin = "admin" in roles
 
-    # Cargamos asignaciones solo si estamos en la raíz (donde tiene sentido
-    # filtrar) o si somos admin (para poder etiquetar cada carpeta con su
-    # oposición). Fuera de la raíz no filtramos ni etiquetamos: no aporta.
-    asignaciones = _asignaciones_carpetas(claims["_token"]) if url_path == "/" or es_admin else {}
+    # Asignaciones de oposición: se usan para filtrar en la raíz y para
+    # etiquetar carpetas y ficheros (propias o heredadas del ancestro).
+    asignaciones = _asignaciones_carpetas(claims["_token"])
     mis_ids = _mis_oposiciones_ids(claims["_token"]) if url_path == "/" and not es_admin else set()
 
     carpetas = []
@@ -259,13 +273,9 @@ def api_listar(request: Request, ruta: str = "/", oposicion_id: str | None = Non
         }
         # Adjuntamos las oposiciones asignadas a la carpeta (0..N). El
         # frontend las pinta como badges y las usa para el picker.
-        asig = asignaciones.get(ruta_d)
-        if asig:
-            entry["oposicion_ids"]     = asig.get("oposicion_ids", [])
-            entry["oposicion_nombres"] = asig.get("oposicion_nombres", [])
-        else:
-            entry["oposicion_ids"]     = []
-            entry["oposicion_nombres"] = []
+        asig = _asignacion_efectiva(ruta_d, asignaciones)
+        entry["oposicion_ids"]     = asig.get("oposicion_ids", [])
+        entry["oposicion_nombres"] = asig.get("oposicion_nombres", [])
 
         # Filtrado en la raíz.
         if url_path == "/":
@@ -291,6 +301,7 @@ def api_listar(request: Request, ruta: str = "/", oposicion_id: str | None = Non
         ruta_f = join_url(url_path, f.name)
         st = f.stat()
         mime, _ = mimetypes.guess_type(f.name)
+        asig_f = _asignacion_efectiva(ruta_f, asignaciones)
         ficheros.append({
             "nombre": f.name,
             "ruta": ruta_f,
@@ -298,6 +309,8 @@ def api_listar(request: Request, ruta: str = "/", oposicion_id: str | None = Non
             "mime": mime,
             "modificado": st.st_mtime,
             "visto": ruta_f in vistos,
+            "oposicion_ids": asig_f.get("oposicion_ids", []),
+            "oposicion_nombres": asig_f.get("oposicion_nombres", []),
         })
 
     parts = [p for p in url_path.split("/") if p]

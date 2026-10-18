@@ -1439,20 +1439,48 @@ function renderPregunta() {
   // Temporizador configurable.  El id vive en una variable de módulo
   // (no en state.quiz) para evitar timers huérfanos cuando se reasigna
   // state.quiz entre quizzes.
-  let t = state.quiz.tiempoPorPregunta || 20;
-  $("#quiz-timer").textContent = t + "s";
-  cancelarTimerQuiz();
-  quizTimer = setInterval(() => {
-    if (t <= 0) { cancelarTimerQuiz(); responder(null); return; }
-    t--;
-    $("#quiz-timer").textContent = t + "s";
-  }, 1000);
+  // La pausa solo afecta a la pregunta en curso: cada pregunta nueva
+  // arranca el tiempo automáticamente.
+  quizTiempoRestante = state.quiz.tiempoPorPregunta || 20;
+  quizPausado = false;
+  pintarTimerQuiz();
+  arrancarTimerQuiz();
 }
 
 let quizTimer = null;
+let quizTiempoRestante = 0;
+let quizPausado = false;
+function arrancarTimerQuiz() {
+  cancelarTimerQuiz();
+  quizTimer = setInterval(() => {
+    if (quizTiempoRestante <= 0) { cancelarTimerQuiz(); responder(null); return; }
+    quizTiempoRestante--;
+    $("#quiz-timer").textContent = quizTiempoRestante + "s";
+  }, 1000);
+}
 function cancelarTimerQuiz() {
   if (quizTimer) { clearInterval(quizTimer); quizTimer = null; }
 }
+function pintarTimerQuiz() {
+  $("#quiz-timer").textContent = quizTiempoRestante + "s";
+  const btn = $("#btn-quiz-pause");
+  if (!btn) return;
+  btn.textContent = quizPausado ? "▶" : "⏸";
+  const txt = quizPausado ? "Reanudar (Espacio)" : "Pausar (Espacio)";
+  btn.title = txt;
+  btn.setAttribute("aria-label", txt);
+  btn.setAttribute("aria-pressed", quizPausado ? "true" : "false");
+  btn.classList.toggle("hidden", !!state.quiz?.answered);
+  $("#quiz-timer").classList.toggle("paused", quizPausado);
+}
+function alternarPausaQuiz() {
+  if (!state.quiz || state.quiz.answered) return;
+  quizPausado = !quizPausado;
+  if (quizPausado) cancelarTimerQuiz();
+  else arrancarTimerQuiz();
+  pintarTimerQuiz();
+}
+on("#btn-quiz-pause", "click", alternarPausaQuiz);
 
 on("#quiz-options", "click", e => {
   const btn = e.target.closest(".option-btn");
@@ -1496,6 +1524,8 @@ async function responder(idx, saltada = false) {
   if (state.quiz.answered) return;
   state.quiz.answered = true;
   cancelarTimerQuiz();
+  quizPausado = false;
+  pintarTimerQuiz();
 
   const q = state.quiz.questions[state.qi];
   const correctIdx = q.options.findIndex(o => o.isCorrect);
@@ -1673,6 +1703,11 @@ document.addEventListener("keydown", e => {
       e.preventDefault();
       $("#btn-next").click();
     }
+    return;
+  }
+  if (e.key === " ") {
+    e.preventDefault();
+    alternarPausaQuiz();
     return;
   }
   const k = parseInt(e.key, 10);
