@@ -4846,6 +4846,30 @@ GRANT EXECUTE ON FUNCTION sincronizar_test_en_oposicion(uuid, text, text, jsonb)
 GRANT EXECUTE ON FUNCTION quitar_test_de_oposicion(uuid, uuid, boolean)            TO web_user;
 GRANT EXECUTE ON FUNCTION editar_pregunta(uuid, text, jsonb, text, text[])         TO web_user;
 
+-- Borra una pregunta de todos los tests, fallos, favoritas y repasos.
+CREATE OR REPLACE FUNCTION borrar_pregunta(p_pregunta_id uuid) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER AS $fn$
+DECLARE
+    v_tests int;
+BEGIN
+    IF NOT (es_admin() OR tiene_permiso('pregunta.borrar')) THEN
+        RAISE EXCEPTION 'no_autorizado';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM preguntas WHERE id = p_pregunta_id) THEN
+        RAISE EXCEPTION 'pregunta_no_encontrada';
+    END IF;
+
+    SELECT count(*) INTO v_tests FROM test_preguntas WHERE pregunta_id = p_pregunta_id;
+
+    -- ON DELETE CASCADE limpia test_preguntas, respuestas, marcadores
+    -- (fallos y favoritas) y repasos de todos los usuarios.
+    DELETE FROM preguntas WHERE id = p_pregunta_id;
+
+    RETURN jsonb_build_object('id', p_pregunta_id, 'tests_afectados', v_tests);
+END $fn$;
+
+GRANT EXECUTE ON FUNCTION borrar_pregunta(uuid) TO web_user;
+
 -- Reemplaza el conjunto completo de oposiciones asignadas a una ruta.
 -- Un array vacío o NULL borra todas las asignaciones (carpeta global).
 CREATE OR REPLACE FUNCTION set_carpeta_oposiciones(

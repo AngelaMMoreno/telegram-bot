@@ -1197,6 +1197,23 @@ on("#pq-borrar", "click", async () => {
   } catch (err) { toast(err.message); }
 });
 
+/* ── Eliminar la pregunta actual (de todos los tests, fallos, repasos…) ── */
+on("#btn-del-q", "click", async () => {
+  if (!state.quiz || !state.quiz.answered) return;
+  const q = state.quiz.questions[state.qi];
+  if (!confirm("Vas a eliminar esta pregunta de TODOS los tests en que esté incluida y también de fallos, favoritas y repasos. No se puede deshacer. ¿Continuar?")) return;
+  try {
+    const r = await rpc("borrar_pregunta", { p_pregunta_id: q.id });
+    // Deja de contar en este intento (la respuesta ya se borró en cascada).
+    if (q._resultado) state.quiz[q._resultado]--;
+    if (state.quiz.totalEfectivo != null) state.quiz.totalEfectivo--;
+    state.quiz.questions.splice(state.qi, 1);
+    toast(`Pregunta eliminada (estaba en ${r.tests_afectados} test${r.tests_afectados === 1 ? "" : "s"})`);
+    if (state.qi >= state.quiz.questions.length) finalizarQuiz();
+    else renderPregunta();
+  } catch (e) { toast(e.message); }
+});
+
 /* ── Editar desde el quiz (botón visible tras responder) ── */
 on("#btn-edit-q", "click", () => {
   if (!state.quiz) return;
@@ -1426,6 +1443,7 @@ function renderPregunta() {
   $("#quiz-explanation").classList.add("hidden");
   $("#btn-next").classList.add("hidden");
   $("#btn-edit-q").classList.add("hidden");
+  $("#btn-del-q").classList.add("hidden");
   $("#btn-skip").classList.remove("hidden");
   $("#quiz-tags-inline").classList.add("hidden");
   $("#quiz-options").innerHTML = q.options.map((o, i) => `
@@ -1538,9 +1556,8 @@ async function responder(idx, saltada = false) {
     if (i === idx && !correcta) b.classList.add("wrong");
   });
 
-  if (correcta) state.quiz.correct++;
-  else if (idx == null) state.quiz.blank++;
-  else state.quiz.wrong++;
+  q._resultado = correcta ? "correct" : (idx == null ? "blank" : "wrong");
+  state.quiz[q._resultado]++;
 
   if (q.explicacion) {
     const e = $("#quiz-explanation");
@@ -1549,6 +1566,7 @@ async function responder(idx, saltada = false) {
   }
   $("#btn-next").classList.remove("hidden");
   $("#btn-edit-q").classList.remove("hidden");
+  $("#btn-del-q").classList.remove("hidden");
   $("#btn-skip").classList.add("hidden");
   renderQuizTagsInline(q);
 
