@@ -1199,9 +1199,15 @@ on("#pq-borrar", "click", async () => {
 
 /* ── Eliminar la pregunta actual (de todos los tests, fallos, repasos…) ── */
 on("#btn-del-q", "click", async () => {
-  if (!state.quiz || !state.quiz.answered) return;
+  if (!state.quiz) return;
   const q = state.quiz.questions[state.qi];
-  if (!confirm("Vas a eliminar esta pregunta de TODOS los tests en que esté incluida y también de fallos, favoritas y repasos. No se puede deshacer. ¿Continuar?")) return;
+  // Mientras se confirma, el tiempo de la pregunta no corre.
+  const corriendo = !state.quiz.answered && !quizPausado;
+  if (corriendo) cancelarTimerQuiz();
+  if (!confirm("Vas a eliminar esta pregunta de TODOS los tests en que esté incluida y también de fallos, favoritas y repasos. No se puede deshacer. ¿Continuar?")) {
+    if (corriendo) arrancarTimerQuiz();
+    return;
+  }
   try {
     const r = await rpc("borrar_pregunta", { p_pregunta_id: q.id });
     // Deja de contar en este intento (la respuesta ya se borró en cascada).
@@ -1211,7 +1217,10 @@ on("#btn-del-q", "click", async () => {
     toast(`Pregunta eliminada (estaba en ${r.tests_afectados} test${r.tests_afectados === 1 ? "" : "s"})`);
     if (state.qi >= state.quiz.questions.length) finalizarQuiz();
     else renderPregunta();
-  } catch (e) { toast(e.message); }
+  } catch (e) {
+    toast(e.message);
+    if (corriendo) arrancarTimerQuiz();
+  }
 });
 
 /* ── Editar desde el quiz (botón visible tras responder) ── */
@@ -1443,7 +1452,6 @@ function renderPregunta() {
   $("#quiz-explanation").classList.add("hidden");
   $("#btn-next").classList.add("hidden");
   $("#btn-edit-q").classList.add("hidden");
-  $("#btn-del-q").classList.add("hidden");
   $("#btn-skip").classList.remove("hidden");
   $("#quiz-tags-inline").classList.add("hidden");
   $("#quiz-options").innerHTML = q.options.map((o, i) => `
@@ -1566,7 +1574,6 @@ async function responder(idx, saltada = false) {
   }
   $("#btn-next").classList.remove("hidden");
   $("#btn-edit-q").classList.remove("hidden");
-  $("#btn-del-q").classList.remove("hidden");
   $("#btn-skip").classList.add("hidden");
   renderQuizTagsInline(q);
 
